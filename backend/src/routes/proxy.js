@@ -253,9 +253,9 @@ router.post('/image', async (req, res) => {
       }
     }
 
-    // 异步任务轮询(banana 有时返 task_id)
-    if (!urls.length && (typeof data?.data === 'string' || data?.task_id || data?.data?.task_id)) {
-      const taskId = typeof data.data === 'string' ? data.data : (data.task_id || data.data?.task_id);
+    // 异步任务轮询(banana / gpt-image-2 有时返 task_id)
+    if (!urls.length && (typeof data?.data === 'string' || data?.task_id || data?.data?.task_id || data?.id)) {
+      const taskId = typeof data.data === 'string' ? data.data : (data.task_id || data.data?.task_id || data.id);
       const polled = await pollImageTask(taskId, settings.zhenzhenApiKey);
       if (polled) urls.push(polled);
     }
@@ -270,9 +270,136 @@ router.post('/image', async (req, res) => {
   }
 });
 
-// ========== 图像异步任务轮询(主要针对 nano-banana 可能返 task_id 的场景) ==========
+// ========================================================================
+// 图像异步任务接口(与主项目 gpt-image-2-web 一致)
+// POST /api/proxy/image/submit -> { taskId }(同 submit 逻辑,但不同步轮询)
+// GET  /api/proxy/image/status/:tid -> { status, progress, urls? }
+// ========================================================================
+router.post('/image/submit', async (req, res) => {
+  const settings = loadRawSettings();
+  if (!settings?.zhenzhenApiKey) {
+    return res.status(400).json({ success: false, error: '未配置贞贞工坊 API Key' });
+  }
+  try {
+    const { model, apiModel, paramKind: paramKindIn, prompt, n,
+            aspect_ratio, image_size, images, image, size } = req.body || {};
+    if (!prompt) return res.status(400).json({ success: false, error: 'prompt 不得为空' });
+    const m = String(apiModel || model || '');
+    const paramKind = paramKindIn || (m.includes('nano-banana') ? 'banana-ratio' : 'gpt-size');
+    const finalApiModel = apiModel || model;
+    const refs = Array.isArray(images) ? images.filter(Boolean) : [];
+    if (typeof image === 'string' && image && !refs.includes(image)) refs.unshift(image);
+    const hasRefs = refs.length > 0;
+    const auth = `Bearer ${settings.zhenzhenApiKey}`;
+    const upstreamBase = `${config.ZHENZHEN_BASE_URL}/v1/images`;
+
+    let r;
+    if (paramKind === 'gpt-size' && hasRefs) {
+      const form = new FormData();
+      for (let i = 0; i < refs.length; i++) {
+        const conv = await refToBuffer(refs[i]);
+        if (!conv) continue;
+        const blob = new Blob([conv.buf], { type: conv.mime });
+        form.append('image', blob, `ref_${i}.${conv.ext}`);
+      }
+      form.append('prompt', prompt);
+      form.append('model', finalApiModel);
+      form.append('size', size || aspectToGptSize(aspect_ratio, image_size, true));
+      form.append('response_format', 'b64_json');
+      r = await fetch(`${upstreamBase}/edits`, { method: 'POST', headers: { Authorization: auth }, body: form });
+    } else {
+      const body = { model: finalApiModel, prompt, n: n || 1, response_format: 'b64_json' };
+      const ar = String(aspect_ratio || '').trim();
+      const isAuto = !ar || ar === 'Auto' || ar === 'AUTO';
+      if (paramKind === 'gpt-size') {
+        body.size = size || aspectToGptSize(aspect_ratio, image_size, false);
+      } else {
+        if (!isAuto) body.aspect_ratio = ar; else if (!hasRefs) body.aspect_ratio = '1:1';
+        body.image_size = String(image_size || '2K').toUpperCase();
+        if (hasRefs) {
+          const arr = [];
+          for (const f of refs) { const ok = await refToBananaImage(f); if (ok) arr.push(ok); }
+          if (arr.length) body.image = arr;
+        }
+      }
+      r = await fetch(`${upstreamBase}/generations`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: auth },
+        body: JSON.stringify(body),
+      });
+    }
+
+    const text = await r.text();
+    let data; try { data = JSON.parse(text); } catch { data = { _raw: text }; }
+    if (!r.ok) {
+      return res.status(r.status).json({ success: false, error: data?.error?.message || data?.message || `上游 HTTP ${r.status}`, raw: data });
+    }
+
+    // 如果同步完成,直接返回结果
+    const items = Array.isArray(data?.data) ? data.data : [];
+    if (items.length && (items[0]?.url || items[0]?.b64_json)) {
+      const urls = [];
+      for (const it of items) {
+        if (it?.b64_json) { const u = saveBase64Image(it.b64_json); if (u) urls.push(u); }
+        else if (it?.url) { const u = await saveRemoteImage(it.url); urls.push(u); }
+      }
+      return res.json({ success: true, data: { sync: true, status: 'completed', progress: '100%', urls, raw: data } });
+    }
+
+    // 异步任务
+    const taskId = typeof data?.data === 'string' ? data.data : (data?.task_id || data?.data?.task_id || data?.id);
+    if (!taskId) {
+      return res.status(500).json({ success: false, error: '未获取到 task_id 且无同步结果: ' + JSON.stringify(data).slice(0, 300) });
+    }
+    res.json({ success: true, data: { sync: false, taskId, status: 'pending', progress: '0%', raw: data } });
+  } catch (e) {
+    console.error('proxy/image/submit 错误:', e);
+    res.status(500).json({ success: false, error: e.message || '请求失败' });
+  }
+});
+
+// 查询异步图像任务状态
+router.get('/image/status/:tid', async (req, res) => {
+  const settings = loadRawSettings();
+  if (!settings?.zhenzhenApiKey) {
+    return res.status(400).json({ success: false, error: '未配置贞贞工坊 API Key' });
+  }
+  const tid = req.params.tid;
+  try {
+    const url = `${config.ZHENZHEN_BASE_URL}/v1/images/tasks/${encodeURIComponent(tid)}`;
+    const r = await fetch(url, { headers: { Authorization: `Bearer ${settings.zhenzhenApiKey}` } });
+    const text = await r.text();
+    let data; try { data = JSON.parse(text); } catch { data = { _raw: text }; }
+    if (!r.ok) {
+      return res.status(r.status).json({ success: false, error: data?.error?.message || `上游 HTTP ${r.status}`, raw: data });
+    }
+    const inner = data?.data || {};
+    const status = String(inner.status || '').toLowerCase();
+    const progress = inner.progress || '0%';
+    const SUCCESS = ['success', 'completed', 'done'];
+    const FAILURE = ['failure', 'failed', 'error'];
+    if (SUCCESS.includes(status)) {
+      const rd = inner.data || {};
+      const arr = Array.isArray(rd.data) ? rd.data : (Array.isArray(inner.data) ? inner.data : []);
+      const urls = [];
+      for (const it of arr) {
+        if (it?.b64_json) { const u = saveBase64Image(it.b64_json); if (u) urls.push(u); }
+        else if (it?.url) { const u = await saveRemoteImage(it.url); urls.push(u); }
+      }
+      return res.json({ success: true, data: { status: 'completed', progress: '100%', urls, raw: data } });
+    }
+    if (FAILURE.includes(status)) {
+      return res.json({ success: false, data: { status: 'failed', progress, error: inner.fail_reason || '任务失败' } });
+    }
+    res.json({ success: true, data: { status: status || 'pending', progress, raw: data } });
+  } catch (e) {
+    console.error('proxy/image/status 错误:', e);
+    res.status(500).json({ success: false, error: e.message || '查询失败' });
+  }
+});
+
+// ========== 图像异步任务轮询(同步代理内部使用,路径对齐主项目 /v1/images/tasks/) ==========
 async function pollImageTask(taskId, apiKey, maxRetries = 60, interval = 2000) {
-  const url = `${config.ZHENZHEN_BASE_URL}/v1/images/generations/${encodeURIComponent(taskId)}`;
+  const url = `${config.ZHENZHEN_BASE_URL}/v1/images/tasks/${encodeURIComponent(taskId)}`;
   for (let i = 0; i < maxRetries; i++) {
     await new Promise(r => setTimeout(r, interval));
     try {
@@ -280,14 +407,17 @@ async function pollImageTask(taskId, apiKey, maxRetries = 60, interval = 2000) {
       const text = await r.text();
       let data; try { data = JSON.parse(text); } catch { continue; }
       if (!r.ok) continue;
-      const st = String(data?.status || '').toUpperCase();
-      if (st === 'SUCCESS' || data?.data?.[0]?.url || data?.data?.[0]?.b64_json) {
-        const it = Array.isArray(data?.data) ? data.data[0] : data?.data;
+      const inner = data?.data || {};
+      const st = String(inner.status || '').toLowerCase();
+      if (['success', 'completed', 'done'].includes(st)) {
+        const rd = inner.data || {};
+        const arr = Array.isArray(rd.data) ? rd.data : (Array.isArray(inner.data) ? inner.data : []);
+        const it = arr[0];
         if (it?.b64_json) return saveBase64Image(it.b64_json);
         if (it?.url) return await saveRemoteImage(it.url);
       }
-      if (st === 'FAILURE' || st === 'FAILED' || data?.error) {
-        console.error('[poll] 任务失败:', data?.error || st);
+      if (['failure', 'failed', 'error'].includes(st)) {
+        console.error('[poll] 任务失败:', inner.fail_reason || st);
         return null;
       }
     } catch (e) {

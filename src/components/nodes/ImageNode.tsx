@@ -2,7 +2,7 @@ import { memo, useMemo, useRef, useState } from 'react';
 import { Handle, Position, useReactFlow, type NodeProps } from '@xyflow/react';
 import { AlertCircle, Image as ImageIcon, Loader2, Plus, Sparkles, X } from 'lucide-react';
 import { IMAGE_MODELS } from '../../providers/models';
-import { generateImage } from '../../services/generation';
+import { submitImageAsync, queryImageStatus } from '../../services/generation';
 import { uploadFile } from '../../services/generation';
 import { useUpdateNodeData } from './useUpdateNodeData';
 import { useRunTrigger } from '../../hooks/useRunTrigger';
@@ -99,10 +99,10 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
       setError('未连接 text 节点也未填写 prompt');
       return;
     }
-    update({ status: 'generating', error: null });
+    update({ status: 'generating', progress: '0%', error: null });
     try {
       const allRefs = [...refImages, ...upstreamImages].slice(0, modelDef.maxReferenceImages);
-      const res = await generateImage({
+      const submit = await submitImageAsync({
         model: modelDef.id,
         apiModel: apiModel,
         paramKind: modelDef.paramKind,
@@ -112,14 +112,51 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
         images: allRefs,
         n: 1,
       });
-      const url = res.urls?.[0];
-      if (!url) throw new Error('上游未返回有效图像');
-      update({
-        status: 'success',
-        imageUrl: url,
-        lastPrompt: finalPrompt,
-        usedI2I: allRefs.length > 0,
-      });
+
+      // 分支一:同步完成
+      if (submit.sync && submit.urls && submit.urls.length) {
+        update({
+          status: 'success',
+          progress: '100%',
+          imageUrl: submit.urls[0],
+          lastPrompt: finalPrompt,
+          usedI2I: allRefs.length > 0,
+        });
+        return;
+      }
+
+      // 分支二:异步任务 → 轮询状态(对齐主项目 gpt-image-2-web pollTask)
+      const taskId = submit.taskId;
+      if (!taskId) throw new Error('未获取到 taskId 且无同步结果');
+      update({ progress: submit.progress || '5%', taskId });
+      const maxPoll = 60;       // 最多 60 次
+      const interval = 2000;    // 每 2 秒一次
+      let lastProg = '5%';
+      for (let i = 0; i < maxPoll; i++) {
+        await new Promise((r) => setTimeout(r, interval));
+        const q = await queryImageStatus(taskId);
+        if (q.progress && q.progress !== lastProg) {
+          lastProg = q.progress;
+          update({ progress: q.progress });
+        }
+        const st = String(q.status || '').toLowerCase();
+        if (st === 'completed' || st === 'success' || st === 'done') {
+          const url = q.urls?.[0];
+          if (!url) throw new Error('任务完成但未返回图片');
+          update({
+            status: 'success',
+            progress: '100%',
+            imageUrl: url,
+            lastPrompt: finalPrompt,
+            usedI2I: allRefs.length > 0,
+          });
+          return;
+        }
+        if (st === 'failed' || st === 'failure' || st === 'error') {
+          throw new Error(q.error || '任务失败');
+        }
+      }
+      throw new Error(`超时:${maxPoll * interval / 1000}s 未完成`);
     } catch (e: any) {
       setError(e?.message || '生成失败');
       update({ status: 'error', error: e?.message });
@@ -191,10 +228,11 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
           <select
             value={apiModel}
             onChange={(e) => update({ apiModel: e.target.value })}
-            className="w-full rounded bg-white/5 border border-white/10 px-2 py-1 text-xs text-white outline-none focus:border-white/30"
+            style={{ background: '#18181b', color: '#ffffff' }}
+            className="w-full rounded border border-white/10 px-2 py-1 text-xs outline-none focus:border-white/30"
           >
             {modelDef.apiModelOptions.map((opt) => (
-              <option key={opt.value} value={opt.value} className="bg-zinc-900">{opt.label}</option>
+              <option key={opt.value} value={opt.value} style={{ background: '#18181b', color: '#ffffff' }}>{opt.label}</option>
             ))}
           </select>
         </div>
@@ -206,10 +244,11 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
             <select
               value={aspectRatio}
               onChange={(e) => update({ aspectRatio: e.target.value })}
-              className="w-full rounded bg-white/5 border border-white/10 px-2 py-1 text-xs text-white outline-none focus:border-white/30"
+              style={{ background: '#18181b', color: '#ffffff' }}
+              className="w-full rounded border border-white/10 px-2 py-1 text-xs outline-none focus:border-white/30"
             >
               {modelDef.aspectRatios.map((r) => (
-                <option key={r} value={r} className="bg-zinc-900">{r}</option>
+                <option key={r} value={r} style={{ background: '#18181b', color: '#ffffff' }}>{r}</option>
               ))}
             </select>
           </div>
@@ -218,10 +257,11 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
             <select
               value={sizeLevel}
               onChange={(e) => update({ sizeLevel: e.target.value })}
-              className="w-full rounded bg-white/5 border border-white/10 px-2 py-1 text-xs text-white outline-none focus:border-white/30"
+              style={{ background: '#18181b', color: '#ffffff' }}
+              className="w-full rounded border border-white/10 px-2 py-1 text-xs outline-none focus:border-white/30"
             >
               {modelDef.sizes.map((s) => (
-                <option key={s} value={s} className="bg-zinc-900">{s}</option>
+                <option key={s} value={s} style={{ background: '#18181b', color: '#ffffff' }}>{s}</option>
               ))}
             </select>
           </div>
@@ -279,7 +319,7 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
           />
         </div>
 
-        {/* 生成按钮 */}
+        {/* 生成按钮(包含异步进度) */}
         <button
           onClick={handleGenerate}
           disabled={status === 'generating'}
@@ -287,7 +327,7 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
         >
           {status === 'generating' ? (
             <>
-              <Loader2 size={12} className="animate-spin" /> 生成中...
+              <Loader2 size={12} className="animate-spin" /> 生成中 {d?.progress || ''}
             </>
           ) : (
             <>

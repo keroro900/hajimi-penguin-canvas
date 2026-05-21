@@ -38,6 +38,47 @@ export async function generateImage(req: GenerateImageRequest): Promise<Generate
   return data.data;
 }
 
+// ========================================================================
+// 图像异步任务(对齐 gpt-image-2-web 的 submit + poll 模式)
+// submitImageAsync 返 { sync, taskId?, urls?, status, progress }
+//   - sync=true: 同步完成,urls 已存在
+//   - sync=false: 需轮询 queryImageStatus(taskId)
+// ========================================================================
+export interface ImageSubmitResult {
+  sync: boolean;
+  taskId?: string;
+  urls?: string[];
+  status: string;       // pending / running / completed / failed
+  progress: string;     // '0%' / '50%' / '100%'
+  raw?: any;
+}
+
+export async function submitImageAsync(req: GenerateImageRequest): Promise<ImageSubmitResult> {
+  const r = await fetch('/api/proxy/image/submit', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req),
+  });
+  const data = await r.json();
+  if (!r.ok || !data.success) throw new Error(data?.error || `HTTP ${r.status}`);
+  return data.data;
+}
+
+export interface ImageQueryResult {
+  status: string;       // pending / running / completed / failed
+  progress: string;
+  urls?: string[];
+  error?: string;
+}
+
+export async function queryImageStatus(taskId: string): Promise<ImageQueryResult> {
+  const r = await fetch(`/api/proxy/image/status/${encodeURIComponent(taskId)}`);
+  const data = await r.json();
+  if (!r.ok) throw new Error(data?.error || `HTTP ${r.status}`);
+  // 失败状态下 success=false 但返回 body 中仍包含 status:'failed'
+  return data.data || { status: data.success ? 'pending' : 'failed', progress: '0%', error: data?.error };
+}
+
 // LLM
 export interface LlmMessage {
   role: 'system' | 'user' | 'assistant';
