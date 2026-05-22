@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useRef, useState } from 'react';
 import { Handle, Position, useReactFlow, type NodeProps } from '@xyflow/react';
 import {
   AlertCircle,
@@ -62,27 +62,27 @@ function savePresets(map: Record<string, string>) {
   }
 }
 
-/** 将原生 wheel 事件拦截，阻止传递到 ReactFlow 画布缩放 */
-function useWheelIsolation<T extends HTMLElement>() {
-  const ref = useRef<T>(null);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const handler = (e: WheelEvent) => {
-      // 只有内容可滚动时才拦截
-      const scrollable = el.scrollHeight > el.clientHeight;
-      if (!scrollable) return;
-      const atTop = el.scrollTop <= 0 && e.deltaY < 0;
-      const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight && e.deltaY > 0;
-      if (!atTop && !atBottom) {
-        e.stopPropagation();
-        e.preventDefault();
-      }
-    };
-    el.addEventListener('wheel', handler, { passive: false });
-    return () => el.removeEventListener('wheel', handler);
-  }, []);
-  return ref;
+/** 原生 wheel 事件拦截 —— 阻止冒泡到 ReactFlow 画布缩放 */
+function attachWheelBlock(el: HTMLElement | null) {
+  if (!el) return;
+  // 避免重复绑定
+  if ((el as any).__wheelBlocked) return;
+  (el as any).__wheelBlocked = true;
+  el.addEventListener(
+    'wheel',
+    (e: WheelEvent) => {
+      e.stopPropagation();
+    },
+    { passive: false, capture: false }
+  );
+  // 同时在 capture 阶段也拦截，防止 ReactFlow capture 监听
+  el.addEventListener(
+    'wheel',
+    (e: WheelEvent) => {
+      e.stopPropagation();
+    },
+    { passive: false, capture: true }
+  );
 }
 
 const LLMNode = ({ id, data, selected }: NodeProps) => {
@@ -95,9 +95,9 @@ const LLMNode = ({ id, data, selected }: NodeProps) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
-  const sysRef = useWheelIsolation<HTMLTextAreaElement>();
-  const userRef = useWheelIsolation<HTMLTextAreaElement>();
-  const chatRef = useWheelIsolation<HTMLDivElement>();
+  const sysRef = useCallback((el: HTMLTextAreaElement | null) => attachWheelBlock(el), []);
+  const userRef = useCallback((el: HTMLTextAreaElement | null) => attachWheelBlock(el), []);
+  const chatRef = useCallback((el: HTMLDivElement | null) => attachWheelBlock(el), []);
 
   const d = data as any;
   const model: string = d?.model || DEFAULT_LLM_MODEL;
@@ -298,7 +298,11 @@ const LLMNode = ({ id, data, selected }: NodeProps) => {
 
   const handleColor = PORT_COLOR.text; // 输出 text;输入兼容 text+image(由 portTypes.llm 决定)
 
+  const hasChat = history.length > 0 || !!streamingText;
+
   return (
+    <div className="flex items-stretch gap-0">
+    {/* 主体 */}
     <div
       className={`relative rounded-xl border-2 transition-all w-[320px] ${
         selected ? 'border-emerald-400 shadow-2xl shadow-emerald-500/20' : 'border-white/15 hover:border-white/30'
@@ -542,39 +546,43 @@ const LLMNode = ({ id, data, selected }: NodeProps) => {
         )}
       </div>
 
-      {/* 会话历史 - 右侧面板 */}
-      {(history.length > 0 || streamingText) && (
-        <div
-          ref={chatRef}
-          className="absolute top-0 left-full ml-2 w-[280px] max-h-[480px] overflow-y-auto rounded-xl border border-white/10 p-2.5 space-y-1.5"
-          style={{ background: 'rgba(20,20,22,.94)', backdropFilter: 'blur(8px)' }}
-          onMouseDown={(e) => e.stopPropagation()}
-        >
-          {history.map((t, i) => (
-            <div key={i} className="text-[11px]">
-              <div className={`text-[9px] mb-0.5 ${t.role === 'user' ? 'text-sky-300/60' : 'text-emerald-300/60'}`}>
-                {t.role === 'user' ? '🧑 用户' : '🤖 助手'}
-              </div>
-              <div className="whitespace-pre-wrap text-white/80 bg-white/[0.03] rounded p-1.5">{t.text || '[空]'}</div>
-              {t.images && t.images.length > 0 && (
-                <div className="flex gap-1 flex-wrap mt-1">
-                  {t.images.map((u, j) => (
-                    <img key={j} src={u} alt="" className="w-12 h-12 object-cover rounded border border-white/10" />
-                  ))}
-                </div>
-              )}
+    </div>
+
+    {/* 右侧会话面板 */}
+    {hasChat && (
+      <div
+        ref={chatRef}
+        className={`w-[260px] rounded-xl border-2 overflow-y-auto p-2.5 space-y-1.5 ${
+          selected ? 'border-emerald-400/60' : 'border-white/10'
+        }`}
+        style={{ background: 'rgba(20,20,22,.94)', backdropFilter: 'blur(8px)', maxHeight: '100%', alignSelf: 'stretch' }}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        {history.map((t, i) => (
+          <div key={i} className="text-[11px]">
+            <div className={`text-[9px] mb-0.5 ${t.role === 'user' ? 'text-sky-300/60' : 'text-emerald-300/60'}`}>
+              {t.role === 'user' ? '🧑 用户' : '🤖 助手'}
             </div>
-          ))}
-          {streamingText && (
-            <div className="text-[11px]">
-              <div className="text-[9px] mb-0.5 text-emerald-300/60">🤖 助手 (流式中…)</div>
-              <div className="whitespace-pre-wrap text-white/80 bg-emerald-500/[0.08] rounded p-1.5 border border-emerald-500/20">
-                {streamingText}
+            <div className="whitespace-pre-wrap text-white/80 bg-white/[0.03] rounded p-1.5">{t.text || '[空]'}</div>
+            {t.images && t.images.length > 0 && (
+              <div className="flex gap-1 flex-wrap mt-1">
+                {t.images.map((u, j) => (
+                  <img key={j} src={u} alt="" className="w-12 h-12 object-cover rounded border border-white/10" />
+                ))}
               </div>
+            )}
+          </div>
+        ))}
+        {streamingText && (
+          <div className="text-[11px]">
+            <div className="text-[9px] mb-0.5 text-emerald-300/60">🤖 助手 (流式中…)</div>
+            <div className="whitespace-pre-wrap text-white/80 bg-emerald-500/[0.08] rounded p-1.5 border border-emerald-500/20">
+              {streamingText}
             </div>
-          )}
-        </div>
-      )}
+          </div>
+        )}
+      </div>
+    )}
     </div>
   );
 };
