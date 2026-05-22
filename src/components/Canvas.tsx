@@ -28,6 +28,7 @@ import { useThemeStore } from '../stores/theme';
 import { useRunBusStore } from '../stores/runBus';
 import { useGroupBusStore, GROUP_COLORS, DEFAULT_GROUP_NAME } from '../stores/groupBus';
 import { topologicalSort } from '../utils/topologicalSort';
+import { installGlobalWheelBlockObserver } from '../utils/wheelBlock';
 import * as api from '../services/api';
 import CanvasToolbar from './CanvasToolbar';
 import TerminalPanel from './TerminalPanel';
@@ -1660,6 +1661,15 @@ function CanvasInner({ onAddNodeRef }: CanvasInnerProps) {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [histUndo, histRedo, handleCopy, handlePaste, handleDuplicate, handleDeleteSelected, selectedCount]);
+
+  // 全局滚轮拦截 —— 自动给所有节点内的 input / textarea / select / contenteditable
+  // 挂上 wheel.stopPropagation()，让用户在文本框内可用鼠标滚轮滚动文字而不触发画布缩放。
+  // 通过 MutationObserver 自动覆盖未来动态新增的节点（如右键添加 / 模板插入等）。
+  useEffect(() => {
+    const root = (document.querySelector('.react-flow') as HTMLElement | null) || document.body;
+    const dispose = installGlobalWheelBlockObserver(root);
+    return dispose;
+  }, []);
 
   const isDark = theme === 'dark';
     const isPixel = style === 'pixel';

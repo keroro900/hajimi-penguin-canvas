@@ -1517,7 +1517,8 @@ nodes/
 | Vite 代理 | `/api/*` → `http://127.0.0.1:18766` |
 | 数据目录 | `data/`（画布JSON） / `input/`（上传） / `output/`（生成产物） / `thumbnails/` |
 | 节点内部防拖拽 | `onMouseDown={(e) => e.stopPropagation()}` 必加在可交互区域 |
-| 节点内部防滚轮缩放 | `attachWheelBlock(el)` 挂载到滚动容器 |
+| 节点内部防滚轮缩放 | **全局自动拦截**：[`Canvas.tsx`](file:///e:/PenguinPravite/T8-penguin-canvas/src/components/Canvas.tsx) 启动 [`installGlobalWheelBlockObserver`](file:///e:/PenguinPravite/T8-penguin-canvas/src/utils/wheelBlock.ts)，以 MutationObserver 自动给 `.react-flow` 下所有 `input / textarea / select / [contenteditable]` 挂 `wheel.stopPropagation()`（capture + bubble 双拦截，仅 `stopPropagation`不 `preventDefault`，保留原生文本滚动）。**新节点 / 新控件加上去不需任何额外代码**。历史中个别节点如 LLM 节点内部仍保留了本地 `attachWheelBlock(el)` 调用，通过同一个 `__wheelBlocked` 标记位保证幂等，不会重复挂载 |
+| 节点内部防滚轮（滚动容器） | 可选调 [`attachWheelBlock(el)`](file:///e:/PenguinPravite/T8-penguin-canvas/src/utils/wheelBlock.ts)，适用于需要防护但不是 input/textarea/select/contenteditable 的滚动容器（如会话面板外层 div） |
 | 节点状态字段 | `data.status: 'idle' \| 'generating' \| 'success' \| 'error'` |
 | 默认系统提示词 | `你是一个提示词专家，将用户的提示词优化` |
 | logBus 调用时机 | 提交 / 轮询中 / 完成 / 失败 / 警告 五个点 |
