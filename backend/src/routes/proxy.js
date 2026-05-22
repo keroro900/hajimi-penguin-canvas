@@ -766,6 +766,225 @@ async function uploadRefToZhenzhen(ref, apiKey) {
   return j?.url || null;
 }
 
+// ========================================================================
+// Video FAL 渠道 — 完全对齐 gpt-image-2-web runVeo3Fal / runGrokFal
+// 不破坏原有 /video/submit · /video/query 路由。
+//
+// POST /api/proxy/video/fal/submit  → { sync, videoUrl?, requestId?, responseUrl?, endpoint? }
+// POST /api/proxy/video/fal/query   → { status, videoUrl?, error? }   body: { responseUrl, endpoint, requestId }
+// ========================================================================
+
+const VIDEO_FAL_REGISTRY = {
+  'veo3.1-fal': {
+    endpoint: 'fal-ai/veo3.1/fast/reference-to-video',
+    paramKind: 'veo-fal',
+    maxRefImages: 3,
+  },
+  'grok-video-fal': {
+    endpoint: 'xai/grok-imagine-video/text-to-video',
+    i2vEndpoint: 'xai/grok-imagine-video/image-to-video',
+    paramKind: 'grok-fal',
+    maxRefImages: 1,
+  },
+};
+
+// 保存远程视频到本地
+async function saveRemoteVideo(url) {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`下载失败: ${res.status}`);
+    const buf = Buffer.from(await res.arrayBuffer());
+    const ext = (url.match(/\.(mp4|webm|mov)/i)?.[1] || 'mp4').toLowerCase();
+    const filename = `vid_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
+    const filePath = path.join(config.OUTPUT_DIR, filename);
+    fs.writeFileSync(filePath, buf);
+    return `/files/output/${filename}`;
+  } catch (e) {
+    console.error('⚠ 转存视频失败:', e.message);
+    return url;
+  }
+}
+
+// POST /api/proxy/video/fal/submit
+router.post('/video/fal/submit', async (req, res) => {
+  const settings = loadRawSettings();
+  if (!settings?.zhenzhenApiKey) {
+    return res.status(400).json({ success: false, error: '未配置贞贞工坊 API Key' });
+  }
+  const apiKey = settings.zhenzhenApiKey;
+  const baseUrl = config.ZHENZHEN_BASE_URL;
+  const {
+    apiModel, prompt, images,
+    // veo-fal
+    aspect_ratio, duration, resolution, generate_audio, safety_tolerance, image_mode,
+    // grok-fal
+    gkDuration, gkRatio,
+  } = req.body || {};
+
+  if (!apiModel) return res.status(400).json({ success: false, error: 'apiModel 必填' });
+  if (!prompt) return res.status(400).json({ success: false, error: 'prompt 不得为空' });
+
+  const reg = VIDEO_FAL_REGISTRY[apiModel];
+  if (!reg) return res.status(400).json({ success: false, error: `未知的 Video FAL 模型: ${apiModel}` });
+
+  const refs = Array.isArray(images) ? images.filter(Boolean) : [];
+  const trimmedRefs = refs.slice(0, reg.maxRefImages);
+
+  let payload;
+  let endpoint;
+  try {
+    if (reg.paramKind === 'veo-fal') {
+      // ===== Veo3.1 FAL (主项目 runVeo3Fal line 3694) =====
+      endpoint = reg.endpoint;
+      payload = {
+        prompt,
+        aspect_ratio: String(aspect_ratio || '16:9'),
+        duration: String(duration || '8s'),
+        resolution: String(resolution || '720p'),
+        generate_audio: generate_audio === true,
+        safety_tolerance: parseInt(safety_tolerance ?? 4, 10) || 4,
+      };
+      // 参考图(最多 3 张)
+      if (trimmedRefs.length) {
+        const imgArr = [];
+        const useBase64 = String(image_mode || 'image_url') === 'base64';
+        for (let i = 0; i < trimmedRefs.length; i++) {
+          if (useBase64) {
+            // base64 直传
+            const conv = await refToBananaImage(trimmedRefs[i]);
+            if (conv) imgArr.push(conv);
+          } else {
+            const u = await uploadRefToZhenzhen(trimmedRefs[i], apiKey);
+            if (u) imgArr.push(u);
+            else throw new Error(`FAL 参考图 #${i + 1} 上传失败`);
+          }
+        }
+        if (imgArr.length) payload.image_urls = imgArr;
+      }
+    } else if (reg.paramKind === 'grok-fal') {
+      // ===== Grok Video FAL (主项目 runGrokFal line 3787) =====
+      const hasImg = trimmedRefs.length > 0;
+      endpoint = hasImg ? (reg.i2vEndpoint || reg.endpoint) : reg.endpoint;
+      payload = {
+        prompt,
+        duration: parseInt(gkDuration ?? 6, 10) || 6,
+        aspect_ratio: String(gkRatio || '16:9'),
+        resolution: String(resolution || '720p'),
+      };
+      // 图生视频模式: 单张 image_url
+      if (hasImg) {
+        const useBase64 = String(image_mode || 'image_url') === 'base64';
+        let imgData;
+        if (useBase64) {
+          imgData = await refToBananaImage(trimmedRefs[0]);
+        } else {
+          imgData = await uploadRefToZhenzhen(trimmedRefs[0], apiKey);
+        }
+        if (imgData) payload.image_url = imgData;
+        else throw new Error('Grok FAL 参考图处理失败');
+      }
+    } else {
+      return res.status(400).json({ success: false, error: `不支持的 Video FAL paramKind: ${reg.paramKind}` });
+    }
+
+    const falUrl = `${baseUrl}/fal/${endpoint}`;
+    console.log('[video/fal/submit]', apiModel, '→', falUrl, '| payload keys:', Object.keys(payload), '| refs:', trimmedRefs.length);
+
+    const resp = await fetch(falUrl, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const text = await resp.text();
+    let data; try { data = JSON.parse(text); } catch { data = { _raw: text }; }
+    if (!resp.ok) {
+      return res.status(resp.status).json({
+        success: false,
+        error: data?.error || data?.detail || data?.message || `FAL HTTP ${resp.status}: ${text.slice(0, 300)}`,
+      });
+    }
+    if (Array.isArray(data)) {
+      return res.status(400).json({ success: false, error: `FAL 参数校验错误: ${JSON.stringify(data).slice(0, 300)}` });
+    }
+    if (data?.detail && !data?.video && !data?.request_id) {
+      return res.status(400).json({ success: false, error: `FAL 错误: ${JSON.stringify(data.detail).slice(0, 300)}` });
+    }
+
+    // 同步返回: result.video.url
+    if (data?.video && data.video.url) {
+      const local = await saveRemoteVideo(data.video.url);
+      return res.json({ success: true, data: { sync: true, videoUrl: local, endpoint, raw: data } });
+    }
+
+    // 异步: request_id + response_url
+    const requestId = data?.request_id;
+    let responseUrl = data?.response_url || '';
+    if (!requestId) {
+      return res.status(500).json({ success: false, error: '未获取到 request_id: ' + JSON.stringify(data).slice(0, 300) });
+    }
+    responseUrl = fixFalResponseUrl(responseUrl, baseUrl, endpoint, requestId);
+    return res.json({
+      success: true,
+      data: { sync: false, requestId, responseUrl, endpoint, raw: data },
+    });
+  } catch (e) {
+    console.error('proxy/video/fal/submit 错误:', e);
+    return res.status(500).json({ success: false, error: e.message || '请求失败' });
+  }
+});
+
+// POST /api/proxy/video/fal/query
+//   body: { responseUrl, endpoint, requestId }
+//   完成标志: data.video.url (区别于图像的 data.images[])
+router.post('/video/fal/query', async (req, res) => {
+  const settings = loadRawSettings();
+  if (!settings?.zhenzhenApiKey) {
+    return res.status(400).json({ success: false, error: '未配置贞贞工坊 API Key' });
+  }
+  const apiKey = settings.zhenzhenApiKey;
+  const baseUrl = config.ZHENZHEN_BASE_URL;
+  const { responseUrl: rawUrl, endpoint, requestId } = req.body || {};
+  const responseUrl = fixFalResponseUrl(rawUrl, baseUrl, endpoint, requestId);
+  if (!responseUrl) return res.status(400).json({ success: false, error: 'responseUrl 或 (endpoint+requestId) 必填' });
+
+  try {
+    const pr = await fetch(responseUrl, { headers: { Authorization: `Bearer ${apiKey}` } });
+    const text = await pr.text();
+    let data; try { data = JSON.parse(text); } catch { data = null; }
+    // HTTP 非200: 主项目规范 - body 中 status=IN_QUEUE/IN_PROGRESS 视为继续等待
+    if (!pr.ok) {
+      if (data && (data.status === 'IN_QUEUE' || data.status === 'IN_PROGRESS')) {
+        return res.json({ success: true, data: { status: 'pending', raw: data } });
+      }
+      return res.status(pr.status).json({
+        success: false,
+        error: `FAL Poll HTTP ${pr.status}: ${text.slice(0, 300)}`,
+        raw: data,
+      });
+    }
+    if (!data) {
+      return res.status(500).json({ success: false, error: 'FAL Poll 响应非 JSON: ' + text.slice(0, 200) });
+    }
+    // 完成: video.url
+    if (data.video && data.video.url) {
+      const local = await saveRemoteVideo(data.video.url);
+      return res.json({ success: true, data: { status: 'completed', videoUrl: local, raw: data } });
+    }
+    const st = String(data.status || '').toUpperCase();
+    if (st === 'FAILED' || st === 'CANCELLED') {
+      return res.json({
+        success: false,
+        data: { status: 'failed', error: data.error || data.detail || `FAL ${st}` },
+      });
+    }
+    // IN_QUEUE / IN_PROGRESS / 空 => pending
+    return res.json({ success: true, data: { status: 'pending', falStatus: st || 'IN_QUEUE', raw: data } });
+  } catch (e) {
+    console.error('proxy/video/fal/query 错误:', e);
+    return res.status(500).json({ success: false, error: e.message || '查询失败' });
+  }
+});
+
 router.post('/video/submit', async (req, res) => {
   const settings = loadRawSettings();
   if (!settings?.zhenzhenApiKey) {

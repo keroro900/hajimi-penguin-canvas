@@ -181,6 +181,44 @@ export const NBPRO_FAL_RESOLUTIONS = ['1K', '2K', '4K'];
 // kind 决定上游 payload 协议(后端会根据 model 名自动识别,前端主要用于控制参数 UI 列表)
 export type VideoKind = 'veo' | 'grok' | 'seedance';
 
+// ---- Video FAL 渠道注册表 (1:1 对齐 gpt-image-2-web runVeo3Fal / runGrokFal) ----
+export interface VideoFalEndpointDef {
+  /** 文生视频 endpoint */
+  endpoint: string;
+  /** 图生视频 endpoint (有参考图时走这个) */
+  i2vEndpoint?: string;
+  paramKind: 'veo-fal' | 'grok-fal';
+  maxRefImages: number;
+}
+export const VIDEO_FAL_REGISTRY: Record<string, VideoFalEndpointDef> = {
+  // 主项目 runVeo3Fal (index.html line 3713)
+  'veo3.1-fal': {
+    endpoint: 'fal-ai/veo3.1/fast/reference-to-video',
+    paramKind: 'veo-fal',
+    maxRefImages: 3,
+  },
+  // 主项目 runGrokFal (index.html line 3772)
+  'grok-video-fal': {
+    endpoint: 'xai/grok-imagine-video/text-to-video',
+    i2vEndpoint: 'xai/grok-imagine-video/image-to-video',
+    paramKind: 'grok-fal',
+    maxRefImages: 1,
+  },
+};
+export function isFalVideoModel(apiModel: string): boolean {
+  return apiModel in VIDEO_FAL_REGISTRY;
+}
+/** Veo FAL 比例(主项目 vf_ratio) */
+export const VEO_FAL_RATIOS = ['16:9', '9:16'];
+/** Veo FAL 时长(主项目 vf_duration) */
+export const VEO_FAL_DURATIONS = ['8s'];
+/** Veo FAL 分辨率(主项目 vf_resolution) */
+export const VEO_FAL_RESOLUTIONS = ['720p', '1080p', '4k'];
+/** Grok FAL 比例(主项目 gkf_ratio) */
+export const GROK_FAL_RATIOS = ['16:9', '4:3', '3:2', '1:1', '2:3', '3:4', '9:16', 'auto'];
+/** Grok FAL 分辨率(主项目 gkf_resolution) */
+export const GROK_FAL_RESOLUTIONS = ['720p', '480p'];
+
 export interface VideoModelDef {
   id: string;                // 节点默认 model 字段(也是上游真实 model)
   label: string;             // 主选项显示名
@@ -217,6 +255,8 @@ const VEO_MODELS = [
   { value: 'veo3.1-pro-4k', label: 'veo3.1-pro-4k' },
   { value: 'veo3.1-components-4k', label: 'veo3.1-components-4k' },
   { value: 'veo3.1-lite', label: 'veo3.1-lite' },
+  // FAL 渠道
+  { value: 'veo3.1-fal', label: 'veo3.1-fal (FAL)' },
 ];
 
 export const VIDEO_MODELS: VideoModelDef[] = [
@@ -239,7 +279,7 @@ export const VIDEO_MODELS: VideoModelDef[] = [
     kind: 'grok',
     provider: 'zhenzhen',
     description: 'xAI Grok Video (最多 7 张参考图)',
-    apiModelOptions: [{ value: 'grok-video-3', label: 'grok-video-3' }],
+    apiModelOptions: [{ value: 'grok-video-3', label: 'grok-video-3' }, { value: 'grok-video-fal', label: 'grok-video-fal (FAL)' }],
     // 主项目 gk_ratio(line 1410): 2:3 / 3:2 / 16:9 / 9:16 / 1:1
     ratios: ['2:3', '3:2', '16:9', '9:16', '1:1'],
     defaultRatio: '16:9',

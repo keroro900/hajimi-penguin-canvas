@@ -1,8 +1,8 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Handle, Position, useReactFlow, type NodeProps } from '@xyflow/react';
 import { AlertCircle, Loader2, Video as VideoIcon, Sparkles, Square } from 'lucide-react';
-import { VIDEO_MODELS } from '../../providers/models';
-import { submitVideo, queryVideo, type VideoSubmitRequest } from '../../services/generation';
+import { VIDEO_MODELS, isFalVideoModel, VIDEO_FAL_REGISTRY, VEO_FAL_RATIOS, VEO_FAL_DURATIONS, VEO_FAL_RESOLUTIONS, GROK_FAL_RATIOS, GROK_FAL_RESOLUTIONS } from '../../providers/models';
+import { submitVideo, queryVideo, submitVideoFal, queryVideoFal, type VideoSubmitRequest, type VideoFalSubmitRequest } from '../../services/generation';
 import { useUpdateNodeData } from './useUpdateNodeData';
 import { useRunTrigger } from '../../hooks/useRunTrigger';
 import { logBus } from '../../stores/logs';
@@ -35,6 +35,20 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
   const seed: number = typeof d?.seed === 'number' ? d.seed : 0;
   const enhancePrompt: boolean = d?.enhancePrompt ?? false;
   const enableUpsample: boolean = d?.enableUpsample ?? false;
+
+  // FAL 专属参数
+  const isFal = isFalVideoModel(apiModel);
+  const falReg = isFal ? VIDEO_FAL_REGISTRY[apiModel] : null;
+  // veo-fal 专属
+  const vfRatio: string = d?.vfRatio || '16:9';
+  const vfDuration: string = d?.vfDuration || '8s';
+  const vfResolution: string = d?.vfResolution || '720p';
+  const vfAudio: boolean = d?.vfAudio ?? false;
+  const vfSafety: number = d?.vfSafety ?? 4;
+  // grok-fal 专属
+  const gkfRatio: string = d?.gkfRatio || '16:9';
+  const gkfDuration: number = d?.gkfDuration ?? 6;
+  const gkfResolution: string = d?.gkfResolution || '720p';
 
   const status: 'idle' | 'submitting' | 'polling' | 'success' | 'error' = d?.status || 'idle';
   const taskId: string | undefined = d?.taskId;
@@ -136,6 +150,45 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
     }, POLL_INT);
   };
 
+  // FAL 轮询
+  const falPollRef = useRef<{ responseUrl?: string; endpoint?: string; requestId?: string } | null>(null);
+
+  const startFalPolling = () => {
+    stopPoll();
+    let elapsed = 0;
+    const POLL_INT = 6000;
+    const MAX = 600; // 60分钟
+    pollTimer.current = window.setInterval(async () => {
+      elapsed += 1;
+      if (elapsed > MAX) {
+        stopPoll();
+        update({ status: 'error', error: 'FAL 轮询超时' });
+        setError('FAL 轮询超时');
+        logBus.error('FAL 轮询超时', src);
+        return;
+      }
+      try {
+        const r = await queryVideoFal(falPollRef.current!);
+        if (elapsed % 10 === 0) logBus.debug(`[FAL ${elapsed}/${MAX}] status=${r.status}`, src);
+        if (r.status === 'completed' && r.videoUrl) {
+          stopPoll();
+          update({ status: 'success', videoUrl: r.videoUrl, progress: '100%' });
+          logBus.success(`FAL 视频完成 → ${r.videoUrl}`, src);
+        } else if (r.status === 'failed') {
+          stopPoll();
+          const msg = r.error || 'FAL 生成失败';
+          update({ status: 'error', error: msg });
+          setError(msg);
+          logBus.error(`FAL 生成失败: ${msg}`, src);
+        } else {
+          update({ status: 'polling', progress: `${Math.min(95, Math.round(20 + elapsed / MAX * 75))}%` });
+        }
+      } catch (e: any) {
+        console.warn('FAL 轮询出错', e?.message);
+      }
+    }, POLL_INT);
+  };
+
   const handleGenerate = async () => {
     setError(null);
     const { prompt: upstreamPrompt, imageUrls } = collectUpstream();
@@ -147,6 +200,53 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
     }
     update({ status: 'submitting', error: null, videoUrl: null, taskId: null });
     try {
+      // === FAL 分支 ===
+      if (isFal && falReg) {
+        const refs = imageUrls.slice(0, falReg.maxRefImages);
+        let images: string[] | undefined;
+        if (refs.length > 0) {
+          // FAL 参考图直传 URL 或 base64，后端会处理上传
+          images = refs;
+        }
+
+        const falReq: VideoFalSubmitRequest = { apiModel, prompt: finalPrompt };
+        if (images && images.length) falReq.images = images;
+
+        if (falReg.paramKind === 'veo-fal') {
+          falReq.aspect_ratio = vfRatio;
+          falReq.duration = vfDuration;
+          falReq.resolution = vfResolution;
+          falReq.generate_audio = vfAudio;
+          falReq.safety_tolerance = vfSafety;
+        } else if (falReg.paramKind === 'grok-fal') {
+          falReq.gkRatio = gkfRatio;
+          falReq.gkDuration = gkfDuration;
+          falReq.resolution = gkfResolution;
+        }
+
+        logBus.info(
+          `提交 FAL 视频: ${apiModel} ` +
+          (falReg.paramKind === 'veo-fal'
+            ? `ratio=${vfRatio} dur=${vfDuration} res=${vfResolution} audio=${vfAudio}`
+            : `ratio=${gkfRatio} dur=${gkfDuration}s res=${gkfResolution}`) +
+          ` refs=${images?.length || 0} prompt="${finalPrompt.slice(0, 30)}…"`,
+          src,
+        );
+
+        const r = await submitVideoFal(falReq);
+        if (r.sync && r.videoUrl) {
+          update({ status: 'success', videoUrl: r.videoUrl, lastPrompt: finalPrompt, progress: '100%' });
+          logBus.success(`FAL 同步完成 → ${r.videoUrl}`, src);
+        } else {
+          falPollRef.current = { responseUrl: r.responseUrl, endpoint: r.endpoint, requestId: r.requestId };
+          update({ status: 'polling', lastPrompt: finalPrompt, progress: '15%' });
+          logBus.info(`FAL 异步任务 requestId=${r.requestId} 进入轮询…`, src);
+          startFalPolling();
+        }
+        return;
+      }
+
+      // === 原有贞贞工坊分支 ===
       // 参考图预处理:
       //   - Grok: 直接传 URL (本地 /files/* 也可,后端会转上游 URL)
       //   - Veo / Seedance: 转 base64
@@ -269,7 +369,69 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
           </div>
         )}
 
-        {/* 比例 */}
+        {/* === FAL 专属参数面板 === */}
+        {isFal && falReg?.paramKind === 'veo-fal' && (
+          <>
+            <div className="grid grid-cols-2 gap-1.5">
+              <div>
+                <label className="text-[10px] text-white/50 block mb-1">比例 (FAL)</label>
+                <select value={vfRatio} onChange={(e) => update({ vfRatio: e.target.value })} className="w-full rounded bg-white/5 border border-white/10 px-2 py-1 text-xs text-white outline-none focus:border-white/30">
+                  {VEO_FAL_RATIOS.map((r) => <option key={r} value={r} className="bg-zinc-900">{r}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-[10px] text-white/50 block mb-1">时长</label>
+                <select value={vfDuration} onChange={(e) => update({ vfDuration: e.target.value })} className="w-full rounded bg-white/5 border border-white/10 px-2 py-1 text-xs text-white outline-none focus:border-white/30">
+                  {VEO_FAL_DURATIONS.map((d) => <option key={d} value={d} className="bg-zinc-900">{d}</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-1.5">
+              <div>
+                <label className="text-[10px] text-white/50 block mb-1">分辨率</label>
+                <select value={vfResolution} onChange={(e) => update({ vfResolution: e.target.value })} className="w-full rounded bg-white/5 border border-white/10 px-2 py-1 text-xs text-white outline-none focus:border-white/30">
+                  {VEO_FAL_RESOLUTIONS.map((r) => <option key={r} value={r} className="bg-zinc-900">{r}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-[10px] text-white/50 block mb-1">安全等级</label>
+                <select value={String(vfSafety)} onChange={(e) => update({ vfSafety: Number(e.target.value) })} className="w-full rounded bg-white/5 border border-white/10 px-2 py-1 text-xs text-white outline-none focus:border-white/30">
+                  {[1,2,3,4,5,6].map((s) => <option key={s} value={s} className="bg-zinc-900">{s}</option>)}
+                </select>
+              </div>
+            </div>
+            <label className="flex items-center gap-1 text-[10px] text-white/60 cursor-pointer">
+              <input type="checkbox" checked={vfAudio} onChange={(e) => update({ vfAudio: e.target.checked })} className="accent-rose-400" />
+              生成音频
+            </label>
+          </>
+        )}
+
+        {isFal && falReg?.paramKind === 'grok-fal' && (
+          <>
+            <div className="grid grid-cols-2 gap-1.5">
+              <div>
+                <label className="text-[10px] text-white/50 block mb-1">比例 (FAL)</label>
+                <select value={gkfRatio} onChange={(e) => update({ gkfRatio: e.target.value })} className="w-full rounded bg-white/5 border border-white/10 px-2 py-1 text-xs text-white outline-none focus:border-white/30">
+                  {GROK_FAL_RATIOS.map((r) => <option key={r} value={r} className="bg-zinc-900">{r}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-[10px] text-white/50 block mb-1">时长(s)</label>
+                <input type="number" value={gkfDuration} min={1} max={30} onChange={(e) => update({ gkfDuration: Number(e.target.value) || 6 })} className="w-full rounded bg-white/5 border border-white/10 px-2 py-1 text-xs text-white outline-none focus:border-white/30" />
+              </div>
+            </div>
+            <div>
+              <label className="text-[10px] text-white/50 block mb-1">分辨率</label>
+              <select value={gkfResolution} onChange={(e) => update({ gkfResolution: e.target.value })} className="w-full rounded bg-white/5 border border-white/10 px-2 py-1 text-xs text-white outline-none focus:border-white/30">
+                {GROK_FAL_RESOLUTIONS.map((r) => <option key={r} value={r} className="bg-zinc-900">{r}</option>)}
+              </select>
+            </div>
+          </>
+        )}
+
+        {/* 比例(非 FAL 时显示原始控件) */}
+        {!isFal && (
         <div className="grid grid-cols-2 gap-1.5">
           <div>
             <label className="text-[10px] text-white/50 block mb-1">比例</label>
@@ -299,9 +461,10 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
             </div>
           )}
         </div>
+        )}
 
-        {/* 分辨率(仅 grok) */}
-        {modelDef.resolutions && modelDef.resolutions.length > 0 && (
+        {/* 分辨率(仅 grok 非FAL) */}
+        {!isFal && modelDef.resolutions && modelDef.resolutions.length > 0 && (
           <div>
             <label className="text-[10px] text-white/50 block mb-1">分辨率</label>
             <select
@@ -316,8 +479,8 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
           </div>
         )}
 
-        {/* veo 专用选项 */}
-        {modelDef.kind === 'veo' && (
+        {/* veo 专用选项(非FAL) */}
+        {!isFal && modelDef.kind === 'veo' && (
           <div className="grid grid-cols-2 gap-1.5">
             <label className="flex items-center gap-1 text-[10px] text-white/60 cursor-pointer">
               <input
@@ -340,7 +503,8 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
           </div>
         )}
 
-        {/* Seed */}
+        {/* Seed(非FAL) */}
+        {!isFal && (
         <div>
           <label className="text-[10px] text-white/50 block mb-1">Seed (0=随机)</label>
           <input
@@ -352,6 +516,7 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
             className="w-full rounded bg-white/5 border border-white/10 px-2 py-1 text-xs text-white outline-none focus:border-white/30"
           />
         </div>
+        )}
 
         {/* 参考图计数 */}
         {modelDef.supportImages && (

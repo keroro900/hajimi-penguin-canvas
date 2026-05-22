@@ -206,6 +206,72 @@ export async function uploadFile(file: File): Promise<{ url: string; filename: s
 }
 
 // ========================================================================
+// Video FAL 渠道(独立提交 + 轮询,对齐 gpt-image-2-web runVeo3Fal / runGrokFal)
+//   submitVideoFal 返 { sync, videoUrl? } 或 { sync:false, requestId, responseUrl, endpoint }
+//   queryVideoFal  返 { status: 'pending'|'completed'|'failed', videoUrl?, error? }
+// ========================================================================
+export interface VideoFalSubmitRequest {
+  /** 'veo3.1-fal' | 'grok-video-fal' */
+  apiModel: string;
+  prompt: string;
+  /** 参考图(base64 dataURI 或本地 /files/* URL) */
+  images?: string[];
+  /** veo-fal: '16:9' | '9:16' */
+  aspect_ratio?: string;
+  /** veo-fal: '8s' */
+  duration?: string;
+  /** veo-fal: '720p' | '1080p' | '4k';  grok-fal: '720p' | '480p' */
+  resolution?: string;
+  /** veo-fal: 生成音频 */
+  generate_audio?: boolean;
+  /** veo-fal: 1-6 (默认 4) */
+  safety_tolerance?: number;
+  /** 参考图上传方式: 'image_url'(上传取URL) | 'base64' */
+  image_mode?: 'image_url' | 'base64';
+  /** grok-fal: 时长秒数 1-30 */
+  gkDuration?: number;
+  /** grok-fal: 比例 */
+  gkRatio?: string;
+}
+
+export interface VideoFalSubmitResult {
+  sync: boolean;
+  videoUrl?: string;
+  requestId?: string;
+  responseUrl?: string;
+  endpoint?: string;
+}
+
+export async function submitVideoFal(req: VideoFalSubmitRequest): Promise<VideoFalSubmitResult> {
+  const r = await fetch('/api/proxy/video/fal/submit', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req),
+  });
+  const data = await r.json();
+  if (!r.ok || !data.success) throw new Error(data?.error || `HTTP ${r.status}`);
+  return data.data;
+}
+
+export interface VideoFalQueryResult {
+  status: 'pending' | 'completed' | 'failed' | string;
+  videoUrl?: string;
+  error?: string;
+  falStatus?: string;
+}
+
+export async function queryVideoFal(params: { responseUrl?: string; endpoint?: string; requestId?: string }): Promise<VideoFalQueryResult> {
+  const r = await fetch('/api/proxy/video/fal/query', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  const data = await r.json();
+  if (!r.ok && !data.data) throw new Error(data?.error || `HTTP ${r.status}`);
+  return data.data || { status: 'failed', error: data?.error || 'unknown' };
+}
+
+// ========================================================================
 // 视频生成(异步) — 完全对齐 gpt-image-2-web
 //   - veo3.1   字段:  aspect_ratio + enhance_prompt + enable_upsample + seed + images(base64,≤3)
 //   - grok     字段:  ratio + duration(秒,数字) + resolution + seed + images(本地 URL/base64,≤7,后端转上游 URL)
