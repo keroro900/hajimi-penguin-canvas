@@ -63,23 +63,42 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
   const progress: string = d.progress || '';
   const localPrompt: string = d.prompt || '';
 
-  // 收集上游 prompt + 参考图
-  const collectUpstream = (): { prompt: string; imageUrls: string[] } => {
+  // 收集上游 prompt + 参考图 + 参考视频 + 参考音频
+  const collectUpstream = (): {
+    prompt: string;
+    imageUrls: string[];
+    videoUrls: string[];
+    audioUrls: string[];
+  } => {
     const edges = getEdges();
     const nodes = getNodes();
     const upstreamIds = edges.filter((e) => e.target === id).map((e) => e.source);
     const prompts: string[] = [];
     const imageUrls: string[] = [];
+    const videoUrls: string[] = [];
+    const audioUrls: string[] = [];
     for (const uid of upstreamIds) {
       const n = nodes.find((x) => x.id === uid);
-      const p = (n?.data as any)?.prompt;
+      const dn = (n?.data as any) || {};
+      const p = dn.prompt;
       if (p && typeof p === 'string') prompts.push(p.trim());
-      const u = (n?.data as any)?.imageUrl;
+      // 图像
+      const u = dn.imageUrl;
       if (u && typeof u === 'string') imageUrls.push(u);
-      const us = (n?.data as any)?.imageUrls;
+      const us = dn.imageUrls;
       if (Array.isArray(us)) for (const x of us) if (typeof x === 'string') imageUrls.push(x);
+      // 视频 (video 节点 / SD2.0 节点 / upload-video 节点)
+      const vu = dn.videoUrl;
+      if (vu && typeof vu === 'string') videoUrls.push(vu);
+      const vus = dn.videoUrls;
+      if (Array.isArray(vus)) for (const x of vus) if (typeof x === 'string') videoUrls.push(x);
+      // 音频 (audio 节点 / upload-audio)
+      const au = dn.audioUrl;
+      if (au && typeof au === 'string') audioUrls.push(au);
+      const aus = dn.audioUrls;
+      if (Array.isArray(aus)) for (const x of aus) if (typeof x === 'string') audioUrls.push(x);
     }
-    return { prompt: prompts.join('\n').trim(), imageUrls };
+    return { prompt: prompts.join('\n').trim(), imageUrls, videoUrls, audioUrls };
   };
 
   const stopPoll = () => {
@@ -138,7 +157,7 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
 
   const handleGenerate = async () => {
     setError(null);
-    const { prompt: upstreamPrompt, imageUrls } = collectUpstream();
+    const { prompt: upstreamPrompt, imageUrls, videoUrls, audioUrls } = collectUpstream();
     const finalPrompt = (upstreamPrompt || localPrompt || '').trim();
     if (!finalPrompt) {
       setError('未连接 text 节点也未填写 prompt');
@@ -181,6 +200,8 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
       if (firstFrame) payload.firstFrame = firstFrame;
       if (lastFrame) payload.lastFrame = lastFrame;
       if (refImages.length) payload.refImages = refImages;
+      if (videoUrls.length) payload.videos = videoUrls;
+      if (audioUrls.length) payload.audios = audioUrls;
 
       logBus.info(
         `提交 Seedance2.0: model=${model} ${duration}s ${ratio} ${resolution} ` +
@@ -188,6 +209,8 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
           `frame=${frameMode} refs=${refImages.length}` +
           (firstFrame ? ' +first' : '') +
           (lastFrame ? ' +last' : '') +
+          (videoUrls.length ? ` +${videoUrls.length}video` : '') +
+          (audioUrls.length ? ` +${audioUrls.length}audio` : '') +
           ` prompt="${finalPrompt.slice(0, 30)}…"`,
         src,
       );

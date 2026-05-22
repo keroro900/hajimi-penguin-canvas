@@ -43,7 +43,12 @@ export const NODE_PORTS: Record<string, NodePorts> = {
   text: { inputs: [], outputs: ['text'] },
   image: { inputs: ['text', 'image'], outputs: ['image'] },
   video: { inputs: ['text', 'image'], outputs: ['video'] },
-  seedance: { inputs: ['text', 'image'], outputs: ['video'] },
+  // SD2.0 (Seedance 2.0) 同时支持:
+  //   text  → prompt
+  //   image → reference_image / first_frame / last_frame
+  //   video → reference_video (上游视频节点 / SD2.0 节点 都可作为输入)
+  //   audio → reference_audio
+  seedance: { inputs: ['text', 'image', 'video', 'audio'], outputs: ['video'] },
   audio: { inputs: ['text', 'audio'], outputs: ['audio'] },
   llm: { inputs: ['text', 'image'], outputs: ['text'] },
 

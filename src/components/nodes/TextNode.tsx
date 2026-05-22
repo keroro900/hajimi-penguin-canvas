@@ -36,6 +36,9 @@ const TextNode = ({ id, data, selected }: NodeProps) => {
           value={text}
           onChange={(e) => update({ prompt: e.target.value })}
           placeholder="输入提示词..."
+          spellCheck={false}
+          autoCorrect="off"
+          autoCapitalize="off"
           className="w-full h-24 resize-none rounded-md bg-white/5 border border-white/10 px-2 py-1.5 text-xs text-white outline-none focus:border-white/30 placeholder:text-white/30"
           // 阻止 reactflow 拖拽冒泡
           onMouseDown={(e) => e.stopPropagation()}

@@ -1118,12 +1118,21 @@ function CanvasInner({ onAddNodeRef }: CanvasInnerProps) {
       if (!from) return;
       // 终点是否落在 Handle / 节点 / 连线上:任何一项命中都交给 ReactFlow 默认连接逻辑处理,不弹出候选菜单
       // 仅当鼠标释放在“空白画布”(pane / background 本体或其隔层子)时才弹菜单
+      // 例外: 拖到 GroupBox(节点组)的内部空白区域也应该被视作“空白” → 弹菜单
       const target = event.target as HTMLElement | null;
       if (!target) return;
       const onHandle = !!target.closest('.react-flow__handle');
-      const onNode = !!target.closest('.react-flow__node');
+      const nodeEl = target.closest('.react-flow__node') as HTMLElement | null;
       const onEdge = !!target.closest('.react-flow__edge');
-      // 如果落在 Handle/节点/连线 上,让 ReactFlow 自己处理(已连 / 不连),则不弹菜单
+      // 判断是否落在真实节点上 (排除 groupBox 类型: groupBox 本身应被当作“区域容器” 而非可连接节点)
+      let onNode = false;
+      if (nodeEl) {
+        const hitId = nodeEl.getAttribute('data-id');
+        const hitNode = hitId ? nodes.find((n) => n.id === hitId) : null;
+        // groupBox 节点 不作为“节点”处理 → 允许弹出候选菜单
+        if (hitNode && hitNode.type !== 'groupBox') onNode = true;
+      }
+      // 如果落在 Handle/真实节点/连线 上,让 ReactFlow 自己处理(已连 / 不连),则不弹菜单
       if (onHandle || onNode || onEdge) return;
       // 获取坐标
       const clientX =
@@ -1694,9 +1703,9 @@ function CanvasInner({ onAddNodeRef }: CanvasInnerProps) {
       {/* 拖线到空白处弹出的候选节点菜单 */}
       {picker && (
         <>
-          {/* 遮罩层:点击空白关闭 */}
+          {/* 遮罩层:点击空白关闭 (fixed 覆盖整个视口,确保点击空白区域可关闭) */}
           <div
-            className="absolute inset-0 z-30"
+            className="fixed inset-0 z-30"
             onClick={() => setPicker(null)}
             onContextMenu={(e) => {
               e.preventDefault();
@@ -1704,8 +1713,9 @@ function CanvasInner({ onAddNodeRef }: CanvasInnerProps) {
             }}
           />
           <div
-            className="absolute z-40 rounded-xl overflow-hidden"
+            className="fixed z-40 rounded-xl overflow-hidden"
             style={{
+              // 使用 fixed + clientX/clientY (视口坐标) 让菜单精确跟随鼠标释放位置
               left: Math.min(picker.screenPos.x, window.innerWidth - 280),
               top: Math.min(picker.screenPos.y, window.innerHeight - 360),
               width: 260,

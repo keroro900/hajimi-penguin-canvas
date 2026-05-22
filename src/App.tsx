@@ -25,7 +25,38 @@ function App() {
     const root = document.documentElement;
     root.setAttribute('data-theme-style', style);
     root.setAttribute('data-theme-mode', theme);
+    // 全局禁用拼写检查(节点提示词为中文/@变量语法,不需红色波浪线干扰)
+    // spellcheck 属性 HTML 标准上是可继承的 → 根上设一次,所有后代 textarea/input 都生效
+    root.setAttribute('spellcheck', 'false');
+    document.body.setAttribute('spellcheck', 'false');
   }, [style, theme]);
+
+  // 全局 MutationObserver: 为动态挂载的 textarea / input 自动设置 spellcheck=false
+  // (Chromium 对 textarea 默认 spellcheck=true,不会从祖先继承 → 需逐个设置)
+  useEffect(() => {
+    const apply = (el: Element) => {
+      if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') {
+        el.setAttribute('spellcheck', 'false');
+        el.setAttribute('autocorrect', 'off');
+        el.setAttribute('autocapitalize', 'off');
+      }
+    };
+    // 初始扫描
+    document.querySelectorAll('textarea, input').forEach(apply);
+    // 增量监听
+    const mo = new MutationObserver((muts) => {
+      for (const m of muts) {
+        m.addedNodes.forEach((n) => {
+          if (n.nodeType !== 1) return;
+          const el = n as Element;
+          apply(el);
+          el.querySelectorAll?.('textarea, input').forEach(apply);
+        });
+      }
+    });
+    mo.observe(document.body, { childList: true, subtree: true });
+    return () => mo.disconnect();
+  }, []);
 
   // 启动探测后端
   useEffect(() => {
