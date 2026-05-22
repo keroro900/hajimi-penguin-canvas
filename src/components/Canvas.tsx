@@ -646,24 +646,39 @@ function CanvasInner({ onAddNodeRef }: CanvasInnerProps) {
   );
 
   // ===== ALT+拖动复制节点 =====
-  // 按住 ALT 键开始拖动时,记录原节点位置;拖放结束后在新位置生成克隆体,原节点恢复到初始位置
-  // 视觉效果: 原节点不动,拖出来的是新复制的节点
-  const altDragCloneRef = useRef<{ originPositions: Map<string, { x: number; y: number }> } | null>(null);
+  // 思路: dragStart 时在原位插入占位克隆(临时ID),用户拖动过程中原位看起来有节点不动;
+  // dragStop 时做 ID 互换: 占位克隆 → 恢复原始ID(保留连线), 被拖走的原节点 → 分配新ID(sanitize)
+  // 最终效果: 原节点留在原位(保留连线和数据), 新复制节点在拖放位置
+  const altDragCloneRef = useRef<{
+    placeholderIds: Map<string, string>; // origId -> placeholderId
+  } | null>(null);
 
   const onNodeDragStart = useCallback(
     (e: React.MouseEvent | MouseEvent, node: Node) => {
       altDragCloneRef.current = null;
       if (!e.altKey) return;
-      // ALT 按下: 记录当前选中节点(或仅拖动节点)的原始位置
+      // ALT 按下: 确定被拖动的节点集合
       const selected = nodes.filter((n) => n.selected);
       const targets = selected.length > 0 && selected.some((n) => n.id === node.id)
         ? selected
         : [node];
-      const originPositions = new Map<string, { x: number; y: number }>();
-      for (const n of targets) {
-        originPositions.set(n.id, { x: n.position.x, y: n.position.y });
-      }
-      altDragCloneRef.current = { originPositions };
+      // 在原位创建占位克隆(临时 ID, 同样外观 / 数据, 但不选中)
+      const stamp = Date.now();
+      const placeholderIds = new Map<string, string>();
+      const placeholders: Node[] = [];
+      targets.forEach((n, idx) => {
+        const phId = `_alt-ph-${stamp}-${idx}-${Math.random().toString(36).slice(2, 5)}`;
+        placeholderIds.set(n.id, phId);
+        placeholders.push({
+          ...n,
+          id: phId,
+          selected: false,
+          position: { ...n.position },
+          data: JSON.parse(JSON.stringify(n.data || {})),
+        } as Node);
+      });
+      setNodes((prev) => [...prev, ...placeholders]);
+      altDragCloneRef.current = { placeholderIds };
     },
     [nodes]
   );
@@ -886,11 +901,16 @@ function CanvasInner({ onAddNodeRef }: CanvasInnerProps) {
   const onNodeDragStop = useCallback((_e: any, node: Node) => {
     setGuides({ vertical: [], horizontal: [] });
 
-    // ===== ALT+拖动结束: 在拖放位置生成克隆体,原节点恢复初始位置 =====
+    // ===== ALT+拖动结束: ID 互换 =====
+    // 占位克隆(临时ID,在原位) → 恢复为原始ID(边自动留在原位)
+    // 原节点(原始ID,已拖到新位置) → 分配新ID + sanitize(变成干净副本)
     if (altDragCloneRef.current) {
-      const { originPositions } = altDragCloneRef.current;
+      const { placeholderIds } = altDragCloneRef.current;
       altDragCloneRef.current = null;
-      const draggedIds = new Set(originPositions.keys());
+      const origIds = new Set(placeholderIds.keys());
+      // phId → origId 反查表
+      const phToOrig = new Map<string, string>();
+      placeholderIds.forEach((phId, origId) => phToOrig.set(phId, origId));
       // 运行时字段黑名单
       const RUNTIME_KEYS = ['status', 'taskId', 'progress', 'error', 'isRunning', 'isPolling', 'pollingTimer'];
       const sanitize = (data: any) => {
@@ -900,36 +920,32 @@ function CanvasInner({ onAddNodeRef }: CanvasInnerProps) {
         return next;
       };
       const stamp = Date.now();
-      const idMap = new Map<string, string>();
+      const newIdMap = new Map<string, string>(); // origId -> newCopyId
 
       setNodes((prev) => {
-        const clones: Node[] = [];
-        const restored = prev.map((n) => {
-          if (!draggedIds.has(n.id)) return n;
-          // 生成克隆体(放在当前拖到的位置)
-          const newId = `${n.type}-${stamp}-${clones.length}-${Math.random().toString(36).slice(2, 5)}`;
-          idMap.set(n.id, newId);
-          clones.push({
-            ...n,
-            id: newId,
-            selected: true,
-            position: { ...n.position }, // 当前拖放位置
-            data: sanitize(n.data),
-          } as Node);
-          // 原节点恢复到初始位置
-          const orig = originPositions.get(n.id)!;
-          return { ...n, selected: false, position: { x: orig.x, y: orig.y } };
+        return prev.map((n) => {
+          // 占位克隆 → 恢复原始ID
+          const restoreId = phToOrig.get(n.id);
+          if (restoreId) {
+            return { ...n, id: restoreId };
+          }
+          // 被拖走的原节点 → 新ID + sanitize
+          if (origIds.has(n.id)) {
+            const newId = `${n.type}-${stamp}-${newIdMap.size}-${Math.random().toString(36).slice(2, 5)}`;
+            newIdMap.set(n.id, newId);
+            return { ...n, id: newId, selected: true, data: sanitize(n.data) };
+          }
+          return n;
         });
-        return [...restored, ...clones];
       });
 
-      // 克隆内部边
+      // 复制内部边(新节点之间)
       setEdges((prev) => {
         const cloneEdges = prev
-          .filter((e2) => draggedIds.has(e2.source) && draggedIds.has(e2.target))
+          .filter((e2) => origIds.has(e2.source) && origIds.has(e2.target))
           .map((e2, idx) => {
-            const s = idMap.get(e2.source);
-            const t = idMap.get(e2.target);
+            const s = newIdMap.get(e2.source);
+            const t = newIdMap.get(e2.target);
             if (!s || !t) return null;
             return { ...e2, id: `e-alt-${stamp}-${idx}-${Math.random().toString(36).slice(2, 5)}`, source: s, target: t } as Edge;
           })
