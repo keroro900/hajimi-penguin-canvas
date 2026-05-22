@@ -1091,14 +1091,41 @@ function CanvasInner({ onAddNodeRef }: CanvasInnerProps) {
     (changes: EdgeChange[]) => setEdges((eds) => applyEdgeChanges(changes, eds)),
     []
   );
+
   const onConnect = useCallback(
     (params: Connection) => {
       // 批量移线过程中禁止普通连接逻辑(不然会多一条重复边)
       if (bulkReconnectRef.current) return;
+      const curNodes = nodesRef.current;
+      const curEdges = edgesRef.current;
       // 连接有效性校验(防止绕过 isValidConnection 的底层调用)
-      const src = nodes.find((n) => n.id === params.source);
-      const tgt = nodes.find((n) => n.id === params.target);
+      const src = curNodes.find((n) => n.id === params.source);
+      let tgt = curNodes.find((n) => n.id === params.target);
       if (!isConnectionValid(src, tgt)) return;
+
+      // ⚡ 输出素材节点单输入约束:若目标是 output 且已有连入,
+      // 自动派生一个新的 output 节点并把本次连接转向它。
+      if (tgt && tgt.type === 'output') {
+        const targetHasConn = curEdges.some((e) => e.target === tgt!.id);
+        if (targetHasConn) {
+          const newId = `output-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+          // 新 output 节点放在原节点右侧(360宽 + 40床)
+          const newNode: Node = {
+            id: newId,
+            type: 'output',
+            position: {
+              x: (tgt.position?.x ?? 0) + 360,
+              y: tgt.position?.y ?? 0,
+            },
+            data: { ...(INITIAL_DATA['output'] || {}) },
+          };
+          setNodes((prev) => [...prev, newNode]);
+          // 后续边连到新节点
+          tgt = newNode;
+          params = { ...params, target: newId };
+        }
+      }
+
       // 根据上游输出类型染色连线
       const outs = src ? getNodeOutputs(src) : [];
       const ins = tgt ? getNodeInputs(tgt) : [];
@@ -1115,17 +1142,18 @@ function CanvasInner({ onAddNodeRef }: CanvasInnerProps) {
         )
       );
     },
-    [nodes]
+    []
   );
 
   // ReactFlow 拖线连接时的实时校验(在连线处于“预览”阶段就拦截不兼容连接)
   const onIsValidConnection = useCallback(
     (params: Connection | Edge) => {
-      const src = nodes.find((n) => n.id === (params as Connection).source);
-      const tgt = nodes.find((n) => n.id === (params as Connection).target);
+      const curNodes = nodesRef.current;
+      const src = curNodes.find((n) => n.id === (params as Connection).source);
+      const tgt = curNodes.find((n) => n.id === (params as Connection).target);
       return isConnectionValid(src, tgt);
     },
-    [nodes]
+    []
   );
 
   // ===== 拖线到空白处 → 弹出候选节点菜单 =====
@@ -1688,6 +1716,23 @@ function CanvasInner({ onAddNodeRef }: CanvasInnerProps) {
   const memoNodeTypes = useMemo(() => nodeTypes, []);
   const memoEdgeTypes = useMemo(() => edgeTypes, []);
 
+  // ⚠️ 以下几个在 ReactFlow 的 fieldsToTrack 列表中, 必须稳定引用,
+  // 否则每次父组件 render 都会让 StoreUpdater 重复 store.setState 反复触发订阅者,
+  // 在某些节点拓扑下会退化为 Maximum update depth exceeded。
+  const memoSelectionKeyCode = useMemo(() => ['Control', 'Meta'] as string[], []);
+  const memoMultiSelectionKeyCode = useMemo(
+    () => ['Control', 'Meta', 'Shift'] as string[],
+    []
+  );
+  const memoProOptions = useMemo(() => ({ hideAttribution: true }), []);
+  const memoDefaultEdgeOptions = useMemo(
+    () => ({
+      style: { stroke: edgeStroke, strokeWidth: isPixel ? 2.5 : 2 },
+      animated: false,
+    }),
+    [edgeStroke, isPixel]
+  );
+
   if (!activeId) {
     return (
       <div
@@ -1752,18 +1797,15 @@ function CanvasInner({ onAddNodeRef }: CanvasInnerProps) {
         onPaneContextMenu={onPaneContextMenu}
         onSelectionChange={onSelectionChange}
         onSelectionEnd={onSelectionEnd}
-        selectionKeyCode={['Control', 'Meta']}
-        multiSelectionKeyCode={['Control', 'Meta', 'Shift']}
+        selectionKeyCode={memoSelectionKeyCode}
+        multiSelectionKeyCode={memoMultiSelectionKeyCode}
         selectionMode={SelectionMode.Partial}
         snapToGrid={snapEnabled}
         snapGrid={SNAP_GRID}
         elevateNodesOnSelect={false}
         fitView
-        proOptions={{ hideAttribution: true }}
-        defaultEdgeOptions={{
-          style: { stroke: edgeStroke, strokeWidth: isPixel ? 2.5 : 2 },
-          animated: false,
-        }}
+        proOptions={memoProOptions}
+        defaultEdgeOptions={memoDefaultEdgeOptions}
       >
         <Background
           variant={BackgroundVariant.Dots}
