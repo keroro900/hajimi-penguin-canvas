@@ -690,17 +690,28 @@ router.post('/image/fal/query', async (req, res) => {
 
 // ========== POST /api/proxy/llm — LLM Chat(独立 Key) ==========
 // body: { model, messages, temperature?, max_tokens?, stream? }
+//   - messages[i].content 支持 string 或 多模态数组 [{type:'text',text} | {type:'image_url',image_url:{url}}]
+//   - stream=true → 透传上游 SSE(text/event-stream) 到前端
+//   - 完全对齐 gpt-image-2-web _doSendChat (index.html L8128~L8305)
 router.post('/llm', async (req, res) => {
   const settings = loadRawSettings();
   if (!settings?.llmApiKey) {
     return res.status(400).json({ success: false, error: '未配置 LLM 独立 API Key' });
   }
-  const { model, messages, temperature, max_tokens } = req.body || {};
+  const { model, messages, temperature, max_tokens, stream } = req.body || {};
   if (!model || !messages) {
     return res.status(400).json({ success: false, error: 'model 和 messages 必填' });
   }
 
   const upstream = `${config.ZHENZHEN_BASE_URL}/v1/chat/completions`;
+  const payload = {
+    model,
+    messages,
+    temperature: temperature ?? 0.7,
+    max_tokens: max_tokens ?? 4096,
+    stream: !!stream,
+  };
+
   try {
     const r = await fetch(upstream, {
       method: 'POST',
@@ -708,13 +719,40 @@ router.post('/llm', async (req, res) => {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${settings.llmApiKey}`,
       },
-      body: JSON.stringify({
-        model,
-        messages,
-        temperature: temperature ?? 0.7,
-        max_tokens: max_tokens ?? 2048,
-      }),
+      body: JSON.stringify(payload),
     });
+
+    // ===== 流式分支:SSE pass-through =====
+    if (payload.stream) {
+      if (!r.ok) {
+        const errText = await r.text();
+        return res.status(r.status).json({
+          success: false,
+          error: `上游 HTTP ${r.status}: ${errText.slice(0, 300)}`,
+        });
+      }
+      res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-cache, no-transform');
+      res.setHeader('Connection', 'keep-alive');
+      res.setHeader('X-Accel-Buffering', 'no');
+      // Node 18+ fetch response.body 为 ReadableStream
+      try {
+        const reader = r.body.getReader();
+        const decoder = new TextDecoder();
+        // 透传上游字节,前端按 SSE 解析
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          res.write(decoder.decode(value, { stream: true }));
+        }
+      } catch (streamErr) {
+        console.error('proxy/llm SSE 转发异常:', streamErr);
+      }
+      return res.end();
+    }
+
+    // ===== 非流式分支(gpt-image-2-all 等) =====
     const text = await r.text();
     let data;
     try {
@@ -728,10 +766,28 @@ router.post('/llm', async (req, res) => {
         error: data?.error?.message || `上游 HTTP ${r.status}`,
       });
     }
-    const reply = data?.choices?.[0]?.message?.content || '';
+    // 处理 content 可能是字符串或多模态数组(gpt-image-2-all 出图)
+    const choice = data?.choices?.[0];
+    let content = choice?.message?.content || '';
+    const imageUrls = [];
+    if (Array.isArray(content)) {
+      let textParts = '';
+      content.forEach((part) => {
+        if (part?.type === 'text') textParts += part.text || '';
+        else if (part?.type === 'image_url' && part.image_url?.url) imageUrls.push(part.image_url.url);
+        else if (part?.type === 'image' && part.image_url?.url) imageUrls.push(part.image_url.url);
+      });
+      content = textParts;
+    }
+    if (Array.isArray(data?.data)) {
+      data.data.forEach((d) => {
+        if (d?.url) imageUrls.push(d.url);
+        else if (d?.b64_json) imageUrls.push('data:image/png;base64,' + d.b64_json);
+      });
+    }
     res.json({
       success: true,
-      data: { content: reply, raw: data, model },
+      data: { content, imageUrls, raw: data, model },
     });
   } catch (e) {
     console.error('proxy/llm 错误:', e);

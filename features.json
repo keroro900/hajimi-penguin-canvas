@@ -1,7 +1,7 @@
 {
   "$schema": "本文件为 T8-penguin-canvas 节点清单防丢失锁,任何节点删减都需要在 roadmap.md 中说明并更新本文件。",
   "version": "1.1.0",
-  "lastUpdated": "2026-05-22",
+  "lastUpdated": "2026-05-22-llm",
   "layout": {
     "mode": "single-column-sidebar",
     "description": "画布管理 + 节点列表合并为一列 Sidebar，主体变为两栏布局(Sidebar + Canvas)，紧凑化节省约 96px 横向空间。",
@@ -81,7 +81,7 @@
         { "type": "video", "label": "视频节点", "description": "veo-3.1 / grok-video" },
         { "type": "seedance", "label": "SD2.0 节点", "description": "Seedance 2.0 视频分镜" },
         { "type": "audio", "label": "音频节点", "description": "Suno 全对齐 gpt-image-2-web:三模式(generate/cover/extend) + 7 版本(v3.0/v3.5/v4/v4.5/v4.5+/v5/v5.5) + 本地上传 + 上游 audioUrl 兜底,无 FAL" },
-        { "type": "llm", "label": "LLM/Vision 节点", "description": "gpt-5 / claude-4.5 / gemini-2.5,使用独立 LLM Key" }
+        { "type": "llm", "label": "LLM/Vision 节点", "description": "完全对齐 gpt-image-2-web chat:5 模型(gemini-3.1-flash-lite 默认/gpt-4o/gemini-3.1-pro/gpt-5/gpt-image-2-all) + temp/max_tokens + system 预设 + 多模态图片 + 多轮会话 + SSE 流式 + 独立 LLM Key" }
       ]
     },
     "rh": {
@@ -186,9 +186,11 @@
       { "id": "suno-extend", "label": "Suno 续写", "provider": "zhenzhen", "endpoint": "/suno/generate", "versions": ["v3.0","v3.5","v4","v4.5","v4.5+","v5","v5.5"] }
     ],
     "llm": [
-      { "id": "gpt-5", "label": "GPT-5", "provider": "llm-direct", "endpoint": "/v1/chat/completions" },
-      { "id": "claude-4.5", "label": "Claude 4.5", "provider": "llm-direct", "endpoint": "/v1/chat/completions" },
-      { "id": "gemini-2.5", "label": "Gemini 2.5", "provider": "llm-direct", "endpoint": "/v1/chat/completions" }
+      { "id": "gemini-3.1-flash-lite-preview", "label": "Gemini 3.1 Flash Lite (默认)", "provider": "llm-direct", "endpoint": "/v1/chat/completions", "vision": true, "stream": true },
+      { "id": "gpt-4o", "label": "GPT-4o", "provider": "llm-direct", "endpoint": "/v1/chat/completions", "vision": true, "stream": true },
+      { "id": "gemini-3.1-pro-preview", "label": "Gemini 3.1 Pro", "provider": "llm-direct", "endpoint": "/v1/chat/completions", "vision": true, "stream": true },
+      { "id": "gpt-5", "label": "GPT-5", "provider": "llm-direct", "endpoint": "/v1/chat/completions", "vision": true, "stream": true },
+      { "id": "gpt-image-2-all", "label": "GPT Image 2 All (图文)", "provider": "llm-direct", "endpoint": "/v1/chat/completions", "vision": true, "imageOutput": true, "stream": false }
     ]
   },
   "apiKeys": {
@@ -246,7 +248,7 @@
         "POST /api/proxy/image — 图像生成(贞贞工坊,自动转存)",
         "POST /api/proxy/image/fal/submit — FAL Queue 提交(gpt-image-2-fal / nano-banana-pro-fal,同步返 images[] 或异步返 requestId+responseUrl)",
         "GET /api/proxy/image/fal/query?requestId&endpoint&responseUrl — FAL 任务轮询(HTTP 非200 时 IN_QUEUE/IN_PROGRESS 视为 pending,完成 images[] 转存)",
-        "POST /api/proxy/llm — LLM Chat(独立 Key)",
+        "POST /api/proxy/llm — LLM Chat(独立 Key, 支持 stream:true SSE 透传, content 支持多模态 text+image_url 数组, temperature 0~2, max_tokens 100~128000)",
         "POST /api/proxy/video/submit — 视频任务提交",
         "GET /api/proxy/video/query?taskId — 视频任务轮询(转存)",
         "POST /api/proxy/audio/submit — Suno 提交(generate/cover/extend, 7 版本 MV 映射)",

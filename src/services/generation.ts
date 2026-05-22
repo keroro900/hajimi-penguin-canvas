@@ -162,9 +162,15 @@ export async function queryImageFal(params: { responseUrl?: string; endpoint?: s
 }
 
 // LLM
+// content 支持多模态:字符串 或 [{type:'text',text} | {type:'image_url',image_url:{url}}]
+// (对齐 gpt-image-2-web _doSendChat 多模态格式, index.html L8106~L8123)
+export type LlmContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string } };
+
 export interface LlmMessage {
   role: 'system' | 'user' | 'assistant';
-  content: string;
+  content: string | LlmContentPart[];
 }
 
 export interface GenerateLlmRequest {
@@ -172,10 +178,14 @@ export interface GenerateLlmRequest {
   messages: LlmMessage[];
   temperature?: number;
   max_tokens?: number;
+  /** 流式开关;默认 false(非流式) */
+  stream?: boolean;
 }
 
 export interface GenerateLlmResult {
   content: string;
+  /** 仅 gpt-image-2-all 等出图模型返回 */
+  imageUrls?: string[];
   raw: any;
   model: string;
 }
@@ -184,13 +194,85 @@ export async function generateLlm(req: GenerateLlmRequest): Promise<GenerateLlmR
   const r = await fetch('/api/proxy/llm', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(req),
+    body: JSON.stringify({ ...req, stream: false }),
   });
   const data = await r.json();
   if (!r.ok || !data.success) {
     throw new Error(data?.error || `HTTP ${r.status}`);
   }
   return data.data;
+}
+
+/**
+ * 流式 LLM 调用,后端透传上游 SSE。
+ * @param req 请求(自动注入 stream:true)
+ * @param opts.onDelta 每个增量片段回调(实时拼接)
+ * @param opts.signal AbortSignal 支持中断
+ * @returns 最终拼接后的完整 content
+ * 对齐 gpt-image-2-web index.html L8262~L8295 流式解析逻辑。
+ */
+export async function generateLlmStream(
+  req: GenerateLlmRequest,
+  opts: { onDelta?: (chunk: string) => void; signal?: AbortSignal } = {}
+): Promise<{ content: string }> {
+  const r = await fetch('/api/proxy/llm', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...req, stream: true }),
+    signal: opts.signal,
+  });
+  if (!r.ok) {
+    // 后端在 stream 错路仍返 JSON
+    let msg = `HTTP ${r.status}`;
+    try {
+      const j = await r.json();
+      msg = j?.error || msg;
+    } catch {
+      /* noop */
+    }
+    throw new Error(msg);
+  }
+  if (!r.body) throw new Error('上游未返回可读流');
+  const reader = r.body.getReader();
+  const decoder = new TextDecoder();
+  let assembled = '';
+  let buffer = '';
+  // SSE 按行解析
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+    for (const raw of lines) {
+      const line = raw.trim();
+      if (!line.startsWith('data:')) continue;
+      const data = line.slice(5).trim();
+      if (data === '[DONE]') return { content: assembled };
+      try {
+        const j = JSON.parse(data);
+        const delta = j?.choices?.[0]?.delta?.content;
+        if (typeof delta === 'string' && delta.length) {
+          assembled += delta;
+          opts.onDelta?.(delta);
+        }
+      } catch {
+        /* 心跳或不完整 JSON 忽略 */
+      }
+    }
+  }
+  return { content: assembled };
+}
+
+/** File → dataURL(对齐主项目 FileReader.readAsDataURL) */
+export function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => resolve(String(e.target?.result || ''));
+    reader.onerror = () => reject(new Error('读取文件失败'));
+    reader.readAsDataURL(file);
+  });
 }
 
 // 文件上传

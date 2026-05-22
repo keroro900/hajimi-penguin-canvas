@@ -337,17 +337,34 @@ export const SUNO_VERSIONS: Array<{ value: string; label: string }> = [
 export const DEFAULT_SUNO_VERSION = 'v5.5';
 
 // ========== LLM/Vision ==========
+// 完全对齐 gpt-image-2-web Chat Tab(index.html L1600 chat_model select)
+// 默认: gemini-3.1-flash-lite-preview
+// 特殊模型: gpt-image-2-all — 图文双向(非流式,可返回 image_url)
 export interface LlmModelDef {
   id: string;
   label: string;
   provider: ProviderType;
+  /** 是否支持多模态(图片输入) */
   vision?: boolean;
+  /** 是否支持图像输出(gpt-image-2-all) */
+  imageOutput?: boolean;
+  /** 是否仅支持非流式(出图模型走非流式) */
+  nonStreaming?: boolean;
   contextLength?: number;
   description?: string;
 }
 
 export const LLM_MODELS: LlmModelDef[] = [
+  { id: 'gemini-3.1-flash-lite-preview', label: 'Gemini 3.1 Flash Lite', provider: 'llm-direct', vision: true, contextLength: 1_000_000 },
+  { id: 'gpt-4o', label: 'GPT-4o', provider: 'llm-direct', vision: true, contextLength: 128_000 },
+  { id: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro', provider: 'llm-direct', vision: true, contextLength: 2_000_000 },
   { id: 'gpt-5', label: 'GPT-5', provider: 'llm-direct', vision: true, contextLength: 200_000 },
-  { id: 'claude-sonnet-4.5', label: 'Claude Sonnet 4.5', provider: 'llm-direct', vision: true, contextLength: 200_000 },
-  { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro', provider: 'llm-direct', vision: true, contextLength: 1_000_000 },
+  { id: 'gpt-image-2-all', label: 'GPT Image 2 All (图文)', provider: 'llm-direct', vision: true, imageOutput: true, nonStreaming: true, description: '可自动调用图像生成' },
 ];
+
+export const DEFAULT_LLM_MODEL = 'gemini-3.1-flash-lite-preview';
+
+/** 是否为出图模型(需走非流式 + 检测 generate_image 指令) */
+export function isImageOutputLlm(modelId: string): boolean {
+  return LLM_MODELS.find((m) => m.id === modelId)?.imageOutput === true;
+}

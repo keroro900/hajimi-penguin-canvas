@@ -754,6 +754,102 @@ export interface FalSubmitRequest {
 
 ---
 
+### 11.10 LLM 节点对齐（gpt-image-2-web Chat·无 FAL）
+
+本小节描述如何对齐主项目 `gpt-image-2-web/index.html` 的 Chat Tab 实现，使本项目 LLM 节点具备：5 模型 / 多模态 / 多轮历史 / 系统提示词预设 / 流式 SSE / `gpt-image-2-all` 自动出图。
+**注意：LLM 节点不提供 FAL 模式**，仅走贞贞工坊兼容 OpenAI 协议的 `/v1/chat/completions`。
+
+#### 11.10.1 起点函数与上游协议（主项目可查行号）
+
+| 实现 | 主项目函数 | 起始行 | 上游接口 |
+| --- | --- | --- | --- |
+| 发送一轮 chat | `_doSendChat` | L8128 | `POST {baseUrl}/v1/chat/completions` |
+| 流式 SSE 解析 | `_doSendChat` 内 reader 循环 | L8262 | `data: {choices:[{delta:{content}}]}` 行流；`data: [DONE]` 结束 |
+| 自动出图 | `_chatAutoGenImages` | L8316 | 检测 `"generate_image":[...]` JSON 块 → 调 `/v1/images/generations` |
+| 多模态 | `_doSendChat` user content | L8170 | `[{type:'text',text} | {type:'image_url',image_url:{url}}]` |
+
+#### 11.10.2 5 模型清单（前后端必须一致）
+
+[LLM_MODELS](file:///e:/PenguinPravite/T8-penguin-canvas/src/providers/models.ts) 与主项目 `index.html` chat_model `<select>` 完全对齐：
+
+| modelId | 标签 | vision | stream | imageOutput |
+| --- | --- | --- | --- | --- |
+| `gemini-3.1-flash-lite-preview`（默认） | Gemini 3.1 Flash Lite | ✓ | ✓ | — |
+| `gpt-4o` | GPT-4o | ✓ | ✓ | — |
+| `gemini-3.1-pro-preview` | Gemini 3.1 Pro | ✓ | ✓ | — |
+| `gpt-5` | GPT-5 | ✓ | ✓ | — |
+| `gpt-image-2-all` | GPT Image 2 All（图文） | ✓ | ✗（强制非流式） | ✓ 可返回 image_url |
+
+常量 `DEFAULT_LLM_MODEL = 'gemini-3.1-flash-lite-preview'`；工具函数 `isImageOutputLlm(id)` 用于 UI 禁用流式开关。
+
+#### 11.10.3 后端一条路由（SSE 透传）
+
+[proxy.js · /llm](file:///e:/PenguinPravite/T8-penguin-canvas/backend/src/routes/proxy.js)：
+
+| 行为 | 说明 |
+| --- | --- |
+| 入参 | `{ model, messages, temperature=0.7, max_tokens=4096, stream }` |
+| 上游 | `POST {ZHENZHEN_BASE_URL}/v1/chat/completions` + `Authorization: Bearer {llmApiKey}` |
+| stream=true | 设置 `Content-Type: text/event-stream` + `X-Accel-Buffering: no`；`r.body.getReader()` → `TextDecoder` → `res.write` 逐块透传，结束 `res.end()` |
+| stream=false | 解析 JSON，`choices[0].message.content` 兼容字符串或多模态数组（提取 text/image_url），同时合并 `data.data[].url / b64_json` → `imageUrls[]` |
+| 返回 | `{ success, data: { content, imageUrls, raw, model } }` |
+
+#### 11.10.4 前端服务双轨
+
+[generation.ts](file:///e:/PenguinPravite/T8-penguin-canvas/src/services/generation.ts) 同时导出两个函数与多模态类型：
+
+```ts
+type LlmContentPart = { type:'text', text:string } | { type:'image_url', image_url:{url:string} }
+interface LlmMessage { role:'system'|'user'|'assistant', content: string | LlmContentPart[] }
+generateLlm(req): Promise<{ content, imageUrls?, raw, model }>   // 非流式
+generateLlmStream(req, { onDelta, signal }): Promise<{ content }> // SSE
+fileToDataUrl(file): Promise<string>                              // 本地图片转 dataURL
+```
+
+SSE 按行 `split('\n')` 解析；`data: [DONE]` 立即 return；`delta.content` 累加并通过 `onDelta` 回调推送给 UI。
+
+#### 11.10.5 LLMNode 节点 UI 范式
+
+[LLMNode.tsx](file:///e:/PenguinPravite/T8-penguin-canvas/src/components/nodes/LLMNode.tsx)（width=320）必须覆盖以下 8 点，与§11.3 一致：
+
+1. **5 模型下拉** — 来自 `LLM_MODELS`；默认 `DEFAULT_LLM_MODEL`。
+2. **参数三件套** — `temperature 0~2 step 0.1`（默认 0.7）/ `max_tokens 100~128000`（默认 4096）/ `stream 开关`（`isImageOutputLlm(model)` 时强制禁用）。
+3. **系统提示词 + 预设管理** — `localStorage` key `t8-llm-sys-presets`；UI 下拉 / `Save` / `Trash2` 删除。
+4. **本地图片上传** — `<input type="file" multiple accept="image/*">` → `fileToDataUrl` → 缩略图 + ✕ 移除。
+5. **上游采集** — `collectUpstream()` 同时拾取 `prompt` 与 `imageUrl/image/url` 单图、`images[]/imageUrls[]` 多图。
+6. **多模态消息装配** — `buildMessages(text, imgs)`：`system`（如有）+ 历史轮（兼容图片轮 `LlmContentPart[]`）+ 当前 `user`（文本+图片）。
+7. **发送/中止** — 流式分支 `generateLlmStream` + `AbortController`（按钮切换为 `Square` 中止）；非流式取 `imageUrls` 写入 `data.generatedImages` 并下发到下游 image 端口。
+8. **总线接入** — [`useRunTrigger`](file:///e:/PenguinPravite/T8-penguin-canvas/src/hooks/useRunTrigger.ts) + [`logBus`](file:///e:/PenguinPravite/T8-penguin-canvas/src/stores/logBus.ts)（`info/success/warn/error`）。
+
+端口颜色：输入/输出 text 均使用 `PORT_COLOR.text` = `#7dd3fc`（[portTypes.ts](file:///e:/PenguinPravite/T8-penguin-canvas/src/utils/portTypes.ts)）。
+
+#### 11.10.6 `gpt-image-2-all` 特殊处理
+
+* `nonStreaming: true` → UI 自动把 `stream` 强制设为 false 且禁用切换；
+* 后端非流式分支会从响应里抽 `imageUrls[]`（content 数组 / data[].url / data[].b64_json 三种来源）；
+* 节点把 `imageUrls` 写入 `data.generatedImages` 并通过 image 端口（黄色 Handle）下发；如同主项目 `_chatAutoGenImages`（L8316）行为，但更通用——不依赖 LLM 自己生成的 `generate_image` JSON 块。
+* 若需要复现主项目「LLM 输出 `"generate_image":[...]` 再调 images/generations」的二段式流程，可在节点 `handleSend` 末尾追加对返回 `content` 的正则解析（当前实现仅记 `logBus.warn` 占位）。
+
+#### 11.10.7 代码定位索引
+
+* 后端路由：[proxy.js · /llm](file:///e:/PenguinPravite/T8-penguin-canvas/backend/src/routes/proxy.js)（搜 `POST /llm`）。
+* 前端服务：[generation.ts](file:///e:/PenguinPravite/T8-penguin-canvas/src/services/generation.ts) — `generateLlm` / `generateLlmStream` / `fileToDataUrl`。
+* 模型注册：[models.ts](file:///e:/PenguinPravite/T8-penguin-canvas/src/providers/models.ts) — `LLM_MODELS` / `DEFAULT_LLM_MODEL` / `isImageOutputLlm`。
+* 节点组件：[LLMNode.tsx](file:///e:/PenguinPravite/T8-penguin-canvas/src/components/nodes/LLMNode.tsx)。
+* 初始 data：[Canvas.tsx INITIAL_DATA.llm](file:///e:/PenguinPravite/T8-penguin-canvas/src/components/Canvas.tsx)（`temperature=0.7 / maxTokens=4096 / stream=true / history=[]`）。
+
+#### 11.10.8 常见坑
+
+| 坑 | 现象 | 防御 |
+| --- | --- | --- |
+| Express 缓冲 SSE | 前端长时间无 delta | 显式 `setHeader('X-Accel-Buffering','no')` + 不要走 `res.json()`，必须 `res.write()` + `res.end()` |
+| 前端把多模态 content 误转字符串 | 上游报 `content must be string or array` | `LlmMessage.content: string \| LlmContentPart[]`，渲染历史也按数组兼容 |
+| `gpt-image-2-all` 走流式 | 上游直接 400 或空响应 | `isImageOutputLlm` 在节点 UI/payload 双重禁用流式 |
+| AbortController 未挂载 | 「中止」按钮无效 | `abortRef.current = new AbortController()` 并把 `signal` 透传给 `generateLlmStream` |
+| 系统提示词丢失 | 重开节点后 system 清空 | 写回 `data.system`（持久化在画布 JSON）+ 预设额外存 `localStorage` |
+
+---
+
 ## 12. 日志总线 / 终端面板规范
 
 ### 12.1 logBus
