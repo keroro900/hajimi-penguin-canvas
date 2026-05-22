@@ -423,7 +423,8 @@ const LLMNode = ({ id, data, selected }: NodeProps) => {
             value={systemPrompt}
             onChange={(e) => update({ system: e.target.value })}
             placeholder="设定AI角色和行为..."
-            className="w-full h-12 resize-none rounded bg-white/5 border border-white/10 px-2 py-1 text-[11px] text-white outline-none focus:border-white/30 placeholder:text-white/30"
+            onWheel={(e) => e.stopPropagation()}
+            className="w-full h-36 resize-none rounded bg-white/5 border border-white/10 px-2 py-1 text-[11px] text-white outline-none focus:border-white/30 placeholder:text-white/30 overflow-y-auto"
           />
         </div>
 
@@ -434,7 +435,8 @@ const LLMNode = ({ id, data, selected }: NodeProps) => {
             value={localPrompt}
             onChange={(e) => update({ prompt: e.target.value })}
             placeholder="备用:无上游连接时使用"
-            className="w-full h-12 resize-none rounded bg-white/5 border border-white/10 px-2 py-1 text-[11px] text-white outline-none focus:border-white/30 placeholder:text-white/30"
+            onWheel={(e) => e.stopPropagation()}
+            className="w-full h-60 resize-none rounded bg-white/5 border border-white/10 px-2 py-1 text-[11px] text-white outline-none focus:border-white/30 placeholder:text-white/30 overflow-y-auto"
           />
         </div>
 
@@ -515,7 +517,7 @@ const LLMNode = ({ id, data, selected }: NodeProps) => {
 
       {/* 会话历史 / 流式实时区 */}
       {(history.length > 0 || streamingText) && (
-        <div className="border-t border-white/10 p-2 space-y-1.5 max-h-72 overflow-y-auto scrollbar-hide">
+        <div className="border-t border-white/10 p-2 space-y-1.5 max-h-[36rem] overflow-y-auto" onWheel={(e) => e.stopPropagation()}>
           {history.map((t, i) => (
             <div key={i} className="text-[11px]">
               <div className={`text-[9px] mb-0.5 ${t.role === 'user' ? 'text-sky-300/60' : 'text-emerald-300/60'}`}>
