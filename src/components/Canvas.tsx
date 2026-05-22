@@ -305,10 +305,17 @@ function CanvasInner({ onAddNodeRef }: CanvasInnerProps) {
       const newNode: Node = {
         id,
         type,
-        position: {
-          x: center.x - 160 + jitter,
-          y: center.y - 100 + (atScreen ? 0 : (Math.random() - 0.5) * 80),
-        },
+        position: atScreen
+          ? {
+              // 右键添加：节点左上角对准鼠标点击位置，使鼠标落在节点 header 上
+              x: center.x,
+              y: center.y,
+            }
+          : {
+              // Sidebar 添加：节点视觉中心对准视口中心 + 小范围抖动避免重叠
+              x: center.x - 160 + jitter,
+              y: center.y - 100 + (Math.random() - 0.5) * 80,
+            },
         data: { ...(INITIAL_DATA[type] || {}) },
       };
       setNodes((prev) => [...prev, newNode]);
