@@ -74,7 +74,7 @@ function App() {
       >
         <div className="flex items-center gap-3">
           <span className="text-xl">🐧</span>
-          <h1 className={`text-sm font-semibold ${isPixel ? 'px-title' : ''}`}>T8 企鹅画布</h1>
+          <h1 className={`text-sm font-semibold ${isPixel ? 'px-title' : ''}`}>贞贞的无限画布（企鹅共创版）</h1>
           <span
             className={
               isPixel
