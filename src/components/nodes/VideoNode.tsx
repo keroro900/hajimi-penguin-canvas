@@ -147,7 +147,7 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
         return;
       }
       try {
-        const r = await queryVideo(tid);
+        const r = await queryVideo(tid, apiModel);
         if (r.progress && r.progress !== lastProgress) {
           lastProgress = r.progress;
           logBus.debug(`[${elapsed}/${MAX}] status=${r.status} progress=${r.progress}`, src);

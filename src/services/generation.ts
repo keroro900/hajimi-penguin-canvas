@@ -71,8 +71,11 @@ export interface ImageQueryResult {
   error?: string;
 }
 
-export async function queryImageStatus(taskId: string): Promise<ImageQueryResult> {
-  const r = await fetch(`/api/proxy/image/status/${encodeURIComponent(taskId)}`);
+// apiModel 透传给后端，让轮询阶段复用与 submit 一致的分类 API Key
+// (否则 hint 为空时会 fallback 到通用 zhenzhenApiKey，分类 key 失效)
+export async function queryImageStatus(taskId: string, apiModel?: string): Promise<ImageQueryResult> {
+  const qs = apiModel ? `?model=${encodeURIComponent(apiModel)}` : '';
+  const r = await fetch(`/api/proxy/image/status/${encodeURIComponent(taskId)}${qs}`);
   const data = await r.json();
   if (!r.ok) throw new Error(data?.error || `HTTP ${r.status}`);
   // 失败状态下 success=false 但返回 body 中仍包含 status:'failed'
@@ -531,8 +534,10 @@ export interface VideoQueryResult {
   failReason?: string | null;
 }
 
-export async function queryVideo(taskId: string): Promise<VideoQueryResult> {
-  const r = await fetch(`/api/proxy/video/query?taskId=${encodeURIComponent(taskId)}`);
+// model 透传给后端，让轮询阶段复用与 submit 一致的分类 API Key
+export async function queryVideo(taskId: string, model?: string): Promise<VideoQueryResult> {
+  const extra = model ? `&model=${encodeURIComponent(model)}` : '';
+  const r = await fetch(`/api/proxy/video/query?taskId=${encodeURIComponent(taskId)}${extra}`);
   const data = await r.json();
   if (!r.ok || !data.success) throw new Error(data?.error || `HTTP ${r.status}`);
   return data.data;

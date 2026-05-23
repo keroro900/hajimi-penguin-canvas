@@ -53,6 +53,21 @@ function applyClassifiedKey(settings, hint) {
   if (picked) settings.zhenzhenApiKey = picked;
 }
 
+// ========== 工具: taskId → 实际使用的 apiKey 内存映射 ==========
+// submit 阶段根据 hint 选了分类 key 后，将 (taskId → key) 记下，
+// query/status 阶段优先从该 Map 恢复 key，
+// 防止前端未透传 model 时轮询错误 fallback 到通用 key 导致“令牌不合法”。
+// 30 分钟过期自清。
+const taskKeyMap = new Map();
+function rememberTaskKey(taskId, apiKey) {
+  if (!taskId || !apiKey) return;
+  taskKeyMap.set(String(taskId), apiKey);
+  setTimeout(() => taskKeyMap.delete(String(taskId)), 30 * 60 * 1000);
+}
+function recallTaskKey(taskId) {
+  return taskId ? taskKeyMap.get(String(taskId)) : null;
+}
+
 // ========== 工具:保存上游返回的图像到本地 ==========
 async function saveRemoteImage(url) {
   try {
@@ -400,6 +415,7 @@ router.post('/image/submit', async (req, res) => {
       return res.json({ success: true, data: { sync: true, status: 'completed', progress: '100%', urls: norm.urls, raw: data } });
     }
     if (norm.kind === 'async') {
+      rememberTaskKey(norm.taskId, settings.zhenzhenApiKey);
       return res.json({ success: true, data: { sync: false, taskId: norm.taskId, status: 'pending', progress: '0%', raw: data } });
     }
     return res.status(500).json({ success: false, error: '未获取到 task_id 且无同步结果: ' + JSON.stringify(data).slice(0, 300) });
@@ -415,8 +431,14 @@ router.get('/image/status/:tid', async (req, res) => {
   if (!settings?.zhenzhenApiKey) {
     return res.status(400).json({ success: false, error: '未配置贞贞工坊 API Key' });
   }
-  // 查询阶段可选传 ?model=xxx 让后端走对应分类 key（不传则用通用 fallback）
-  applyClassifiedKey(settings, String(req.query.model || ''));
+  // 优先从 submit 阶段记录的 (taskId → key) 映射恢复，防止前端未传 model 导致 fallback 错 key。
+  const remembered = recallTaskKey(req.params.tid);
+  if (remembered) {
+    settings.zhenzhenApiKey = remembered;
+  } else {
+    // 查询阶段可选传 ?model=xxx 让后端走对应分类 key（不传则用通用 fallback）
+    applyClassifiedKey(settings, String(req.query.model || ''));
+  }
   const tid = req.params.tid;
   try {
     const url = `${config.ZHENZHEN_BASE_URL}/v1/images/tasks/${encodeURIComponent(tid)}`;
@@ -1350,6 +1372,7 @@ router.post('/video/submit', async (req, res) => {
     }
     const taskId = data?.task_id || data?.id;
     if (!taskId) return res.status(500).json({ success: false, error: '未获取到 task_id: ' + text.slice(0, 200) });
+    rememberTaskKey(taskId, apiKey);
     res.json({ success: true, data: { taskId, raw: data } });
   } catch (e) {
     console.error('proxy/video/submit 错误:', e);
@@ -1362,8 +1385,14 @@ router.get('/video/query', async (req, res) => {
   if (!settings?.zhenzhenApiKey) {
     return res.status(400).json({ success: false, error: '未配置贞贞工坊 API Key' });
   }
-  applyClassifiedKey(settings, String(req.query.model || ''));
   const taskId = String(req.query.taskId || '').trim();
+  // 优先从 submit 阶段记录的 (taskId → key) 映射恢复，防止前端未传 model 导致 fallback 错 key。
+  const remembered = recallTaskKey(taskId);
+  if (remembered) {
+    settings.zhenzhenApiKey = remembered;
+  } else {
+    applyClassifiedKey(settings, String(req.query.model || ''));
+  }
   if (!taskId) return res.status(400).json({ success: false, error: 'taskId 必填' });
   const upstream = `${config.ZHENZHEN_BASE_URL}/v2/videos/generations/${encodeURIComponent(taskId)}`;
   try {
