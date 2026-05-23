@@ -1784,6 +1784,11 @@ function CanvasInner({ onAddNodeRef }: CanvasInnerProps) {
         matched = candidateOuts.filter((t) => fromIns.includes(t) || fromIns.includes('any') || t === 'any');
       }
       return [{ ...meta, matchedTypes: matched }];
+    }).sort((a, b) => {
+      // 中继节点(relay)永远置顶,作为最常用的透传/分发节点入口
+      if (a.type === 'relay' && b.type !== 'relay') return -1;
+      if (b.type === 'relay' && a.type !== 'relay') return 1;
+      return 0;
     });
   }, [picker, nodes]);
 

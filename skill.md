@@ -1,7 +1,9 @@
 # T8-penguin-canvas · skill.md
 
 > 项目能力 / 接口 / 文件用途速查手册。
-> 版本：v1.5.2 ｜ 仓库：<https://github.com/T8mars/T8-penguin-canvas>
+> 版本：v1.5.3 ｜ 仓库：<https://github.com/T8mars/T8-penguin-canvas>
+>
+> v1.5.3 增量：节点拖出候选菜单 中继节点置顶（36）
 >
 > v1.5.2 增量：RelayNode 全字段透传修复 · 文本/图像/视频/音频四类素材统一中继 · 修复 Upload→Relay→Output 视频/音频断流 bug（35）
 >
@@ -3167,6 +3169,50 @@ if (upstreamIds.length === 0) {
 - [src/components/nodes/RelayNode.tsx](file:///e:/PenguinPravite/T8-penguin-canvas/src/components/nodes/RelayNode.tsx)（唯一修改文件）
 - 字段对齐参考：[UploadNode.tsx](file:///e:/PenguinPravite/T8-penguin-canvas/src/components/nodes/UploadNode.tsx) / [OutputNode.tsx](file:///e:/PenguinPravite/T8-penguin-canvas/src/components/nodes/OutputNode.tsx)
 - 死循环规范：本文档 §22.2
+
+---
+
+## 36. 节点拖出候选菜单·中继节点置顶（v1.5.3）
+
+### 36.1 需求
+
+从任意节点 Handle 拖出到画布空白区后，弹出的「连接到…」 / 「从…输入」候选菜单中，**中继（relay）节点永远置顶**。
+
+原因：中继节点是跨距离连线 / 多上游合并 / 下游分发的高频中转点，原本按 NODE_REGISTRY 顺序在后面，需要滚动才能看到，不体贴。
+
+### 36.2 实现
+
+只需在 [Canvas.tsx](file:///e:/PenguinPravite/T8-penguin-canvas/src/components/Canvas.tsx) 的 `pickerCandidates` useMemo 末尾追加一条稳定排序：
+
+```ts
+return NODE_REGISTRY.flatMap((meta) => {
+  // …过滤 + 能力匹配逻辑保持不变…
+  return [{ ...meta, matchedTypes: matched }];
+}).sort((a, b) => {
+  // 中继节点(relay)永远置顶
+  if (a.type === 'relay' && b.type !== 'relay') return -1;
+  if (b.type === 'relay' && a.type !== 'relay') return 1;
+  return 0;            // 其余项保持原 NODE_REGISTRY 顺序(稳定排序)
+});
+```
+
+要点：
+
+- **只动 relay**：其余节点顺序完全不变，不引入额外优先级表
+- **返回 0**：Array.prototype.sort 在现代引擎中为稳定排序，relay 之外的顺序 ≡ NODE_REGISTRY 顺序
+- **仅影响这一个入口**：Sidebar / QUICK_NODES / NODE_GROUPS 都不受影响
+
+### 36.3 入口对比
+
+| 入口 | 顺序来源 | relay 位置 |
+|---|---|---|
+| 左侧 Sidebar | NODE_GROUPS（按分类）| auxiliary 分组内原位 |
+| 右键快添加 | QUICK_NODES = input + core | 不包含（本例不受影响）|
+| **Handle 拖出候选** | NODE_REGISTRY + sort(relay置顶) | **首位** |
+
+### 36.4 关键文件
+
+- [src/components/Canvas.tsx](file:///e:/PenguinPravite/T8-penguin-canvas/src/components/Canvas.tsx)——`pickerCandidates` useMemo 末尾 `.sort()`
 
 ---
 
