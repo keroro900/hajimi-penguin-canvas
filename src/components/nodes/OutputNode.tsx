@@ -171,13 +171,23 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
   const total = collected.texts.length + collected.images.length + collected.videos.length + collected.audios.length;
 
   // === 下游透传: 将 collected + displayText 写到自身 data 供下游节点读取 ===
-  // 仅在生成的输出实际变化时调用 update, 避免 setNode 风暴。
+  // 仅在生成的输出实际变化时调用 update, 避免 setNode 风暴.
   // 不踩 outputText (保留 「用户编辑覆盖」 语义), 文本透传到 prompt/text/reply.
+  //
+  // ⚡ 过滤规则 (需求 #3):
+  //   - 若 collected 同时含有非文本素材 (图/视/音任一), 下游只需要非文本部分,
+  //     清空 prompt/text/reply (避免下游生成节点误将上下文提示词一起当参考文本)
+  //   - 若只有文本 (纯文本输出), 仍将文本透传到 prompt/text/reply
   useEffect(() => {
+    const hasNonText =
+      collected.images.length > 0 ||
+      collected.videos.length > 0 ||
+      collected.audios.length > 0;
+    const passText = hasNonText ? '' : (displayText || '');
     const next: any = {
-      prompt: displayText || '',
-      text: displayText || '',
-      reply: displayText || '',
+      prompt: passText,
+      text: passText,
+      reply: passText,
       imageUrl: collected.images[0] || '',
       imageUrls: collected.images.slice(),
       urls: collected.images.slice(),
@@ -209,13 +219,8 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
 
   return (
     <div
-      className="relative rounded-xl border-2 transition-colors"
-      style={{
-        background: isDark ? 'rgb(20,20,22)' : 'rgb(255,255,255)',
-        width: 320,
-        overflow: 'hidden',
-        borderColor: selected ? accent : isDark ? 'rgba(255,255,255,.15)' : 'rgba(0,0,0,.1)',
-      }}
+      className="relative"
+      style={{ width: 320 }}
     >
       {/* target handle (左侧) - 上游任意类型可连入 */}
       <Handle
@@ -224,13 +229,15 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
         className="!border-0"
         style={{
           background: HANDLE,
-          width: 10,
-          height: 10,
-          minWidth: 10,
-          minHeight: 10,
+          width: 12,
+          height: 12,
+          minWidth: 12,
+          minHeight: 12,
           top: '50%',
-          left: -5,
+          left: -6,
           transform: 'translateY(-50%)',
+          zIndex: 12,
+          pointerEvents: 'all',
         }}
         title="文本 / 图像 / 视频 / 音频 任意类型可连入"
       />
@@ -241,16 +248,28 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
         className="!border-0"
         style={{
           background: HANDLE,
-          width: 10,
-          height: 10,
-          minWidth: 10,
-          minHeight: 10,
+          width: 12,
+          height: 12,
+          minWidth: 12,
+          minHeight: 12,
           top: '50%',
-          right: -5,
+          right: -6,
           transform: 'translateY(-50%)',
+          zIndex: 12,
+          pointerEvents: 'all',
         }}
         title="透传 文本 / 图像 / 视频 / 音频 到下游"
       />
+
+      {/* 内层裁切容器: 圆角 + 越界裁切, 不影响外层 handle */}
+      <div
+        className="rounded-xl border-2 transition-colors"
+        style={{
+          background: isDark ? 'rgb(20,20,22)' : 'rgb(255,255,255)',
+          overflow: 'hidden',
+          borderColor: selected ? accent : isDark ? 'rgba(255,255,255,.15)' : 'rgba(0,0,0,.1)',
+        }}
+      >
 
       {/* 头部 */}
       <div
@@ -463,6 +482,7 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
             ))}
           </div>
         )}
+      </div>
       </div>
     </div>
   );

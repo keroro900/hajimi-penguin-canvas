@@ -1041,6 +1041,7 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
         {/* 上游素材聚合预览区 (新机制) - 本地上传 + 上游接入统一呈现, 可拖动排序 */}
         {modelDef.supportsReference && (
           <MaterialPreviewSection
+            texts={orderedTexts}
             images={orderedImages}
             order={materialOrder}
             onReorder={setMaterialOrder}
@@ -1048,7 +1049,7 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
             selected={!!selected}
             isDark={isDark}
             isPixel={isPixel}
-            groups={['image']}
+            groups={['text', 'image']}
             title={isMj ? '主参考图 · 上游+本地' : '参考图 · 上游+本地'}
             imageUploadAction={
               refImages.length < maxRefs
