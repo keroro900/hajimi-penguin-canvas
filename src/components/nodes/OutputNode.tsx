@@ -76,6 +76,7 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
         const arr1 = Array.isArray(ud.imageUrls) ? ud.imageUrls.join(',') : '';
         const arr2 = Array.isArray(ud.urls) ? ud.urls.join(',') : '';
         const arr3 = Array.isArray(ud.generatedImages) ? ud.generatedImages.join(',') : '';
+        const arr4 = Array.isArray(ud.consumedTexts) ? ud.consumedTexts.join('\u241F') : '';
         return [
           n?.id || '',
           ud.outputText || '',
@@ -88,6 +89,7 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
           arr1,
           arr2,
           arr3,
+          arr4,
         ].join('§');
       })
       .join('|');
@@ -96,10 +98,37 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
   const collected = useMemo<Collected>(() => {
     const out: Collected = { texts: [], images: [], videos: [], audios: [] };
 
+    // 「被 LLM 消化」文本跳过集: 与 useUpstreamMaterials 保持一致。
+    // 场景: TextNode 同时连 LLM 和 OutputNode 时, 避免 原始 prompt + LLM reply 同现 2 条。
+    const skipTextSet = new Set<string>();
+    {
+      const list0 = Array.isArray(upstreamNodes) ? upstreamNodes : [];
+      for (const n of list0) {
+        const ud: any = n?.data || {};
+        const hasReply = typeof ud.reply === 'string' && ud.reply.trim().length > 0;
+        if (!hasReply) continue;
+        if (Array.isArray(ud.consumedTexts)) {
+          for (const t of ud.consumedTexts) {
+            if (typeof t === 'string') {
+              const s = t.trim();
+              if (s) skipTextSet.add(s);
+            }
+          }
+        }
+      }
+    }
+
     const pushUnique = (arr: string[], v: any) => {
       if (typeof v !== 'string') return;
       const s = v.trim();
       if (!s) return;
+      if (arr.indexOf(s) === -1) arr.push(s);
+    };
+    const pushUniqueText = (arr: string[], v: any) => {
+      if (typeof v !== 'string') return;
+      const s = v.trim();
+      if (!s) return;
+      if (skipTextSet.has(s)) return; // 已被 LLM 消化
       if (arr.indexOf(s) === -1) arr.push(s);
     };
 
@@ -108,10 +137,10 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
       const ud: any = n?.data || {};
 
       // 文本
-      pushUnique(out.texts, ud.outputText);
-      pushUnique(out.texts, ud.reply);
-      pushUnique(out.texts, ud.prompt);
-      pushUnique(out.texts, ud.text);
+      pushUniqueText(out.texts, ud.outputText);
+      pushUniqueText(out.texts, ud.reply);
+      pushUniqueText(out.texts, ud.prompt);
+      pushUniqueText(out.texts, ud.text);
 
       // 图像 - 单
       pushUnique(out.images, ud.imageUrl);

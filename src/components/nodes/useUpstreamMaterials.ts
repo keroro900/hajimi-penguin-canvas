@@ -61,10 +61,36 @@ export function useUpstreamMaterials(nodeId: string): UpstreamMaterials {
 
     const list = Array.isArray(upstreamNodes) ? upstreamNodes : [];
 
+    // === 「被 LLM 消化」文本跳过集 ===
+    // 场景: TextNode “原始 prompt” 同时连到 LLMNode 和下游生成节点 (Image/Video/Audio/Seedance/SD2.0/Output 等)。
+    //   下游期望只看到 LLM 优化后的 reply, 不要再看到原始 prompt。
+    //
+    // 实现: LLMNode 生成成功时会 update({ consumedTexts: [上游文本数组] }) 记录被消化的文本。
+    //   这里扫描所有上游, 取并集加入 skipSet, 下面 pushText 时跳过。
+    //
+    // 边界:
+    //   - 仅当该上游同时有 reply (已生成) 才启用 skip, 避免未生成时误屏蔽。
+    //   - skipSet 包含空串也不会误伤 (pushText 原本就忽略空串)。
+    const skipTextSet = new Set<string>();
+    for (const n of list) {
+      const ud: any = n?.data || {};
+      const hasReply = typeof ud.reply === 'string' && ud.reply.trim().length > 0;
+      if (!hasReply) continue;
+      if (Array.isArray(ud.consumedTexts)) {
+        for (const t of ud.consumedTexts) {
+          if (typeof t === 'string') {
+            const s = t.trim();
+            if (s) skipTextSet.add(s);
+          }
+        }
+      }
+    }
+
     const pushText = (sourceId: string, v: any) => {
       if (typeof v !== 'string') return;
       const s = v.trim();
       if (!s) return;
+      if (skipTextSet.has(s)) return; // 已被 LLM 消化
       const dedupeKey = `text:${s}`;
       if (seen.has(dedupeKey)) return;
       seen.add(dedupeKey);

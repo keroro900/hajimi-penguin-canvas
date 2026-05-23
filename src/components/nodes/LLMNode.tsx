@@ -260,6 +260,9 @@ const LLMNode = ({ id, data, selected }: NodeProps) => {
           history: finalHistory,
           reply: replyText,
           prompt: replyText, // 下游可作为 prompt 消费
+          // 记录本轮被「消化」的上游文本: 下游 useUpstreamMaterials 聚合时
+          // 会跳过这些文本, 避免「原始 TextNode + LLM 优化结果」同时出现 2 条文本。
+          consumedTexts: orderedTexts.map((t) => t.url).filter((s) => !!s),
         });
         setStreamingText('');
         setPickedFiles([]);
@@ -280,6 +283,8 @@ const LLMNode = ({ id, data, selected }: NodeProps) => {
           prompt: replyText,
           generatedImages: imgs.length ? [...generatedImages, ...imgs] : generatedImages,
           imageUrls: imgs.length ? imgs : undefined,
+          // 同上: 记录被消化的上游文本(非流式分支)
+          consumedTexts: orderedTexts.map((t) => t.url).filter((s) => !!s),
         });
         setPickedFiles([]);
         if (imgs.length) logBus.success(`完成 · ${replyText.length} 字 + ${imgs.length} 图`, src);
@@ -348,6 +353,8 @@ const LLMNode = ({ id, data, selected }: NodeProps) => {
       history: newHistory,
       reply: lastAssistant?.text || '',
       prompt: lastAssistant?.text || '',
+      // 双击编辑助手回复后保持已有 consumedTexts (即上一次 send 时的上游)。
+      // 此处不重新计算: 用户编辑期间 orderedTexts 可能与生成时不同, 不应覆盖。
     });
     setEditingIdx(null);
   };
