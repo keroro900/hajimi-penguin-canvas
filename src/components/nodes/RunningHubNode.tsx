@@ -1,6 +1,6 @@
-import { memo, useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Handle, Position, useReactFlow, type NodeProps } from '@xyflow/react';
-import { AlertCircle, Loader2, Workflow, Sparkles, Square, Search } from 'lucide-react';
+import { AlertCircle, Loader2, Workflow, Sparkles, Square, Search, RefreshCw } from 'lucide-react';
 import { submitRh, queryRh, fetchRhAppInfo, uploadRhAsset } from '../../services/generation';
 import { useUpdateNodeData } from './useUpdateNodeData';
 import { useHasAutoOutput } from './useHasAutoOutput';
@@ -8,15 +8,50 @@ import { useRunTrigger } from '../../hooks/useRunTrigger';
 
 /**
  * RunningHubNode - 主工作流节点
- * 输入: webappId(必填) + 上游 RhConfig 节点提供 nodeInfoList 注入
+ * 输入: webappId(必填) + 点搜索拉取 nodeInfoList 在节点内展开为表单
+ * 可选: 上游 RhConfig / image / video / audio / upload 节点补充参数
  * 流程: submit → 5s 轮询 outputs → 转存到 /output → 显示
  */
+
+// ========== fieldType → valueType 映射 ==========
+// RH apiCallDemo 返回的 fieldType: IMAGE / VIDEO / AUDIO / STRING / TEXT / NUMBER / FLOAT / INTEGER / BOOLEAN / LIST / SELECT
+function inferValueType(fieldType: string | undefined): 'text' | 'number' | 'image' | 'video' | 'audio' {
+  const t = String(fieldType || '').toUpperCase();
+  if (t === 'IMAGE') return 'image';
+  if (t === 'VIDEO') return 'video';
+  if (t === 'AUDIO') return 'audio';
+  if (t === 'NUMBER' || t === 'FLOAT' || t === 'INTEGER' || t === 'INT') return 'number';
+  return 'text';
+}
+
+// 从上游节点 data 中提取对应 kind 的第一个 url
+function extractUpstreamUrl(d: any, kind: 'image' | 'video' | 'audio'): string {
+  if (!d) return '';
+  if (kind === 'image') {
+    if (typeof d.imageUrl === 'string' && d.imageUrl) return d.imageUrl;
+    if (Array.isArray(d.imageUrls) && d.imageUrls[0]) return d.imageUrls[0];
+    if (Array.isArray(d.urls) && d.urls[0]) return d.urls[0];
+    if (Array.isArray(d.generatedImages) && d.generatedImages[0]) return d.generatedImages[0];
+    if (d.uploadType === 'image' && typeof d.url === 'string') return d.url;
+  } else if (kind === 'video') {
+    if (typeof d.videoUrl === 'string' && d.videoUrl) return d.videoUrl;
+    if (d.uploadType === 'video' && typeof d.url === 'string') return d.url;
+  } else if (kind === 'audio') {
+    if (typeof d.audioUrl === 'string' && d.audioUrl) return d.audioUrl;
+    if (d.uploadType === 'audio' && typeof d.url === 'string') return d.url;
+  }
+  return '';
+}
+
+const paramKey = (nodeId: any, fieldName: any) => `${nodeId}::${fieldName}`;
+
 const RunningHubNode = ({ id, data, selected }: NodeProps) => {
   const update = useUpdateNodeData(id);
   const hasAutoOutput = useHasAutoOutput(id);
   const { getEdges, getNodes } = useReactFlow();
   const [error, setError] = useState<string | null>(null);
   const pollTimer = useRef<number | null>(null);
+  const [fetchingInfo, setFetchingInfo] = useState(false);
 
   const d = data as any;
   const webappId: string = d?.webappId || '';
@@ -25,6 +60,9 @@ const RunningHubNode = ({ id, data, selected }: NodeProps) => {
   const taskId: string | undefined = d?.taskId;
   const urls: string[] = d?.urls || [];
   const appInfo: any = d?.appInfo;
+  // paramValues: 在节点内为每个 nodeInfoList 条目保存的当前编辑值
+  // 结构: { 'nodeId::fieldName': { value: string; sourceFromUpstream?: boolean } }
+  const paramValues: Record<string, { value: string; sourceFromUpstream?: boolean }> = d?.paramValues || {};
 
   const stopPoll = () => {
     if (pollTimer.current) {
@@ -34,18 +72,90 @@ const RunningHubNode = ({ id, data, selected }: NodeProps) => {
   };
   useEffect(() => () => stopPoll(), []);
 
-  // 收集上游 rh-config 节点的 nodeInfoList（原始带 valueType 信息）
-  const collectNodeInfoList = () => {
+  // ========== 上游节点 ==========
+  const upstreamNodes = useMemo(() => {
     const edges = getEdges();
     const nodes = getNodes();
-    const upstreamIds = edges.filter((e) => e.target === id).map((e) => e.source);
+    const upIds = edges.filter((e) => e.target === id).map((e) => e.source);
+    return upIds.map((uid) => nodes.find((n) => n.id === uid)).filter(Boolean) as any[];
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, d]);
+
+  const findUpstreamUrl = (kind: 'image' | 'video' | 'audio'): string => {
+    for (const n of upstreamNodes) {
+      const u = extractUpstreamUrl(n.data, kind);
+      if (u) return u;
+    }
+    return '';
+  };
+
+  // ========== 保存某一条 paramValue ==========
+  const setParam = (k: string, patch: Partial<{ value: string; sourceFromUpstream: boolean }>) => {
+    const cur = paramValues[k] || { value: '' };
+    const next = { ...paramValues, [k]: { ...cur, ...patch } };
+    update({ paramValues: next });
+  };
+
+  // 对于勾选「从上游自动获取」的媒体字段，随上游节点 url 变化同步回填
+  useEffect(() => {
+    const list: any[] = appInfo?.nodeInfoList;
+    if (!Array.isArray(list) || list.length === 0) return;
+    let changed = false;
+    const next = { ...paramValues };
+    for (const it of list) {
+      const vt = inferValueType(it?.fieldType);
+      if (vt !== 'image' && vt !== 'video' && vt !== 'audio') continue;
+      const k = paramKey(it.nodeId, it.fieldName);
+      const cur = next[k];
+      if (!cur?.sourceFromUpstream) continue;
+      const u = findUpstreamUrl(vt);
+      if (u && u !== cur.value) {
+        next[k] = { ...cur, value: u };
+        changed = true;
+      }
+    }
+    if (changed) update({ paramValues: next });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [upstreamNodes, appInfo]);
+
+  // ========== 收集上游 RhConfig nodeInfoList（保留向后兼容）==========
+  const collectUpstreamConfigList = () => {
     const list: any[] = [];
-    for (const uid of upstreamIds) {
-      const n = nodes.find((x) => x.id === uid);
+    for (const n of upstreamNodes) {
       const arr = (n?.data as any)?.nodeInfoList;
       if (Array.isArray(arr)) list.push(...arr);
     }
     return list;
+  };
+
+  // ========== 从节点内表单 + 上游 RhConfig 合并出原始 nodeInfoList（同一个 (nodeId,fieldName) 表单优先） ==========
+  const buildRawNodeInfoList = (): any[] => {
+    const seen = new Set<string>();
+    const out: any[] = [];
+    // 1. 节点内表单
+    const list: any[] = appInfo?.nodeInfoList || [];
+    for (const it of list) {
+      const k = paramKey(it.nodeId, it.fieldName);
+      const vt = inferValueType(it?.fieldType);
+      const v = paramValues[k]?.value;
+      // 未填 且 原始 fieldValue 为空且非必填 → 跳过
+      const finalVal = v != null && v !== '' ? v : (it?.fieldValue ?? '');
+      seen.add(k);
+      out.push({
+        nodeId: it.nodeId,
+        fieldName: it.fieldName,
+        fieldValue: finalVal,
+        valueType: vt,
+      });
+    }
+    // 2. 上游 RhConfig 补充（同 key 已被节点内覆盖则跳过）
+    const upstreamList = collectUpstreamConfigList();
+    for (const it of upstreamList) {
+      const k = paramKey(it?.nodeId, it?.fieldName);
+      if (seen.has(k)) continue;
+      out.push(it);
+    }
+    return out;
   };
 
   /**
@@ -64,7 +174,6 @@ const RunningHubNode = ({ id, data, selected }: NodeProps) => {
       if (vt === 'image' || vt === 'video' || vt === 'audio') {
         const v = String(fieldValue || '').trim();
         if (!v) continue; // 未提供资源 → 跳过该条目
-        // 如果看起来是 url，就去上传拿 fileName；否则当作已是 fileName 直接用
         if (/^https?:\/\//i.test(v) || v.startsWith('/files/output/') || v.startsWith('/output/')) {
           const r = await uploadRhAsset(v);
           fieldValue = r.fileName;
@@ -137,11 +246,23 @@ const RunningHubNode = ({ id, data, selected }: NodeProps) => {
       setError('请先填写 webappId');
       return;
     }
+    setFetchingInfo(true);
     try {
       const info = await fetchRhAppInfo(webappId);
-      update({ appInfo: info });
+      // 拉取后用示例值初始化 paramValues（仅填未存在的 key）
+      const list: any[] = info?.nodeInfoList || [];
+      const next: Record<string, { value: string; sourceFromUpstream?: boolean }> = { ...paramValues };
+      for (const it of list) {
+        const k = paramKey(it.nodeId, it.fieldName);
+        if (!(k in next)) {
+          next[k] = { value: it?.fieldValue ?? '' };
+        }
+      }
+      update({ appInfo: info, paramValues: next });
     } catch (e: any) {
       setError(e?.message || '查询失败');
+    } finally {
+      setFetchingInfo(false);
     }
   };
 
@@ -153,7 +274,7 @@ const RunningHubNode = ({ id, data, selected }: NodeProps) => {
     }
     update({ status: 'submitting', error: null, urls: [], taskId: null });
     try {
-      const rawList = collectNodeInfoList();
+      const rawList = buildRawNodeInfoList();
       // 提交前：把媒体类 url 转成 RH 内部 fileName
       const nodeInfoList = await resolveNodeInfoList(rawList);
       const r = await submitRh({
@@ -181,10 +302,11 @@ const RunningHubNode = ({ id, data, selected }: NodeProps) => {
   };
 
   const isBusy = status === 'submitting' || status === 'polling';
+  const nodeInfoList: any[] = appInfo?.nodeInfoList || [];
 
   return (
     <div
-      className={`relative rounded-xl border-2 transition-all w-[300px] ${
+      className={`relative rounded-xl border-2 transition-all w-[340px] ${
         selected ? 'border-cyan-400 shadow-2xl shadow-cyan-500/20' : 'border-white/15 hover:border-white/30'
       }`}
       style={{ background: 'rgba(20,20,22,.92)', backdropFilter: 'blur(8px)' }}
@@ -199,9 +321,9 @@ const RunningHubNode = ({ id, data, selected }: NodeProps) => {
         >
           <Workflow size={13} />
         </div>
-        <div className="flex-1">
-          <div className="text-sm font-semibold text-white">RunningHub</div>
-          <div className="text-[10px] text-white/40">{appInfo?.appName || appInfo?.name || 'AI 工作流'}</div>
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-semibold text-white truncate">RunningHub</div>
+          <div className="text-[10px] text-white/40 truncate">{appInfo?.appName || appInfo?.name || 'AI 工作流'}</div>
         </div>
       </div>
 
@@ -218,17 +340,114 @@ const RunningHubNode = ({ id, data, selected }: NodeProps) => {
             />
             <button
               onClick={handleFetchInfo}
+              disabled={fetchingInfo}
               title="拉取应用信息"
-              className="px-2 rounded bg-white/5 hover:bg-white/10 border border-white/10 text-white/70"
+              className="px-2 rounded bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 disabled:opacity-50"
             >
-              <Search size={11} />
+              {fetchingInfo ? <Loader2 size={11} className="animate-spin" /> : <Search size={11} />}
             </button>
           </div>
         </div>
 
-        {appInfo?.nodeInfoList && Array.isArray(appInfo.nodeInfoList) && (
-          <div className="text-[10px] text-cyan-200/70 bg-cyan-500/5 border border-cyan-500/20 rounded px-2 py-1 max-h-20 overflow-auto">
-            {appInfo.nodeInfoList.length} 个节点参数可注入(连接 rh-config 节点)
+        {/* 参数表单：拉取 nodeInfoList 后逐条展开 */}
+        {nodeInfoList.length > 0 && (
+          <div className="rounded border border-cyan-500/20 bg-cyan-500/5 p-2 space-y-2 max-h-[420px] overflow-auto">
+            <div className="text-[10px] text-cyan-200/80 flex items-center justify-between">
+              <span>参数 ({nodeInfoList.length})</span>
+              <span className="text-white/30">点击字段可编辑</span>
+            </div>
+            {nodeInfoList.map((it: any, i: number) => {
+              const vt = inferValueType(it?.fieldType);
+              const k = paramKey(it.nodeId, it.fieldName);
+              const cur = paramValues[k] || { value: it?.fieldValue ?? '' };
+              const isMedia = vt === 'image' || vt === 'video' || vt === 'audio';
+              const fieldDataOptions = (() => {
+                const fd = it?.fieldData;
+                if (Array.isArray(fd) && fd.length > 0 && fd.every((x) => typeof x === 'string' || typeof x === 'number')) return fd as any[];
+                return null;
+              })();
+              return (
+                <div key={i} className="space-y-1 pb-2 border-b border-white/5 last:border-0 last:pb-0">
+                  <div className="flex items-center justify-between gap-1">
+                    <span className="text-[10px] text-white/80 font-medium truncate">{it.fieldName}</span>
+                    <span className="text-[9px] text-cyan-300/60 px-1 rounded bg-cyan-500/10">{vt}</span>
+                    <span className="text-[9px] text-white/30">#{it.nodeId}</span>
+                  </div>
+                  {it?.description && (
+                    <div className="text-[9px] text-white/40 leading-tight">{it.description}</div>
+                  )}
+                  {isMedia ? (
+                    <>
+                      <div className="flex items-center justify-between text-[10px]">
+                        <label className="flex items-center gap-1 text-cyan-200/80 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={!!cur.sourceFromUpstream}
+                            onChange={(e) => setParam(k, { sourceFromUpstream: e.target.checked })}
+                            className="accent-cyan-400"
+                          />
+                          从上游自动获取
+                        </label>
+                        {cur.sourceFromUpstream && (
+                          <button
+                            onClick={() => {
+                              const u = findUpstreamUrl(vt);
+                              if (u) setParam(k, { value: u });
+                            }}
+                            className="flex items-center gap-1 text-cyan-200/80 hover:text-cyan-100"
+                            title="重新同步上游 url"
+                          >
+                            <RefreshCw size={9} /> 同步
+                          </button>
+                        )}
+                      </div>
+                      <input
+                        type="text"
+                        value={cur.value}
+                        onChange={(e) => setParam(k, { value: e.target.value })}
+                        placeholder={cur.sourceFromUpstream ? '(从上游自动填入)' : `${vt} url 或 fileName`}
+                        readOnly={!!cur.sourceFromUpstream}
+                        className={`w-full rounded border px-2 py-1 text-[11px] text-white outline-none placeholder:text-white/30 ${
+                          cur.sourceFromUpstream
+                            ? 'bg-cyan-500/10 border-cyan-500/30 cursor-not-allowed'
+                            : 'bg-white/5 border-white/10 focus:border-white/30'
+                        }`}
+                      />
+                      {vt === 'image' && /\.(png|jpe?g|webp|gif|bmp)$/i.test(cur.value) && (
+                        <img src={cur.value} alt="预览" className="w-full max-h-24 object-contain rounded border border-white/10" />
+                      )}
+                    </>
+                  ) : fieldDataOptions ? (
+                    <select
+                      value={cur.value}
+                      onChange={(e) => setParam(k, { value: e.target.value })}
+                      className="w-full rounded bg-white/5 border border-white/10 px-2 py-1 text-[11px] text-white outline-none focus:border-white/30"
+                    >
+                      {!cur.value && <option value="">(选择)</option>}
+                      {fieldDataOptions.map((opt, oi) => (
+                        <option key={oi} value={String(opt)}>{String(opt)}</option>
+                      ))}
+                    </select>
+                  ) : vt === 'number' ? (
+                    <input
+                      type="number"
+                      value={cur.value}
+                      onChange={(e) => setParam(k, { value: e.target.value })}
+                      placeholder={String(it?.fieldValue ?? '')}
+                      className="w-full rounded bg-white/5 border border-white/10 px-2 py-1 text-[11px] text-white outline-none focus:border-white/30 placeholder:text-white/30"
+                    />
+                  ) : (
+                    <textarea
+                      value={cur.value}
+                      onChange={(e) => setParam(k, { value: e.target.value })}
+                      placeholder={String(it?.fieldValue ?? '')}
+                      rows={2}
+                      className="w-full resize-none rounded bg-white/5 border border-white/10 px-2 py-1 text-[11px] text-white outline-none focus:border-white/30 placeholder:text-white/30"
+                    />
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
 
