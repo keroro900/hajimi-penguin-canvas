@@ -1751,6 +1751,92 @@ function CanvasInner({ onAddNodeRef }: CanvasInnerProps) {
     }
   }, [nodes, edges, loaded]);
 
+  // ===== 自动外挂 OutputNode 的网格重排 =====
+  // 创建时使用了固定占位坐标 (350x360), 但节点实际宽高取决于
+  // 里面的图片/视频 measured 尺寸, 会造成节点互相遮挡。
+  // 本 useEffect 以 e-auto- 开头的 edge 定位出同一上游下的所有自动 OutputNode,
+  // 按 pickIndex 排序, 取各列 max(width)、各行 max(height) 作为列宽/行高,
+  // 重新计算 position 使节点沿边对齐且互不遮挡。
+  // 只动 id 以 'output-auto-' 开头的节点, 避免影响手动创建的 OutputNode。
+  const REORDER_GAP = 30;
+  const REORDER_COLS = 3;
+  useEffect(() => {
+    if (!loaded) return;
+    // 按 source 分组收集自动外挂的 OutputNode
+    const groups = new Map<string, Node[]>();
+    for (const e of edges) {
+      if (!e.id.startsWith('e-auto-')) continue;
+      const target = nodes.find((n) => n.id === e.target);
+      if (!target || target.type !== 'output') continue;
+      if (!target.id.startsWith('output-auto-')) continue;
+      let g = groups.get(e.source);
+      if (!g) {
+        g = [];
+        groups.set(e.source, g);
+      }
+      g.push(target);
+    }
+    if (groups.size === 0) return;
+
+    const updates = new Map<string, { x: number; y: number }>();
+    for (const [srcId, list] of groups) {
+      const src = nodes.find((n) => n.id === srcId);
+      if (!src) continue;
+      // 按 pickIndex 排序, 保证顺序与上游输出一致
+      list.sort((a, b) => {
+        const ai = (a.data as any)?.pickIndex ?? 0;
+        const bi = (b.data as any)?.pickIndex ?? 0;
+        return ai - bi;
+      });
+      // measured 优先, 未渲染出来前回退到占位尺寸
+      const dims = list.map((n) => ({
+        w: (n as any).measured?.width || (n as any).width || 320,
+        h: (n as any).measured?.height || (n as any).height || 360,
+      }));
+      const rowsCount = Math.ceil(list.length / REORDER_COLS);
+      const colMaxW = new Array(REORDER_COLS).fill(0);
+      const rowMaxH = new Array(rowsCount).fill(0);
+      list.forEach((_, i) => {
+        const c = i % REORDER_COLS;
+        const r = Math.floor(i / REORDER_COLS);
+        if (dims[i].w > colMaxW[c]) colMaxW[c] = dims[i].w;
+        if (dims[i].h > rowMaxH[r]) rowMaxH[r] = dims[i].h;
+      });
+      // 累加出各列 / 各行 的起点偏移
+      const colX = new Array(REORDER_COLS).fill(0);
+      for (let c = 1; c < REORDER_COLS; c++) {
+        colX[c] = colX[c - 1] + colMaxW[c - 1] + REORDER_GAP;
+      }
+      const rowY = new Array(rowsCount).fill(0);
+      for (let r = 1; r < rowsCount; r++) {
+        rowY[r] = rowY[r - 1] + rowMaxH[r - 1] + REORDER_GAP;
+      }
+      const srcW = (src as any).measured?.width || (src as any).width || 320;
+      const baseX = (src.position?.x ?? 0) + srcW + 80;
+      const baseY = src.position?.y ?? 0;
+      list.forEach((n, i) => {
+        const c = i % REORDER_COLS;
+        const r = Math.floor(i / REORDER_COLS);
+        const newX = baseX + colX[c];
+        const newY = baseY + rowY[r];
+        const cx = n.position?.x ?? 0;
+        const cy = n.position?.y ?? 0;
+        // 误差大于 1px 才修正, 避免微量抖动触发无限重渲染
+        if (Math.abs(cx - newX) > 1 || Math.abs(cy - newY) > 1) {
+          updates.set(n.id, { x: newX, y: newY });
+        }
+      });
+    }
+    if (updates.size > 0) {
+      setNodes((prev) =>
+        prev.map((n) => {
+          const p = updates.get(n.id);
+          return p ? { ...n, position: p } : n;
+        })
+      );
+    }
+  }, [nodes, edges, loaded]);
+
   // ===== 全局快捷键 =====
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
