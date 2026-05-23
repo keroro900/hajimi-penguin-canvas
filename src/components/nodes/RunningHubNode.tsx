@@ -244,8 +244,14 @@ const RunningHubNode = ({ id, data, selected, type }: NodeProps) => {
 
   // ========== 从节点内表单 + 上游 RhConfig 合并出原始 nodeInfoList（同一个 (nodeId,fieldName) 表单优先）==========
   // 同样接受可选的 override 参数让 handleRun 同步路径能用 freshly fetched 结果
-  // 媒体超增：若上游 image/video/audio 素材数量 > nodeInfoList 中该 kind 字段数，
-  // 以“最后一个同 kind 字段名”追加多条 nodeInfoList 记录，让多图/多视频/多音频都传递到 RH。
+  //
+  // 媒体多素材协议（修复 v2）：
+  //   - RH 协议规定 nodeInfoList 同 (nodeId, fieldName) 仅取一条（重复时后覆盖前 → 首条丢失）
+  //   - 因此「上游素材数 > 字段数」时，不再追加多条记录，而是把溢出 url 用换行符 \n 拼接到
+  //     该 kind 「最后一个」字段的 fieldValue 中（仍是单条 nodeInfoList 项 + 单 fieldValue）
+  //   - 后续 resolveNodeInfoList 会按 \n 拆分逐个 uploadRhAsset → 再用 \n 重新拼接 fileName
+  //   - 这样：单图行为完全不变；多图时 webapp 如内部支持多 url 引用（@image1/@image2）就两张都识别；
+  //     不支持也至少保留首行，且不会因为协议覆盖语义把首条丢失。
   const buildRawNodeInfoList = (
     overrideList?: any[],
     overrideValues?: Record<string, { value: string; sourceFromUpstream?: boolean }>,
@@ -255,7 +261,7 @@ const RunningHubNode = ({ id, data, selected, type }: NodeProps) => {
     // 1. 节点内表单
     const list: any[] = overrideList ?? appInfo?.nodeInfoList ?? [];
     const values = overrideValues ?? paramValues;
-    // 收集每 kind 的字段顺序，用于超量补充取“最后一个”同 kind 字段名
+    // 收集每 kind 的字段顺序，用于溢出时定位「最后一个同 kind 字段」承载额外 url
     const kindFields: Record<'image' | 'video' | 'audio', Array<{ nodeId: any; fieldName: any }>> = {
       image: [], video: [], audio: [],
     };
@@ -277,29 +283,37 @@ const RunningHubNode = ({ id, data, selected, type }: NodeProps) => {
         kindFields[vt].push({ nodeId: it.nodeId, fieldName: it.fieldName });
       }
     }
-    // 1.5 媒体超增补充：上游素材数 > 字段数 → 最后一个同 kind 字段名追加额外记录
-    const fillOverflow = (
+    // 1.5 媒体溢出合并：上游素材数 > 字段数 → 把溢出 url 用 \n 追加到该 kind「最后一个」字段的 fieldValue
+    //     仍是单条 nodeInfoList 项，规避 RH 协议的「同 fieldName 后覆盖前」语义。
+    const mergeOverflowToLast = (
       kind: 'image' | 'video' | 'audio',
       arr: Array<{ url: string }>,
     ) => {
       const fields = kindFields[kind];
       if (fields.length === 0 || arr.length <= fields.length) return;
       const last = fields[fields.length - 1];
-      for (let i = fields.length; i < arr.length; i++) {
-        const u = arr[i]?.url;
-        if (!u) continue;
-        console.log('[RH/build] overflow append', kind, '#' + i, '→', last.fieldName, u);
-        out.push({
-          nodeId: last.nodeId,
-          fieldName: last.fieldName,
-          fieldValue: u,
-          valueType: kind,
-        });
+      // 找到 out 里对应该字段的最后一条记录（必有，刚才循环时 push 过）
+      for (let oi = out.length - 1; oi >= 0; oi--) {
+        const e = out[oi];
+        if (e.nodeId === last.nodeId && e.fieldName === last.fieldName) {
+          const extras: string[] = [];
+          for (let i = fields.length; i < arr.length; i++) {
+            const u = arr[i]?.url;
+            if (u) extras.push(u);
+          }
+          if (extras.length > 0) {
+            const baseVal = String(e.fieldValue || '').trim();
+            const merged = baseVal ? baseVal + '\n' + extras.join('\n') : extras.join('\n');
+            console.log('[RH/build] overflow merge', kind, '→', last.fieldName, 'lines=', extras.length + (baseVal ? 1 : 0));
+            e.fieldValue = merged;
+          }
+          break;
+        }
       }
     };
-    fillOverflow('image', orderedImages);
-    fillOverflow('video', orderedVideos);
-    fillOverflow('audio', orderedAudios);
+    mergeOverflowToLast('image', orderedImages);
+    mergeOverflowToLast('video', orderedVideos);
+    mergeOverflowToLast('audio', orderedAudios);
     // 2. 上游 RhConfig 补充（同 key 已被节点内覆盖则跳过）
     const upstreamList = collectUpstreamConfigList();
     for (const it of upstreamList) {
@@ -328,36 +342,54 @@ const RunningHubNode = ({ id, data, selected, type }: NodeProps) => {
         // 最后一道兼底：如果当前值看起来不是 url（可能是 RH 内部默认 hash 或用户手填 fileName），
         // 但上游连了对应类型的媒体节点，且用户没有主动取消 sourceFromUpstream，
         // 则强制用上游 url，避免 state 异步/race condition 导致仍提交默认 hash。
-        const isUrlLike0 =
-          /^https?:\/\//i.test(v) ||
-          v.startsWith('/files/output/') ||
-          v.startsWith('/output/') ||
-          v.startsWith('/files/input/') ||
-          v.startsWith('/input/');
-        if (!isUrlLike0) {
+        const looksUrlOrPath = (s: string) =>
+          /^https?:\/\//i.test(s) ||
+          s.startsWith('/files/output/') ||
+          s.startsWith('/output/') ||
+          s.startsWith('/files/input/') ||
+          s.startsWith('/input/');
+        // 处理多 url：可能是 buildRawNodeInfoList 溢出合并后的多行 fieldValue。
+        // 如果包含多行，逐行检测上传；否则走单行原路径。
+        const lines = v.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+        if (lines.length === 0) {
+          // 空值→尝试从上游提取
           const k = paramKey(nodeId, fieldName);
           const cur = paramValues[k];
           if (cur?.sourceFromUpstream !== false) {
             const upUrl = findUpstreamUrl(vt as any);
             if (upUrl) {
-              console.log('[RH/resolve] override field', fieldName, 'from', v || '(empty)', '→ upstream', upUrl);
-              v = upUrl;
+              console.log('[RH/resolve] override field', fieldName, 'from (empty) → upstream', upUrl);
+              lines.push(upUrl);
+            }
+          }
+        } else if (lines.length === 1 && !looksUrlOrPath(lines[0])) {
+          // 单行且不像 url → 同样从上游兼底
+          const k = paramKey(nodeId, fieldName);
+          const cur = paramValues[k];
+          if (cur?.sourceFromUpstream !== false) {
+            const upUrl = findUpstreamUrl(vt as any);
+            if (upUrl) {
+              console.log('[RH/resolve] override field', fieldName, 'from', lines[0] || '(empty)', '→ upstream', upUrl);
+              lines[0] = upUrl;
             }
           }
         }
-        if (!v) continue; // 未提供资源 → 跳过该条目
-        // 判定为本地/远程 url 的样式 → 走 /upload-asset 转 fileName
-        const isUrlLike =
-          /^https?:\/\//i.test(v) ||
-          v.startsWith('/files/output/') ||
-          v.startsWith('/output/') ||
-          v.startsWith('/files/input/') ||
-          v.startsWith('/input/');
-        if (isUrlLike) {
-          const r = await uploadRhAsset(v, useWallet);
-          fieldValue = r.fileName;
-        } else {
-          fieldValue = v;
+        if (lines.length === 0) continue; // 未提供资源 → 跳过该条目
+        // 逐行转 fileName（url 走 /upload-asset，非 url 按原样 fileName 使用）
+        const fileNames: string[] = [];
+        for (const ln of lines) {
+          if (looksUrlOrPath(ln)) {
+            const r = await uploadRhAsset(ln, useWallet);
+            fileNames.push(r.fileName);
+          } else {
+            fileNames.push(ln);
+          }
+        }
+        // 多 fileName 用换行重新拼接，webapp 如内部支持多行 url引用就多图生效；
+        // 不支持也至少首行（用户视觉上「第一张」）是合法 fileName。
+        fieldValue = fileNames.join('\n');
+        if (fileNames.length > 1) {
+          console.log('[RH/resolve] multi-asset', fieldName, 'lines=', fileNames.length);
         }
       } else if (vt === 'number') {
         const num = Number(fieldValue);
