@@ -6,6 +6,18 @@
 @tailwind components;
 @tailwind utilities;
 
+/* 「在线画布」推广浮层 下拉入场动画 */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 
 /* T8-penguin-canvas 全局样式 */
 :root {
