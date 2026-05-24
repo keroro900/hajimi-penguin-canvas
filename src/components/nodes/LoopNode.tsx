@@ -188,6 +188,22 @@ const LoopNode = (p: NodeProps) => {
     const order = topologicalSort(subNodes, subEdges, EXEC_TYPES);
     if (order.length === 0) { setError('下游链路上没有可执行节点'); update({ status: 'error', error: '无可执行节点' }); return; }
 
+    // v1.2.8.3: 子图末端 OutputNode 集合（跨轮累积呈现多轮产物，避免中间节点 imageUrl 被下一轮覆盖后丢失历史输出）
+    const outputNodeIds = new Set(subNodes.filter((n) => n.type === 'output').map((n) => n.id));
+    if (outputNodeIds.size > 0) {
+      // 开始新一轮串联前，清空这些 OutputNode 的 direct*Urls 以免混入上一次循环遗留
+      rf.setNodes((prev) => prev.map((nd) => {
+        if (!outputNodeIds.has(nd.id)) return nd;
+        const od: any = nd.data || {};
+        const next: any = { ...od };
+        if (kind === 'image') next.directImageUrls = [];
+        else if (kind === 'video') next.directVideoUrls = [];
+        else if (kind === 'audio') next.directAudioUrls = [];
+        else next.outputText = '';
+        return { ...nd, data: next };
+      }));
+    }
+
     const collected: Array<string | null> = [];
     let okCount = 0; let failCount = 0;
 
@@ -216,6 +232,20 @@ const LoopNode = (p: NodeProps) => {
       collected.push(result);
       if (result) okCount++; else failCount++;
       update({ outputs: [...collected], progress: { done: i + 1, total: items.length, ok: okCount, fail: failCount } });
+
+      // v1.2.8.3: 本轮产物累积到子图末端 OutputNode 的 direct*Urls (该字段在 OutputNode 内走 pushUnique 去重)
+      if (result && outputNodeIds.size > 0) {
+        rf.setNodes((prev) => prev.map((nd) => {
+          if (!outputNodeIds.has(nd.id)) return nd;
+          const od: any = nd.data || {};
+          const next: any = { ...od };
+          if (kind === 'image') next.directImageUrls = [...(Array.isArray(od.directImageUrls) ? od.directImageUrls : []), result];
+          else if (kind === 'video') next.directVideoUrls = [...(Array.isArray(od.directVideoUrls) ? od.directVideoUrls : []), result];
+          else if (kind === 'audio') next.directAudioUrls = [...(Array.isArray(od.directAudioUrls) ? od.directAudioUrls : []), result];
+          else next.outputText = (typeof od.outputText === 'string' && od.outputText ? od.outputText + '\n\n\u2500\u2500\u2500\u2500\u2500\u2500\n\n' : '') + result;
+          return { ...nd, data: next };
+        }));
+      }
     }
 
     // 4. 最终聚合到 imageUrls / urls / videoUrl... (取成功结果)

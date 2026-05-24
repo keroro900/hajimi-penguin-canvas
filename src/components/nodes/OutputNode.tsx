@@ -179,8 +179,15 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
     if (typeof d.directVideoUrl === 'string' && d.directVideoUrl) {
       pushUnique(out.videos, d.directVideoUrl);
     }
+    // v1.2.8.3: 多产物数组 (LoopNode 串联 / 并联跨轮累积)
+    if (Array.isArray(d.directVideoUrls)) {
+      d.directVideoUrls.forEach((u: any) => pushUnique(out.videos, u));
+    }
     if (typeof d.directAudioUrl === 'string' && d.directAudioUrl) {
       pushUnique(out.audios, d.directAudioUrl);
+    }
+    if (Array.isArray(d.directAudioUrls)) {
+      d.directAudioUrls.forEach((u: any) => pushUnique(out.audios, u));
     }
 
     // 兜底: 一些节点把视频/音频塞在 imageUrl, 通过扩展名识别再纠正
@@ -223,7 +230,7 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
     }
 
     return out;
-  }, [upstreamNodes, upstreamSig, d.pickKind, d.pickIndex, d.directImageUrl, d.directImageUrls, d.directVideoUrl, d.directAudioUrl]);
+  }, [upstreamNodes, upstreamSig, d.pickKind, d.pickIndex, d.directImageUrl, d.directImageUrls, d.directVideoUrl, d.directVideoUrls, d.directAudioUrl, d.directAudioUrls]);
 
   // 文本编辑
   const overrideText: string = typeof d.outputText === 'string' ? d.outputText : '';

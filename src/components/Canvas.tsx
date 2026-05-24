@@ -1915,6 +1915,50 @@ function CanvasInner({ onAddNodeRef }: CanvasInnerProps) {
       // 数组才是最终聚合产物, 交给 autoOutput 判并拆为 N 个 OutputNode (每行 3 个网格)。
       if (t === 'loop' && d?.status !== 'success') continue;
 
+      // === v1.2.8.3: FramePair 双端口专属路径 ===
+      // 不走通用 imageUrls 聚合 (FramePair 已不再写 imageUrl/imageUrls), 按 first/last
+      // 各创建一个带 sourceHandle 的 OutputNode, useUpstreamMaterials 按 handle 正确过滤到对应帧。
+      if (t === 'frame-pair') {
+        const first = typeof d.firstFrameUrl === 'string' ? d.firstFrameUrl : '';
+        const last = typeof d.lastFrameUrl === 'string' ? d.lastFrameUrl : '';
+        if (!first || !last) continue;
+        const sig = `frame-pair:${first}|${last}`;
+        if (autoOutputProcessedRef.current.get(n.id) === sig) continue;
+        // 已被连接的 sourceHandle 集合
+        const usedHandles = new Set<string | null>();
+        for (const e of edges) {
+          if (e.source !== n.id) continue;
+          usedHandles.add((e as any).sourceHandle ?? null);
+        }
+        // null/默认 handle 也能充当任意一边（兼容旧连接）——只要这边有一个 OutputNode 进来, 就不重复补
+        const baseX = (n.position?.x ?? 0) + (((n as any).width || (n as any).measured?.width || 280)) + 80;
+        const baseY = n.position?.y ?? 0;
+        const need: Array<'first' | 'last'> = [];
+        if (!usedHandles.has('first') && !usedHandles.has(null)) need.push('first');
+        if (!usedHandles.has('last')) need.push('last');
+        // 若 null 已占位, 仅备份 'last' 偶尔多补一个 (使用者手动拖一根默认就应默认 first)
+        newSigPatches.push([n.id, sig]);
+        for (let i = 0; i < need.length; i++) {
+          const h = need[i];
+          const newId = `output-auto-${n.id}-${Date.now()}-${h}-${Math.random().toString(36).slice(2, 6)}`;
+          toAddNodes.push({
+            id: newId,
+            type: 'output',
+            position: { x: baseX, y: baseY + i * 360 },
+            data: {}, // 不带 pickKind/pickIndex, 让 useUpstreamMaterials 按 sourceHandle 过滤
+            selected: false,
+          } as Node);
+          toAddEdges.push({
+            id: `e-auto-${newId}`,
+            source: n.id,
+            target: newId,
+            sourceHandle: h,
+            type: 'deletable',
+          } as Edge);
+        }
+        continue;
+      }
+
       // 提取输出项 (去重 + 过滤 + 同类型内序号)
       const seen = new Set<string>();
       const imgs: string[] = [];

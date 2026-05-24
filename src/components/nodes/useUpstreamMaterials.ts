@@ -52,6 +52,19 @@ export function useUpstreamMaterials(nodeId: string): UpstreamMaterials {
   );
   const upstreamNodes = useNodesData(upstreamIds);
 
+  // v1.2.8.3: 收集每个上游 source 上被连接的 sourceHandle 集合, 供 FramePair 等多端口节点按 handle 区分输出
+  // - sourceHandle === 'first' / 'last' (FramePair) → 只取对应帧
+  // - sourceHandle === null/undefined / 默认 → 兼容全部 (保持原行为)
+  const handleMap = useMemo(() => {
+    const m = new Map<string, Set<string | null>>();
+    for (const c of conns) {
+      let set = m.get(c.source);
+      if (!set) { set = new Set<string | null>(); m.set(c.source, set); }
+      set.add((c as any).sourceHandle ?? null);
+    }
+    return m;
+  }, [conns]);
+
   return useMemo<UpstreamMaterials>(() => {
     const texts: Material[] = [];
     const images: Material[] = [];
@@ -104,12 +117,31 @@ export function useUpstreamMaterials(nodeId: string): UpstreamMaterials {
       if (!n) continue;
       const sid = n.id;
       const ud: any = n.data || {};
+      const handles = handleMap.get(sid) || new Set<string | null>([null]);
 
       // 文本: outputText (用户编辑覆盖) > reply > prompt > text
       pushText(sid, ud.outputText);
       pushText(sid, ud.reply);
       pushText(sid, ud.prompt);
       pushText(sid, ud.text);
+
+      // === v1.2.8.3: FramePair 双端口语义 ===
+      // 节点同时具备 firstFrameUrl + lastFrameUrl 字段时按 sourceHandle 过滤,
+      //   - 'first' 端口 → 只输出首帧
+      //   - 'last'  端口 → 只输出尾帧
+      //   - null/默认  → 同时输出两帧 (autoOutput / 手动接默认 handle 的兼容)
+      // 跳过通用 imageUrl/imageUrls 分支, 避免双图被通用聚合再次合并。
+      const isFramePair = (typeof ud.firstFrameUrl === 'string' || typeof ud.lastFrameUrl === 'string')
+        && (ud.firstFrameUrl !== undefined || ud.lastFrameUrl !== undefined)
+        && Object.prototype.hasOwnProperty.call(ud, 'firstFrameUrl')
+        && Object.prototype.hasOwnProperty.call(ud, 'lastFrameUrl');
+      if (isFramePair) {
+        const wantFirst = handles.has('first') || (handles.has(null) && !handles.has('last'));
+        const wantLast = handles.has('last') || (handles.has(null) && !handles.has('first'));
+        if (wantFirst) pushUrl(sid, 'image', ud.firstFrameUrl, images);
+        if (wantLast) pushUrl(sid, 'image', ud.lastFrameUrl, images);
+        continue;
+      }
 
       // 图像: 单 + 多
       pushUrl(sid, 'image', ud.imageUrl, images);
@@ -150,5 +182,5 @@ export function useUpstreamMaterials(nodeId: string): UpstreamMaterials {
     }
 
     return { texts, images: fixedImages, videos, audios };
-  }, [upstreamNodes]);
+  }, [upstreamNodes, handleMap]);
 }

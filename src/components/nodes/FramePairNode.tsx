@@ -83,8 +83,7 @@ const FramePairNode = (p: NodeProps) => {
       error: null,
       firstFrameUrl: '',
       lastFrameUrl: '',
-      imageUrl: '',
-      imageUrls: [],
+      // v1.2.8.3: 不再写 imageUrl/imageUrls —— 双端口语义由 useUpstreamMaterials 按 sourceHandle 过滤
     });
 
     try {
@@ -142,7 +141,8 @@ const FramePairNode = (p: NodeProps) => {
       ctx.drawImage(vid, 0, 0, w, h);
       const firstDataUrl = canvas.toDataURL('image/png');
       const firstOut = await upload(firstDataUrl, 'frame-pair-first');
-      update({ firstFrameUrl: firstOut, imageUrl: firstOut, imageUrls: [firstOut] });
+      // v1.2.8.3: 不再写 imageUrl, 严格依赖 firstFrameUrl + sourceHandle='first' 语义
+      update({ firstFrameUrl: firstOut });
 
       // ---- 尾帧 (t≈duration - 0.05 避开末帧黑屏) ----
       setPhase('last');
@@ -156,10 +156,8 @@ const FramePairNode = (p: NodeProps) => {
         status: 'success',
         firstFrameUrl: firstOut,
         lastFrameUrl: lastOut,
-        // 兼容下游单值 imageUrl 默认拿首帧
-        imageUrl: firstOut,
-        // 让 useUpstreamMaterials / OutputNode 一次拿到双图
-        imageUrls: [firstOut, lastOut],
+        // v1.2.8.3: 不再写 imageUrl/imageUrls —— 交由 useUpstreamMaterials 按 sourceHandle 过滤
+        // 下游连到 'first' 端口 → 只拿 firstFrameUrl, 连到 'last' 端口 → 只拿 lastFrameUrl
         error: null,
       });
     } catch (e: any) {
