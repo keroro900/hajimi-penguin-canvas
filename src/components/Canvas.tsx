@@ -2214,7 +2214,7 @@ function CanvasInner({ onAddNodeRef }: CanvasInnerProps) {
         style={{ background: bgColor, color: isDark ? '#71717a' : '#52525b' }}
       >
         <div className="text-center">
-          <div className="text-4xl mb-2">🐧</div>
+          <div className="text-2xl mb-2 font-bold tracking-wide">🐧 贞贞的无限画布（企鹅共创版）</div>
           <p>请先在左侧创建或选择一个画布</p>
         </div>
       </div>

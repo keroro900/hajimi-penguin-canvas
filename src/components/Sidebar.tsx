@@ -13,10 +13,12 @@ import {
   X,
 } from 'lucide-react';
 import { NODE_GROUPS } from '../config/nodeRegistry';
+
+// vite.config.ts 中通过 define 注入的编译期常量（与 package.json version 同步）
+declare const __APP_VERSION__: string;
 import type { NodeMeta, NodeType } from '../types/canvas';
 import { useThemeStore } from '../stores/theme';
 import { useCanvasStore } from '../stores/canvas';
-
 const COLOR_HEX: Record<string, string> = {
   sky: '#7dd3fc',
   amber: '#fcd34d',
@@ -408,9 +410,9 @@ export default function Sidebar({ onAddNode }: SidebarProps) {
         }`}
       >
         {isPixel ? (
-          <span className="px-chip px-chip--muted">T8 · v1.0.1</span>
+          <span className="px-chip px-chip--muted">T8 · v{__APP_VERSION__}</span>
         ) : (
-          <>T8-penguin-canvas · v1.0.1</>
+          <>T8-penguin-canvas · v{__APP_VERSION__}</>
         )}
       </div>
     </div>

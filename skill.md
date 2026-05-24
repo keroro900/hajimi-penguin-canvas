@@ -4716,7 +4716,7 @@ if (config.IS_PACKAGED && config.FRONTEND_DIST && fs.existsSync(config.FRONTEND_
 
 - [ ] **package.json 版本号已 bump**（`version` 字段决定 `T8-PenguinCanvas-Setup-${version}.exe`）
 - [ ] **electron/main.cjs 三处版本号已同步**：① `BrowserWindow.title` ② log 窗口 HTML `<span>v...</span>` ③ `ipcMain.handle('t8pc:get-info')` 返回 `version` —— 否则窗口标题与安装包不一致，用户疑惑
-- [ ] **vite.config.ts / vite.config.js 的 `__APP_VERSION__` 已同步**（默认 `JSON.stringify('1.0.0')` 是伺服默认，必须与 package.json 版本号一致）
+- [ ] **vite.config.ts / vite.config.js 的 `__APP_VERSION__` 已同步**（默认 `JSON.stringify('1.0.0')` 是伺服默认，必须与 package.json 版本号一致）。前端仅从该宏读取。[`Sidebar.tsx`](file:///e:/PenguinPravite/T8-penguin-canvas/src/components/Sidebar.tsx) 左下角版本号采用 `T8 · v{__APP_VERSION__}` / `T8-penguin-canvas · v{__APP_VERSION__}`，勿再硬编码为 `v1.0.1` 之类、只需同步宏即可
 - [ ] **端口约定以后端 18766 为准，前端 dev = 11422**（Electron 打包后主窗口 `loadURL('http://127.0.0.1:18766/')` 由 Express 静态托管 dist/，**不依赖 Vite dev port**）。若后端端口变更，需同步改：`backend/src/config.js` `BACKEND_PORT` 默认值 + `vite.config.ts/js` 三个 proxy target（/api,/files,/output） + `electron/main.cjs` `backendPort`；前端 dev port 变更只需改 `vite.config.ts/js` `server.port` 一处
 - [ ] **backend/src/{config.js,server.js} 改动后必须重新 `npm run encrypt`**（否则 .t8c 还是旧字节码）
 - [ ] **bytenode 已 npm install**（`dependencies` 中 `bytenode: ^1.5.7`，`postinstall` 跑 `electron-builder install-app-deps`）
