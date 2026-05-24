@@ -53,6 +53,44 @@ function applyClassifiedKey(settings, hint) {
   if (picked) settings.zhenzhenApiKey = picked;
 }
 
+// ========== v1.2.9.15 新增：「专属优先 fallback 通用」一体化 API Key 校验 ==========
+// 修复 v1.2.9.14 之前的两类 bug：
+//   ① 旧路由先校验 settings.zhenzhenApiKey 非空 → 再 applyClassifiedKey；
+//      若用户「只配置了分类专属 key 而通用 key 留空」，会被第一道检查误拦，
+//      报「未配置贞贞工坊 API Key」，但其实专属 key 已存在；
+//   ② 即使 zhenzhenApiKey 是错误值（如 '123'），按旧顺序通过校验后 applyClassifiedKey
+//      仍能用 sunoApiKey 覆盖，但用户错配了 audio/upload 这类「完全没调 applyClassifiedKey」
+//      的子路由 → Suno 上传步骤直接用 zhenzhenApiKey='123' 上传 → 上游返回令牌错误。
+//
+// 用法：
+//   const settings = loadRawSettings();
+//   if (!ensureKey(settings, res, 'suno', 'Suno')) return;
+//   // 此时 settings.zhenzhenApiKey 已是 effective key（专属优先 fallback 通用），
+//   // 后续直接 `Bearer ${settings.zhenzhenApiKey}` 即可。
+//
+// 副作用：成功时（return true）已对 settings 做 applyClassifiedKey；
+//        失败时（return false）已通过 res 写入 400 响应，调用方应直接 return。
+//
+// 设计原则：
+//   - 「专属优先」：sunoApiKey 非空 → 用 sunoApiKey；
+//   - 「通用 fallback」：sunoApiKey 留空但 zhenzhenApiKey 非空 → 用 zhenzhenApiKey；
+//   - 「双空才拒」：两者都空时报「分类专属 + 通用 至少填其一」。
+function ensureKey(settings, res, hint, label) {
+  if (!settings) {
+    res.status(400).json({ success: false, error: '未找到 settings 文件，请先在【设置】中配置 API Key' });
+    return false;
+  }
+  applyClassifiedKey(settings, hint || '');
+  if (!settings.zhenzhenApiKey) {
+    const tip = label
+      ? `未配置 ${label} 专属 API Key，且贞贞工坊通用 API Key 也为空（请在【设置】中至少填写其中一个）`
+      : '未配置贞贞工坊 API Key（请在【设置】中填写）';
+    res.status(400).json({ success: false, error: tip });
+    return false;
+  }
+  return true;
+}
+
 // ========== 工具: taskId → 实际使用的 apiKey 内存映射 ==========
 // submit 阶段根据 hint 选了分类 key 后，将 (taskId → key) 记下，
 // query/status 阶段优先从该 Map 恢复 key，
@@ -327,16 +365,14 @@ async function normalizeImageResponse(data) {
 
 router.post('/image', async (req, res) => {
   const settings = loadRawSettings();
-  if (!settings?.zhenzhenApiKey) {
-    return res.status(400).json({ success: false, error: '未配置贞贞工坊 API Key' });
-  }
   const {
     model, apiModel, paramKind: paramKindIn,
     prompt, n,
     aspect_ratio, image_size,
     images, image, size, quality,
   } = req.body || {};
-  applyClassifiedKey(settings, apiModel || model || '');
+  // v1.2.9.15: 一体化「专属优先 fallback 通用」校验
+  if (!ensureKey(settings, res, apiModel || model || '', '图像')) return;
   if (!prompt) return res.status(400).json({ success: false, error: 'prompt 必填' });
   const m = String(apiModel || model || '');
   const paramKind = paramKindIn || (m.includes('nano-banana') ? 'banana-ratio' : 'gpt-size');
@@ -384,13 +420,11 @@ router.post('/image', async (req, res) => {
 // ========================================================================
 router.post('/image/submit', async (req, res) => {
   const settings = loadRawSettings();
-  if (!settings?.zhenzhenApiKey) {
-    return res.status(400).json({ success: false, error: '未配置贞贞工坊 API Key' });
-  }
   try {
     const { model, apiModel, paramKind: paramKindIn, prompt, n,
             aspect_ratio, image_size, images, image, size, quality } = req.body || {};
-    applyClassifiedKey(settings, apiModel || model || '');
+    // v1.2.9.15: 一体化「专属优先 fallback 通用」校验
+    if (!ensureKey(settings, res, apiModel || model || '', '图像')) return;
     if (!prompt) return res.status(400).json({ success: false, error: 'prompt 不得为空' });
     const m = String(apiModel || model || '');
     const paramKind = paramKindIn || (m.includes('nano-banana') ? 'banana-ratio' : 'gpt-size');
@@ -428,16 +462,14 @@ router.post('/image/submit', async (req, res) => {
 // 查询异步图像任务状态
 router.get('/image/status/:tid', async (req, res) => {
   const settings = loadRawSettings();
-  if (!settings?.zhenzhenApiKey) {
-    return res.status(400).json({ success: false, error: '未配置贞贞工坊 API Key' });
-  }
   // 优先从 submit 阶段记录的 (taskId → key) 映射恢复，防止前端未传 model 导致 fallback 错 key。
   const remembered = recallTaskKey(req.params.tid);
   if (remembered) {
-    settings.zhenzhenApiKey = remembered;
+    if (settings) settings.zhenzhenApiKey = remembered;
+    else return res.status(400).json({ success: false, error: '未找到 settings' });
   } else {
-    // 查询阶段可选传 ?model=xxx 让后端走对应分类 key（不传则用通用 fallback）
-    applyClassifiedKey(settings, String(req.query.model || ''));
+    // v1.2.9.15: 一体化「专属优先 fallback 通用」校验（查询阶段可选传 ?model=xxx）
+    if (!ensureKey(settings, res, String(req.query.model || ''), '图像')) return;
   }
   const tid = req.params.tid;
   try {
@@ -571,9 +603,6 @@ function fixFalResponseUrl(responseUrl, baseUrl, endpoint, requestId) {
 //   nbpro-fal 专属: { aspect_ratio, resolution, safety_tolerance, seed?, system_prompt?, enable_web_search?, image_mode?: 'image_url'|'base64' }
 router.post('/image/fal/submit', async (req, res) => {
   const settings = loadRawSettings();
-  if (!settings?.zhenzhenApiKey) {
-    return res.status(400).json({ success: false, error: '未配置贞贞工坊 API Key' });
-  }
   const {
     apiModel, prompt, images, n, format, sync,
     // gpt-fal
@@ -582,7 +611,8 @@ router.post('/image/fal/submit', async (req, res) => {
     aspect_ratio, resolution, safety_tolerance, seed,
     system_prompt, enable_web_search, image_mode,
   } = req.body || {};
-  applyClassifiedKey(settings, apiModel || '');
+  // v1.2.9.15: 一体化「专属优先 fallback 通用」校验
+  if (!ensureKey(settings, res, apiModel || '', '图像 FAL')) return;
   const apiKey = settings.zhenzhenApiKey;
   const baseUrl = config.ZHENZHEN_BASE_URL;
 
@@ -724,11 +754,9 @@ router.post('/image/fal/submit', async (req, res) => {
 //   返回: { status: 'pending'|'completed'|'failed', urls?, error? }
 router.post('/image/fal/query', async (req, res) => {
   const settings = loadRawSettings();
-  if (!settings?.zhenzhenApiKey) {
-    return res.status(400).json({ success: false, error: '未配置贞贞工坊 API Key' });
-  }
   const { responseUrl: rawUrl, endpoint, requestId } = req.body || {};
-  applyClassifiedKey(settings, endpoint || rawUrl || '');
+  // v1.2.9.15: 一体化「专属优先 fallback 通用」校验
+  if (!ensureKey(settings, res, endpoint || rawUrl || '', '图像 FAL')) return;
   const apiKey = settings.zhenzhenApiKey;
   const baseUrl = config.ZHENZHEN_BASE_URL;
   const responseUrl = fixFalResponseUrl(rawUrl, baseUrl, endpoint, requestId);
@@ -795,8 +823,8 @@ function mjSpeedSeg(speed) {
 // 返回上游 imagine 原始响应 { code, description, result(taskId), properties }
 router.post('/mj/imagine', async (req, res) => {
   const settings = loadRawSettings();
-  if (!settings?.zhenzhenApiKey) return res.status(400).json({ success: false, error: '未配置贞贞工坊 API Key' });
-  applyClassifiedKey(settings, 'mj');
+  // v1.2.9.15: 一体化「专属优先 fallback 通用」校验
+  if (!ensureKey(settings, res, 'mj', 'MJ')) return;
   const body = req.body || {};
   const speedSeg = mjSpeedSeg(body.speed);
   const url = `${config.ZHENZHEN_BASE_URL}/${speedSeg}/mj/submit/imagine`;
@@ -847,8 +875,8 @@ router.post('/mj/imagine', async (req, res) => {
 // 轮询任务状态
 router.get('/mj/task/:id', async (req, res) => {
   const settings = loadRawSettings();
-  if (!settings?.zhenzhenApiKey) return res.status(400).json({ success: false, error: '未配置贞贞工坊 API Key' });
-  applyClassifiedKey(settings, 'mj');
+  // v1.2.9.15: 一体化「专属优先 fallback 通用」校验
+  if (!ensureKey(settings, res, 'mj', 'MJ')) return;
   const taskId = req.params.id;
   const speedSeg = mjSpeedSeg(req.query.speed);
   if (!taskId) return res.status(400).json({ success: false, error: 'taskId 必填' });
@@ -878,8 +906,8 @@ router.get('/mj/task/:id', async (req, res) => {
 // 上传参考图到 MJ Discord，返回 URL（主项目 uploadMJImage L4407 + server.py L2457）
 router.post('/mj/upload', async (req, res) => {
   const settings = loadRawSettings();
-  if (!settings?.zhenzhenApiKey) return res.status(400).json({ success: false, error: '未配置贞贞工坊 API Key' });
-  applyClassifiedKey(settings, 'mj');
+  // v1.2.9.15: 一体化「专属优先 fallback 通用」校验
+  if (!ensureKey(settings, res, 'mj', 'MJ')) return;
   const { base64Data, speed } = req.body || {};
   if (!base64Data) return res.status(400).json({ success: false, error: 'base64Data 不得为空' });
   const speedSeg = mjSpeedSeg(speed);
@@ -1117,9 +1145,6 @@ async function saveRemoteVideo(url) {
 // POST /api/proxy/video/fal/submit
 router.post('/video/fal/submit', async (req, res) => {
   const settings = loadRawSettings();
-  if (!settings?.zhenzhenApiKey) {
-    return res.status(400).json({ success: false, error: '未配置贞贞工坊 API Key' });
-  }
   const {
     apiModel, prompt, images,
     // veo-fal
@@ -1127,7 +1152,8 @@ router.post('/video/fal/submit', async (req, res) => {
     // grok-fal
     gkDuration, gkRatio,
   } = req.body || {};
-  applyClassifiedKey(settings, apiModel || '');
+  // v1.2.9.15: 一体化「专属优先 fallback 通用」校验
+  if (!ensureKey(settings, res, apiModel || '', '视频 FAL')) return;
   const apiKey = settings.zhenzhenApiKey;
   const baseUrl = config.ZHENZHEN_BASE_URL;
 
@@ -1248,11 +1274,9 @@ router.post('/video/fal/submit', async (req, res) => {
 //   完成标志: data.video.url (区别于图像的 data.images[])
 router.post('/video/fal/query', async (req, res) => {
   const settings = loadRawSettings();
-  if (!settings?.zhenzhenApiKey) {
-    return res.status(400).json({ success: false, error: '未配置贞贞工坊 API Key' });
-  }
   const { responseUrl: rawUrl, endpoint, requestId } = req.body || {};
-  applyClassifiedKey(settings, endpoint || rawUrl || '');
+  // v1.2.9.15: 一体化「专属优先 fallback 通用」校验
+  if (!ensureKey(settings, res, endpoint || rawUrl || '', '视频 FAL')) return;
   const apiKey = settings.zhenzhenApiKey;
   const baseUrl = config.ZHENZHEN_BASE_URL;
   const responseUrl = fixFalResponseUrl(rawUrl, baseUrl, endpoint, requestId);
@@ -1298,9 +1322,6 @@ router.post('/video/fal/query', async (req, res) => {
 
 router.post('/video/submit', async (req, res) => {
   const settings = loadRawSettings();
-  if (!settings?.zhenzhenApiKey) {
-    return res.status(400).json({ success: false, error: '未配置贞贞工坊 API Key' });
-  }
   const {
     model, prompt,
     // Veo 参数
@@ -1310,7 +1331,8 @@ router.post('/video/submit', async (req, res) => {
     // 通用
     seed, images,
   } = req.body || {};
-  applyClassifiedKey(settings, model || '');
+  // v1.2.9.15: 一体化「专属优先 fallback 通用」校验
+  if (!ensureKey(settings, res, model || '', '视频')) return;
   if (!model || !prompt) {
     return res.status(400).json({ success: false, error: 'model 和 prompt 必填' });
   }
@@ -1382,16 +1404,15 @@ router.post('/video/submit', async (req, res) => {
 
 router.get('/video/query', async (req, res) => {
   const settings = loadRawSettings();
-  if (!settings?.zhenzhenApiKey) {
-    return res.status(400).json({ success: false, error: '未配置贞贞工坊 API Key' });
-  }
   const taskId = String(req.query.taskId || '').trim();
   // 优先从 submit 阶段记录的 (taskId → key) 映射恢复，防止前端未传 model 导致 fallback 错 key。
   const remembered = recallTaskKey(taskId);
   if (remembered) {
-    settings.zhenzhenApiKey = remembered;
+    if (settings) settings.zhenzhenApiKey = remembered;
+    else return res.status(400).json({ success: false, error: '未找到 settings' });
   } else {
-    applyClassifiedKey(settings, String(req.query.model || ''));
+    // v1.2.9.15: 一体化「专属优先 fallback 通用」校验
+    if (!ensureKey(settings, res, String(req.query.model || ''), '视频')) return;
   }
   if (!taskId) return res.status(400).json({ success: false, error: 'taskId 必填' });
   const upstream = `${config.ZHENZHEN_BASE_URL}/v2/videos/generations/${encodeURIComponent(taskId)}`;
@@ -1459,10 +1480,8 @@ router.get('/video/query', async (req, res) => {
 // ========================================================================
 router.post('/seedance/submit', async (req, res) => {
   const settings = loadRawSettings();
-  if (!settings?.zhenzhenApiKey) {
-    return res.status(400).json({ success: false, error: '未配置贞贞工坊 API Key' });
-  }
-  applyClassifiedKey(settings, 'seedance');
+  // v1.2.9.15: 一体化「专属优先 fallback 通用」校验
+  if (!ensureKey(settings, res, 'seedance', 'Seedance')) return;
   const apiKey = settings.zhenzhenApiKey;
   const baseUrl = config.ZHENZHEN_BASE_URL;
   const {
@@ -1567,10 +1586,8 @@ router.post('/seedance/submit', async (req, res) => {
 
 router.get('/seedance/query', async (req, res) => {
   const settings = loadRawSettings();
-  if (!settings?.zhenzhenApiKey) {
-    return res.status(400).json({ success: false, error: '未配置贞贞工坊 API Key' });
-  }
-  applyClassifiedKey(settings, 'seedance');
+  // v1.2.9.15: 一体化「专属优先 fallback 通用」校验
+  if (!ensureKey(settings, res, 'seedance', 'Seedance')) return;
   const taskId = String(req.query.taskId || '').trim();
   if (!taskId) return res.status(400).json({ success: false, error: 'taskId 必填' });
 
@@ -1671,10 +1688,8 @@ function resolveSunoMv(version) {
 
 router.post('/audio/submit', async (req, res) => {
   const settings = loadRawSettings();
-  if (!settings?.zhenzhenApiKey) {
-    return res.status(400).json({ success: false, error: '未配置贞贞工坊 API Key' });
-  }
-  applyClassifiedKey(settings, 'suno');
+  // v1.2.9.15: 一体化「专属优先 fallback 通用」校验 —— 先 applyClassifiedKey('suno') 再校验 effective key
+  if (!ensureKey(settings, res, 'suno', 'Suno')) return;
   const { mode, prompt, title, tags, version, seed, continue_clip_id, continue_at, cover_clip_id } = req.body || {};
   const m = mode || 'generate';
   if (!prompt && m !== 'extend') {
@@ -1735,8 +1750,8 @@ router.post('/audio/submit', async (req, res) => {
 
 router.get('/audio/query', async (req, res) => {
   const settings = loadRawSettings();
-  if (!settings?.zhenzhenApiKey) return res.status(400).json({ success: false, error: '未配置贞贞工坊 API Key' });
-  applyClassifiedKey(settings, 'suno');
+  // v1.2.9.15: 一体化「专属优先 fallback 通用」校验
+  if (!ensureKey(settings, res, 'suno', 'Suno')) return;
   const ids = String(req.query.clipIds || req.query.taskId || '').trim();
   if (!ids) return res.status(400).json({ success: false, error: 'clipIds 或 taskId 必填' });
   // 是否将完成的音频转存到本地 output 目录(默认 true)
@@ -1794,7 +1809,10 @@ router.get('/audio/query', async (req, res) => {
 // ========================================================================
 router.post('/audio/upload', audioUpload.single('file'), async (req, res) => {
   const settings = loadRawSettings();
-  if (!settings?.zhenzhenApiKey) return res.status(400).json({ success: false, error: '未配置贞贞工坊 API Key' });
+  // v1.2.9.15: 修复 BUG —— 之前完全缺失 applyClassifiedKey('suno')，
+  // 导致 Suno cover/extend 上传步骤即使配置了 sunoApiKey 也始终用通用 zhenzhenApiKey，
+  // 与 audio/submit · audio/query 的 key 不一致。改用 ensureKey 统一「专属优先 fallback 通用」。
+  if (!ensureKey(settings, res, 'suno', 'Suno')) return;
   if (!req.file) return res.status(400).json({ success: false, error: '未接收到音频文件 (field=file)' });
   const apiKey = settings.zhenzhenApiKey;
   const baseUrl = config.ZHENZHEN_BASE_URL;

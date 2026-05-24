@@ -5746,3 +5746,114 @@ for (const e of inEdges) {
 6. **finally 中 setTimeout(200) 不是黑魔法**：是给 autoOutput useEffect 一个 commit 周期把新 OutputNode 落 store。
 
 ---
+
+## 55. 后端「分类 API Key 专属优先 fallback 通用」修复（v1.2.9.15 · 强制规范）
+
+### 背景与症状
+用户在【设置】界面填写 Suno 专属 API Key 后，将「贞贞工坊通用 API Key」故意改成错误值 `'123'`，点击 Suno 节点生成 → 上游报「令牌错误」。即
+
+> 「专属 APIKEY 没有生效，无论 Suno 单个还是整个分类 key 体系都失效。」
+
+根因排查后定位到 backend/src/routes/proxy.js **3 类同模式 bug**：
+
+#### Bug ① 子路由完全缺失 applyClassifiedKey（最严重）
+```js
+// audio/upload 旧实现：
+router.post('/audio/upload', ..., async (req, res) => {
+  const settings = loadRawSettings();
+  if (!settings?.zhenzhenApiKey) return res.status(400)...;
+  // ❌ 完全没调 applyClassifiedKey('suno')
+  const apiKey = settings.zhenzhenApiKey; // ← 拿到错误的 '123'
+  // ...直接拿通用 key 上传 → 令牌错误
+});
+```
+Suno cover/extend 上传步骤即使 sunoApiKey 配置正确也始终用错误的 zhenzhenApiKey。
+
+#### Bug ② 检查顺序错误（边缘场景）
+```js
+// 旧顺序：先校验通用 key 非空 → 再 applyClassifiedKey
+if (!settings?.zhenzhenApiKey) return res.status(400).json({ error: '未配置...' });
+applyClassifiedKey(settings, 'suno');
+```
+用户「只填了专属 key、留空通用 key」时被误拦在第一步，永远跑不到 applyClassifiedKey。
+
+#### Bug ③ 错误提示混淆
+旧错误信息只说「未配置贞贞工坊 API Key」，没区分通用 key 与专属 key，用户配了专属还看到这个提示极易误判。
+
+### 一体化修复方案：`ensureKey` helper
+
+紧接 `applyClassifiedKey` 之后定义统一的「应用专属 → 校验 effective → 错误响应」一体化 helper：
+
+```js
+// backend/src/routes/proxy.js
+function ensureKey(settings, res, hint, label) {
+  if (!settings) {
+    res.status(400).json({ success: false, error: '未找到 settings 文件，请先在【设置】中配置 API Key' });
+    return false;
+  }
+  applyClassifiedKey(settings, hint || ''); // 先应用专属
+  if (!settings.zhenzhenApiKey) {           // 后校验 effective
+    const tip = label
+      ? `未配置 ${label} 专属 API Key，且贞贞工坊通用 API Key 也为空（请在【设置】中至少填写其中一个）`
+      : '未配置贞贞工坊 API Key（请在【设置】中填写）';
+    res.status(400).json({ success: false, error: tip });
+    return false;
+  }
+  return true;
+}
+```
+
+**调用模板**（所有分类 key 路由统一遵循）：
+```js
+router.post('/xxx/yyy', async (req, res) => {
+  const settings = loadRawSettings();
+  const { /* body 提取 */ } = req.body || {};
+  // ① 一体化「专属优先 fallback 通用」校验
+  if (!ensureKey(settings, res, hint, '业务标签')) return;
+  // ② 后续直接用 settings.zhenzhenApiKey 即可（已是 effective key）
+  const apiKey = settings.zhenzhenApiKey;
+  // ...
+});
+```
+
+### 修复矩阵（v1.2.9.15 全局应用，共 16 个路由）
+
+| # | 路由 | hint 来源 | label |
+|---|------|----------|-------|
+| 1 | POST /image | `apiModel \|\| model` | 图像 |
+| 2 | POST /image/submit | `apiModel \|\| model` | 图像 |
+| 3 | GET /image/status/:tid | remembered key 优先；否则 `query.model` | 图像 |
+| 4 | POST /image/fal/submit | `apiModel` | 图像 FAL |
+| 5 | POST /image/fal/query | `endpoint \|\| rawUrl` | 图像 FAL |
+| 6 | POST /mj/imagine | `'mj'` | MJ |
+| 7 | GET /mj/task/:id | `'mj'` | MJ |
+| 8 | POST /mj/upload | `'mj'` | MJ |
+| 9 | POST /video/fal/submit | `apiModel` | 视频 FAL |
+| 10 | POST /video/fal/query | `endpoint \|\| rawUrl` | 视频 FAL |
+| 11 | POST /video/submit | `model` | 视频 |
+| 12 | GET /video/query | remembered key 优先；否则 `query.model` | 视频 |
+| 13 | POST /seedance/submit | `'seedance'` | Seedance |
+| 14 | GET /seedance/query | `'seedance'` | Seedance |
+| 15 | POST /audio/submit | `'suno'` | Suno |
+| 16 | GET /audio/query | `'suno'` | Suno |
+| 17 | POST /audio/upload | `'suno'`（**Bug ① 修复点**） | Suno |
+
+### 不受影响的路由
+- `/llm` 用独立的 `settings.llmApiKey`（不参与 zhenzhenApiKey 分类体系）
+- `/runninghub/*` 用独立的 `settings.rhApiKey` / `settings.rhWalletApiKey`
+
+### 强制规范（写后端 zhenzhenApiKey 路由必读）
+
+- ✅ **唯一入口**：所有读取 `settings.zhenzhenApiKey` 之前**必须** `if (!ensureKey(settings, res, hint, label)) return;`
+- ✅ **hint 优先级**：能拿到具体 model（apiModel / model）就传 model；纯分类路由（mj/seedance/suno）传分类字符串
+- ✅ **remembered key 优先**：异步轮询查询路由（image/status、video/query）若 `recallTaskKey(taskId)` 命中则直接覆盖 `settings.zhenzhenApiKey`，**不再调用 ensureKey**（remembered 自身保证有 key）
+- ❌ **严禁旧顺序**：`if (!settings?.zhenzhenApiKey) return ...; applyClassifiedKey(settings, hint);` ——会让「只配专属」用户被误拦
+- ❌ **严禁裸跑**：直接 `Bearer ${settings.zhenzhenApiKey}` 而不先 applyClassifiedKey ——audio/upload 那种 Bug 会重现
+- ❌ **严禁混淆错误提示**：必须明确「专属 + 通用」双重校验语义
+
+### 教训
+1. **applyClassifiedKey 是「覆盖」而不是「读取」**：调用后 `settings.zhenzhenApiKey` 已被分类 key 覆盖，所以校验必须在 apply **之后**。
+2. **多步骤业务（提交+轮询+上传）必须每步都 ensureKey**：Suno 需要 submit / query / upload 三个路由都修复，遗漏任何一个都会让链路失败。
+3. **错误信息是 UX 一部分**：用户看到「未配置贞贞工坊 API Key」会立刻去填通用 key，而真正的问题是专属 key —— 错误提示必须双重明示。
+
+---
