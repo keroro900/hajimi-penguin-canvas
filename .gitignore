@@ -42,6 +42,7 @@ input/
 output/
 thumbnails/
 backend/data/
+**/recharge.private.json
 
 # Env
 .env

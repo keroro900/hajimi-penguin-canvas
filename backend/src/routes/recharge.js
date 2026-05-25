@@ -29,31 +29,48 @@ function nowText() {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
+function normalizeRechargeConfig(raw) {
+  const cfg = raw && typeof raw === 'object' ? raw : {};
+  return Object.fromEntries(
+    ['AGENT_BASE_URL', 'AGENT_HMAC_KEY', 'WEBSITE_URL', 'DULUPAY_KEY']
+      .map((key) => [key, String(cfg[key] || '').trim()])
+      .filter(([, value]) => value)
+  );
+}
+
+function loadPrivateRechargeConfig() {
+  try {
+    if (!fs.existsSync(config.RECHARGE_PRIVATE_FILE)) return {};
+    return normalizeRechargeConfig(JSON.parse(fs.readFileSync(config.RECHARGE_PRIVATE_FILE, 'utf-8')));
+  } catch (e) {
+    console.warn('[recharge] load private config failed:', e?.message || e);
+    return {};
+  }
+}
+
 function loadRechargeConfig() {
   if (rechargeConfigCache) return rechargeConfigCache;
-  const envConfig = {
+  const envOverrides = normalizeRechargeConfig({
     AGENT_BASE_URL: String(process.env.RECHARGE_AGENT_BASE_URL || '').trim(),
     AGENT_HMAC_KEY: String(process.env.RECHARGE_AGENT_HMAC_KEY || '').trim(),
     WEBSITE_URL: String(process.env.RECHARGE_WEBSITE_URL || '').trim(),
     DULUPAY_KEY: String(process.env.RECHARGE_DULUPAY_KEY || '').trim(),
-  };
-  const envOverrides = Object.fromEntries(
-    Object.entries(envConfig).filter(([, value]) => value)
-  );
+  });
+  const privateConfig = loadPrivateRechargeConfig();
   try {
     const magic = 'ZZENC1\n';
     if (!RECHARGE_DEFAULT_ENC.startsWith(magic)) {
-      rechargeConfigCache = { ...envOverrides };
+      rechargeConfigCache = { ...privateConfig, ...envOverrides };
       return rechargeConfigCache;
     }
     const key = crypto.createHash('sha256').update('ZhenzhenAI-Studio-T8star-2026').digest();
     const payload = Buffer.from(RECHARGE_DEFAULT_ENC.slice(magic.length), 'base64');
     const decoded = Buffer.alloc(payload.length);
     for (let i = 0; i < payload.length; i += 1) decoded[i] = payload[i] ^ key[i % key.length];
-    rechargeConfigCache = { ...JSON.parse(decoded.toString('utf-8')), ...envOverrides };
+    rechargeConfigCache = { ...normalizeRechargeConfig(JSON.parse(decoded.toString('utf-8'))), ...privateConfig, ...envOverrides };
   } catch (e) {
     console.warn('[recharge] load config failed:', e?.message || e);
-    rechargeConfigCache = { ...envOverrides };
+    rechargeConfigCache = { ...privateConfig, ...envOverrides };
   }
   return rechargeConfigCache;
 }

@@ -39,6 +39,7 @@ const config = {
   RH_TOOL_APPS_FILE: path.join(DATA_ROOT, 'data', 'rh_tool_apps.json'),
   RECHARGE_FILE: path.join(DATA_ROOT, 'data', 'recharge.json'),
   RECHARGE_DEVICE_FILE: path.join(DATA_ROOT, 'data', '.recharge_device_id'),
+  RECHARGE_PRIVATE_FILE: path.join(DATA_ROOT, 'data', 'recharge.private.json'),
 
   // 前端静态产物目录(打包后由 Express 同进程托管)
   FRONTEND_DIST: process.env.T8PC_FRONTEND_DIST || (IS_PACKAGED ? '' : path.join(PROJECT_DIR, 'dist')),

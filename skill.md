@@ -1,7 +1,9 @@
 # T8-penguin-canvas · skill.md
 
 > 项目能力 / 接口 / 文件用途速查手册。
-> 版本：v1.2.10.11 ｜ 仓库：<https://github.com/T8mars/T8-penguin-canvas>
+> 版本：v1.2.10.12 ｜ 仓库：<https://github.com/T8mars/T8-penguin-canvas>
+>
+> v1.2.10.12 增量：恢复本地开发充值配置入口；GitHub 仍保持 `RECHARGE_DEFAULT_ENC` 为空，本地通过忽略文件 `data/recharge.private.json` 或 `RECHARGE_*` 环境变量注入私有 agent 配置。
 >
 > v1.2.10.11 增量：开源推送前密钥清理规则落地；`RECHARGE_DEFAULT_ENC` 默认留空，代理 HMAC / 支付回调密钥仅允许通过本地环境变量或私有部署注入，禁止进入 GitHub。
 >
@@ -1846,7 +1848,7 @@ nodes/
 - 恢复到远程最新：`git fetch origin main && git reset --hard origin/main`
 - 禁止强制推送 `--force`
 - **GitHub 推送前必须做密钥清理**：公开仓库里的 `backend/src/routes/recharge.js::RECHARGE_DEFAULT_ENC` 必须保持空字符串，不能提交任何真实 `AGENT_HMAC_KEY`、`DULUPAY_KEY`、支付平台密钥、代理签名密钥或可逆加密后的同等内容。
-- 私有充值配置只允许通过本地环境变量注入：`RECHARGE_AGENT_BASE_URL`、`RECHARGE_AGENT_HMAC_KEY`、`RECHARGE_WEBSITE_URL`、`RECHARGE_DULUPAY_KEY`；这些变量值不得写入 `skill.md` / `features.json` / 源码 / 构建产物。
+- 私有充值配置只允许通过本地忽略文件 `data/recharge.private.json` 或环境变量注入：`RECHARGE_AGENT_BASE_URL`、`RECHARGE_AGENT_HMAC_KEY`、`RECHARGE_WEBSITE_URL`、`RECHARGE_DULUPAY_KEY`；这些变量值不得写入 `skill.md` / `features.json` / 源码 / 构建产物。
 - 推送前必须确认 `.gitignore` 覆盖本地数据与产物：`data/`、`backend/data/`、`input/`、`output/`、`thumbnails/`、`build/`、`dist/`、`dist_electron/`、`.env*` 不得进入 staged diff。
 - 推送前用 `rg -n "AGENT_HMAC_KEY|DULUPAY_KEY|RECHARGE_DEFAULT_ENC|secret|token|password" backend/src src electron features.json skill.md package.json .gitignore` 做一次人工复核；只允许出现空配置、变量名、文档警示，不允许出现真实值。
 
@@ -6802,11 +6804,11 @@ const baseY = srcY + srcH / 2 - groupH / 2;
 
 **代码落地**：
 - `backend/src/routes/recharge.js` 的 `RECHARGE_DEFAULT_ENC` 改为空字符串
-- `loadRechargeConfig()` 仅从环境变量读取私有充值配置：`RECHARGE_AGENT_BASE_URL`、`RECHARGE_AGENT_HMAC_KEY`、`RECHARGE_WEBSITE_URL`、`RECHARGE_DULUPAY_KEY`
+- `loadRechargeConfig()` 仅从本地忽略文件 `data/recharge.private.json` 或环境变量读取私有充值配置：`RECHARGE_AGENT_BASE_URL`、`RECHARGE_AGENT_HMAC_KEY`、`RECHARGE_WEBSITE_URL`、`RECHARGE_DULUPAY_KEY`
 - 缺少 `RECHARGE_AGENT_HMAC_KEY` 时创建订单会返回 agent 未配置，不会用空密钥继续签名
 
 **每次推送 GitHub 前必须执行**：
-- 确认 `RECHARGE_DEFAULT_ENC = ''`，真实 HMAC / 支付密钥不得出现在源码、文档、JSON、构建产物中
+- 确认 `RECHARGE_DEFAULT_ENC = ''`，真实 HMAC / 支付密钥不得出现在源码、文档、受 Git 跟踪的 JSON、构建产物中
 - `rg -n "AGENT_HMAC_KEY|DULUPAY_KEY|RECHARGE_DEFAULT_ENC|secret|token|password" backend/src src electron features.json skill.md package.json .gitignore`，只允许出现变量名、空配置和安全说明
 - `git status --short` 确认没有 `data/`、`backend/data/`、`input/`、`output/`、`thumbnails/`、`build/`、`dist/`、`dist_electron/`、`.env*`
 - `backend/src/` 有改动时，打包前重新 `npm run encrypt`；但 `build/backend-enc` 只用于本地打包验证，不推 GitHub
@@ -6815,3 +6817,25 @@ const baseY = srcY + srcH / 2 - groupH / 2;
 **私有部署说明**：
 - 私有环境通过进程环境变量注入充值配置，示例变量名可写入部署文档，但真实值只能存在本机/服务器 Secret 管理中
 - 若任何真实 HMAC 曾经出现在开源提交、日志、截图或压缩包中，必须立即轮换
+
+---
+
+### v1.2.10.12 · 本地私有充值配置恢复
+
+**问题**：v1.2.10.11 为了避免 GitHub 泄露 HMAC，把公开默认充值配置清空，但本地开发也失去 agent 配置，充值弹窗显示「支付服务未配置」。
+
+**修复**：
+- `backend/src/config.js` 增加 `RECHARGE_PRIVATE_FILE = data/recharge.private.json`
+- `backend/src/routes/recharge.js` 启动时读取 `data/recharge.private.json`，再叠加 `RECHARGE_*` 环境变量覆盖
+- `.gitignore` 增加 `**/recharge.private.json`，防止私有充值配置误提交
+- 本机已从 `gpt-image-2-web/server.py` 的本地已验证配置恢复 `data/recharge.private.json`；该文件不进入 Git
+
+**配置优先级**：
+1. 公开默认配置：必须为空，仅占位
+2. 本地忽略文件：`data/recharge.private.json`
+3. 环境变量：`RECHARGE_AGENT_BASE_URL / RECHARGE_AGENT_HMAC_KEY / RECHARGE_WEBSITE_URL / RECHARGE_DULUPAY_KEY`
+
+**推送规则更新**：
+- 可以提交读取私有文件的代码
+- 不能提交 `data/recharge.private.json` 本身
+- 推送前 `git status --short --ignored` 中该文件只能出现在 `!! data/recharge.private.json`

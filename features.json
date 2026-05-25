@@ -1,7 +1,7 @@
 {
   "$schema": "本文件为 T8-penguin-canvas 节点清单防丢失锁,任何节点删减都需要在 roadmap.md 中说明并更新本文件。",
-  "version": "1.2.10.11",
-  "lastUpdated": "2026-05-25-v1.2.10.11-github-secret-scrub",
+  "version": "1.2.10.12",
+  "lastUpdated": "2026-05-25-v1.2.10.12-local-private-recharge-config",
   "packaging": {
     "description": "Electron NSIS 桌面端打包链路(v1.2.1 起标准化, 严禁未明确指令主动打包)。完整产物拓扑: app.asar(electron/{main,loader,preload}.cjs + node_modules) + app.asar.unpacked(node_modules/sharp + @img) + resources/backend-enc/*.t8c(extraResources, asar 外) + resources/frontend(extraResources, asar 外)。前端版本号由 vite define 注入 __APP_VERSION__、Sidebar 左下角自动同步。",
     "scripts": {
@@ -16,10 +16,10 @@
       "T8PC_FRONTEND_DIST": "打包模式 = path.join(process.resourcesPath, 'frontend'); 开发模式 = <project>/dist",
       "T8PC_RES": "打包模式 = process.resourcesPath; 开发模式 = <project>"
     },
-    "version": "1.2.10.11",
-    "semverVersion": "1.2.1011",
-    "versionNote": "display 版本(__APP_VERSION__/标题/skill/features) 用 4 段 1.2.10.11；package.json 必须 semver 兼容用 1.2.1011（electron-builder 严格校验）。",
-    "installer": "dist_electron/T8-PenguinCanvas-Setup-1.2.1011.exe (NSIS, 约 87 MB)",
+    "version": "1.2.10.12",
+    "semverVersion": "1.2.1012",
+    "versionNote": "display 版本(__APP_VERSION__/标题/skill/features) 用 4 段 1.2.10.12；package.json 必须 semver 兼容用 1.2.1012（electron-builder 严格校验）。",
+    "installer": "dist_electron/T8-PenguinCanvas-Setup-1.2.1012.exe (NSIS, 约 87 MB)",
     "checklist": [
       "运行 npm run encrypt 前确认已 npm install bytenode 且使用 Electron 内置 Node",
       "backend/src/ 任何文件修改后必须重新 npm run encrypt 再打包",
@@ -121,7 +121,8 @@
     "phase37": { "label": "节点落点防重叠 · 阿基米德螺线避让 + 向右扫描 + 兆底 (v1.2.10.5~8)", "status": "complete", "items": ["v1.2.10.5: 节点落点算法初版(nodePlacement.ts) + 双 pass spiral + pendingPlacedNodes 多源累积器", "v1.2.10.6 hotfix3: reorder-grid 覆盖 placement 偏移修复 + onConnect 接入 placeSingleNode", "v1.2.10.6 hotfix4: 去掉 adaptiveStep(防止远距离偏移) + autoOutput gap=0(只防实际重叠) + reorder 用第一个节点作锚点(防止无限循环)", "v1.2.10.7: baseY 对齐源节点垂直中心(handle 位置)，避免输出节点偏上", "v1.2.10.8: 螺线失败后加向右线性扫描(rightwardScan)，避免跳过中间空地直接落到画布最右端", "最终架构: spiral(~400px) → rightwardScan(~3000px) → fallback(最右兜底)"] },
     "phase38": { "label": "算力充值系统迁移 (v1.2.10.9)", "status": "complete", "items": ["从 gpt-image-2-web 迁移充值核心: 绑定网站用户 ID、档位列表、创建支付订单、支付回调、主动查单、转移算力、失败重试、订单记录", "后端新增 backend/src/routes/recharge.js，Express 路由挂载 /api/recharge/* 与 /pay/*，保留 HMAC 请求签名协议；v1.2.10.11 起公开仓库默认不携带代理密钥", "存储改为 JSON 文件 data/recharge.json + .recharge_device_id，避免引入 sqlite 原生依赖影响 Electron 打包", "档位保留原 20/30/50/100/200/300/500 CP，并新增临时 test_1cny 1 元测试档位；余额查询暂不迁移", "前端新增 RechargeModal.tsx + services/api.ts recharge API，顶部工具条新增「充值」入口，四主题(tech/pixel × light/dark)走各自视觉分支", "打包校验 _post_build.cjs 新增 routes/recharge.t8c，backend/src 修改后需重新 npm run encrypt"] },
     "phase39": { "label": "充值确认弹窗 + 安全硬化 (v1.2.10.10)", "status": "complete", "items": ["创建订单并付款前新增同主题 alertdialog，醒目提示「请核对绑定的用户ID，一旦充错无法退回！」，展示绑定 ID / 套餐 / 金额，用户二次确认后才调用创建订单接口", "后端 CORS 从全开放改为只允许 127.0.0.1/localhost 来源或无 Origin 请求，降低网页跨站驱动本地服务风险", "支付通知 /pay/notify 在缺少 DULUPAY_KEY 时直接 fail，避免空密钥 MD5 被伪造触发转额度", "订单号随机后缀从 3 bytes 提升到 8 bytes，降低碰撞和枚举风险", "GET /api/recharge/order/:orderId 与 /api/recharge/orders 返回脱敏摘要，不再回传 trade_no"] },
-    "phase40": { "label": "GitHub 推送密钥清理规则 (v1.2.10.11)", "status": "complete", "items": ["RECHARGE_DEFAULT_ENC 默认改为空字符串，公开仓库不再携带 AGENT_HMAC_KEY 或可逆代理配置", "充值代理配置改为仅通过 RECHARGE_AGENT_BASE_URL / RECHARGE_AGENT_HMAC_KEY / RECHARGE_WEBSITE_URL / RECHARGE_DULUPAY_KEY 等环境变量注入", "skill.md 追加 GitHub 推送前安全清单：严禁提交真实 HMAC、支付平台密钥、data 本地数据、build/dist_electron 打包产物与明文配置"] }
+    "phase40": { "label": "GitHub 推送密钥清理规则 (v1.2.10.11)", "status": "complete", "items": ["RECHARGE_DEFAULT_ENC 默认改为空字符串，公开仓库不再携带 AGENT_HMAC_KEY 或可逆代理配置", "充值代理配置改为仅通过 RECHARGE_AGENT_BASE_URL / RECHARGE_AGENT_HMAC_KEY / RECHARGE_WEBSITE_URL / RECHARGE_DULUPAY_KEY 等环境变量注入", "skill.md 追加 GitHub 推送前安全清单：严禁提交真实 HMAC、支付平台密钥、data 本地数据、build/dist_electron 打包产物与明文配置"] },
+    "phase41": { "label": "本地私有充值配置恢复 (v1.2.10.12)", "status": "complete", "items": ["新增 data/recharge.private.json 本地私有配置兜底，文件被 .gitignore 忽略，本地开发可继续使用充值 agent", "配置读取顺序为公开默认空配置 < data/recharge.private.json < RECHARGE_* 环境变量，GitHub 仍不携带真实 HMAC", "config.js 增加 RECHARGE_PRIVATE_FILE，recharge.js 增加私有配置读取与规范化逻辑"] }
   },
   "categories": {
     "input": {
