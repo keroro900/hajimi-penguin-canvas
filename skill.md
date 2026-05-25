@@ -1,7 +1,7 @@
 # T8-penguin-canvas · skill.md
 
 > 项目能力 / 接口 / 文件用途速查手册。
-> 版本：v1.2.10.6 ｜ 仓库：<https://github.com/T8mars/T8-penguin-canvas>
+> 版本：v1.2.10.7 ｜ 仓库：<https://github.com/T8mars/T8-penguin-canvas>
 >
 > v1.2.1 增量（§47）：Electron 打包加密链路 3 处根因修复 + 标准化 SOP 沉淀 — bytenode .jsc loader 复刻（vm.Script + cachedData 直跑、跳过 tmpFile 二次 require）+ asar 外 .t8c 的 require MODULE_NOT_FOUND 回退 loader.cjs 自身（解析 app.asar/node_modules/express|cors|multer|sharp）+ backend/src/config.js 识别 T8PC_PACKAGED/T8PC_USER_DATA/T8PC_FRONTEND_DIST 三环境变量（数据写 userData、NODE_ENV=production）+ backend/src/server.js 打包模式 express.static + SPA 兑底（regex 排除 api/files/input/output 4 前缀）+ main.cjs 三处版本号同步 v1.2.0 + 6 项打包前必检 checklist + 完整 SOP 写入本章作为下次打包唯一参考依据。
 >
@@ -6414,5 +6414,23 @@ src/components/nodes/LoopNode.tsx               克隆链整组 + excludeIds=sub
 3. **gap=0 是 autoOutput 的正确设置** —— 输出节点只需不重叠，不需要 32px 额外缓冲。上方高节点底部刚好触碰目标区域时，gap=32 会误判碰撞而推远输出
 4. **adaptiveStep 不适合用于多节点画布** —— 画布上有各种尺寸节点，取最大值作步长会让小场景也跳很远
 5. **reorder 用第一个节点位置作锚点** —— 保留 autoOutput 的偏移结果，同时只做内部网格对齐
+
+---
+
+### v1.2.10.7 · placement baseY 对齐源节点垂直中心
+
+**用户反馈**：输出节点避让时偏上放置，但最佳位置应该是水平平移（与源节点输出端口同高）。
+
+**根因**：之前 `baseY = n.position?.y ?? 0`（源节点顶部），但 ReactFlow 输出端口在源节点的垂直中心位置。对于较高的源节点（如图像节点 ~600px），输出从顶部开始排列，视觉上明显偏上。
+
+**修复**：让输出组的垂直中心对齐源节点的垂直中心（handle 位置）：
+
+```ts
+const srcH = rectOf(n).h;
+const groupH = (rows - 1) * 360 + outputNodeH;
+const baseY = srcY + srcH / 2 - groupH / 2;
+```
+
+影响范围：3 条 autoOutput 路径（FramePair / Suno / 通用） + reorder-grid naturalBaseY。
 
 ---

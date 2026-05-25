@@ -1982,8 +1982,8 @@ function CanvasInner({ onAddNodeRef }: CanvasInnerProps) {
           usedHandles.add((e as any).sourceHandle ?? null);
         }
         // null/默认 handle 也能充当任意一边（兼容旧连接）——只要这边有一个 OutputNode 进来, 就不重复补
-        const baseX = (n.position?.x ?? 0) + rectOf(n).w + 80;
-        const baseY = n.position?.y ?? 0;
+        const _srcRectFP = rectOf(n);
+        const baseX = (n.position?.x ?? 0) + _srcRectFP.w + 80;
         const need: Array<'first' | 'last'> = [];
         if (!usedHandles.has('first') && !usedHandles.has(null)) need.push('first');
         if (!usedHandles.has('last')) need.push('last');
@@ -1992,6 +1992,9 @@ function CanvasInner({ onAddNodeRef }: CanvasInnerProps) {
         if (need.length === 0) continue; // v1.2.10.5-hotfix3: 无需创建则跳过，避免无用的 placeBatchNodes 调用 + 诊断噪音
         // v1.2.10.5: 整组防重叠 —— 先算期望单列矩形, 再求公共偏移
         const _szFP = defaultSizeOf('output');
+        // v1.2.10.7: baseY 对齐源节点垂直中心（handle 位置），避免输出偏上
+        const _groupHFP = (need.length - 1) * 360 + _szFP.h;
+        const baseY = (n.position?.y ?? 0) + _srcRectFP.h / 2 - _groupHFP / 2;
         const _desiredFP: PlacementRect[] = need.map((_, i) => ({
           x: baseX, y: baseY + i * 360, w: _szFP.w, h: _szFP.h,
         }));
@@ -2034,8 +2037,8 @@ function CanvasInner({ onAddNodeRef }: CanvasInnerProps) {
           if (e.source !== n.id) continue;
           usedHandles.add((e as any).sourceHandle ?? null);
         }
-        const baseX = (n.position?.x ?? 0) + rectOf(n).w + 80;
-        const baseY = n.position?.y ?? 0;
+        const _srcRectSU = rectOf(n);
+        const baseX = (n.position?.x ?? 0) + _srcRectSU.w + 80;
         const need: Array<'audio-0' | 'audio-1'> = [];
         // null 默认占位则 audio-0 不重复创建（老连接兼容）
         if (a0 && !usedHandles.has('audio-0') && !usedHandles.has(null)) need.push('audio-0');
@@ -2044,6 +2047,9 @@ function CanvasInner({ onAddNodeRef }: CanvasInnerProps) {
         newSigPatches.push([n.id, sig]);
         // v1.2.10.5: 整组防重叠
         const _szSU = defaultSizeOf('output');
+        // v1.2.10.7: baseY 对齐源节点垂直中心（handle 位置），避免输出偏上
+        const _groupHSU = (need.length - 1) * 360 + _szSU.h;
+        const baseY = (n.position?.y ?? 0) + _srcRectSU.h / 2 - _groupHSU / 2;
         const _desiredSU: PlacementRect[] = need.map((_, i) => ({
           x: baseX, y: baseY + i * 360, w: _szSU.w, h: _szSU.h,
         }));
@@ -2186,12 +2192,15 @@ function CanvasInner({ onAddNodeRef }: CanvasInnerProps) {
       }
       if (needCount <= 0) continue;
 
-      const srcW = rectOf(n).w;
-      const baseX = (n.position?.x ?? 0) + srcW + 80;
-      const baseY = n.position?.y ?? 0;
+      const _srcRectGen = rectOf(n);
+      const baseX = (n.position?.x ?? 0) + _srcRectGen.w + 80;
 
       // v1.2.10.5: 整组防重叠 —— 先算期望网格矩形, 再求公共偏移
       const _szGen = defaultSizeOf('output');
+      // v1.2.10.7: baseY 让输出组垂直中心对齐源节点中心（handle 位置），避免输出偏上
+      const _gridRows = Math.ceil(needCount / 3);
+      const _groupHGen = (_gridRows - 1) * 360 + _szGen.h;
+      const baseY = (n.position?.y ?? 0) + _srcRectGen.h / 2 - _groupHGen / 2;
       const _desiredGen: PlacementRect[] = remainingItems.slice(0, needCount).map((item) => {
         const idx = items.findIndex((it) => it.kind === item.kind && it.kindIndex === item.kindIndex);
         return {
@@ -2309,10 +2318,13 @@ function CanvasInner({ onAddNodeRef }: CanvasInnerProps) {
         rowY[r] = rowY[r - 1] + rowMaxH[r - 1] + REORDER_GAP;
       }
       const srcW = (src as any).measured?.width || (src as any).width || 320;
+      const srcH = (src as any).measured?.height || (src as any).height || 360;
       // v1.2.10.5-hotfix4: reorder 只负责内部网格对齐，不做碰撞避让（避让是 autoOutput 的职责）。
       // 用第一个节点的当前位置作为锚点，保留 autoOutput 算好的偏移，避免无限循环。
       const naturalBaseX = (src.position?.x ?? 0) + srcW + 80;
-      const naturalBaseY = src.position?.y ?? 0;
+      // v1.2.10.7: naturalBaseY 对齐源节点垂直中心
+      const _totalGridH = rowY[rowsCount - 1] + rowMaxH[rowsCount - 1];
+      const naturalBaseY = (src.position?.y ?? 0) + srcH / 2 - _totalGridH / 2;
       const firstNode = list[0];
       const baseX = firstNode.position?.x ?? naturalBaseX;
       const baseY = firstNode.position?.y ?? naturalBaseY;
