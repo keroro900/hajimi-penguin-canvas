@@ -2318,10 +2318,9 @@ function CanvasInner({ onAddNodeRef }: CanvasInnerProps) {
         const r = Math.floor(i / REORDER_COLS);
         return { x: baseX + colX[c], y: baseY + rowY[r], w: dims[i].w, h: dims[i].h };
       });
+      // 排除自身组（源节点 + 组内 output 节点），其余所有节点都参与碰撞
       const _excludeIds = new Set([srcId, ...list.map(n => n.id)]);
-      // v1.2.10.5-hotfix3: reorder 只需避开其他 output 节点，不需要避开上游源节点（它们在左侧）。
-      // 否则宽大的源节点会把输出推得很远。
-      const _externalNodes = nodes.filter(n => !_excludeIds.has(n.id) && n.type === 'output');
+      const _externalNodes = nodes.filter(n => !_excludeIds.has(n.id));
       const _reorderOff = placeBatchNodes(_groupDesired, _externalNodes, {
         source: 'placement:reorder-grid',
         excludeIds: _excludeIds,
