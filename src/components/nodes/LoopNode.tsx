@@ -8,6 +8,8 @@ import { useRunBusStore } from '../../stores/runBus';
 import { useUpstreamMaterials, type MaterialKind, type Material } from './useUpstreamMaterials';
 import { topologicalSort } from '../../utils/topologicalSort';
 import { PORT_COLOR } from '../../config/portTypes';
+// v1.2.10.5: 节点落点防重叠 —— 多链克隆子图整组避让
+import { placeBatchNodes, rectOf, type Rect as PlacementRect } from '../../utils/nodePlacement';
 
 /**
  * LoopNode — 工具节点：循环器（v1.2.8 新增）
@@ -578,6 +580,24 @@ const LoopNode = (p: NodeProps) => {
     const allNewEdges: Edge[] = [];
     const cloneIdMaps: Array<Map<string, string>> = [];
 
+    // v1.2.10.5: 预算克隆链期望矩形 —— 全部克隆节点 (i=1..N-1) 作为一组防重叠
+    //   其中 existing 排除 subNodes 本身 (它们是克隆源, 克隆后会被覆盖在原位 + yOffset)
+    const subNodeIds = new Set(subNodes.map((n) => n.id));
+    const _desiredClones: PlacementRect[] = [];
+    for (let i = 1; i < items.length; i++) {
+      const yOffset = i * blockH;
+      for (const n of subNodes) {
+        const r = rectOf(n);
+        _desiredClones.push({ x: r.x, y: r.y + yOffset, w: r.w, h: r.h });
+      }
+    }
+    const _offClone = items.length > 1
+      ? placeBatchNodes(_desiredClones, rf.getNodes(), {
+          excludeIds: subNodeIds,
+          source: `placement:loop-clone:${id}`,
+        })
+      : { dx: 0, dy: 0 };
+
     // v1.2.8.1: 为 i=1..N-1 克隆完整下游子图, 克隆链入口节点 直接连接到 items[i].sourceNodeId (原始上游素材节点)
     // 不再创建 supplier output 节点, 避免克隆出一堆中转节点。
     for (let i = 1; i < items.length; i++) {
@@ -588,7 +608,7 @@ const LoopNode = (p: NodeProps) => {
       const clonedNodes: Node[] = subNodes.map((n) => ({
         ...n,
         id: idMap.get(n.id)!,
-        position: { x: n.position.x, y: n.position.y + yOffset },
+        position: { x: n.position.x + _offClone.dx, y: n.position.y + yOffset + _offClone.dy },
         data: { ...(n.data as any), status: 'idle', error: null, __loopClone: id },
         selected: false,
       } as Node));

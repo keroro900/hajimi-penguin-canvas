@@ -29,6 +29,13 @@ import { useRunBusStore } from '../stores/runBus';
 import { useGroupBusStore, GROUP_COLORS, DEFAULT_GROUP_NAME } from '../stores/groupBus';
 import { topologicalSort } from '../utils/topologicalSort';
 import { installGlobalWheelBlockObserver } from '../utils/wheelBlock';
+// v1.2.10.5: 节点落点防重叠解析器 (单节点/整组双模式 + 兜底+toast+飞镜)
+import {
+  placeSingleNode,
+  placeBatchNodes,
+  defaultSizeOf,
+  type Rect as PlacementRect,
+} from '../utils/nodePlacement';
 import * as api from '../services/api';
 import CanvasToolbar from './CanvasToolbar';
 import TerminalPanel from './TerminalPanel';
@@ -407,6 +414,9 @@ function CanvasInner({ onAddNodeRef }: CanvasInnerProps) {
 
   // 添加节点(供 Sidebar 调用) —— 默认落在当前视口中心
   // 可选 atScreen 传入屏幕坐标，节点会落在该点(用于右键画布空白区添加)
+  // v1.2.10.5: 接入 placeSingleNode 防重叠解析器 ——
+  //   期望落点冲突时按螺线 (右→下→左→上 step=80 maxTries=64) 自动避让,
+  //   兜底走最右侧 + 写日志 + setCenter 飞镜。
   const addNode = useCallback(
     (type: NodeType, atScreen?: { x: number; y: number }) => {
       const id = `${type}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
@@ -424,27 +434,27 @@ function CanvasInner({ onAddNodeRef }: CanvasInnerProps) {
         cy = rect ? rect.top + rect.height / 2 : window.innerHeight / 2;
       }
       const center = screenToFlowPosition({ x: cx, y: cy });
-      // 仅默认插入(无 atScreen)时加随机拖动，右键插入需精准在点击位置
-      const jitter = atScreen ? 0 : (Math.random() - 0.5) * 80;
+      // 期望落点: 右键 = 左上角对准鼠标; Sidebar = 节点视觉中心对准视口中心
+      const sz = defaultSizeOf(type);
+      const desiredX = atScreen ? center.x : center.x - sz.w / 2;
+      const desiredY = atScreen ? center.y : center.y - sz.h / 2;
+      // 防重叠: 用现有节点矩形求螺线无重叠位置
+      const finalPos = placeSingleNode(desiredX, desiredY, type, nodes, {
+        source: 'placement:add',
+        onFallback: (p) => {
+          const { zoom } = getViewport();
+          setCenter(p.x, p.y, { zoom, duration: 400 });
+        },
+      });
       const newNode: Node = {
         id,
         type,
-        position: atScreen
-          ? {
-              // 右键添加：节点左上角对准鼠标点击位置，使鼠标落在节点 header 上
-              x: center.x,
-              y: center.y,
-            }
-          : {
-              // Sidebar 添加：节点视觉中心对准视口中心 + 小范围抖动避免重叠
-              x: center.x - 160 + jitter,
-              y: center.y - 100 + (Math.random() - 0.5) * 80,
-            },
+        position: { x: finalPos.x, y: finalPos.y },
         data: { ...(INITIAL_DATA[type] || {}) },
       };
       setNodes((prev) => [...prev, newNode]);
     },
-    [screenToFlowPosition]
+    [screenToFlowPosition, nodes, getViewport, setCenter]
   );
 
   // ===== 复制 / 粘贴 / 删除 =====
@@ -1971,13 +1981,19 @@ function CanvasInner({ onAddNodeRef }: CanvasInnerProps) {
         if (!usedHandles.has('last')) need.push('last');
         // 若 null 已占位, 仅备份 'last' 偶尔多补一个 (使用者手动拖一根默认就应默认 first)
         newSigPatches.push([n.id, sig]);
+        // v1.2.10.5: 整组防重叠 —— 先算期望单列矩形, 再求公共偏移
+        const _szFP = defaultSizeOf('output');
+        const _desiredFP: PlacementRect[] = need.map((_, i) => ({
+          x: baseX, y: baseY + i * 360, w: _szFP.w, h: _szFP.h,
+        }));
+        const _offFP = placeBatchNodes(_desiredFP, nodes, { source: 'placement:auto-frame-pair' });
         for (let i = 0; i < need.length; i++) {
           const h = need[i];
           const newId = `output-auto-${n.id}-${Date.now()}-${h}-${Math.random().toString(36).slice(2, 6)}`;
           toAddNodes.push({
             id: newId,
             type: 'output',
-            position: { x: baseX, y: baseY + i * 360 },
+            position: { x: baseX + _offFP.dx, y: baseY + i * 360 + _offFP.dy },
             data: {}, // 不带 pickKind/pickIndex, 让 useUpstreamMaterials 按 sourceHandle 过滤
             selected: false,
           } as Node);
@@ -2015,13 +2031,19 @@ function CanvasInner({ onAddNodeRef }: CanvasInnerProps) {
         if (a1 && !usedHandles.has('audio-1')) need.push('audio-1');
         if (need.length === 0) { newSigPatches.push([n.id, sig]); continue; }
         newSigPatches.push([n.id, sig]);
+        // v1.2.10.5: 整组防重叠
+        const _szSU = defaultSizeOf('output');
+        const _desiredSU: PlacementRect[] = need.map((_, i) => ({
+          x: baseX, y: baseY + i * 360, w: _szSU.w, h: _szSU.h,
+        }));
+        const _offSU = placeBatchNodes(_desiredSU, nodes, { source: 'placement:auto-suno' });
         for (let i = 0; i < need.length; i++) {
           const h = need[i];
           const newId = `output-auto-${n.id}-${Date.now()}-${h}-${Math.random().toString(36).slice(2, 6)}`;
           toAddNodes.push({
             id: newId,
             type: 'output',
-            position: { x: baseX, y: baseY + i * 360 },
+            position: { x: baseX + _offSU.dx, y: baseY + i * 360 + _offSU.dy },
             data: {}, // 不带 pickKind/pickIndex。由 useUpstreamMaterials/OutputNode collected 按 sourceHandle 滤
             selected: false,
           } as Node);
@@ -2155,6 +2177,18 @@ function CanvasInner({ onAddNodeRef }: CanvasInnerProps) {
       const baseX = (n.position?.x ?? 0) + srcW + 80;
       const baseY = n.position?.y ?? 0;
 
+      // v1.2.10.5: 整组防重叠 —— 先算期望网格矩形, 再求公共偏移
+      const _szGen = defaultSizeOf('output');
+      const _desiredGen: PlacementRect[] = remainingItems.slice(0, needCount).map((item) => {
+        const idx = items.findIndex((it) => it.kind === item.kind && it.kindIndex === item.kindIndex);
+        return {
+          x: baseX + (idx % 3) * 350,
+          y: baseY + Math.floor(idx / 3) * 360,
+          w: _szGen.w, h: _szGen.h,
+        };
+      });
+      const _offGen = placeBatchNodes(_desiredGen, nodes, { source: 'placement:auto-output' });
+
       for (let i = 0; i < needCount; i++) {
         const item = remainingItems[i];
         if (!item) break;
@@ -2168,9 +2202,10 @@ function CanvasInner({ onAddNodeRef }: CanvasInnerProps) {
           type: 'output',
           // 网格排列: 每行 3 个, 超过换行。
           // OutputNode 宽 320 + 横间距 30 = 列宽 350; 行高 360 (包含图像预览).
+          // v1.2.10.5: 掠上 _offGen 避让现有节点。
           position: {
-            x: baseX + (offsetIndex % 3) * 350,
-            y: baseY + Math.floor(offsetIndex / 3) * 360,
+            x: baseX + (offsetIndex % 3) * 350 + _offGen.dx,
+            y: baseY + Math.floor(offsetIndex / 3) * 360 + _offGen.dy,
           },
           // pickKind/pickIndex: 下游 OutputNode 只拾上游对应 kind 的第 kindIndex 项,
           // 避免多图场景下所有 OutputNode 都重复显示全部输出

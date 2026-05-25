@@ -17,6 +17,8 @@ import { useMaterialDropTarget } from '../../hooks/useMaterialDropTarget';
 import { useDragMaterialStore, type MaterialPayload } from '../../stores/dragMaterial';
 import ResizableCorners from './ResizableCorners';
 import { saveAssetToDisk } from '../../services/api';
+// v1.2.10.5: 节点落点防重叠 —— 双击编辑产出 N 节点 3 列宫格整组避让
+import { placeBatchNodes, defaultSizeOf, type Rect as PlacementRect } from '../../utils/nodePlacement';
 
 /**
  * OutputNode - 通用输出素材节点 (中继展示型)
@@ -361,6 +363,14 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
     const COL_W = 350;
     const ROW_H = Math.max(360, myH); // 以本节点高度为下限避免重叠
     const ts = Date.now();
+    // v1.2.10.5: 整组防重叠 —— 先算期望 3 列宫格, 再求公共偏移
+    const _sz = defaultSizeOf('output');
+    const _desired: PlacementRect[] = urls.map((_, i) => ({
+      x: baseX + (i % COLS) * COL_W,
+      y: baseY + Math.floor(i / COLS) * ROW_H,
+      w: _sz.w, h: _sz.h,
+    }));
+    const _off = placeBatchNodes(_desired, rf.getNodes(), { source: `placement:produce:${id}` });
     const newNodes: Node[] = urls.map((u, i) => {
       const newId = `output-auto-edit-${id}-${ts}-${i}-${Math.random()
         .toString(36)
@@ -369,8 +379,8 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
         id: newId,
         type: 'output',
         position: {
-          x: baseX + (i % COLS) * COL_W,
-          y: baseY + Math.floor(i / COLS) * ROW_H,
+          x: baseX + (i % COLS) * COL_W + _off.dx,
+          y: baseY + Math.floor(i / COLS) * ROW_H + _off.dy,
         },
         data: {
           directImageUrl: u,

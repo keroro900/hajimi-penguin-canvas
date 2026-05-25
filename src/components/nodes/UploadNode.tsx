@@ -17,6 +17,8 @@ import { useRunTrigger } from '../../hooks/useRunTrigger';
 import { useDragMaterialStore, type MaterialPayload } from '../../stores/dragMaterial';
 import ImageEditModal, { type ImageEditProduceMeta } from './ImageEditModal';
 import ResizableCorners from './ResizableCorners';
+// v1.2.10.5: 节点落点防重叠
+import { placeSingleNode, placeBatchNodes, defaultSizeOf, type Rect as PlacementRect } from '../../utils/nodePlacement';
 
 /**
  * UploadNode - 通用上传素材节点
@@ -153,10 +155,12 @@ const UploadNode = ({ id, data, selected }: NodeProps) => {
       dataPatch.directAudioUrl = url;
       dataPatch.audioUrl = url;
     }
+    // v1.2.10.5: 防重叠 —— 单节点螺线避让
+    const _finalPos = placeSingleNode(baseX, baseY, 'output', nodes, { source: `placement:upload-auto:${id}` });
     const newNode: Node = {
       id: newId,
       type: 'output',
-      position: { x: baseX, y: baseY },
+      position: { x: _finalPos.x, y: _finalPos.y },
       data: dataPatch,
       selected: false,
     } as Node;
@@ -283,6 +287,14 @@ const UploadNode = ({ id, data, selected }: NodeProps) => {
     const COL_W = 350;
     const ROW_H = Math.max(360, myH);
     const ts = Date.now();
+    // v1.2.10.5: 整组防重叠 —— 先算 3 列宫格, 再求公共偏移
+    const _sz = defaultSizeOf('output');
+    const _desired: PlacementRect[] = urls.map((_, i) => ({
+      x: baseX + (i % COLS) * COL_W,
+      y: baseY + Math.floor(i / COLS) * ROW_H,
+      w: _sz.w, h: _sz.h,
+    }));
+    const _off = placeBatchNodes(_desired, rf.getNodes(), { source: `placement:upload-produce:${id}` });
     const newNodes: Node[] = urls.map((u, i) => {
       const newId = `output-auto-edit-${id}-${ts}-${i}-${Math.random()
         .toString(36)
@@ -291,8 +303,8 @@ const UploadNode = ({ id, data, selected }: NodeProps) => {
         id: newId,
         type: 'output',
         position: {
-          x: baseX + (i % COLS) * COL_W,
-          y: baseY + Math.floor(i / COLS) * ROW_H,
+          x: baseX + (i % COLS) * COL_W + _off.dx,
+          y: baseY + Math.floor(i / COLS) * ROW_H + _off.dy,
         },
         data: {
           directImageUrl: u,
