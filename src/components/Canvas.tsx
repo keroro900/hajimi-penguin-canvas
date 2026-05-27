@@ -394,6 +394,7 @@ function CanvasInner({ onAddNodeRef }: CanvasInnerProps) {
   );
   const visualStyle = currentTemplate.visuals?.style || style;
   const isOp = visualStyle === 'op';
+  const isNaruto = visualStyle === 'naruto';
   const themeTokens = getTemplateMode(currentTemplate, theme).tokens;
   const { screenToFlowPosition, setCenter, getViewport } = useReactFlow();
   const [nodes, setNodes] = useState<Node[]>([]);
@@ -3045,25 +3046,31 @@ function CanvasInner({ onAddNodeRef }: CanvasInnerProps) {
             setCenter(position.x, position.y, { zoom, duration: 400 });
           }}
           style={{
-            width: isOp ? 144 : undefined,
-            height: isOp ? 144 : undefined,
+            width: isOp ? 144 : isNaruto ? 182 : undefined,
+            height: isOp ? 144 : isNaruto ? 122 : undefined,
             background: isOp
               ? themeTokens.panelBg
+              : isNaruto
+                ? themeTokens.panelBg
               : isDark ? 'rgba(20,20,22,.9)' : 'rgba(255,255,255,.9)',
             border: isOp
               ? `4px double ${themeTokens.textMain}`
+              : isNaruto
+                ? `3px solid ${themeTokens.textMain}`
               : `1px solid ${isDark ? 'rgba(255,255,255,.1)' : 'rgba(0,0,0,.08)'}`,
-            borderRadius: isOp ? 999 : 8,
-            right: isOp ? 24 : undefined,
-            bottom: isOp ? 42 : undefined,
+            borderRadius: isOp ? 999 : isNaruto ? '18px 18px 12px 12px' : 8,
+            right: isOp ? 24 : isNaruto ? 24 : undefined,
+            bottom: isOp ? 42 : isNaruto ? 40 : undefined,
             boxShadow: isOp
               ? `0 0 0 7px ${themeTokens.warning}, 5px 5px 0 ${themeTokens.textMain}`
+              : isNaruto
+                ? themeTokens.shadowPanel
               : undefined,
             cursor: 'pointer',
-            overflow: isOp ? 'hidden' : undefined,
+            overflow: isOp || isNaruto ? 'hidden' : undefined,
           }}
-          maskColor={isOp ? 'rgba(15,124,140,.28)' : isDark ? 'rgba(0,0,0,.6)' : 'rgba(255,255,255,.6)'}
-          nodeColor={() => (isOp ? themeTokens.secondary : isDark ? '#a1a1aa' : '#52525b')}
+          maskColor={isOp ? 'rgba(15,124,140,.28)' : isNaruto ? 'rgba(255,91,31,.22)' : isDark ? 'rgba(0,0,0,.6)' : 'rgba(255,255,255,.6)'}
+          nodeColor={() => (isOp ? themeTokens.secondary : isNaruto ? themeTokens.accent : isDark ? '#a1a1aa' : '#52525b')}
         />
         {/* 选中可执行节点时的浮动操作栏 (执行 / 中止 / 关闭) */}
         <NodeActionBar />
