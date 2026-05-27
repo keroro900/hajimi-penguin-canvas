@@ -96,12 +96,12 @@ function defaultMusicFor(legacyStyle, visuals) {
   }
   if (style === 'rh') {
     return {
-      title: 'RunningHub Pulse Loop',
+      title: '潮鸣',
       preset: 'rh-pulse',
       source: 'synth',
       volume: 0.14,
       bpm: 104,
-      copyrightNote: '原创 RH 工作台氛围合成循环；可替换为已授权音频 URL。',
+      copyrightNote: 'RH 工作台氛围默认音乐；可替换为已授权音频 URL。',
     };
   }
   if (legacyStyle === 'tech' || style === 'tech') {
@@ -131,6 +131,11 @@ function normalizeMusic(raw, legacyStyle, visuals) {
   const bpm = Number(source.bpm);
   const rawUrl = typeof source.url === 'string' ? source.url.trim() : '';
   const safeUrl = rawUrl.startsWith('data:audio/') || /^https?:\/\//i.test(rawUrl) ? rawUrl.slice(0, 45000000) : '';
+  const rawHiddenUrl = typeof source.hiddenUrl === 'string' ? source.hiddenUrl.trim() : '';
+  const safeHiddenUrl = rawHiddenUrl.startsWith('data:audio/') || /^https?:\/\//i.test(rawHiddenUrl)
+    ? rawHiddenUrl.slice(0, 45000000)
+    : '';
+  const hiddenVolume = Number(source.hiddenVolume);
   return {
     title: typeof source.title === 'string' && source.title.trim()
       ? source.title.trim().slice(0, 80)
@@ -138,6 +143,11 @@ function normalizeMusic(raw, legacyStyle, visuals) {
     preset: MUSIC_PRESETS.has(source.preset) ? source.preset : fallback.preset,
     source: MUSIC_SOURCES.has(source.source) ? source.source : fallback.source,
     url: safeUrl,
+    hiddenTitle: typeof source.hiddenTitle === 'string' && source.hiddenTitle.trim()
+      ? source.hiddenTitle.trim().slice(0, 80)
+      : '',
+    hiddenUrl: safeHiddenUrl,
+    hiddenVolume: Number.isFinite(hiddenVolume) ? Math.max(0, Math.min(hiddenVolume, 0.5)) : undefined,
     volume: Number.isFinite(volume) ? Math.max(0, Math.min(volume, 0.5)) : fallback.volume,
     bpm: Number.isFinite(bpm) ? Math.max(40, Math.min(Math.round(bpm), 220)) : fallback.bpm,
     copyrightNote: typeof source.copyrightNote === 'string'

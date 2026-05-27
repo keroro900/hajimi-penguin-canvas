@@ -4,6 +4,8 @@ import type { ThemeMode, ThemeTemplate, ThemeTokens } from './types';
 const classicThemeMusicUrl = new URL('../assets/theme-music/classic-one-summer-day.mp3', import.meta.url).href;
 const pixelThemeMusicUrl = new URL('../assets/theme-music/pixel-theme-of-sss.mp3', import.meta.url).href;
 const opThemeMusicUrl = new URL('../assets/theme-music/op-battle-scars.mp3', import.meta.url).href;
+export const rhThemeMusicUrl = new URL('../assets/theme-music/rh-tide.mp3', import.meta.url).href;
+export const rhHiddenThemeMusicUrl = new URL('../assets/theme-music/rh-hidden-saya.mp3', import.meta.url).href;
 
 export const DEFAULT_THEME_TEMPLATE_ID = 'pixel-candy';
 export const TECH_TEMPLATE_ID = 'tech-default';
@@ -402,12 +404,16 @@ export const BUILT_IN_THEME_TEMPLATES: ThemeTemplate[] = [
       headerMark: 'RH',
     },
     music: {
-      title: 'RunningHub Pulse Loop',
+      title: '潮鸣',
       preset: 'rh-pulse',
-      source: 'synth',
-      volume: 0.14,
+      source: 'url',
+      url: rhThemeMusicUrl,
+      hiddenTitle: '沙耶之歌',
+      hiddenUrl: rhHiddenThemeMusicUrl,
+      hiddenVolume: 0.2,
+      volume: 0.16,
       bpm: 104,
-      copyrightNote: '原创 RH 工作台氛围合成循环；可在主题模板中上传替换。',
+      copyrightNote: 'RH 风格默认音乐文件；隐藏模式会自动切换到隐藏主题音乐，可在主题模板中上传替换普通主题音乐。',
     },
     modes: { dark: { tokens: rhDark }, light: { tokens: rhLight } },
   },

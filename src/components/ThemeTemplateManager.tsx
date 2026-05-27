@@ -11,7 +11,13 @@ import {
   Upload,
   X,
 } from 'lucide-react';
-import { BUILT_IN_THEME_TEMPLATES, getTemplateMode, resolveThemeTemplate } from '../theme/defaultTemplates';
+import {
+  BUILT_IN_THEME_TEMPLATES,
+  getTemplateMode,
+  resolveThemeTemplate,
+  rhHiddenThemeMusicUrl,
+  rhThemeMusicUrl,
+} from '../theme/defaultTemplates';
 import { getThemeContrastWarnings } from '../theme/validateTheme';
 import type {
   LegacyThemeStyle,
@@ -160,12 +166,16 @@ function fallbackMusic(legacyStyle: LegacyThemeStyle, visuals?: ThemeVisuals): T
   }
   if (visualStyle === 'rh') {
     return {
-      title: 'RunningHub Pulse Loop',
+      title: '潮鸣',
       preset: 'rh-pulse',
-      source: 'synth',
-      volume: 0.14,
+      source: 'url',
+      url: rhThemeMusicUrl,
+      hiddenTitle: '沙耶之歌',
+      hiddenUrl: rhHiddenThemeMusicUrl,
+      hiddenVolume: 0.2,
+      volume: 0.16,
       bpm: 104,
-      copyrightNote: '原创 RH 工作台氛围合成循环；可替换为已授权音频 URL。',
+      copyrightNote: 'RH 风格默认音乐；隐藏模式会自动切换隐藏主题音乐。',
     };
   }
   if (legacyStyle === 'tech' || visualStyle === 'tech') {

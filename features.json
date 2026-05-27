@@ -1,7 +1,7 @@
 {
   "$schema": "本文件为 T8-penguin-canvas 节点清单防丢失锁,任何节点删减都需要在 roadmap.md 中说明并更新本文件。",
-  "version": "1.5.4",
-  "lastUpdated": "2026-05-27-v1.5.4-rh-hidden-duck",
+  "version": "1.5.5",
+  "lastUpdated": "2026-05-27-v1.5.5-rh-theme-music",
   "packaging": {
     "description": "Electron NSIS 桌面端打包链路(v1.2.1 起标准化, 严禁未明确指令主动打包)。完整产物拓扑: app.asar(electron/{main,loader,preload}.cjs + node_modules) + app.asar.unpacked(node_modules/sharp + @img) + resources/backend-enc/*.t8c(extraResources, asar 外) + resources/frontend(extraResources, asar 外)。前端版本号由 vite define 注入 __APP_VERSION__、Sidebar 左下角自动同步。",
     "scripts": {
@@ -16,10 +16,10 @@
       "T8PC_FRONTEND_DIST": "打包模式 = path.join(process.resourcesPath, 'frontend'); 开发模式 = <project>/dist",
       "T8PC_RES": "打包模式 = process.resourcesPath; 开发模式 = <project>"
     },
-    "version": "1.5.4",
-    "semverVersion": "1.5.4",
-    "versionNote": "v1.3.0 起统一采用 semver 三段阶段号 x.y.z；当前源码为 v1.5.4：RH 主题隐藏鸭鸭解码模式收尾，长按 RUN 后上传节点、输出节点、端口、选中外圈和解码连线统一红色隐藏态，解码成功时 OutputNode 只展示解码后的真实素材，不再混入解码前鸭鸭图。本次按规范打包 Electron。",
-    "installer": "dist_electron/T8-PenguinCanvas-Setup-1.5.4.exe (NSIS, 104.65 MB)",
+    "version": "1.5.5",
+    "semverVersion": "1.5.5",
+    "versionNote": "v1.3.0 起统一采用 semver 三段阶段号 x.y.z；当前源码为 v1.5.5：RH 主题默认音乐替换为 rh-tide.mp3，隐藏模式自动切换 rh-hidden-saya.mp3 并解除静音播放，主题模板导入/导出保留隐藏音乐字段。本次按规范打包 Electron。",
+    "installer": "dist_electron/T8-PenguinCanvas-Setup-1.5.5.exe (NSIS, 108.96 MB)",
     "checklist": [
       "运行 npm run encrypt 前确认已 npm install bytenode 且使用 Electron 内置 Node",
       "backend/src/ 任何文件修改后必须重新 npm run encrypt 再打包",
@@ -68,9 +68,10 @@
           "tech-default": "classic-one-summer-day.mp3",
           "pixel-candy": "pixel-theme-of-sss.mp3",
           "op-style": "op-battle-scars.mp3",
-          "rh-style": "rh-pulse synth"
+          "rh-style": "rh-tide.mp3",
+          "rh-hidden": "rh-hidden-saya.mp3"
         },
-        "rule": "主题音乐只在用户主动点击播放按钮后播放；模板编辑器支持上传替换，导出模板可携带 data:audio/*。"
+        "rule": "主题音乐默认静音，通常只在用户主动点击播放按钮后播放；RH 主题隐藏模式是唯一例外，会自动切换隐藏音乐并解除静音。模板编辑器支持上传替换，导出模板可携带 data:audio/*。"
       }
     },
     "styles": {
@@ -129,7 +130,7 @@
           "nodeFrame": "hub-card",
           "headerMark": "RH"
         },
-        "music": "rh-pulse synth"
+        "music": "rh-tide.mp3；隐藏模式自动切换 rh-hidden-saya.mp3 并解除静音播放"
       }
     },
     "defaultStyle": "pixel",
@@ -214,7 +215,8 @@
     "phase70": { "label": "素材集二版与资源库整套复用 (v1.5.2)", "status": "complete", "items": ["修复素材集内图像缩略图拖拽排序无反应：图片内容禁用 pointer 事件，缩略项使用自定义 pointer 排序并阻止 ReactFlow 抢拖拽；视频、音频排序逻辑保持不变。", "MaterialSetNode 新增反转顺序、按文件名/文本名排序、随机排序，方便用户快速整理批量素材。", "MaterialSetNode 新增 t8-material-set JSON 导入 / 导出，导出包含素材集类型、素材顺序、文件名、mime、大小和文本内容，导入时会校验 schema 与同类型素材。", "素材集节点右键菜单新增「保存素材集到资源库」，复用原资源库分类选择菜单；保存时整套素材按当前顺序复制到资源库目录。", "资源库新增 set / 素材集类型与默认分类，ResourceLibraryDrawer 增加素材集 Tab，支持整套缩略预览、收藏、重命名、分类、删除和一键插入画布为 material-set 节点。", "后端 resources 路由新增 POST /api/resources/sets/add、GET /api/resources/set/:id、GET /api/resources/set-file/:id/:index；媒体素材复制到 resources/sets/<id>/，文本素材写入 manifest，插入后仍可继续传给生成、RH、循环器和工具节点。"] },
     "phase71": { "label": "素材集导入显性化与资源库快捷键 (v1.5.3)", "status": "complete", "items": ["MaterialSetNode 将原本隐藏在图标里的 JSON 操作改成明确的「导入素材集 / 导出素材集」文字按钮，用户可直接导入 t8-material-set JSON 恢复整套素材。", "导入素材集仍复用 parseMaterialSetBackup 校验 schema 和同类型素材约束；导入会在当前素材集非空时二次确认覆盖，避免误替换。", "App 增加全局 R 快捷键：未选中任何 ReactFlow 节点、且焦点不在 input / textarea / select / contenteditable 时，按 R 打开或关闭资源库。", "CanvasToolbar 快捷键说明同步新增 R 说明，资源库顶部按钮和快捷键保持一致。", "公开版本同步到 1.5.3：package.json、package-lock.json、vite.config.ts/js、electron/main.cjs、backend/src/config.js APP_VERSION、features.json、README.md 全部同步；skill.md 仅本地更新，继续禁止推送 GitHub。"] },
     "phase72": { "label": "RH 主题模板 (v1.5.3)", "status": "complete", "items": ["新增第四套内置主题 RH风格，参考 RunningHub 工作台观感，提供 light/dark 两套 ThemeTokens。", "主题视觉新增 visuals.style=rh、canvasPattern=hub、nodeFrame=hub-card 与 rh-pulse 合成音乐预设，模板编辑器和后端主题导入校验同步支持。", "新增 theme-rh.css 全局视觉层，覆盖顶部栏、侧边栏、节点卡片、组容器、输入框、端口、连线、MiniMap、Controls、主题音乐按钮和主题预览，保持新节点自动适配。", "RH 皮肤层增加 legacy 内部控件适配器，统一覆盖旧节点里硬编码的标题角标、运行按钮、Tab/segmented controls、状态色、checkbox/radio，避免外壳是 RH 但内部仍是 orange/violet/rose/cyan 节点类型色。", "RH 风格保留科技风兼容层，不引入业务节点分支；后续新增节点只要走 t8-* 变量即可继承该主题。"] },
-    "phase73": { "label": "RH 隐藏鸭鸭解码模式收尾 (v1.5.4)", "status": "complete", "items": ["RH 主题下选中已上传图像的 UploadNode 后，长按顶部浮动 RUN 3 秒切换红色隐藏模式；其他主题、非图像上传和未上传节点不触发。", "隐藏模式运行时批量调用 /api/files/duck-decode 尝试 SS_tools 无密码鸭鸭图解码，成功后按真实 kind 输出 image / video / audio；非鸭鸭图或解码失败静默回退普通上传输出，不打扰用户。", "解码成功的 OutputNode 写入 rhDuckDecoded direct-only 标记，OutputNode 不再通过上游连线重新收集解码前鸭鸭原图，只展示解码后的真实素材。", "RH 主题隐藏态覆盖上传节点、输出节点、端口、选中外圈、Edit/RUN 按钮、缩放角点与隐藏解码连线，统一使用荧光红，与普通 RH 荧光绿状态明确区分。", "DeletableEdge 会根据 edge.data.rhDuckEdge 或目标 OutputNode 的 rhDuckDecoded 自动补 rh-duck-edge 类名，避免隐藏模式连线在重渲染后回到绿色。", "后端 duck-decode 仅允许 /files/input/* 与 /files/output/* 本地文件，不暴露任意路径读取；hiddenFeatures.ts 只保存会话态，不持久化进画布 JSON。", "公开版本同步到 1.5.4：package.json、package-lock.json、vite.config.ts/js、electron/main.cjs、backend/src/config.js APP_VERSION、features.json、README.md 全部同步；skill.md 仅本地更新，继续禁止推送 GitHub。"] }
+    "phase73": { "label": "RH 隐藏鸭鸭解码模式收尾 (v1.5.4)", "status": "complete", "items": ["RH 主题下选中已上传图像的 UploadNode 后，长按顶部浮动 RUN 3 秒切换红色隐藏模式；其他主题、非图像上传和未上传节点不触发。", "隐藏模式运行时批量调用 /api/files/duck-decode 尝试 SS_tools 无密码鸭鸭图解码，成功后按真实 kind 输出 image / video / audio；非鸭鸭图或解码失败静默回退普通上传输出，不打扰用户。", "解码成功的 OutputNode 写入 rhDuckDecoded direct-only 标记，OutputNode 不再通过上游连线重新收集解码前鸭鸭原图，只展示解码后的真实素材。", "RH 主题隐藏态覆盖上传节点、输出节点、端口、选中外圈、Edit/RUN 按钮、缩放角点与隐藏解码连线，统一使用荧光红，与普通 RH 荧光绿状态明确区分。", "DeletableEdge 会根据 edge.data.rhDuckEdge 或目标 OutputNode 的 rhDuckDecoded 自动补 rh-duck-edge 类名，避免隐藏模式连线在重渲染后回到绿色。", "RH 风格默认音乐改为 src/assets/theme-music/rh-tide.mp3；隐藏模式启用后 ThemeMusicToggle 自动切换到 rh-hidden-saya.mp3 并解除静音播放，隐藏模式关闭后若原本未手动播放则自动停止。", "后端 duck-decode 仅允许 /files/input/* 与 /files/output/* 本地文件，不暴露任意路径读取；hiddenFeatures.ts 只保存会话态，不持久化进画布 JSON。", "公开版本同步到 1.5.4：package.json、package-lock.json、vite.config.ts/js、electron/main.cjs、backend/src/config.js APP_VERSION、features.json、README.md 全部同步；skill.md 仅本地更新，继续禁止推送 GitHub。"] },
+    "phase74": { "label": "RH 主题音乐与隐藏模式自动播放 (v1.5.5)", "status": "complete", "items": ["RH 风格默认音乐正式替换为 src/assets/theme-music/rh-tide.mp3，对应用户提供的潮鸣音频；隐藏模式音乐新增 src/assets/theme-music/rh-hidden-saya.mp3，对应用户提供的沙耶之歌主题音频。", "ThemeMusic 类型新增 hiddenTitle / hiddenUrl / hiddenVolume，defaultTemplates 内置 RH 模板改为 URL 音频源并声明隐藏模式备用曲目。", "ThemeMusicToggle 监听 hiddenFeatures.rhDuckUploadIds：RH 隐藏模式开启时自动切换隐藏音乐并解除静音播放；关闭隐藏模式时，如果不是用户手动播放，则自动停止，避免普通 RH 主题意外继续响。", "ThemeTemplateManager 与 backend/src/routes/themes.js 保留隐藏音乐字段，主题模板编辑、保存、导入、导出不会丢失 hiddenTitle / hiddenUrl / hiddenVolume。", "_post_build.cjs 校验五首内置主题音乐 mp3，包含 classic-one-summer-day、pixel-theme-of-sss、op-battle-scars、rh-tide、rh-hidden-saya，防止 Electron 用户包漏带音频资源。", "公开版本同步到 1.5.5：package.json、package-lock.json、vite.config.ts/js、electron/main.cjs、backend/src/config.js APP_VERSION、features.json、README.md 全部同步；skill.md 仅本地更新，继续禁止推送 GitHub。"] }
   },
   "categories": {
     "input": {

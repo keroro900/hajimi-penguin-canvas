@@ -1,6 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Disc3, VolumeX } from 'lucide-react';
 import type { ThemeMusicPreset, ThemeTemplate } from '../theme/types';
+import { rhHiddenThemeMusicUrl } from '../theme/defaultTemplates';
+import { useHiddenFeatureStore } from '../stores/hiddenFeatures';
 
 interface ThemeMusicToggleProps {
   template: ThemeTemplate;
@@ -80,16 +82,50 @@ function scheduleNote(ctx: AudioContext, master: GainNode, note: Note, startAt: 
 }
 
 export default function ThemeMusicToggle({ template }: ThemeMusicToggleProps) {
-  const music = template.music;
   const [enabled, setEnabled] = useState(false);
+  const rhDuckUploadIds = useHiddenFeatureStore((s) => s.rhDuckUploadIds);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const masterGainRef = useRef<GainNode | null>(null);
   const timerRef = useRef<number | null>(null);
+  const autoHiddenMusicRef = useRef(false);
+  const enabledRef = useRef(false);
+
+  const rhHiddenMusicActive = template.visuals?.style === 'rh' && rhDuckUploadIds.length > 0;
+  const music = useMemo(() => {
+    const base = template.music;
+    if (!rhHiddenMusicActive) return base;
+    return {
+      title: base?.hiddenTitle || '沙耶之歌',
+      preset: base?.preset || 'rh-pulse',
+      source: 'url' as const,
+      url: base?.hiddenUrl || rhHiddenThemeMusicUrl,
+      volume: base?.hiddenVolume ?? base?.volume ?? 0.2,
+      bpm: base?.bpm,
+      copyrightNote: base?.copyrightNote,
+    };
+  }, [
+    rhHiddenMusicActive,
+    template.music?.bpm,
+    template.music?.copyrightNote,
+    template.music?.hiddenTitle,
+    template.music?.hiddenUrl,
+    template.music?.hiddenVolume,
+    template.music?.preset,
+    template.music?.source,
+    template.music?.title,
+    template.music?.url,
+    template.music?.volume,
+  ]);
 
   const title = music?.title || 'Theme Music';
   const preset = music?.preset || 'tech-pulse';
   const volume = clampVolume(music?.volume);
+  const musicKey = `${template.id}|${rhHiddenMusicActive ? 'rh-hidden' : 'normal'}|${music?.preset || ''}|${music?.source || ''}|${music?.url || ''}|${volume}`;
+
+  useEffect(() => {
+    enabledRef.current = enabled;
+  }, [enabled]);
 
   const stop = () => {
     if (timerRef.current !== null) {
@@ -141,13 +177,8 @@ export default function ThemeMusicToggle({ template }: ThemeMusicToggleProps) {
     timerRef.current = window.setInterval(playLoop, loopSeconds * 1000);
   };
 
-  const toggle = async () => {
-    if (enabled) {
-      stop();
-      setEnabled(false);
-      return;
-    }
-
+  const playCurrentMusic = async () => {
+    stop();
     try {
       if ((music?.source === 'url' || music?.source === 'upload') && music.url?.trim()) {
         await playUrl(music.url.trim());
@@ -155,18 +186,44 @@ export default function ThemeMusicToggle({ template }: ThemeMusicToggleProps) {
         await playSynth();
       }
       setEnabled(true);
+      enabledRef.current = true;
     } catch (error) {
       stop();
       setEnabled(false);
+      enabledRef.current = false;
       console.warn('[theme-music] unable to start theme music', error);
     }
   };
 
+  const toggle = async () => {
+    autoHiddenMusicRef.current = false;
+    if (enabled) {
+      stop();
+      setEnabled(false);
+      enabledRef.current = false;
+      return;
+    }
+    await playCurrentMusic();
+  };
+
   useEffect(() => {
+    const wasPlaying = enabledRef.current;
     stop();
-    setEnabled(false);
+    if (rhHiddenMusicActive) {
+      autoHiddenMusicRef.current = !wasPlaying;
+      void playCurrentMusic();
+      return stop;
+    }
+
+    if (wasPlaying && !autoHiddenMusicRef.current) {
+      void playCurrentMusic();
+    } else {
+      setEnabled(false);
+      enabledRef.current = false;
+    }
+    autoHiddenMusicRef.current = false;
     return stop;
-  }, [template.id, template.music?.preset, template.music?.source, template.music?.url]);
+  }, [musicKey]);
 
   return (
     <button

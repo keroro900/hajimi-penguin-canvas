@@ -62,6 +62,9 @@ export interface ThemeMusic {
   preset: ThemeMusicPreset;
   source?: ThemeMusicSource;
   url?: string;
+  hiddenTitle?: string;
+  hiddenUrl?: string;
+  hiddenVolume?: number;
   volume?: number;
   bpm?: number;
   copyrightNote?: string;
