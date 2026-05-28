@@ -1,7 +1,7 @@
 {
   "$schema": "本文件为 T8-penguin-canvas 节点清单防丢失锁,任何节点删减都需要在 roadmap.md 中说明并更新本文件。",
-  "version": "1.6.2",
-  "lastUpdated": "2026-05-28-v1.6.2-cross-canvas-eagle-send",
+  "version": "1.6.3",
+  "lastUpdated": "2026-05-28-v1.6.3-send-materials-ux",
   "packaging": {
     "description": "Electron NSIS 桌面端打包链路(v1.2.1 起标准化, 严禁未明确指令主动打包)。完整产物拓扑: app.asar(electron/{main,loader,preload}.cjs + node_modules) + app.asar.unpacked(node_modules/sharp + @img) + resources/backend-enc/*.t8c(extraResources, asar 外) + resources/frontend(extraResources, asar 外)。前端版本号由 vite define 注入 __APP_VERSION__、Sidebar 左下角自动同步。",
     "scripts": {
@@ -16,9 +16,9 @@
       "T8PC_FRONTEND_DIST": "打包模式 = path.join(process.resourcesPath, 'frontend'); 开发模式 = <project>/dist",
       "T8PC_RES": "打包模式 = process.resourcesPath; 开发模式 = <project>"
     },
-    "version": "1.6.2",
-    "semverVersion": "1.6.2",
-    "versionNote": "v1.3.0 起统一采用 semver 三段阶段号 x.y.z；当前源码为 v1.6.2：新增跨画布素材发送与本地 Eagle 入库能力，框选上传素材 / 输出素材 / 素材集可发送到其他画布、资源库或 Eagle；发送弹窗补充明确选中态、忙碌反馈、发送后自动切换并定位到新节点，同批素材重复发送会替换旧批次，避免旧发送结果累计。已通过 npm run build；本次未重新打包 Electron。",
+    "version": "1.6.3",
+    "semverVersion": "1.6.3",
+    "versionNote": "v1.3.0 起统一采用 semver 三段阶段号 x.y.z；当前源码为 v1.6.3：补完跨画布发送第四阶段体验优化，发送弹窗新增最近发送画布、发送历史和重复素材提示；历史仅保存在本机 localStorage，点击历史可恢复目标画布和发送方式，重复同批素材会提示并继续沿用画布端替换旧批次机制。已通过 npm run build；本次未重新打包 Electron。",
     "installer": "本次未打包 Electron；最近一次安装包为 dist_electron/T8-PenguinCanvas-Setup-1.5.5.exe (NSIS, 108.96 MB)",
     "checklist": [
       "运行 npm run encrypt 前确认已 npm install bytenode 且使用 Electron 内置 Node",
@@ -1267,6 +1267,17 @@
         "新增后端 /api/eagle/status 与 /api/eagle/import，本地 Eagle API 只允许 localhost / 127.0.0.1 / ::1，支持本地 input/output 文件、资源库文件、资源库素材集文件与文本临时 txt 入库。",
         "设置页新增 Eagle 本地接口地址，默认 http://127.0.0.1:41595；_post_build.cjs 增加 routes/eagle.t8c 检查，确保 Electron 打包不会漏掉 Eagle 路由。",
         "公开版本同步到 1.6.2：package.json、package-lock.json、vite.config.ts/js、electron/main.cjs、backend/src/config.js APP_VERSION、features.json、README.md 同步；skill.md 仅本地更新，继续禁止推送 GitHub。"
+      ]
+    },
+    "phase82": {
+      "label": "跨画布素材发送体验优化 (v1.6.3)",
+      "status": "complete",
+      "items": [
+        "SendMaterialsModal 新增本机发送历史，最多保留 12 条成功发送记录，记录目标画布、发送方式、素材摘要、素材签名与发送时间。",
+        "发送弹窗左侧展示最近 4 条发送历史，点击历史可恢复目标画布与发送方式；目标画布区域新增最近发送画布快捷入口，减少多画布项目中的搜索成本。",
+        "同一批素材再次发送到同一目标画布时，弹窗会显示重复素材提示，提醒用户本次会优先复用既有 sendBridgeSignature 去重替换机制，避免旧发送节点反复堆叠。",
+        "发送目标初始化增加兜底：如果历史中的旧目标画布已不存在，会自动回退到当前画布或第一个可用画布，避免空目标导致用户迷惑。",
+        "公开版本同步到 1.6.3：package.json、package-lock.json、vite.config.ts/js、electron/main.cjs、backend/src/config.js APP_VERSION、features.json、README.md 同步；skill.md 仅本地更新，继续禁止推送 GitHub。"
       ]
     }
   },

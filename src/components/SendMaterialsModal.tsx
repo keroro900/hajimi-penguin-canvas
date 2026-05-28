@@ -1,9 +1,22 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Box, CheckCircle2, ExternalLink, Library, MonitorUp, PackagePlus, Send as SendIcon, UploadCloud, X } from 'lucide-react';
+import {
+  AlertTriangle,
+  Box,
+  CheckCircle2,
+  Clock3,
+  ExternalLink,
+  History,
+  Library,
+  MonitorUp,
+  PackagePlus,
+  Send as SendIcon,
+  UploadCloud,
+  X,
+} from 'lucide-react';
 import type { CanvasListItem } from '../types/canvas';
 import { useThemeStore } from '../stores/theme';
 import type { SendTargetMode, SendableMaterial } from '../utils/sendMaterials';
-import { bucketSendableMaterials, summarizeSendableMaterials } from '../utils/sendMaterials';
+import { bucketSendableMaterials, sendableMaterialSignature, summarizeSendableMaterials } from '../utils/sendMaterials';
 
 interface SendMaterialsModalProps {
   open: boolean;
@@ -26,6 +39,70 @@ const MODE_OPTIONS: Array<{ value: SendTargetMode; label: string; desc: string; 
   { value: 'output', label: '输出素材', desc: '以输出素材节点展示，适合跨画布归档结果', icon: MonitorUp },
 ];
 
+const SEND_HISTORY_KEY = 't8.sendMaterials.history.v1';
+const MAX_SEND_HISTORY = 12;
+
+interface SendHistoryEntry {
+  id: string;
+  targetCanvasId: string;
+  targetCanvasName: string;
+  mode: SendTargetMode;
+  modeLabel: string;
+  summary: string;
+  signature: string;
+  materialCount: number;
+  createdAt: number;
+}
+
+function isHistoryEntry(value: unknown): value is SendHistoryEntry {
+  if (!value || typeof value !== 'object') return false;
+  const entry = value as Partial<SendHistoryEntry>;
+  return (
+    typeof entry.id === 'string' &&
+    typeof entry.targetCanvasId === 'string' &&
+    typeof entry.targetCanvasName === 'string' &&
+    typeof entry.mode === 'string' &&
+    typeof entry.modeLabel === 'string' &&
+    typeof entry.summary === 'string' &&
+    typeof entry.signature === 'string' &&
+    typeof entry.materialCount === 'number' &&
+    typeof entry.createdAt === 'number'
+  );
+}
+
+function loadSendHistory(): SendHistoryEntry[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(SEND_HISTORY_KEY) || '[]');
+    return Array.isArray(parsed) ? parsed.filter(isHistoryEntry).slice(0, MAX_SEND_HISTORY) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveSendHistory(entries: SendHistoryEntry[]) {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(SEND_HISTORY_KEY, JSON.stringify(entries.slice(0, MAX_SEND_HISTORY)));
+  } catch {
+    // localStorage may be disabled; the send action itself should not fail because of history.
+  }
+}
+
+function formatHistoryTime(ts: number) {
+  try {
+    return new Date(ts).toLocaleString('zh-CN', {
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+  } catch {
+    return '';
+  }
+}
+
 export default function SendMaterialsModal({
   open,
   materials,
@@ -46,12 +123,14 @@ export default function SendMaterialsModal({
   const [q, setQ] = useState('');
   const [switchAfter, setSwitchAfter] = useState(false);
   const [busy, setBusy] = useState('');
+  const [sendHistory, setSendHistory] = useState<SendHistoryEntry[]>([]);
   const busyRef = useRef(false);
 
   useEffect(() => {
     if (!open) return;
+    setSendHistory(loadSendHistory());
     setMode(defaultMode);
-    setTargetId((prev) => prev || activeCanvasId || canvases[0]?.id || '');
+    setTargetId((prev) => (prev && canvases.some((canvas) => canvas.id === prev) ? prev : activeCanvasId || canvases[0]?.id || ''));
     setQ('');
     setSwitchAfter(false);
     setBusy('');
@@ -60,6 +139,7 @@ export default function SendMaterialsModal({
 
   const buckets = useMemo(() => bucketSendableMaterials(materials), [materials]);
   const summary = useMemo(() => summarizeSendableMaterials(materials), [materials]);
+  const signature = useMemo(() => sendableMaterialSignature(materials), [materials]);
   const filteredCanvases = useMemo(() => {
     const keyword = q.trim().toLowerCase();
     if (!keyword) return canvases;
@@ -73,6 +153,23 @@ export default function SendMaterialsModal({
     () => MODE_OPTIONS.find((opt) => opt.value === mode) || MODE_OPTIONS[0],
     [mode],
   );
+  const recentTargets = useMemo(() => {
+    const seen = new Set<string>();
+    const out: CanvasListItem[] = [];
+    for (const entry of sendHistory) {
+      if (seen.has(entry.targetCanvasId)) continue;
+      const target = canvases.find((canvas) => canvas.id === entry.targetCanvasId);
+      if (!target) continue;
+      seen.add(entry.targetCanvasId);
+      out.push(target);
+      if (out.length >= 4) break;
+    }
+    return out;
+  }, [canvases, sendHistory]);
+  const duplicateHistory = useMemo(() => {
+    if (!targetId || !signature) return null;
+    return sendHistory.find((entry) => entry.targetCanvasId === targetId && entry.signature === signature) || null;
+  }, [sendHistory, signature, targetId]);
 
   if (!open) return null;
 
@@ -101,6 +198,34 @@ export default function SendMaterialsModal({
       busyRef.current = false;
       setBusy('');
     }
+  };
+  const handleHistoryPick = (entry: SendHistoryEntry) => {
+    if (!canvases.some((canvas) => canvas.id === entry.targetCanvasId)) return;
+    setTargetId(entry.targetCanvasId);
+    if (MODE_OPTIONS.some((opt) => opt.value === entry.mode)) setMode(entry.mode);
+  };
+  const handleSendToCanvas = async () => {
+    const target = selectedCanvas || canvases.find((canvas) => canvas.id === targetId);
+    const entry: SendHistoryEntry = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      targetCanvasId: targetId,
+      targetCanvasName: target?.name || '未命名画布',
+      mode,
+      modeLabel: selectedMode.label,
+      summary,
+      signature,
+      materialCount: materials.length,
+      createdAt: Date.now(),
+    };
+    await onSendToCanvas(targetId, mode, switchAfter);
+    const previous = loadSendHistory();
+    const next = [
+      entry,
+      ...previous.filter(
+        (old) => !(old.targetCanvasId === entry.targetCanvasId && old.signature === entry.signature && old.mode === entry.mode),
+      ),
+    ].slice(0, MAX_SEND_HISTORY);
+    saveSendHistory(next);
   };
 
   return (
@@ -138,6 +263,40 @@ export default function SendMaterialsModal({
                 </div>
               ))}
               {materials.length > 12 && <div>还有 {materials.length - 12} 项...</div>}
+            </div>
+
+            <div className={`mt-3 rounded-lg p-2 ${isPixel ? 'border-2 border-[var(--px-ink)] bg-[var(--px-surface)]' : isDark ? 'border border-white/10 bg-black/20' : 'border border-black/10 bg-white'}`}>
+              <div className="flex items-center gap-1.5 text-xs font-semibold opacity-75">
+                <History size={13} />
+                <span>发送历史</span>
+              </div>
+              {sendHistory.length === 0 ? (
+                <div className="mt-2 rounded-md border border-dashed border-current/20 px-2 py-3 text-center text-[11px] opacity-55">
+                  发送后会记录最近目标和方式
+                </div>
+              ) : (
+                <div className="mt-2 space-y-1.5">
+                  {sendHistory.slice(0, 4).map((entry) => {
+                    const disabled = !canvases.some((canvas) => canvas.id === entry.targetCanvasId);
+                    return (
+                      <button
+                        key={entry.id}
+                        type="button"
+                        disabled={disabled}
+                        title={disabled ? '该画布已不存在' : '恢复这个发送目标和方式'}
+                        onClick={() => handleHistoryPick(entry)}
+                        className={`w-full rounded-md px-2 py-1.5 text-left text-[11px] transition ${disabled ? 'cursor-not-allowed opacity-45' : isPixel ? 'border-2 border-[var(--px-ink)] bg-[var(--px-muted)] hover:bg-[var(--px-yellow)]' : isDark ? 'bg-white/[0.05] hover:bg-white/10' : 'bg-black/[0.035] hover:bg-black/[0.06]'}`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="truncate font-semibold">{entry.targetCanvasName}</span>
+                          <span className="shrink-0 opacity-55">{formatHistoryTime(entry.createdAt)}</span>
+                        </div>
+                        <div className="mt-0.5 truncate opacity-65">{entry.modeLabel} · {entry.summary}</div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </aside>
 
@@ -180,6 +339,30 @@ export default function SendMaterialsModal({
 
             <div>
               <label className="mb-1 block text-xs font-semibold opacity-70">目标画布</label>
+              {recentTargets.length > 0 && (
+                <div className="mb-2">
+                  <div className="mb-1 flex items-center gap-1 text-[11px] font-semibold opacity-60">
+                    <Clock3 size={12} />
+                    <span>最近发送画布</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {recentTargets.map((canvas) => {
+                      const active = canvas.id === targetId;
+                      return (
+                        <button
+                          key={canvas.id}
+                          type="button"
+                          aria-pressed={active}
+                          onClick={() => setTargetId(canvas.id)}
+                          className={`max-w-[9rem] truncate rounded-full border px-2.5 py-1 text-xs font-semibold transition ${active ? 'border-[var(--t8-primary)] bg-[var(--t8-primary)] text-[var(--t8-on-primary)]' : isPixel ? 'border-[var(--px-ink)] bg-[var(--px-surface)] hover:bg-[var(--px-yellow)]' : isDark ? 'border-white/10 bg-white/5 hover:bg-white/10' : 'border-black/10 bg-black/[0.04] hover:bg-black/[0.07]'}`}
+                        >
+                          {canvas.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
               <input
                 value={q}
                 onChange={(event) => setQ(event.target.value)}
@@ -213,6 +396,17 @@ export default function SendMaterialsModal({
                 <input type="checkbox" checked={switchAfter} onChange={(event) => setSwitchAfter(event.target.checked)} />
                 发送后切换到目标画布
               </label>
+              {duplicateHistory && (
+                <div className={`mt-2 flex items-start gap-2 rounded-lg px-2.5 py-2 text-[11px] ${isPixel ? 'border-2 border-[var(--px-ink)] bg-[var(--px-yellow)] text-[var(--px-ink)]' : isDark ? 'border border-amber-300/30 bg-amber-300/10 text-amber-100' : 'border border-amber-300 bg-amber-50 text-amber-900'}`}>
+                  <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+                  <div>
+                    <div className="font-semibold">这批素材最近已发送过</div>
+                    <div className="mt-0.5 opacity-80">
+                      上次：{formatHistoryTime(duplicateHistory.createdAt)} · {duplicateHistory.modeLabel}。再次发送会优先替换旧批次，避免重复堆叠。
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </main>
         </div>
@@ -246,7 +440,7 @@ export default function SendMaterialsModal({
             type="button"
             className={primaryBtn}
             disabled={!!busy || materials.length === 0 || !targetId}
-            onClick={() => runAction('canvas', () => onSendToCanvas(targetId, mode, switchAfter))}
+            onClick={() => runAction('canvas', handleSendToCanvas)}
           >
             <SendIcon size={14} className="inline-block mr-1" />
             {busy === 'canvas' ? '发送中...' : '发送到画布'}
