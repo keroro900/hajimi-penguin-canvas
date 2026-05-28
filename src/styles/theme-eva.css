@@ -315,6 +315,11 @@ html[data-theme-visual="eva"] .t8-sidebar .px-btn--icon {
 }
 
 html[data-theme-visual="eva"] .t8-canvas-shell {
+  --t8-floating-control-left: 14px;
+  --t8-floating-control-bottom: 12px;
+  --t8-flow-controls-height: 132px;
+  --t8-floating-control-gap: 10px;
+  --t8-theme-music-size: 30px;
   position: relative;
   overflow: hidden;
   background:
@@ -353,9 +358,17 @@ html[data-theme-visual="eva"] .t8-canvas-shell::after {
   pointer-events: none;
 }
 
+html[data-theme-visual="eva"][data-theme-mode="dark"] .t8-canvas-shell::after {
+  opacity: 0.62;
+  mix-blend-mode: normal;
+  filter:
+    drop-shadow(0 0 10px color-mix(in srgb, var(--eva-red) 26%, transparent))
+    drop-shadow(0 0 24px color-mix(in srgb, var(--eva-red) 14%, transparent));
+}
+
 html[data-theme-visual="eva"] .react-flow {
   position: relative;
-  z-index: 1;
+  z-index: 2;
 }
 
 html[data-theme-visual="eva"] .react-flow__background {
@@ -841,14 +854,6 @@ html[data-theme-visual="eva"] .t8-group-box__handle {
 }
 
 html[data-theme-visual="eva"] .t8-theme-music-toggle {
-  left: 14px !important;
-  right: auto !important;
-  top: auto !important;
-  bottom: 140px !important;
-  width: 30px !important;
-  height: 30px !important;
-  min-width: 30px !important;
-  min-height: 30px !important;
   padding: 0 !important;
   border: 1px solid var(--eva-red) !important;
   border-radius: 0 !important;

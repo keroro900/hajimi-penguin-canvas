@@ -10,13 +10,13 @@ https://www.runninghub.cn/?inviteCode=rh-v1121
 My favorite girl Go YounJung
 # 🐧 贞贞的无限画布（企鹅共创版） · T8-penguin-canvas
 
-> AI 节点画布工作流工具 · Web + Electron 桌面端｜v1.6.0
+> AI 节点画布工作流工具 · Web + Electron 桌面端｜v1.6.1
 >
 > GitHub：<https://github.com/T8mars/T8-penguin-canvas>
 
 一个面向 AI 创作的 **节点式画布**：拖拽节点、连线编排、生成图像 / 视频 / 音频、调用 LLM、串接 RunningHub 工作流，叠加批量执行、智能对齐、打组、主题模板与终端日志。Web 浏览器即可使用，亦可一键打包为 Windows 桌面端（NSIS 安装包）。
 
-![status](https://img.shields.io/badge/version-v1.6.0-brightgreen) ![node](https://img.shields.io/badge/node-%E2%89%A518-blue) ![react](https://img.shields.io/badge/react-19-61dafb) ![electron](https://img.shields.io/badge/electron-33-47848f) ![license](https://img.shields.io/badge/license-MIT-yellow)
+![status](https://img.shields.io/badge/version-v1.6.1-brightgreen) ![node](https://img.shields.io/badge/node-%E2%89%A518-blue) ![react](https://img.shields.io/badge/react-19-61dafb) ![electron](https://img.shields.io/badge/electron-33-47848f) ![license](https://img.shields.io/badge/license-MIT-yellow)
 
 ---
 
@@ -35,7 +35,7 @@ My favorite girl Go YounJung
 
 ## ✨ 功能亮点
 
-- 🎨 **28 个业务节点**，覆盖文本 / 图像 / 视频 / 音频 / LLM / RunningHub / 工具 / 辅助 / 工具箱 / 输出预览 / 上传素材
+- 🎨 **39 个节点**，覆盖文本 / 图像 / 视频 / 音频 / LLM / RunningHub / 工具 / 辅助 / 工具箱 / 输出预览 / 上传素材 / 素材集
 - 🧺 **画布级批量导入 + 素材合集打散**：上传节点支持一次选择多张图 / 多个视频 / 多段音频；也可直接把剪贴板或文件拖到画布，同类型多素材自动形成合集，上传和输出合集都可一键打散为多个独立素材节点
 - 🗂️ **素材集节点 + 资源库整套复用**：可把同类型文本 / 图像 / 视频 / 音频合并为素材集，支持拖拽排序、反转 / 文件名 / 随机排序、导入素材集 / 导出素材集、保存到资源库、从资源库整套插入画布；未选中节点时按 `R` 可快速打开 / 关闭资源库
 - 📁 **跨平台本地路径默认值**：Windows 继续默认 `D:\zhenzhen`，macOS / Linux 默认 `~/zhenzhen`；旧版非 Windows 配置若仍是硬编码默认值会自动迁移，自定义路径不会被覆盖
@@ -48,6 +48,7 @@ My favorite girl Go YounJung
 - 🎬 **电影感组合器**：电影感节点支持成片风格、镜头、光影、调色、质感各 50 项，带中英文 prompt、强度控制、收藏复用、JSON 导入/导出和一键运行输出
 - 🎥 **视频运镜组合器**：视频运镜节点支持成片场景、运镜动作、路径、节奏、稳定和主体约束各 50 项，带可响应 50 项动作 / 50 项路径的路线示意、中英文 prompt、收藏复用、JSON 导入/导出和一键运行输出
 - 🧾 **文本分割二版**：文本分割节点支持段落 / 行 / 自定义分隔 / Markdown / 序号 / 智能分镜 / 正则高级 / 字数切块；按段落严格以至少一个空行切段，按行才逐行切分，内置模式说明、中文输入稳定编辑、双列预览布局、分段收藏、JSON 导入导出，并一键创建前置文本循环器链路；循环器执行完成后可自动打散为多个文本节点
+- 🖌️ **图层画板节点**：工具分类开放画板节点，支持 16:9 / 9:16 等画布比例、空白图层、图层组折叠、可见 / 锁定状态、载入上游或本地图片、手绘 / 文字 / 图形 / 箭头、缩放旋转、导入导出画板 JSON 与运行输出 PNG
 - 🔑 **分类独立 API Key 可选 · 默认折叠**（v1.2.6）：gpt-image / nano-banana / mj / veo / grok / seedance / suno 七个分类 Key 未填自动 fallback 贞贞通用 Key，新手默认折叠不被干扰
 - 🧲 **智能对齐辅助线 + snap-to-grid**：拖动时检测同列 / 同行 / 居中对齐并弱吸附
 - 📦 **GroupBox 打组**：框选 ≥2 节点一键套色框容器，可拖拽联动、整体执行、12 色调色板
@@ -156,7 +157,7 @@ T8-penguin-canvas/
 │   │   ├── CanvasManager.tsx
 │   │   ├── Sidebar.tsx
 │   │   ├── ApiSettings.tsx
-│   │   └── nodes/           # 27 个节点组件
+│   │   └── nodes/           # 节点组件
 │   ├── stores/              # canvas / apiKeys / theme / runBus / logs
 │   ├── hooks/               # useCanvasHistory / useRunTrigger
 │   ├── services/            # api / generation / imageOps
@@ -205,7 +206,7 @@ T8-penguin-canvas/
 2. 串行 `triggerRun(id)` → 等待运行总线 `lastDone.id === id` 推进
 3. 进度徽标 `done/total` 实时显示，再次点击（■）中断
 
-可执行节点（16 类）：image / edit / multi-angle-3d / panorama-720 / penguin-portrait / video / seedance / audio / llm / runninghub / resize / upscale / grid-crop / remove-bg / combine / frame-extractor。
+可执行节点包含：image / edit / multi-angle-3d / panorama-720 / penguin-portrait / video / seedance / audio / llm / runninghub / runninghub-wallet / rh-tools / resize / upscale / grid-crop / remove-bg / combine / image-compare / frame-extractor / frame-pair / upload / loop / pick-from-set / drawing-board / cinematic / video-motion / multi-angle-visual。
 
 ---
 
@@ -252,11 +253,11 @@ npm run preview       # 本地预览构建产物
 
 ---
 
-## 📋 节点清单（38 个，可见 + 隐藏）
+## 📋 节点清单（39 个，可见 + 隐藏）
 
 | 分组 | 节点 |
 |---|---|
-| 素材资源 (2) | upload（上传素材） · output（输出素材终端预览） |
+| 素材资源 (3) | upload（上传素材） · material-set（素材集） · output（输出素材终端预览） |
 | 核心 (6) | text · image · video · seedance · audio · llm |
 | RunningHub (4) | runninghub · runninghub-wallet（RH 钱包应用） · rh-config（隐藏） · rh-tools（RH 超市） |
 | 特殊 (5, 隐藏) | multi-angle-3d · panorama-720 · penguin-portrait · portrait-metadata · storyboard-grid |

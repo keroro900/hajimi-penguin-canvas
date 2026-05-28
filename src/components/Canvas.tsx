@@ -250,6 +250,7 @@ const INITIAL_DATA: Record<string, Record<string, any>> = {
   // 从合集获取: 默认 image + 第 1 个
   'pick-from-set': { pickKind: 'image', pickIndex: 1 },
   'image-compare': { mode: 'slider', align: 'contain', split: 50, opacity: 50, threshold: 24 },
+  'drawing-board': { boardRatio: '16:9', boardWidth: 960, boardHeight: 540, boardElements: [], boardColor: '#111827', boardStrokeSize: 5 },
   'grid-crop': { rows: 3, cols: 3, gap: 0 },
 };
 
@@ -261,7 +262,7 @@ const EXECUTABLE_NODE_TYPES = new Set<string>([
   'video', 'seedance', 'audio', 'llm', 'runninghub', 'runninghub-wallet',
   // v1.2.10.1: rh-tools 与 RunningHub 同质，同样可被批量运行调起
   'rh-tools',
-  'resize', 'upscale', 'grid-crop', 'remove-bg', 'combine', 'image-compare',
+  'resize', 'upscale', 'grid-crop', 'remove-bg', 'combine', 'image-compare', 'drawing-board',
   'frame-extractor', 'frame-pair',
   'upload',
   // v1.2.8 工具节点 (循环器 / 从合集获取)
@@ -3023,21 +3024,21 @@ function CanvasInner({ onAddNodeRef }: CanvasInnerProps) {
             </svg>
           </ViewportPortal>
         )}
-        <ThemeMusicToggle template={currentTemplate} />
-        <Controls
-          style={{
-            background: isOp
-              ? themeTokens.panelBg
-              : isDark ? 'rgba(20,20,22,.9)' : 'rgba(255,255,255,.9)',
-            border: isOp
-              ? `3px solid ${themeTokens.textMain}`
-              : `1px solid ${isDark ? 'rgba(255,255,255,.1)' : 'rgba(0,0,0,.08)'}`,
-            borderRadius: isOp ? '16px 16px 8px 8px' : 8,
-            left: isOp ? 18 : undefined,
-            bottom: isOp ? 34 : undefined,
-            boxShadow: isOp ? `4px 4px 0 ${themeTokens.textMain}` : undefined,
-          }}
-        />
+        <div className="t8-control-rail nodrag nopan" data-canvas-floating-ui="control-rail">
+          <ThemeMusicToggle template={currentTemplate} />
+          <Controls
+            style={{
+              background: isOp
+                ? themeTokens.panelBg
+                : isDark ? 'rgba(20,20,22,.9)' : 'rgba(255,255,255,.9)',
+              border: isOp
+                ? `3px solid ${themeTokens.textMain}`
+                : `1px solid ${isDark ? 'rgba(255,255,255,.1)' : 'rgba(0,0,0,.08)'}`,
+              borderRadius: isOp ? '16px 16px 8px 8px' : 8,
+              boxShadow: isOp ? `4px 4px 0 ${themeTokens.textMain}` : undefined,
+            }}
+          />
+        </div>
         <MiniMap
           pannable
           zoomable
