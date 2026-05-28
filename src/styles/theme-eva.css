@@ -924,3 +924,21 @@ html[data-theme-visual="eva"] .resource-library-drawer {
   height: 5px;
   background: repeating-linear-gradient(135deg, var(--eva-red) 0 9px, #160708 9px 18px);
 }
+
+html[data-theme-visual="eva"] .t8-context-menu {
+  --t8-context-menu-bg: color-mix(in srgb, var(--eva-panel-2, #0a1110) 96%, transparent);
+  --t8-context-menu-border: 1px solid var(--eva-red, #ff3046);
+  --t8-context-menu-radius: 4px;
+  --t8-context-menu-shadow: 0 0 0 1px color-mix(in srgb, var(--eva-green, #78ff4d) 24%, transparent), 0 18px 46px rgba(0, 0, 0, 0.5);
+  --t8-context-menu-header-bg: repeating-linear-gradient(135deg, var(--eva-red, #ff3046) 0 12px, #160708 12px 24px);
+  --t8-context-menu-header-text: #fff3e0;
+  --t8-context-menu-item-text: var(--t8-text-main, #ecffe8);
+  --t8-context-menu-item-hover: color-mix(in srgb, var(--eva-green, #78ff4d) 16%, transparent);
+  --t8-context-menu-divider: 1px solid color-mix(in srgb, var(--eva-red, #ff3046) 48%, transparent);
+}
+
+html[data-theme-visual="eva"] .t8-node-action-bar {
+  --t8-actionbar-bg: color-mix(in srgb, var(--eva-panel-2, #0a1110) 94%, transparent);
+  --t8-actionbar-border: 1px solid var(--eva-red, #ff3046);
+  --t8-actionbar-shadow: 0 0 0 1px color-mix(in srgb, var(--eva-green, #78ff4d) 22%, transparent), 0 10px 30px rgba(0, 0, 0, 0.42);
+}
