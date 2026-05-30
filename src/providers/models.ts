@@ -63,7 +63,7 @@ export const IMAGE_MODELS: ImageModelDef[] = [
     sizes: ['1K', '2K', '4K'],
     defaultSize: '2K', // 主项目默认为 2K
     supportsReference: true,
-    maxReferenceImages: 5,
+    maxReferenceImages: 9,
     description: '支持文生图/图生图/编辑/文字渲染',
   },
   {

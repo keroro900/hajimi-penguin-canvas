@@ -82,7 +82,7 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
   const vfAudio: boolean = d?.vfAudio ?? false;
   const vfSafety: number = d?.vfSafety ?? 4;
   // grok-fal 专属
-  const gkfMode: 'image_to_video' | 'reference_to_video' = d?.gkfMode === 'reference_to_video' ? 'reference_to_video' : 'image_to_video';
+  const gkfMode: 'image_to_video' | 'reference_to_video' = d?.gkfMode === 'image_to_video' ? 'image_to_video' : 'reference_to_video';
   const gkfRatio: string = d?.gkfRatio || '16:9';
   const gkfDuration: number = d?.gkfDuration ?? 6;
   const gkfResolution: string = d?.gkfResolution || '720p';

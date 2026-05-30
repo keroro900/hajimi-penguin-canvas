@@ -1,7 +1,7 @@
 {
   "$schema": "本文件为 T8-penguin-canvas 节点清单防丢失锁,任何节点删减都需要在 roadmap.md 中说明并更新本文件。",
-  "version": "1.7.1",
-  "lastUpdated": "2026-05-30-v1.7.1-tech-light-legacy-adapter-and-interaction-hotfixes",
+  "version": "1.7.2",
+  "lastUpdated": "2026-05-31-v1.7.2-connection-navigation-and-model-default-hotfixes",
   "packaging": {
     "description": "Electron NSIS 桌面端打包链路(v1.2.1 起标准化, 严禁未明确指令主动打包)。完整产物拓扑: app.asar(electron/{main,loader,preload}.cjs + node_modules) + app.asar.unpacked(node_modules/sharp + @img) + resources/backend-enc/*.t8c(extraResources, asar 外) + resources/frontend(extraResources, asar 外)。前端版本号由 vite define 注入 __APP_VERSION__、Sidebar 左下角自动同步。",
     "scripts": {
@@ -16,9 +16,9 @@
       "T8PC_FRONTEND_DIST": "打包模式 = path.join(process.resourcesPath, 'frontend'); 开发模式 = <project>/dist",
       "T8PC_RES": "打包模式 = process.resourcesPath; 开发模式 = <project>"
     },
-    "version": "1.7.1",
-    "semverVersion": "1.7.1",
-    "versionNote": "v1.3.0 起统一采用 semver 三段阶段号 x.y.z；当前源码为 v1.7.1：科技风浅色模式新增 legacy node adapter，统一兜底老节点里的 text-white/bg-zinc/bg-white 等暗色工具类，修复图像、文本等节点在经典科技白天模式残留黑卡片或文字不可读的问题；顶部栏推广 / 资源库 / 设置 / 主题浮层支持点击画布空白处关闭；Ctrl+V 媒体粘贴增加原生 paste 与快捷键去重；LLM/Vision 新增 gemini-3.5-flash 模型。本次未重新打包 Electron。",
+    "version": "1.7.2",
+    "semverVersion": "1.7.2",
+    "versionNote": "v1.3.0 起统一采用 semver 三段阶段号 x.y.z；当前源码为 v1.7.2：拖线时按 Space 可进入连线导航模式，松开鼠标后仍保留连线起点，可拖动画布再点击目标接口连接，并提供 HUD 与画布脉冲反馈；科技风黑夜控制条改走主题变量，避免白色按钮不可读；Ctrl+V 媒体粘贴进一步按 name/size/type 去重；Grok Video FAL 默认模式改为参考生视频；GPT2 图像参考图上限提升到 9 张。本次未重新打包 Electron。",
     "installer": "本次未打包 Electron；最近一次安装包为 dist_electron/T8-PenguinCanvas-Setup-1.5.5.exe (NSIS, 108.96 MB)",
     "checklist": [
       "运行 npm run encrypt 前确认已 npm install bytenode 且使用 Electron 内置 Node",
@@ -71,6 +71,8 @@
         "主题风格化元素使用 visuals.style / iconPack / canvasPattern / nodeFrame / headerMark 表达，避免把某个 IP 或图案写死在业务组件里",
         "自定义模板导入时必须通过 validateTheme/后端 normalizeTemplate，过滤未知枚举、过长字段和非法音乐 URL",
         "ThemeMusicToggle 与 ReactFlow Controls 必须同置于 .t8-control-rail，由全局变量统一定位和堆叠；主题 CSS 只能覆盖尺寸、颜色和视觉样式，不得分别硬编码 left/top/bottom 造成喇叭与缩放条漂移",
+        "ReactFlow Controls 必须继承 .t8-canvas-shell 的 --t8-flow-controls-* 变量，主题只覆盖变量，不得让内置 controls 回退为白底白字或脱离 .t8-control-rail；新增主题必须同时检查音乐按钮、控制条和连线导航 HUD",
+        "拖线中 Space 连线导航模式属于全局主题反馈：HUD、画布边缘脉冲、Controls 色值都必须跟随 --t8-flow-controls-accent，禁止在单主题里硬编码固定 cyan / white",
         "画布背景水印必须放在 .t8-canvas-shell::before/::after 背景层，z-index:0 且 pointer-events:none；ReactFlow 节点、边、浮层和 GroupBox 内容必须盖住水印，不能让装饰穿透到素材预览或画板内容上方",
         "强风格官方主题可为 light/dark 分别提供水印资产；若深色水印包含黑底终端、警告面板或厚重贴片，浅色模式必须改用透明底线稿 / 印章 / HUD 版本，避免浅色画布出现突兀深色块",
         "框选/节点右键菜单、空白右键快速添加菜单、拖线候选菜单和选中节点右上角 RUN/关闭浮动条都属于全局主题控件，必须使用 t8-context-menu / t8-node-action-bar 语义类和 visuals.style 作为视觉判断来源，禁止仅按 legacyStyle=像素/科技分支导致 OP、火影、EVA 等主题残留白底或绿色按钮",
@@ -1466,6 +1468,17 @@
         "顶部栏推广入口、资源库抽屉、设置弹窗和主题模板弹窗支持点击画布空白处关闭，保留充值弹窗既有交互，减少必须二次点击图标关闭的割裂感。",
         "画布 Ctrl+V 媒体粘贴增加快捷键与原生 paste 事件去重，避免复制截图或文件时同一批素材被创建两次，同时保留节点内部复制粘贴逻辑。",
         "LLM/Vision 模型列表新增 gemini-3.5-flash，默认模型和其他 LLM 链路保持不变。"
+      ]
+    },
+    "phase99": {
+      "label": "连线导航模式与媒体默认值热修 (v1.7.2)",
+      "status": "complete",
+      "items": [
+        "拖线过程中按 Space 可进入连线导航模式：松开鼠标不会取消起点，用户可拖动画布后点击目标接口完成远距离连接，再次按 Space 或窗口失焦会取消；快捷键面板同步新增说明。",
+        "连线导航模式增加画布边缘脉冲与 HUD 提示，视觉色值跟随 --t8-flow-controls-* 主题变量，避免用户无法感知当前是否处于特殊连接状态。",
+        "ReactFlow Controls 统一接入 t8-control-rail 主题变量，修复科技风黑夜模式下缩放控制条和按钮回退为白色导致不可读的问题，并纳入主题设计合同。",
+        "Ctrl+V 媒体粘贴在快捷键与原生 paste 两条路径都按 name/size/type 去重，修复复制截图或文件时偶发创建两个相同上传节点的问题。",
+        "Grok Video FAL 默认模式改为参考生视频；GPT2 图像参考图上限提升到 9 张，满足多图参考工作流。"
       ]
     }
   },

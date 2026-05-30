@@ -700,7 +700,7 @@ function collectCanvasMediaFiles(dataTransfer: DataTransfer | null | undefined):
   const seen = new Set<string>();
   const push = (file: File | null) => {
     if (!file || !inferCanvasMediaKind(file)) return;
-    const key = `${file.name}|${file.size}|${file.type}|${file.lastModified}`;
+    const key = canvasMediaFileKey(file);
     if (seen.has(key)) return;
     seen.add(key);
     files.push(file);
@@ -710,6 +710,10 @@ function collectCanvasMediaFiles(dataTransfer: DataTransfer | null | undefined):
     if (item.kind === 'file') push(item.getAsFile());
   });
   return files;
+}
+
+function canvasMediaFileKey(file: File): string {
+  return `${file.name || 'clipboard-file'}|${file.size}|${file.type || 'application/octet-stream'}`;
 }
 
 function hasFileTransfer(dataTransfer: DataTransfer | null | undefined): boolean {
@@ -741,6 +745,29 @@ function isCanvasOverviewShortcutBlocked(target: EventTarget | null): boolean {
   );
 }
 
+function getReactFlowHandleInfo(target: EventTarget | null): {
+  nodeId: string;
+  handleType: 'source' | 'target';
+  handleId: string | null;
+} | null {
+  if (!(target instanceof Element)) return null;
+  const handleEl = target.closest('.react-flow__handle') as HTMLElement | null;
+  if (!handleEl) return null;
+  const nodeId =
+    handleEl.getAttribute('data-nodeid') ||
+    handleEl.closest('.react-flow__node')?.getAttribute('data-id') ||
+    '';
+  const rawType =
+    handleEl.getAttribute('data-handletype') ||
+    (handleEl.classList.contains('source') ? 'source' : handleEl.classList.contains('target') ? 'target' : '');
+  if (!nodeId || (rawType !== 'source' && rawType !== 'target')) return null;
+  return {
+    nodeId,
+    handleType: rawType,
+    handleId: handleEl.getAttribute('data-handleid') || null,
+  };
+}
+
 interface CanvasInnerProps {
   onAddNodeRef?: React.MutableRefObject<AddNodeFn | null>;
 }
@@ -758,7 +785,7 @@ function CanvasInner({ onAddNodeRef }: CanvasInnerProps) {
   const isEva = visualStyle === 'eva';
   const isYyh = visualStyle === 'yyh';
   const themeTokens = getTemplateMode(currentTemplate, theme).tokens;
-  const { screenToFlowPosition, setCenter, getViewport, fitView } = useReactFlow();
+  const { screenToFlowPosition, setCenter, getViewport, setViewport, fitView } = useReactFlow();
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -788,6 +815,24 @@ function CanvasInner({ onAddNodeRef }: CanvasInnerProps) {
     nodeId: string;
     handleType: 'source' | 'target';
   } | null>(null);
+  const isConnectionDraggingRef = useRef(false);
+  const connectionPanModeRef = useRef(false);
+  const connectionPanPointerRef = useRef<{ x: number; y: number } | null>(null);
+  const [connectionPanModeActive, setConnectionPanModeActive] = useState(false);
+
+  const setConnectionPanMode = useCallback((enabled: boolean) => {
+    connectionPanModeRef.current = enabled;
+    connectionPanPointerRef.current = null;
+    setConnectionPanModeActive((current) => (current === enabled ? current : enabled));
+    if (typeof document !== 'undefined') {
+      document.body.classList.toggle('connection-pan-mode', enabled);
+    }
+  }, []);
+
+  const resetConnectionPanMode = useCallback(() => {
+    isConnectionDraggingRef.current = false;
+    setConnectionPanMode(false);
+  }, [setConnectionPanMode]);
 
   // ===== SHIFT+拖拽 Handle 批量移线 =====
   // 按住 SHIFT 从节点入口(target handle)拖出，可一次性把所有入边移到另一个节点的入口。
@@ -1100,9 +1145,18 @@ function CanvasInner({ onAddNodeRef }: CanvasInnerProps) {
 
   const createUploadNodesFromFiles = useCallback(
     async (rawFiles: File[], atScreen?: { x: number; y: number }) => {
+      const seenFiles = new Set<string>();
+      const dedupedFiles = rawFiles.filter((file) => {
+        const kind = inferCanvasMediaKind(file);
+        if (!kind) return true;
+        const key = canvasMediaFileKey(file);
+        if (seenFiles.has(key)) return false;
+        seenFiles.add(key);
+        return true;
+      });
       const buckets: Record<MediaKind, File[]> = { image: [], video: [], audio: [] };
       let skipped = 0;
-      rawFiles.forEach((file) => {
+      dedupedFiles.forEach((file) => {
         const kind = inferCanvasMediaKind(file);
         if (!kind) {
           skipped += 1;
@@ -2299,6 +2353,7 @@ function CanvasInner({ onAddNodeRef }: CanvasInnerProps) {
 
   const onConnect = useCallback(
     (params: Connection) => {
+      resetConnectionPanMode();
       // 批量移线过程中禁止普通连接逻辑(不然会多一条重复边)
       if (bulkReconnectRef.current) return;
       const curNodes = nodesRef.current;
@@ -2367,7 +2422,7 @@ function CanvasInner({ onAddNodeRef }: CanvasInnerProps) {
         )
       );
     },
-    []
+    [resetConnectionPanMode]
   );
 
   // ReactFlow 拖线连接时的实时校验(在连线处于“预览”阶段就拦截不兼容连接)
@@ -2386,6 +2441,8 @@ function CanvasInner({ onAddNodeRef }: CanvasInnerProps) {
     (_e: any, params: { nodeId: string | null; handleType: 'source' | 'target' | null }) => {
       if (!params.nodeId || !params.handleType) return;
       connectingFromRef.current = { nodeId: params.nodeId, handleType: params.handleType };
+      isConnectionDraggingRef.current = true;
+      setConnectionPanMode(false);
 
       // SHIFT + target handle → 批量移动所有入边
       const evt = _e as MouseEvent;
@@ -2411,13 +2468,22 @@ function CanvasInner({ onAddNodeRef }: CanvasInnerProps) {
         }
       }
     },
-    [edges]
+    [edges, setConnectionPanMode]
   );
 
   const onConnectEnd = useCallback(
     (event: MouseEvent | TouchEvent) => {
       const from = connectingFromRef.current;
+      const target = event.target as HTMLElement | null;
+      const droppedOnHandle = getReactFlowHandleInfo(target);
+      if (connectionPanModeRef.current && from && !droppedOnHandle && !bulkReconnectRef.current) {
+        // Space 导航模式下，松开鼠标只是结束本次拖动画布；保留起点，
+        // 用户可以继续平移画布，随后点击目标接口完成连接。
+        connectionPanPointerRef.current = null;
+        return;
+      }
       connectingFromRef.current = null;
+      resetConnectionPanMode();
 
       // ===== SHIFT+批量移线处理 =====
       if (bulkReconnectRef.current) {
@@ -2497,7 +2563,6 @@ function CanvasInner({ onAddNodeRef }: CanvasInnerProps) {
       // 终点是否落在 Handle / 节点 / 连线上:任何一项命中都交给 ReactFlow 默认连接逻辑处理,不弹出候选菜单
       // 仅当鼠标释放在“空白画布”(pane / background 本体或其隔层子)时才弹菜单
       // 例外: 拖到 GroupBox(节点组)的内部空白区域也应该被视作“空白” → 弹菜单
-      const target = event.target as HTMLElement | null;
       if (!target) return;
       const onHandle = !!target.closest('.react-flow__handle');
       const nodeEl = target.closest('.react-flow__node') as HTMLElement | null;
@@ -2525,8 +2590,112 @@ function CanvasInner({ onAddNodeRef }: CanvasInnerProps) {
         screenPos: { x: clientX, y: clientY },
       });
     },
-    [screenToFlowPosition, nodes]
+    [resetConnectionPanMode, screenToFlowPosition, nodes]
   );
+
+  // 拉线时按 Space 进入“连线导航”模式，适合远距离连线。
+  // 鼠标可松开；起点会保留到点击目标接口、再次按 Space 取消，或窗口失焦。
+  useEffect(() => {
+    const isSpaceKey = (event: KeyboardEvent) =>
+      event.code === 'Space' || event.key === ' ' || event.key === 'Spacebar';
+
+    const stopNativePointer = (event: PointerEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      (event as any).stopImmediatePropagation?.();
+    };
+
+    const connectPendingToHandle = (handle: ReturnType<typeof getReactFlowHandleInfo>) => {
+      const from = connectingFromRef.current;
+      if (!from || !handle || from.nodeId === handle.nodeId || from.handleType === handle.handleType) return false;
+      const params: Connection =
+        from.handleType === 'source'
+          ? {
+              source: from.nodeId,
+              sourceHandle: null,
+              target: handle.nodeId,
+              targetHandle: handle.handleId,
+            }
+          : {
+              source: handle.nodeId,
+              sourceHandle: handle.handleId,
+              target: from.nodeId,
+              targetHandle: null,
+            };
+      connectingFromRef.current = null;
+      onConnect(params);
+      return true;
+    };
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!isConnectionDraggingRef.current) return;
+      if (!isSpaceKey(event)) return;
+      if (isTextEditingTarget(event.target)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.repeat) return;
+      if (connectionPanModeRef.current) {
+        connectingFromRef.current = null;
+        resetConnectionPanMode();
+        return;
+      }
+      setConnectionPanMode(true);
+    };
+
+    const onPointerDown = (event: PointerEvent) => {
+      if (!isConnectionDraggingRef.current || !connectionPanModeRef.current) return;
+      const target = event.target as Element | null;
+      if (target?.closest('[data-canvas-floating-ui], .t8-context-menu, input, textarea, select, [contenteditable="true"]')) return;
+
+      const handle = getReactFlowHandleInfo(event.target);
+      if (handle) {
+        stopNativePointer(event);
+        connectPendingToHandle(handle);
+        return;
+      }
+
+      if (event.button !== 0) return;
+      connectionPanPointerRef.current = { x: event.clientX, y: event.clientY };
+      stopNativePointer(event);
+    };
+
+    const onPointerMove = (event: PointerEvent) => {
+      if (!isConnectionDraggingRef.current || !connectionPanModeRef.current) return;
+      if (event.buttons === 0) {
+        connectionPanPointerRef.current = null;
+        return;
+      }
+      const current = { x: event.clientX, y: event.clientY };
+      const last = connectionPanPointerRef.current;
+      connectionPanPointerRef.current = current;
+      if (!last) return;
+      const dx = current.x - last.x;
+      const dy = current.y - last.y;
+      if (dx === 0 && dy === 0) return;
+      const viewport = getViewport();
+      void setViewport({ x: viewport.x + dx, y: viewport.y + dy, zoom: viewport.zoom }, { duration: 0 });
+      stopNativePointer(event);
+    };
+
+    const onPointerUp = () => {
+      connectionPanPointerRef.current = null;
+    };
+    const onBlur = () => resetConnectionPanMode();
+
+    window.addEventListener('keydown', onKeyDown, true);
+    window.addEventListener('pointerdown', onPointerDown, true);
+    window.addEventListener('pointermove', onPointerMove, true);
+    window.addEventListener('pointerup', onPointerUp, true);
+    window.addEventListener('blur', onBlur);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown, true);
+      window.removeEventListener('pointerdown', onPointerDown, true);
+      window.removeEventListener('pointermove', onPointerMove, true);
+      window.removeEventListener('pointerup', onPointerUp, true);
+      window.removeEventListener('blur', onBlur);
+      document.body.classList.remove('connection-pan-mode');
+    };
+  }, [getViewport, onConnect, resetConnectionPanMode, setConnectionPanMode, setViewport]);
 
   // ===== 全局 SHIFT+Handle 批量移线拦截器 =====
   // 原因: ReactFlow 的 multiSelectionKeyCode 包含 'Shift'，导致按住 SHIFT 在 handle 上 mousedown
@@ -3531,7 +3700,7 @@ function CanvasInner({ onAddNodeRef }: CanvasInnerProps) {
         internalPasteTimerRef.current = null;
       }
       const signature = files
-        .map((file) => `${file.name}|${file.size}|${file.type}|${file.lastModified}`)
+        .map(canvasMediaFileKey)
         .join('||');
       const now = Date.now();
       const last = lastExternalMediaPasteRef.current;
@@ -3750,7 +3919,7 @@ function CanvasInner({ onAddNodeRef }: CanvasInnerProps) {
 
   return (
     <div
-      className="t8-canvas-shell flex-1 relative"
+      className={`t8-canvas-shell flex-1 relative${connectionPanModeActive ? ' connection-pan-mode-active' : ''}`}
       data-theme-visual={visualStyle}
       style={{ background: bgColor }}
       onContextMenuCapture={onCanvasContextMenuCapture}
@@ -3778,6 +3947,13 @@ function CanvasInner({ onAddNodeRef }: CanvasInnerProps) {
         onToggleSnap={() => setSnapEnabled((v) => !v)}
       />
       <TerminalPanel />
+      {connectionPanModeActive && (
+        <div className="t8-connection-pan-hud" data-canvas-floating-ui="connection-pan-hud">
+          <span className="t8-connection-pan-hud__signal" aria-hidden="true" />
+          <span className="t8-connection-pan-hud__title">连线导航模式</span>
+          <span className="t8-connection-pan-hud__hint">拖动画布后点击目标接口连接，再按 Space 取消</span>
+        </div>
+      )}
       <input
         ref={fileInputRef}
         type="file"
