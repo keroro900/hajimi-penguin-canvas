@@ -9,8 +9,9 @@ export type ProviderType = 'zhenzhen' | 'llm-direct' | 'runninghub';
 // paramKind:决定调用上游时使用哪种参数协议
 //  - 'gpt-size'    : OpenAI 兼容,size 字段为像素串(1024x1024 等),编辑端点 multipart
 //  - 'banana-ratio': nano-banana 协议,使用 aspect_ratio + image_size(1K/2K/4K) + image[]
+//  - 'grok-image'  : Grok Image 协议,JSON /generations,参考图默认 base64 dataURL
 //  - 'mj'          : Midjourney 协议,走专属 /api/proxy/mj/* 路由(speed_map + sref/oref)
-export type ImageParamKind = 'gpt-size' | 'banana-ratio' | 'mj';
+export type ImageParamKind = 'gpt-size' | 'banana-ratio' | 'grok-image' | 'mj';
 
 export interface ImageModelDef {
   id: string;             // 节点内部 id(如 'gpt-image-2')
@@ -40,6 +41,8 @@ const GPT_RATIOS = ['Auto', '1:1', '16:9', '4:3', '4:5', '3:2', '2:3', '3:4', '5
 // nano-banana-2(Flash)支持全部 14 个比例,Pro 支持精简集
 const BANANA_FLASH_RATIOS = GPT_RATIOS;
 const BANANA_PRO_RATIOS = ['Auto', '1:1', '16:9', '4:3', '4:5', '3:2', '2:3', '3:4', '5:4', '9:16', '21:9'];
+// gpt-image-2-web Grok Image Tab 的比例集合,默认参考图传入方式为 Base64
+const GROK_IMAGE_RATIOS = ['1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3'];
 
 export const IMAGE_MODELS: ImageModelDef[] = [
   {
@@ -104,6 +107,25 @@ export const IMAGE_MODELS: ImageModelDef[] = [
     supportsReference: true,
     maxReferenceImages: 5,
     description: '高品质 Pro 版本',
+  },
+  {
+    id: 'grok-image',
+    apiModel: 'grok-4.2-image',
+    label: 'Grok Image',
+    tabLabel: 'Grok',
+    provider: 'zhenzhen',
+    paramKind: 'grok-image',
+    capabilities: ['t2i', 'i2i'],
+    apiModelOptions: [
+      { value: 'grok-4.2-image', label: 'grok-4.2-image' },
+    ],
+    aspectRatios: GROK_IMAGE_RATIOS,
+    defaultAspectRatio: '1:1',
+    sizes: [],
+    defaultSize: '',
+    supportsReference: true,
+    maxReferenceImages: 4,
+    description: 'Grok Image · 参考图 Base64',
   },
   // ========================================================================
   // Midjourney — 完全对齐 gpt-image-2-web/index.html runMJ L4437~L4694
@@ -253,15 +275,17 @@ export const NBPRO_FAL_RESOLUTIONS = ['1K', '2K', '4K'];
 
 // ========== 视频 ==========
 // kind 决定上游 payload 协议(后端会根据 model 名自动识别,前端主要用于控制参数 UI 列表)
-export type VideoKind = 'veo' | 'grok' | 'seedance';
+export type VideoKind = 'veo' | 'grok' | 'sora' | 'seedance';
 
-// ---- Video FAL 渠道注册表 (1:1 对齐 gpt-image-2-web runVeo3Fal / runGrokFal) ----
+// ---- Video FAL 渠道注册表 (1:1 对齐 gpt-image-2-web runVeo3Fal / runGrokFal / runSora2Fal) ----
 export interface VideoFalEndpointDef {
   /** 文生视频 endpoint */
   endpoint: string;
   /** 图生视频 endpoint (有参考图时走这个) */
   i2vEndpoint?: string;
-  paramKind: 'veo-fal' | 'grok-fal';
+  /** 参考生视频 endpoint (多参考图时走这个) */
+  referenceEndpoint?: string;
+  paramKind: 'veo-fal' | 'grok-fal' | 'sora-fal';
   maxRefImages: number;
 }
 export const VIDEO_FAL_REGISTRY: Record<string, VideoFalEndpointDef> = {
@@ -275,7 +299,27 @@ export const VIDEO_FAL_REGISTRY: Record<string, VideoFalEndpointDef> = {
   'grok-video-fal': {
     endpoint: 'xai/grok-imagine-video/text-to-video',
     i2vEndpoint: 'xai/grok-imagine-video/image-to-video',
+    referenceEndpoint: 'xai/grok-imagine-video/reference-to-video',
     paramKind: 'grok-fal',
+    maxRefImages: 7,
+  },
+  // 主项目 runSora2Fal (index.html line 5341)
+  'sora-2': {
+    endpoint: 'fal-ai/sora-2/text-to-video',
+    i2vEndpoint: 'fal-ai/sora-2/image-to-video',
+    paramKind: 'sora-fal',
+    maxRefImages: 1,
+  },
+  'sora-2-2025-12-08': {
+    endpoint: 'fal-ai/sora-2/text-to-video',
+    i2vEndpoint: 'fal-ai/sora-2/image-to-video',
+    paramKind: 'sora-fal',
+    maxRefImages: 1,
+  },
+  'sora-2-2025-10-06': {
+    endpoint: 'fal-ai/sora-2/text-to-video',
+    i2vEndpoint: 'fal-ai/sora-2/image-to-video',
+    paramKind: 'sora-fal',
     maxRefImages: 1,
   },
 };
@@ -292,6 +336,23 @@ export const VEO_FAL_RESOLUTIONS = ['720p', '1080p', '4k'];
 export const GROK_FAL_RATIOS = ['16:9', '4:3', '3:2', '1:1', '2:3', '3:4', '9:16', 'auto'];
 /** Grok FAL 分辨率(主项目 gkf_resolution) */
 export const GROK_FAL_RESOLUTIONS = ['720p', '480p'];
+/** Grok FAL 模式(主项目 gkf_mode) */
+export const GROK_FAL_MODES = [
+  { value: 'image_to_video', label: '图生' },
+  { value: 'reference_to_video', label: '参考' },
+] as const;
+/** Sora2 FAL 模式(主项目 srf_mode) */
+export const SORA2_FAL_MODES = [
+  { value: 'auto', label: 'Auto' },
+  { value: 'text_to_video', label: 'Text' },
+  { value: 'image_to_video', label: 'Image' },
+] as const;
+/** Sora2 FAL 比例(主项目 srf_ratio) */
+export const SORA2_FAL_RATIOS = ['16:9', '9:16', 'auto'];
+/** Sora2 FAL 时长(主项目 srf_duration) */
+export const SORA2_FAL_DURATIONS = [4, 8, 12, 16, 20];
+/** Sora2 FAL 分辨率(主项目 srf_resolution) */
+export const SORA2_FAL_RESOLUTIONS = ['720p', 'auto'];
 
 export interface VideoModelDef {
   id: string;                // 节点默认 model 字段(也是上游真实 model)
@@ -365,6 +426,26 @@ export const VIDEO_MODELS: VideoModelDef[] = [
     defaultResolution: '720P',
     supportImages: true,
     maxRefImages: 7,
+  },
+  {
+    id: 'sora-2',
+    label: 'Sora2',
+    kind: 'sora',
+    provider: 'zhenzhen',
+    description: 'Sora2 FAL 文生/图生视频 (默认 Base64 参考图)',
+    apiModelOptions: [
+      { value: 'sora-2', label: 'sora-2' },
+      { value: 'sora-2-2025-12-08', label: 'sora-2-2025-12-08' },
+      { value: 'sora-2-2025-10-06', label: 'sora-2-2025-10-06' },
+    ],
+    ratios: ['16:9', '9:16', 'auto'],
+    defaultRatio: '16:9',
+    durations: [4, 8, 12, 16, 20],
+    defaultDuration: 4,
+    resolutions: ['720p', 'auto'],
+    defaultResolution: '720p',
+    supportImages: true,
+    maxRefImages: 1,
   },
   {
     id: 'seedance-2.0',

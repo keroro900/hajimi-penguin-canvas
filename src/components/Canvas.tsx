@@ -88,6 +88,7 @@ import RemoveBgNode from './nodes/RemoveBgNode';
 import ImageCompareNode from './nodes/ImageCompareNode';
 import ToolboxParamNode from './nodes/ToolboxParamNode';
 import PortraitMasterNode from './nodes/PortraitMasterNode';
+import PoseMasterNode from './nodes/PoseMasterNode';
 import IdeaNode from './nodes/IdeaNode';
 import BpNode from './nodes/BpNode';
 import RelayNode from './nodes/RelayNode';
@@ -162,11 +163,12 @@ const SPECIFIC_NODES: Record<string, any> = {
   bp: BpNode,
   relay: RelayNode,
   'video-output': VideoOutputNode,
-  // Toolbox (4)
+  // Toolbox (5)
   cinematic: ToolboxParamNode,
   'video-motion': ToolboxParamNode,
   'multi-angle-visual': ToolboxParamNode,
   'portrait-master': PortraitMasterNode,
+  'pose-master': PoseMasterNode,
   // Input (1) - 上传素材
   upload: UploadNode,
   // Output (1) - 输出素材(文本/图像/视频/音频 预览 + 文本双击编辑)
@@ -199,6 +201,19 @@ const INITIAL_DATA: Record<string, Record<string, any>> = {
     portraitLocks: {},
     portraitWeights: {},
     portraitCustomText: '',
+    prompt: '',
+  },
+  'pose-master': {
+    kind: 'pose-master',
+    poseLanguage: 'en',
+    posePresetId: 'standing',
+    poseViewId: 'front',
+    poseShotId: 'full-body',
+    poseIntensityId: 'natural',
+    poseBatchCount: 4,
+    poseBatchMode: 'next',
+    poseFavorites: [],
+    poseCustomText: '',
     prompt: '',
   },
   'text-split': {
@@ -292,7 +307,7 @@ const EXECUTABLE_NODE_TYPES = new Set<string>([
   // v1.2.8 工具节点 (循环器 / 从合集获取)
   'loop', 'pick-from-set',
   // v1.4.8: 工具箱文本节点也可点击 RUN 直接外挂 OutputNode
-  'cinematic', 'video-motion', 'multi-angle-visual', 'portrait-master',
+  'cinematic', 'video-motion', 'multi-angle-visual', 'portrait-master', 'pose-master',
 ]);
 
 // 网格吸附步长 / 对齐阈值(世界坐标)
@@ -3042,7 +3057,8 @@ function CanvasInner({ onAddNodeRef }: CanvasInnerProps) {
     // v1.2.8.2: 'pick-from-set' 是中转节点 (从合集取一个供下游), 不应被自动挂 OutputNode
     // v1.2.9.9: 'loop' 也加入 — 循环器自身不产出最终结果 (累积已由下游 EXEC→OutputNode 链路接管),
     //          autoOutput 若给 LoopNode 自动建 OutputNode 会让用户看到 “循环器自己生了 N 个素材” 的错误体验。
-    const SKIP_TYPES = new Set(['output', 'groupBox', 'bulkPhantom', 'upload', 'material-set', 'pick-from-set', 'loop']);
+    // PoseMaster 自己负责写入单张/合集 OutputNode；通用 autoOutput 再处理会把批量合集拆出重复单体。
+    const SKIP_TYPES = new Set(['output', 'groupBox', 'bulkPhantom', 'upload', 'material-set', 'pick-from-set', 'loop', 'pose-master']);
 
     const toAddNodes: Node[] = [];
     const toAddEdges: Edge[] = [];
