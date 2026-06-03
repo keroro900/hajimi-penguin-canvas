@@ -29,13 +29,14 @@ const EXECUTABLE_NODE_TYPES = new Set<string>([
     // v1.2.10.1: RH 工具节点
     'rh-tools', 'rh-toolbox', 'comfyui-store',
   'resize', 'upscale', 'grid-crop', 'grid-editor', 'remove-bg', 'combine', 'image-compare', 'drawing-board',
+  'panorama-3d',
   'frame-extractor', 'frame-pair',
   'upload',
   // v1.2.8 循环器 / 从合集获取
   'loop', 'pick-from-set',
   // v1.4.6: 工具箱文本节点也可点击 RUN 直接外挂 OutputNode
   'cinematic', 'video-motion',
-  'portrait-master', 'pose-master',
+  'portrait-master', 'pose-master', 'aggregate-parser',
   'remove-ai-watermark',
 ]);
 

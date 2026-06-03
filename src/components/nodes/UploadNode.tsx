@@ -627,6 +627,8 @@ const UploadNode = ({ id, data, selected }: NodeProps) => {
                         src={item.url}
                         alt={item.name || `图像 ${i + 1}`}
                         className="w-full h-auto rounded block cursor-zoom-in"
+                        loading="lazy"
+                        decoding="async"
                         style={{ background: '#0008', objectFit: 'contain', maxHeight: mediaItems.length >= 2 ? 120 : 480 }}
                         data-drag-source
                         data-drag-kind="image"

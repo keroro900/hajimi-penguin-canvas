@@ -1,25 +1,30 @@
 {
   "$schema": "本文件为 T8-penguin-canvas 节点清单防丢失锁,任何节点删减都需要在 roadmap.md 中说明并更新本文件。",
-  "version": "1.9.7",
-  "lastUpdated": "2026-06-03-jimeng-seedance-multimodal-electron",
+  "version": "1.9.9",
+  "lastUpdated": "2026-06-04-achievement-roadmap-public-v199",
   "packaging": {
     "description": "Electron NSIS 桌面端打包链路(v1.2.1 起标准化, 严禁未明确指令主动打包)。完整产物拓扑: app.asar(electron/{main,loader,preload}.cjs + node_modules) + app.asar.unpacked(node_modules/sharp + @img) + resources/backend-enc/*.t8c(extraResources, asar 外) + resources/frontend(extraResources, asar 外)。前端版本号由 vite define 注入 __APP_VERSION__、Sidebar 左下角自动同步。",
     "scripts": {
       "encrypt": "cross-env ELECTRON_RUN_AS_NODE=1 electron electron/encrypt.cjs (必须用 Electron 内置 Node, 否则 V8 字节码版本不匹配)",
       "prepack:enc": "npm run build && npm run encrypt (vite 前端产物 + bytenode .jsc + T8ENC1 加密 → build/backend-enc/*.t8c)",
       "dist:dir": "npm run prepack:enc && electron-builder --win --x64 --dir && node electron/_post_build.cjs (只出 win-unpacked 目录, 不打 NSIS)",
-      "dist": "npm run prepack:enc && electron-builder --win --x64 && node electron/_post_build.cjs (出最终 T8-PenguinCanvas-Setup-${version}.exe)"
+      "dist": "npm run prepack:enc && electron-builder --win --x64 && node electron/_post_build.cjs (出最终 T8-PenguinCanvas-Setup-${version}.exe)",
+      "dist:release": "node scripts/dist-release.cjs (注入 T8_REQUIRE_AI_WATERMARK_RUNTIME=1、T8_REQUIRE_PARSEHUB_RUNTIME=1 与 T8_REQUIRE_UPDATE_ARTIFACTS=1，本地构建并上传 GitHub Release 自动更新资产)",
+      "release:github": "node scripts/release-github.cjs (复用当前 dist_electron 产物创建/更新 GitHub Release)",
+      "release:verify": "node scripts/verify-github-release.cjs (校验 GitHub Release 是否包含 installer/blockmap/latest.yml)"
     },
     "runtimeEnvVars": {
       "T8PC_PACKAGED": "1=打包模式 / 0=开发模式 (由 main.cjs 在 startBackend 注入)",
       "T8PC_USER_DATA": "app.getPath('userData') 路径 = %APPDATA%/t8-penguin-canvas, 后端数据/输入/输出/缩略图全部位于此",
       "T8PC_FRONTEND_DIST": "打包模式 = path.join(process.resourcesPath, 'frontend'); 开发模式 = <project>/dist",
-      "T8PC_RES": "打包模式 = process.resourcesPath; 开发模式 = <project>"
+      "T8PC_RES": "打包模式 = process.resourcesPath; 开发模式 = <project>",
+      "T8_PARSEHUB_PYTHON": "可选，覆盖聚合解析节点使用的 Python 3.12 解释器路径",
+      "T8_PARSEHUB_LIB_PATHS": "可选，覆盖 ParseHub Python 依赖搜索路径；正式包默认使用 resources/tools/parsehub-pythonlibs"
     },
-    "version": "1.9.7",
-    "semverVersion": "1.9.7",
-    "versionNote": "v1.3.0 起统一采用 semver 三段阶段号 x.y.z；当前源码为 v1.9.7：视频节点选择扩展 API 平台的即梦 CLI Seedance 后，参考素材入口从 Grok Video 1.5 的单图限制切换为即梦协议，支持最多 9 张图像、3 个视频、3 段音频；节点预览、Ctrl 拖拽、本地参考素材、端口连线、实际提交 payload 和后端 dreamina multimodal2video / multiframe2video 命令同步适配。v1.9.6 继续保留画布对齐防堆叠；v1.9.5 继续保留扩展 API 平台高级入口、ModelScope LoRA、本地 ComfyUI 字段映射热修、去AI水印 0.8.7、RH工具箱、足球小将主题、云端上传目标、内置 ffmpeg 与主要生成节点 3600 秒轮询。GitHub 公开源码仍排除本地私有计费/支付/充值实现。",
-    "installer": "本次按规范打包 Electron，目标产物为 dist_electron/T8-PenguinCanvas-Setup-1.9.7.exe；正式用户包必须包含 tools/remove-ai-watermarks-runtime sidecar runtime、tools/ffmpeg-runtime/ffmpeg.exe，并通过 _post_build.cjs 校验。",
+    "version": "1.9.9",
+    "semverVersion": "1.9.9",
+    "versionNote": "v1.3.0 起统一采用 semver 三段阶段号 x.y.z；当前源码为 v1.9.9：修复 3D 全景节点在 Vite 开发环境从 public/vendor 动态导入 Three.js 导致启动白屏 overlay 的问题，并新增工具箱「聚合解析」节点，基于 ParseHub 2.0.24 解析 17+ 社媒分享短链/分享码，前端强制合规确认，后端通过 Python bridge 隔离依赖。v1.9.9 继续保留 Electron GitHub Release 自动更新、3D 全景节点、肖像大师保存到资源库、即梦 CLI Seedance 多素材参考；本次公开元数据同步记录主题成就 / 勋章 / 加密影片解锁系统规划，功能仍处规划阶段未开发。GitHub 公开源码仍排除本地私有计费/支付/充值实现。",
+    "installer": "本次按规范打包 Electron，目标产物为 dist_electron/T8-PenguinCanvas-Setup-1.9.9.exe，并额外生成 dist_electron/latest.yml 与 .exe.blockmap 供 GitHub Release 自动更新使用；正式用户包必须包含 tools/remove-ai-watermarks-runtime sidecar runtime、tools/ffmpeg-runtime/ffmpeg.exe，并通过 _post_build.cjs 校验。",
     "publicReleasePolicy": {
       "github": "GitHub 公开源码只保留通用画布、生成节点、扩展平台、资源库、主题、ComfyUI/RH 工具箱、云端上传等能力；本地私有计费/支付/充值能力不得进入公开仓库。",
       "neverStage": [
@@ -46,6 +51,7 @@
       "_post_build.cjs 验证 resources/frontend/index.html + assets/ 必存在",
       "_post_build.cjs 必须让 src/assets/theme-music/*.mp3 / *.mid 经 Vite 输出到 resources/frontend/assets，主题音乐默认静音且随前端资源一起打包",
       "_post_build.cjs 必须检查 resources/tools/remove-ai-watermarks sidecar runtime slot；普通源码构建缺少 runtime 时只警告，正式用户包设置 T8_REQUIRE_AI_WATERMARK_RUNTIME=1 后缺少 remove-ai-watermarks.exe / Scripts/remove-ai-watermarks.exe / python.exe 等入口必须失败",
+      "_post_build.cjs 必须检查 resources/tools/parsehub-bridge/parsehub_bridge.py、resources/tools/parsehub-pythonlibs/parsehub、backend-enc/routes/parseHub.t8c 与 backend-enc/utils/parseHubBridge.t8c；正式发布脚本设置 T8_REQUIRE_PARSEHUB_RUNTIME=1，缺少 ParseHub 依赖时必须失败",
       "_post_build.cjs 必须检查 RH工具箱制作器不得进入用户包；resources/frontend 内若出现 RHToolboxMakerNode、RH工具箱制作器 或 rh-toolbox-maker，打包后置检查必须失败",
       "去AI水印 full runtime 不提交 Git；如需离线用户包，先把 Python/Torch/remove-ai-watermarks[gpu,detect,trustmark,lama] sidecar 放入 tools/remove-ai-watermarks-runtime，再执行 npm run dist",
       "_post_build.cjs 自动清除任何意外混入的 resources/{app,backend}/src 明文目录",
@@ -313,7 +319,126 @@
       "每次同步上游后必须重新跑 status/capability、代表性 process smoke、node --test tests/*.test.ts、npm run build 和 Electron 打包后置检查。"
     ]
   },
-  "totalNodes": 46,
+  "parseHubRuntime": {
+    "upstream": "https://github.com/z-mio/parsehub",
+    "upstreamVersion": "2.0.24",
+    "upstreamLicense": "MIT",
+    "nodeType": "aggregate-parser",
+    "category": "toolbox",
+    "supportedPlatforms": [
+      "Twitter / X",
+      "Instagram",
+      "YouTube",
+      "Facebook",
+      "Threads",
+      "Bilibili",
+      "抖音",
+      "TikTok",
+      "微博",
+      "小红书",
+      "贴吧",
+      "微信公众号",
+      "快手",
+      "酷安",
+      "皮皮虾",
+      "最右",
+      "小黑盒"
+    ],
+    "runtimeResolutionOrder": [
+      "T8_PARSEHUB_PYTHON + T8_PARSEHUB_LIB_PATHS",
+      "Electron resources/tools/parsehub-runtime",
+      "Electron resources/tools/remove-ai-watermarks/python/python.exe + resources/tools/parsehub-pythonlibs",
+      "开发环境 tools/remove-ai-watermarks-runtime/python/python.exe + tools/parsehub-pythonlibs",
+      "系统 python / py -3.12 + 本地 ParseHub/src"
+    ],
+    "electronPackaging": {
+      "bridgeSlot": "tools/parsehub-bridge",
+      "dependencySlot": "tools/parsehub-pythonlibs",
+      "packagedBridge": "resources/tools/parsehub-bridge",
+      "packagedDependencies": "resources/tools/parsehub-pythonlibs",
+      "strictEnv": "T8_REQUIRE_PARSEHUB_RUNTIME=1",
+      "refreshCommand": "tools\\remove-ai-watermarks-runtime\\python\\python.exe -m pip install --upgrade --target tools\\parsehub-pythonlibs .\\ParseHub"
+    },
+    "complianceRule": [
+      "前端节点必须保留合规确认复选框和免责提醒；后端 /api/parsehub/resolve 必须要求 acceptedCompliance=true。",
+      "默认只解析媒体地址；保存到本地输出目录必须由用户显式选择 download 模式。",
+      "Cookie / 代理为可选高级项，不写入日志，不自动保存到全局设置。"
+    ],
+    "upstreamUpdateRule": [
+      "ParseHub/ 是本地外部上游 clone，默认不 stage / commit / push。",
+      "上游更新后先同步 ParseHub clone，再重新执行 refreshCommand 刷新 tools/parsehub-pythonlibs。",
+      "若 ParseHub 返回结构变化，优先只改 tools/parsehub-bridge/parsehub_bridge.py 与 backend/src/utils/parseHubBridge.js 的归一化层，不改画布节点协议。",
+      "每次更新至少跑 bridge status 自检、node --test tests/aggregateParser.test.ts、npm run type-check、npm run build；正式发布还需 dist:release 后置检查通过。"
+    ]
+  },
+  "achievementSystemRoadmap": {
+    "status": "planned",
+    "reference": "roadmap.md::主题成就 / 勋章 / 加密影片解锁系统路线（规划中，2026-06-04）",
+    "scope": "九套系统主题分别累计有效使用时长、隐藏模式探索、节点运行、资源库沉淀，并解锁主题勋章与影片馆内容。",
+    "themeTracks": [
+      "tech",
+      "pixel",
+      "op",
+      "rh",
+      "naruto",
+      "eva",
+      "yyh",
+      "slamdunk",
+      "soccer-hero"
+    ],
+    "dataModel": {
+      "localFile": "data/achievements.json",
+      "manifest": "src/data/achievementManifest.ts",
+      "profile": "本机匿名 profileId，仅本地使用；默认不接账号云同步。",
+      "themeStatsFields": [
+        "activeSeconds",
+        "lastActiveAt",
+        "sessions",
+        "nodesCreated",
+        "runsSucceeded",
+        "resourcesSaved",
+        "hiddenModeActivations"
+      ],
+      "unlockState": [
+        "unlockedAchievements",
+        "claimedMedals",
+        "unlockedFilms",
+        "preferences"
+      ]
+    },
+    "activeTimeRule": [
+      "只在应用窗口前台、document visible、最近 90 秒有 pointer/key/drag/wheel/canvas 操作时累计有效时长。",
+      "心跳建议 15-30 秒合并上报，单次最多累计 30 秒，避免睡眠或后台一次补刷。",
+      "切换主题时先结算旧 themeTrack，再进入新主题。"
+    ],
+    "hiddenModeHooks": [
+      "RH 主题 UploadNode 鸭鸭解码隐藏模式：长按 RUN 开启，解码成功后记录 hidden_mode.used。",
+      "幽游白书主题肖像大师隐藏模式：长按 RUN 开启，成功输出隐藏肖像 prompt 后记录 hidden_mode.used。",
+      "成就事件只记录类型、主题、计数和节点类型，不记录用户链接、Cookie、完整 prompt 或隐私内容。"
+    ],
+    "filmUnlockPlan": {
+      "sourcePolicy": "影片原始文件放 private/achievement-films-src/ 并保持 ignored，不进入公开仓库。",
+      "encryptedSlot": "tools/achievement-media/films/*.t8film + manifest.json",
+      "packScript": "scripts/pack-achievement-films.cjs",
+      "encryption": "AES-256-GCM，manifest 记录 filmId、主题、解锁规则、sha256、mime、时长与封面。",
+      "playback": "解锁后后端解密到用户数据目录临时缓存，并复用 Range 播放逻辑供 video 标签拖动进度条。",
+      "strictPackagingEnv": "T8_REQUIRE_ACHIEVEMENT_MEDIA=1"
+    },
+    "retentionIdeas": [
+      "今日主题任务：每个主题给 1-3 个轻任务，只奖励成就经验，不阻塞画布。",
+      "周常创作护照：一周内在 3 个不同主题各完成一次创作，解锁跨主题勋章或影片碎片。",
+      "影片碎片机制：高价值影片用主题时长 + 特色成就 + 连续使用组合解锁，降低纯挂机收益。",
+      "本地创作回顾：用户打开成就页时生成周报，展示主题时长、产出数量、常用节点和已获勋章。"
+    ],
+    "acceptance": [
+      "九套主题分别累计时长，后台/无焦点/无交互不刷时长。",
+      "每个主题至少 5 个时长成就、3 个特色成就、1 个主题大师勋章。",
+      "未解锁影片无法播放；解锁后可播放、拖动进度条、继续播放和清缓存。",
+      "加密影片原始素材不得进入 git、build 明文目录或 Electron resources。",
+      "自动更新到带新影片的版本后，旧成就数据仍能解锁并播放新资源。"
+    ]
+  },
+  "totalNodes": 48,
   "phases": {
     "phase0": {
       "label": "基础设施",
@@ -2045,6 +2170,56 @@
         "新增回归测试覆盖即梦 Seedance 9 图 / 3 视频 / 3 音频裁剪、multiframe 9 图、前端隐藏 FAL 专属控件并发送 videos/audios、视频端口允许 audio/video 连线。",
         "本次按规范打包 Electron：package.json / package-lock.json / vite.config.ts/js / electron/main.cjs / backend/src/config.js APP_VERSION / features.json / README.md 同步到 1.9.7；用户包继续要求 remove-ai-watermarks runtime 与 ffmpeg sidecar。GitHub 公开源码仍排除 roadmap.md、skill.md 与本地私有计费/支付/充值 overlay。"
       ]
+    },
+    "phase138": {
+      "label": "Electron GitHub Release 自动更新 (v1.9.8)",
+      "status": "complete",
+      "items": [
+        "Electron 主进程接入 electron-updater，打包版本启动后从 GitHub Release 检查最新版本；autoDownload 关闭，由用户在顶栏手动下载，下载完成后再重启安装。",
+        "preload 只暴露 t8pc.updater 的 status/check/download/install/onStatus 受控 IPC；渲染层不会接触 GitHub token 或本地发布脚本。",
+        "顶栏新增桌面更新入口，支持检查、发现新版本、下载进度、已下载、重启安装和错误状态；Web/开发模式不会显示无效桌面更新流程。",
+        "package.json 增加 GitHub publish 配置和 dist:release / release:github / release:verify 脚本；发布前校验 installer、.blockmap 与 latest.yml，上传后再从 GitHub Release 拉取校验。",
+        "本次版本同步到 1.9.8，并保留 3D 全景节点、肖像大师保存到资源库、即梦 CLI Seedance 多素材参考、本地私有充值 overlay 打包安全策略。"
+      ]
+    },
+    "phase139": {
+      "label": "3D 全景开发白屏与大画布图片加载热修 (v1.9.9)",
+      "status": "complete",
+      "items": [
+        "修复 3D 全景节点从 /public/vendor/js/three-0.160.0.module.js 动态 import 导致 Vite 开发环境白屏 overlay 的问题；节点现在通过项目依赖 import('three') 按需加载 Three.js，避免 public 目录资源被源代码直接 import。",
+        "3D 全景自动旋转只在贴图 ready 且用户开启 panoramaAutoRotate 时启动 requestAnimationFrame，未就绪或未开启时不再持续占用渲染循环。",
+        "MaterialThumbnail、UploadNode、OutputNode 与 3D 全景导出预览图片统一增加 loading=\"lazy\" 与 decoding=\"async\"，降低大画布启动时全量缩略图同步请求和解码造成的白屏/图片迟迟不显示问题。",
+        "Electron 更新下载完成后的重启安装改为 quitAndInstall(true, true)，v1.9.9 起后续版本更新应走静默安装并自动重启新版，减少安装向导打断。",
+        "新增 tests/imageLoadingPerformance.test.ts 与 panorama3d 回归断言，锁定 Three.js 依赖加载方式和关键图片预览懒加载策略。",
+        "公开版本同步到 1.9.9：package.json、package-lock.json、vite.config.ts/js、electron/main.cjs、backend/src/config.js APP_VERSION、features.json、README.md 同步；本次按规范打包 Electron 并作为 v1.9.8 自动更新基线的跨版本验收包。"
+      ]
+    },
+    "phase140": {
+      "label": "工具箱聚合解析节点 · ParseHub 桥接 (v1.9.9)",
+      "status": "complete",
+      "items": [
+        "工具箱分类新增「聚合解析」节点，类型 aggregate-parser；用户可粘贴短链、作品链接、分享码或完整分享文案，也可连接上游 text 节点自动取分享文本。",
+        "节点 UI 强制合规确认，清晰提示版权、平台条款、隐私、DRM/付费内容与 Cookie 风险；后端 /api/parsehub/resolve 同样要求 acceptedCompliance=true，避免绕过前端直接解析。",
+        "解析能力通过 ParseHub 2.0.24 提供，覆盖 Twitter/X、Instagram、YouTube、Facebook、Threads、Bilibili、抖音、TikTok、微博、小红书、贴吧、微信公众号、快手、酷安、皮皮虾、最右、小黑盒等 17 个平台。",
+        "新增 Python bridge：tools/parsehub-bridge/parsehub_bridge.py 只读 stdin JSON、只写 stdout JSON；Node 后端 backend/src/utils/parseHubBridge.js 负责 Python runtime 发现、PYTHONPATH 注入、超时控制、结果归一和本地 output URL 映射。",
+        "新增后端路由 backend/src/routes/parseHub.js：GET /api/parsehub/status 检查运行时与平台，POST /api/parsehub/resolve 支持 parse 与 download 两种模式；默认只解析远端媒体地址，download 模式才保存到 output/parsehub。",
+        "新增前端服务 src/services/parseHub.ts 与节点组件 src/components/nodes/AggregateParserNode.tsx；运行成功后写出 outputText/textSegments/imageUrls/videoUrls/audioUrls，并为文本摘要创建或更新下游 OutputNode，媒体仍走通用 autoOutput。",
+        "Electron 打包增加 tools/parsehub-bridge 与 tools/parsehub-pythonlibs extraResources；scripts/dist-release.cjs 注入 T8_REQUIRE_PARSEHUB_RUNTIME=1，electron/_post_build.cjs 校验 bridge、parsehub 依赖、parseHub 路由和 parseHubBridge 工具的加密产物。",
+        "新增 tests/aggregateParser.test.ts，覆盖节点注册、端口、前端合规 UI、后端挂载、Electron 打包资源和 ParseHub 结果归一；已验证 bridge status 返回 ParseHub 2.0.24 / Python 3.12.9 / 17 平台，npm run type-check 与 npm run build 通过。"
+      ]
+    },
+    "phase141": {
+      "label": "主题成就 / 勋章 / 加密影片解锁系统规划 (planned)",
+      "status": "planned",
+      "items": [
+        "roadmap.md 已在本地新增主题成就路线：九套系统主题分别拥有独立使用时长、成就、勋章和影片解锁轨道；公开仓库通过 features.json.achievementSystemRoadmap 记录摘要，roadmap.md 仍按项目规则不随 GitHub 推送。",
+        "第一版成就数据建议落在 data/achievements.json，规则走 src/data/achievementManifest.ts，事件由统一 AchievementProvider / useAchievementStore 汇总，避免节点组件直接写成就状态。",
+        "有效时长只在窗口前台、页面可见、近期有用户交互时累计；心跳合并上报且单次最多累计 30 秒，避免后台、睡眠和挂机刷时长。",
+        "隐藏模式成就优先接入两条现有能力：RH 主题 UploadNode 鸭鸭解码隐藏模式、幽游白书主题肖像大师隐藏模式；事件只记录类型、主题和计数，不记录用户链接、Cookie、完整 prompt 或隐私内容。",
+        "影片由用户后续提供，原始文件规划放入 private/achievement-films-src/ 并 ignored；加密产物规划为 tools/achievement-media/films/*.t8film + manifest，打包时可通过 T8_REQUIRE_ACHIEVEMENT_MEDIA=1 严格校验。",
+        "解锁影片第一版建议后端解密到用户数据目录临时缓存，并复用资源库 Range 播放逻辑；该方案是轻量本地解锁保护，不宣称 DRM 级防破解。",
+        "留存增强规划包括今日主题任务、周常创作护照、影片碎片、主题代表作、主题大师外观奖励和本地创作回顾；所有提醒必须可关闭或弱化，不打断画布主流程。"
+      ]
     }
   },
   "categories": {
@@ -2302,7 +2477,7 @@
     },
     "toolbox": {
       "label": "工具箱",
-      "count": 5,
+      "count": 6,
       "nodes": [
         {
           "type": "cinematic",
@@ -2328,6 +2503,22 @@
           "type": "pose-master",
           "label": "姿势大师",
           "description": "人体线稿姿态编辑器：可拖动关节点或抓取移动整个人物、套用常用姿势、MediaPipe 识别人物图、多人姿态、手部控制、A/B 关键帧、预览并输出线稿/OpenPose/COCO 参考图，同时导出 OpenPose/COCO keypoints JSON、prompt/text 与 metadata"
+        },
+        {
+          "type": "aggregate-parser",
+          "label": "聚合解析",
+          "description": "基于 ParseHub 的轻量自媒体聚合解析节点：输入短链、作品链接、分享码或分享文案，合规确认后解析无水印/原始媒体地址；可选使用代理/Cookie，默认只解析地址，显式选择后可保存到 output/parsehub"
+        }
+      ]
+    },
+    "3d": {
+      "label": "3D",
+      "count": 1,
+      "nodes": [
+        {
+          "type": "panorama-3d",
+          "label": "3D全景",
+          "description": "Three.js 360 全景预览与取景导出，支持拖拽视角、缩放、视窗比例、自定义比例和自动旋转；输入 2:1 全景图后可导出当前取景画面"
         }
       ]
     }

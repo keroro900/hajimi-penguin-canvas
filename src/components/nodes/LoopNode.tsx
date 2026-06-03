@@ -38,8 +38,10 @@ const EXEC_TYPES = new Set<string>([
     // v1.2.10.1: RH 工具节点 (循环器中作为 EXEC 使用)
     'rh-tools', 'rh-toolbox', 'comfyui-store',
   'resize', 'upscale', 'grid-crop', 'grid-editor', 'remove-bg', 'combine',
+  'panorama-3d',
   'frame-extractor', 'frame-pair',
   'upload',
+  'aggregate-parser',
 ]);
 
 // 自动计算型下游节点：没有 useRunTrigger，不应放入 EXEC_TYPES 等待 runBus，

@@ -121,6 +121,8 @@ import ImageCompareNode from './nodes/ImageCompareNode';
 import ToolboxParamNode from './nodes/ToolboxParamNode';
 import PortraitMasterNode from './nodes/PortraitMasterNode';
 import PoseMasterNode from './nodes/PoseMasterNode';
+import Panorama3DNode from './nodes/Panorama3DNode';
+import AggregateParserNode from './nodes/AggregateParserNode';
 import IdeaNode from './nodes/IdeaNode';
 import BpNode from './nodes/BpNode';
 import RelayNode from './nodes/RelayNode';
@@ -218,6 +220,8 @@ const SPECIFIC_NODES: Record<string, any> = {
   'multi-angle-visual': ToolboxParamNode,
   'portrait-master': PortraitMasterNode,
   'pose-master': PoseMasterNode,
+  'aggregate-parser': AggregateParserNode,
+  'panorama-3d': Panorama3DNode,
   // Input (1) - 上传素材
   upload: UploadNode,
   // Output (1) - 输出素材(文本/图像/视频/音频 预览 + 文本双击编辑)
@@ -374,6 +378,26 @@ const INITIAL_DATA: Record<string, Record<string, any>> = {
     poseFavorites: [],
     poseCustomText: '',
     prompt: '',
+  },
+  'aggregate-parser': {
+    aggregateParserInput: '',
+    aggregateParserMode: 'parse',
+    aggregateParserProxy: '',
+    aggregateParserCookie: '',
+    aggregateParserAcceptedCompliance: false,
+    aggregateParserPreferUpstream: true,
+    aggregateParserResult: null,
+    aggregateParserMedia: [],
+    prompt: '',
+    outputText: '',
+    textSegments: [],
+    imageUrl: '',
+    imageUrls: [],
+    videoUrl: '',
+    videoUrls: [],
+    audioUrl: '',
+    audioUrls: [],
+    status: 'idle',
   },
   'text-split': {
     sourceText: '',
@@ -534,6 +558,19 @@ const INITIAL_DATA: Record<string, Record<string, any>> = {
   // 从合集获取: 默认 image + 第 1 个
   'pick-from-set': { pickKind: 'image', pickIndex: 1 },
   'image-compare': { mode: 'slider', align: 'contain', split: 50, opacity: 50, threshold: 24 },
+  'panorama-3d': {
+    panoramaRatio: 'wide',
+    panoramaCustomW: 16,
+    panoramaCustomH: 9,
+    panoramaYaw: 0,
+    panoramaPitch: 0,
+    panoramaFov: 75,
+    panoramaAutoRotate: false,
+    imageUrl: '',
+    imageUrls: [],
+    urls: [],
+    status: 'idle',
+  },
   'drawing-board': { boardRatio: '16:9', boardWidth: 960, boardHeight: 540, boardElements: [], boardColor: '#111827', boardStrokeSize: 5 },
   'grid-crop': { rows: 3, cols: 3, gap: 0 },
   'grid-editor': {
@@ -586,12 +623,13 @@ const EXECUTABLE_NODE_TYPES = new Set<string>([
   // v1.2.10.1: rh-tools 与 RunningHub 同质，同样可被批量运行调起
   'rh-tools', 'rh-toolbox', 'comfyui-store',
   'resize', 'upscale', 'grid-crop', 'grid-editor', 'remove-bg', 'combine', 'image-compare', 'drawing-board',
+  'panorama-3d',
   'frame-extractor', 'frame-pair',
   'upload',
   // v1.2.8 工具节点 (循环器 / 从合集获取)
   'loop', 'pick-from-set',
   // v1.4.8: 工具箱文本节点也可点击 RUN 直接外挂 OutputNode
-  'cinematic', 'video-motion', 'multi-angle-visual', 'portrait-master', 'pose-master',
+  'cinematic', 'video-motion', 'multi-angle-visual', 'portrait-master', 'pose-master', 'aggregate-parser',
   'remove-ai-watermark',
 ]);
 

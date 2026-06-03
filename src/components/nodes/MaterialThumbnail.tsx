@@ -136,6 +136,8 @@ const MaterialThumbnail = ({
           src={material.url}
           alt={material.label || ''}
           draggable={false}
+          loading="lazy"
+          decoding="async"
           style={{
             width: '100%',
             height: '100%',

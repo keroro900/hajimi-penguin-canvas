@@ -53,6 +53,13 @@ _*.log
 !/tools/remove-ai-watermarks-runtime/
 !/tools/remove-ai-watermarks-runtime/README.md
 
+# Local ParseHub upstream clone and generated Python dependency target.
+# Keep bridge/docs tracked; refresh dependencies locally before Electron release builds.
+/ParseHub/
+/tools/parsehub-pythonlibs/**
+!/tools/parsehub-pythonlibs/
+!/tools/parsehub-pythonlibs/README.md
+
 # Dependencies
 node_modules
 .pnp

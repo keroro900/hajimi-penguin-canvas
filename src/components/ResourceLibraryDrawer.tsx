@@ -14,6 +14,7 @@ import {
   Send,
   Star,
   Trash2,
+  UserRoundCog,
   Video,
   Workflow,
   X,
@@ -22,6 +23,7 @@ import type { CSSProperties } from 'react';
 import { useThemeStore } from '../stores/theme';
 import * as api from '../services/api';
 import type { ResourceCategory, ResourceItem, ResourceKind } from '../services/api';
+import { isPortraitResourceItem } from '../utils/portraitResource';
 import { resourceItemToSendMaterials } from '../utils/sendMaterials';
 import { summarizeWorkflowResource } from '../utils/workflowResource';
 import LoopingVideo from './LoopingVideo';
@@ -462,7 +464,9 @@ export default function ResourceLibraryDrawer({ open, onClose, onInsertMaterial 
             </div>
           )}
           <div className="grid grid-cols-2 gap-2">
-            {items.map((item) => (
+            {items.map((item) => {
+              const isPortraitResource = isPortraitResourceItem(item);
+              return (
               <article
                 key={item.id}
                 className={`resource-card overflow-hidden transition-transform ${isPixel ? 'border-2 border-[var(--px-ink)] bg-[var(--px-surface)] shadow-[3px_3px_0_var(--px-ink)]' : isDark ? 'rounded-lg border border-white/10 bg-white/[0.04]' : 'rounded-lg border border-black/10 bg-black/[0.03]'}`}
@@ -476,7 +480,9 @@ export default function ResourceLibraryDrawer({ open, onClose, onInsertMaterial 
                       'data-drag-node-id': 'resource-library',
                     })}
                 title={
-                  item.kind === 'set'
+                  isPortraitResource
+                    ? '点击恢复为肖像大师节点'
+                    : item.kind === 'set'
                     ? '点击插入整个素材集'
                     : item.kind === 'pose'
                       ? '点击恢复为姿势大师节点'
@@ -525,32 +531,46 @@ export default function ResourceLibraryDrawer({ open, onClose, onInsertMaterial 
                     </div>
                   )}
                   {item.kind === 'set' && (
-                    <div className="resource-media h-full w-full bg-[var(--t8-bg-panel-muted)] p-2 transition-transform duration-200">
-                      <div className="grid h-full grid-cols-2 gap-1 overflow-hidden">
-                        {(item.materialSetItems || []).slice(0, 4).map((child, index) => (
-                          <div
-                            key={child.id || index}
-                            className="flex items-center justify-center overflow-hidden rounded border border-black/10 bg-black/10 text-[10px]"
-                            title={child.name || child.text || child.url || ''}
-                          >
-                            {child.kind === 'image' && child.url ? (
-                              <img src={child.url} className="h-full w-full object-cover" draggable={false} />
-                            ) : child.kind === 'video' ? (
-                              <Video size={18} className="text-rose-300" />
-                            ) : child.kind === 'audio' ? (
-                              <Music size={18} className="text-violet-200" />
-                            ) : (
-                              <div className="flex h-full w-full items-center gap-1 p-1 text-left text-[9px] leading-tight text-[var(--t8-text-muted)]">
-                                <FileText size={12} className="shrink-0" />
-                                <span className="line-clamp-3 break-all">{child.text || child.name || '文本'}</span>
-                              </div>
-                            )}
+                    <div
+                      className="resource-media h-full w-full bg-[var(--t8-bg-panel-muted)] p-2 transition-transform duration-200"
+                      style={isPortraitResource ? { background: 'linear-gradient(135deg, rgba(236,72,153,.9), rgba(14,165,233,.78), rgba(15,23,42,.92))' } : undefined}
+                    >
+                      {isPortraitResource ? (
+                        <div className="flex h-full w-full flex-col items-center justify-center gap-1.5 text-center">
+                          <UserRoundCog size={36} className="text-white drop-shadow" />
+                          <div className="rounded-full bg-black/45 px-2 py-0.5 text-[10px] font-semibold text-white">
+                            PortraitMaster
                           </div>
-                        ))}
-                      </div>
-                      <div className="absolute bottom-1.5 left-1.5 rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-semibold text-white">
-                        {materialSetLabel(item.materialSetKind)} · {item.materialSetItems?.length || 0}
-                      </div>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="grid h-full grid-cols-2 gap-1 overflow-hidden">
+                            {(item.materialSetItems || []).slice(0, 4).map((child, index) => (
+                              <div
+                                key={child.id || index}
+                                className="flex items-center justify-center overflow-hidden rounded border border-black/10 bg-black/10 text-[10px]"
+                                title={child.name || child.text || child.url || ''}
+                              >
+                                {child.kind === 'image' && child.url ? (
+                                  <img src={child.url} className="h-full w-full object-cover" draggable={false} />
+                                ) : child.kind === 'video' ? (
+                                  <Video size={18} className="text-rose-300" />
+                                ) : child.kind === 'audio' ? (
+                                  <Music size={18} className="text-violet-200" />
+                                ) : (
+                                  <div className="flex h-full w-full items-center gap-1 p-1 text-left text-[9px] leading-tight text-[var(--t8-text-muted)]">
+                                    <FileText size={12} className="shrink-0" />
+                                    <span className="line-clamp-3 break-all">{child.text || child.name || '文本'}</span>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                          <div className="absolute bottom-1.5 left-1.5 rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-semibold text-white">
+                            {materialSetLabel(item.materialSetKind)} · {item.materialSetItems?.length || 0}
+                          </div>
+                        </>
+                      )}
                     </div>
                   )}
                   {item.kind === 'pose' && (
@@ -583,7 +603,9 @@ export default function ResourceLibraryDrawer({ open, onClose, onInsertMaterial 
                 <div className="p-2 space-y-1.5">
                   <div className="text-xs font-medium truncate" title={item.title}>{item.title}</div>
                   <div className={`text-[10px] truncate ${subtle}`}>
-                    {item.kind === 'set'
+                    {isPortraitResource
+                      ? '肖像大师配置 · 可恢复节点'
+                      : item.kind === 'set'
                       ? `${materialSetLabel(item.materialSetKind)} · ${item.materialSetItems?.length || 0} 项`
                       : item.kind === 'pose'
                         ? '姿势大师配置 · 可恢复节点'
@@ -604,8 +626,8 @@ export default function ResourceLibraryDrawer({ open, onClose, onInsertMaterial 
                       onClick={() => insertItem(item)}
                       className="nodrag nopan t8-mini-icon-button resource-card-action"
                       style={miniInsertStyle}
-                      title="插入画布"
-                      aria-label="插入画布"
+                      title={isPortraitResource ? '恢复为肖像大师节点' : '插入画布'}
+                      aria-label={isPortraitResource ? '恢复为肖像大师节点' : '插入画布'}
                     >
                       <Plus size={15} />
                     </button>
@@ -638,7 +660,8 @@ export default function ResourceLibraryDrawer({ open, onClose, onInsertMaterial 
                   </div>
                 </div>
               </article>
-            ))}
+              );
+            })}
           </div>
         </main>
       </div>

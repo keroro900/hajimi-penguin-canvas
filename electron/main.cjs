@@ -14,8 +14,14 @@ const fs = require('fs');
 const net = require('net');
 const { spawn } = require('child_process');
 
+const APP_VERSION = '1.9.9';
+const UPDATE_DISABLED_MESSAGE = '开发模式不会检查 GitHub Release 更新';
+
 // 允许在 Linux/某些机型上规避 GPU 沙盒导致的启动延迟
 app.commandLine.appendSwitch('disable-features', 'OutOfBlinkCors');
+if (process.platform === 'win32') {
+  app.setAppUserModelId('cn.t8star.penguin-canvas');
+}
 
 let mainWindow = null;
 let logWindow = null;
@@ -23,6 +29,19 @@ let backendModule = null; // 后端 Express app(同进程加载) 或 子进程�
 let backendProcess = null;
 let backendPort = 18766;
 let logBuffer = [];
+let autoUpdater = null;
+let initialUpdateCheckStarted = false;
+let updaterState = {
+  status: 'idle',
+  currentVersion: APP_VERSION,
+  availableVersion: null,
+  message: '等待检查更新',
+  progress: null,
+  downloaded: false,
+  error: null,
+  packaged: false,
+  updatedAt: null,
+};
 
 function isSafeExternalUrl(url) {
   try {
@@ -80,6 +99,202 @@ function appendToLogWindow(msg) {
       )
       .catch(() => {});
   }
+}
+
+function normalizeError(error) {
+  if (!error) return 'unknown error';
+  if (error.message) return error.message;
+  return String(error);
+}
+
+function emitUpdaterStatus(patch = {}) {
+  updaterState = {
+    ...updaterState,
+    ...patch,
+    currentVersion: APP_VERSION,
+    packaged: isPackaged(),
+    updatedAt: new Date().toISOString(),
+  };
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('t8pc:updater-status', updaterState);
+  }
+  return updaterState;
+}
+
+function ensureAutoUpdater() {
+  if (!isPackaged()) {
+    return { ok: false, message: UPDATE_DISABLED_MESSAGE };
+  }
+  if (autoUpdater) return { ok: true, updater: autoUpdater };
+  try {
+    const updaterModule = require('electron-updater');
+    autoUpdater = updaterModule.autoUpdater;
+    try {
+      const log = require('electron-log');
+      autoUpdater.logger = log;
+      if (log.transports && log.transports.file) {
+        log.transports.file.level = 'info';
+      }
+    } catch (logError) {
+      dbgLog(`[updater] electron-log unavailable: ${normalizeError(logError)}`);
+    }
+
+    autoUpdater.autoDownload = false;
+    autoUpdater.autoInstallOnAppQuit = true;
+    autoUpdater.allowPrerelease = false;
+
+    autoUpdater.on('checking-for-update', () => {
+      dbgLog('[updater] checking GitHub Releases');
+      emitUpdaterStatus({
+        status: 'checking',
+        message: '正在检查更新',
+        progress: null,
+        downloaded: false,
+        error: null,
+      });
+    });
+    autoUpdater.on('update-available', (info) => {
+      const version = info && info.version ? info.version : null;
+      dbgLog(`[updater] update available: ${version || 'unknown'}`);
+      emitUpdaterStatus({
+        status: 'available',
+        availableVersion: version,
+        message: version ? `发现新版本 v${version}` : '发现新版本',
+        progress: null,
+        downloaded: false,
+        error: null,
+      });
+    });
+    autoUpdater.on('update-not-available', () => {
+      dbgLog('[updater] no update available');
+      emitUpdaterStatus({
+        status: 'not-available',
+        message: '已是最新版本',
+        progress: null,
+        downloaded: false,
+        error: null,
+      });
+    });
+    autoUpdater.on('download-progress', (progress) => {
+      emitUpdaterStatus({
+        status: 'downloading',
+        message: '正在下载更新',
+        progress: {
+          percent: Number(progress && progress.percent ? progress.percent : 0),
+          transferred: Number(progress && progress.transferred ? progress.transferred : 0),
+          total: Number(progress && progress.total ? progress.total : 0),
+          bytesPerSecond: Number(progress && progress.bytesPerSecond ? progress.bytesPerSecond : 0),
+        },
+        downloaded: false,
+        error: null,
+      });
+    });
+    autoUpdater.on('update-downloaded', (info) => {
+      const version = info && info.version ? info.version : updaterState.availableVersion;
+      dbgLog(`[updater] update downloaded: ${version || 'unknown'}`);
+      emitUpdaterStatus({
+        status: 'downloaded',
+        availableVersion: version || null,
+        message: '更新已下载',
+        progress: null,
+        downloaded: true,
+        error: null,
+      });
+    });
+    autoUpdater.on('error', (error) => {
+      const message = normalizeError(error);
+      dbgLog(`[updater] error: ${message}`);
+      emitUpdaterStatus({
+        status: 'error',
+        message: '更新失败',
+        error: message,
+        progress: null,
+      });
+    });
+
+    return { ok: true, updater: autoUpdater };
+  } catch (error) {
+    const message = normalizeError(error);
+    dbgLog(`[updater] init failed: ${message}`);
+    return { ok: false, message };
+  }
+}
+
+async function checkForUpdatesByUser() {
+  const ready = ensureAutoUpdater();
+  if (!ready.ok) {
+    return {
+      success: false,
+      message: ready.message,
+      status: emitUpdaterStatus({ status: 'disabled', message: ready.message, error: null }),
+    };
+  }
+  try {
+    const result = await ready.updater.checkForUpdates();
+    return { success: true, info: result && result.updateInfo ? result.updateInfo : null, status: updaterState };
+  } catch (error) {
+    const message = normalizeError(error);
+    return {
+      success: false,
+      message,
+      status: emitUpdaterStatus({ status: 'error', message: '更新检查失败', error: message }),
+    };
+  }
+}
+
+async function downloadAvailableUpdate() {
+  const ready = ensureAutoUpdater();
+  if (!ready.ok) {
+    return {
+      success: false,
+      message: ready.message,
+      status: emitUpdaterStatus({ status: 'disabled', message: ready.message, error: null }),
+    };
+  }
+  try {
+    await ready.updater.downloadUpdate();
+    return { success: true, status: updaterState };
+  } catch (error) {
+    const message = normalizeError(error);
+    return {
+      success: false,
+      message,
+      status: emitUpdaterStatus({ status: 'error', message: '更新下载失败', error: message }),
+    };
+  }
+}
+
+function installDownloadedUpdate() {
+  const ready = ensureAutoUpdater();
+  if (!ready.ok) {
+    return {
+      success: false,
+      message: ready.message,
+      status: emitUpdaterStatus({ status: 'disabled', message: ready.message, error: null }),
+    };
+  }
+  if (!updaterState.downloaded) {
+    return {
+      success: false,
+      message: '还没有已下载的更新',
+      status: emitUpdaterStatus({ message: '还没有已下载的更新' }),
+    };
+  }
+  setImmediate(() => ready.updater.quitAndInstall(true, true));
+  return { success: true, status: emitUpdaterStatus({ status: 'installing', message: '正在重启安装' }) };
+}
+
+function startInitialUpdateCheck() {
+  if (initialUpdateCheckStarted) return;
+  initialUpdateCheckStarted = true;
+  if (!isPackaged()) {
+    emitUpdaterStatus({ status: 'disabled', message: UPDATE_DISABLED_MESSAGE, error: null });
+    return;
+  }
+  emitUpdaterStatus({ status: 'idle', message: '等待检查更新', error: null });
+  setTimeout(() => {
+    void checkForUpdatesByUser();
+  }, 2500);
 }
 
 // ---------- 端口探测 ----------
@@ -148,7 +363,7 @@ function createMainWindow() {
     minHeight: 640,
     show: false,
     backgroundColor: '#0b0b0d',
-    title: '贞贞的无限画布（企鹅共创版） v1.9.7',
+    title: `贞贞的无限画布（企鹅共创版） v${APP_VERSION}`,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -177,6 +392,7 @@ function createMainWindow() {
 
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
+    startInitialUpdateCheck();
   });
 
   mainWindow.on('closed', () => {
@@ -201,7 +417,7 @@ function createLogWindow() {
 .h b{color:#ffd76b;}
 #log{padding:12px 18px;white-space:pre-wrap;line-height:1.5;font-size:12px;}
 </style></head><body>
-<div class="h">🐧 <b>贞贞的无限画布</b>（企鹅共创版）<span style="float:right;color:#666;">v1.9.7</span></div>
+<div class="h">🐧 <b>贞贞的无限画布</b>（企鹅共创版）<span style="float:right;color:#666;">v${APP_VERSION}</span></div>
 <div id="log">[启动] 正在初始化加密内核 + Express 后端...\n</div>
 </body></html>`;
   fs.writeFileSync(logHtmlPath, html, 'utf-8');
@@ -227,10 +443,15 @@ ipcMain.handle('t8pc:get-info', () => ({
   packaged: isPackaged(),
   backendPort,
   userData: getUserDataDir(),
-  version: '1.9.7',
+  version: APP_VERSION,
+  updater: updaterState,
 }));
 
 ipcMain.handle('t8pc:open-external', async (_event, url) => openExternalUrl(url));
+ipcMain.handle('t8pc:updater:status', () => emitUpdaterStatus());
+ipcMain.handle('t8pc:updater:check', async () => checkForUpdatesByUser());
+ipcMain.handle('t8pc:updater:download', async () => downloadAvailableUpdate());
+ipcMain.handle('t8pc:updater:install', () => installDownloadedUpdate());
 
 // ---------- 生命周期 ----------
 app.whenReady().then(async () => {
