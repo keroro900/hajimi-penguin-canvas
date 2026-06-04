@@ -50,6 +50,7 @@ import { useUpdateNodeData } from './useUpdateNodeData';
 import { useUpstreamMaterials } from './useUpstreamMaterials';
 import { useHasAutoOutput } from './useHasAutoOutput';
 import SmartImage from '../SmartImage';
+import PromptTextarea from '../PromptTextarea';
 
 const COLOR = '#38bdf8';
 
@@ -123,12 +124,15 @@ function downloadUrl(url: string, filename: string) {
 }
 
 async function ensurePanoramaResourceCategory() {
-  const categories = await api.getResourceCategories('image');
+  const categories = await api.getResourceCategories('panorama');
   if (!categories.success) throw new Error(categories.error || '读取资源库分类失败');
-  const existing = categories.data.find((cat) => cat.name === '3D全景');
+  const existing =
+    categories.data.find((cat) => cat.id === 'panorama_uncategorized') ||
+    categories.data.find((cat) => cat.name === '未分类') ||
+    categories.data[0];
   if (existing) return existing;
-  const created = await api.addResourceCategory('image', '3D全景');
-  if (!created.success) throw new Error(created.error || '创建 3D全景 分类失败');
+  const created = await api.addResourceCategory('panorama', '未分类');
+  if (!created.success) throw new Error(created.error || '创建全景分类失败');
   return created.data;
 }
 
@@ -618,7 +622,7 @@ const Panorama3DNode = (p: NodeProps) => {
       const title = `${compactPrompt(userPrompt || d.prompt || '3D全景贴图')} · ${sizeLevel}`;
       const saved = await api.addResourceItem({
         url: sourceUrl,
-        kind: 'image',
+        kind: 'panorama',
         categoryId: category.id,
         title,
         tags: ['3D全景', 'panorama', 'VR', sizeLevel, generationModeLabel(generationMode)],
@@ -781,11 +785,12 @@ const Panorama3DNode = (p: NodeProps) => {
                 {PANORAMA_FIXED_PROMPT}
               </div>
 
-              <textarea
+              <PromptTextarea
+                title="3D 全景提示词"
                 value={userPrompt}
-                onChange={(e) => update({
-                  panoramaPrompt: e.target.value,
-                  panoramaPromptFinal: buildPanoramaPromptFinal(e.target.value),
+                onValueChange={(value) => update({
+                  panoramaPrompt: value,
+                  panoramaPromptFinal: buildPanoramaPromptFinal(value),
                 })}
                 rows={3}
                 placeholder={panelMode === 'image' ? '可选补充：场景风格、天气、镜头中心...' : '场景提示词'}

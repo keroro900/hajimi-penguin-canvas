@@ -60,6 +60,7 @@ const RATIO_OPTIONS = ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9', '9:21', 'ada
 const RESOLUTION_OPTIONS = ['480p', '720p', 'native1080p', '1080p', '2k', '4k'];
 const DURATION_OPTIONS = [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
 const SEEDANCE_POLL_TIMEOUT_SECONDS = 3600;
+type SeedanceFrameMode = 'auto' | 'first' | 'firstlast' | 'multiframe';
 const seedanceMinPollCount = (intervalMs: number) =>
   Math.ceil((SEEDANCE_POLL_TIMEOUT_SECONDS * 1000) / Math.max(1, intervalMs));
 
@@ -107,8 +108,14 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
   const seed: number = typeof d.seed === 'number' ? d.seed : -1;
   const maxPoll: number = typeof d.maxPoll === 'number' ? d.maxPoll : 360;
   const pollInt: number = typeof d.pollInt === 'number' ? d.pollInt : 10;
-  // 首/末帧使用模式: 'auto' | 'first' | 'firstlast'
-  const frameMode: 'auto' | 'first' | 'firstlast' = d.frameMode || 'auto';
+  // 首/末帧使用模式: Jimeng CLI additionally supports explicit intelligent multi-frame.
+  const rawFrameMode = String(d.frameMode || 'auto');
+  const frameMode: SeedanceFrameMode = (
+    rawFrameMode === 'first'
+    || rawFrameMode === 'firstlast'
+    || rawFrameMode === 'multiframe'
+  ) ? rawFrameMode : 'auto';
+  const activeFrameMode: SeedanceFrameMode = !isJimengCliSelected && frameMode === 'multiframe' ? 'auto' : frameMode;
 
   const status: 'idle' | 'submitting' | 'polling' | 'success' | 'error' = d.status || 'idle';
   const taskId: string | undefined = d.taskId;
@@ -318,7 +325,7 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
           providerParams: isJimengCliSelected
             ? {
                 ...(d?.providerParams || {}),
-                frameMode,
+                frameMode: activeFrameMode,
               }
             : {
                 ...(d?.providerParams || {}),
@@ -326,7 +333,7 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
                 return_last_frame: returnLastFrame,
                 watermark,
                 web_search: webSearch,
-                frameMode,
+                frameMode: activeFrameMode,
               },
         });
         const nextVideoUrl = r.videoUrls[0];
@@ -346,16 +353,16 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
       }
 
       // 拆分参考图(对齐主项目 sd_firstFrame / sd_lastFrame / sd_refImgs):
-      //  - frameMode='auto'(默认): 全部走 reference_image
-      //  - frameMode='first':   第 1 张作为 firstFrame, 其余作为 reference_image
-      //  - frameMode='firstlast': 第 1 张 first, 第 2 张 last, 其余作为 reference_image
+      //  - activeFrameMode='auto'(默认): 全部走 reference_image
+      //  - activeFrameMode='first':   第 1 张作为 firstFrame, 其余作为 reference_image
+      //  - activeFrameMode='firstlast': 第 1 张 first, 第 2 张 last, 其余作为 reference_image
       let firstFrame: string | undefined;
       let lastFrame: string | undefined;
       let refImages: string[] = [];
-      if (frameMode === 'first' && imageUrls.length >= 1) {
+      if (activeFrameMode === 'first' && imageUrls.length >= 1) {
         firstFrame = imageUrls[0];
         refImages = imageUrls.slice(1);
-      } else if (frameMode === 'firstlast' && imageUrls.length >= 1) {
+      } else if (activeFrameMode === 'firstlast' && imageUrls.length >= 1) {
         firstFrame = imageUrls[0];
         if (imageUrls.length >= 2) lastFrame = imageUrls[1];
         refImages = imageUrls.slice(2);
@@ -382,9 +389,9 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
       if (audioUrls.length) payload.audios = audioUrls;
 
       logBus.info(
-        `提交 Seedance2.0: model=${model} ${duration}s ${ratio} ${resolution} ` +
+          `提交 Seedance2.0: model=${model} ${duration}s ${ratio} ${resolution} ` +
           `audio=${generateAudio} retLast=${returnLastFrame} ` +
-          `frame=${frameMode} refs=${refImages.length}` +
+          `frame=${activeFrameMode} refs=${refImages.length}` +
           (firstFrame ? ' +first' : '') +
           (lastFrame ? ' +last' : '') +
           (videoUrls.length ? ` +${videoUrls.length}video` : '') +
@@ -640,13 +647,16 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
         <div>
           <label className="text-[10px] text-white/50 block mb-1">参考图模式</label>
           <select
-            value={frameMode}
+            value={activeFrameMode}
             onChange={(e) => update({ frameMode: e.target.value })}
             className="w-full rounded bg-white/5 border border-white/10 px-2 py-1 text-xs text-white outline-none focus:border-white/30"
           >
             <option value="auto" className="bg-zinc-900">{isJimengCliSelected ? '全能参考(auto)' : '全部作参考图(auto)'}</option>
             <option value="first" className="bg-zinc-900">{isJimengCliSelected ? '单图参考（图生视频）' : '上传首帧（图生视频）'}</option>
             <option value="firstlast" className="bg-zinc-900">{isJimengCliSelected ? '首帧+尾帧(frames2video)' : '传入首帧+尾帧（首尾帧视频）'}</option>
+            {isJimengCliSelected && (
+              <option value="multiframe" className="bg-zinc-900">智能多帧(multiframe)</option>
+            )}
           </select>
         </div>
 
@@ -822,6 +832,7 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
         <div>
           <label className="text-[10px] text-white/50 block mb-1">本地 Prompt(可选)</label>
           <MentionPromptInput
+            title="SD2.0 Prompt"
             value={localPrompt}
             mentions={promptMentions}
             materials={mentionMaterials}

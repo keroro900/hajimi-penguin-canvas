@@ -3,6 +3,7 @@ import {
   Eye,
   FolderPlus,
   FileText,
+  Globe2,
   Image as ImageIcon,
   Library,
   Music,
@@ -33,10 +34,15 @@ const KIND_META: Record<ResourceKind, { label: string; icon: typeof ImageIcon; a
   image: { label: '图像', icon: ImageIcon, accent: '#fbbf24' },
   video: { label: '视频', icon: Video, accent: '#fb7185' },
   audio: { label: '音频', icon: Music, accent: '#a78bfa' },
+  panorama: { label: '全景', icon: Globe2, accent: '#38bdf8' },
   set: { label: '素材集', icon: PackageOpen, accent: '#2dd4bf' },
   pose: { label: '姿势', icon: PersonStanding, accent: '#fb923c' },
-  workflow: { label: '工作流', icon: Workflow, accent: '#38bdf8' },
+  workflow: { label: '工作流', icon: Workflow, accent: '#60a5fa' },
 };
+
+function resourceItemDragKind(item: ResourceItem) {
+  return item.kind === 'panorama' ? 'image' : item.kind;
+}
 
 interface ResourceLibraryDrawerProps {
   open: boolean;
@@ -475,7 +481,7 @@ export default function ResourceLibraryDrawer({ open, onClose, onInsertMaterial 
                   ? {}
                   : {
                       'data-drag-source': true,
-                      'data-drag-kind': item.kind,
+                      'data-drag-kind': resourceItemDragKind(item),
                       'data-drag-url': item.fileUrl,
                       'data-drag-preview': item.thumbUrl || item.fileUrl,
                       'data-drag-node-id': 'resource-library',
@@ -493,7 +499,7 @@ export default function ResourceLibraryDrawer({ open, onClose, onInsertMaterial 
                 }
               >
                 <div className="relative h-28 overflow-hidden bg-black/80">
-                  {item.kind === 'image' && (
+                  {(item.kind === 'image' || item.kind === 'panorama') && (
                     <>
                       <SmartImage
                         src={item.thumbUrl || item.fileUrl}
@@ -613,6 +619,8 @@ export default function ResourceLibraryDrawer({ open, onClose, onInsertMaterial 
                         ? '姿势大师配置 · 可恢复节点'
                         : item.kind === 'workflow'
                           ? `${summarizeWorkflowResource(item)} · 可插入画布`
+                          : item.kind === 'panorama'
+                            ? `全景贴图 · ${formatSize(item.size) || item.mime || '图像'}`
                       : formatSize(item.size) || item.mime || item.kind}
                   </div>
                   {item.kind === 'audio' && <audio src={item.fileUrl} controls className="w-full h-8" />}

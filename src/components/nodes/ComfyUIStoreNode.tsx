@@ -34,6 +34,7 @@ import {
 } from '../../utils/materialExclusion';
 import MaterialPreviewSection from './MaterialPreviewSection';
 import SmartImage from '../SmartImage';
+import PromptTextarea from '../PromptTextarea';
 import ResizableCorners from './ResizableCorners';
 import { useOrderedMaterials } from './useOrderedMaterials';
 import { useUpdateNodeData } from './useUpdateNodeData';
@@ -565,9 +566,10 @@ const ComfyUIStoreNode = ({ id, data, selected }: NodeProps) => {
                 <label key={param.key} className="block space-y-1">
                   <span className="text-[11px] font-bold" style={{ color: sub }}>{param.label}</span>
                   {param.kind === 'textarea' ? (
-                    <textarea
+                    <PromptTextarea
+                      title={`ComfyUI 参数 · ${param.label}`}
                       value={String(paramValues[param.key] ?? '')}
-                      onChange={(e) => setParam(param.key, e.target.value)}
+                      onValueChange={(value) => setParam(param.key, value)}
                       rows={param.rows || 4}
                       className={`${inputCls} resize-y`}
                       style={inputStyle}

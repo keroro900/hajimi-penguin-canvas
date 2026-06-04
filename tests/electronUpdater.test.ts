@@ -6,11 +6,16 @@ function read(path: string) {
   return readFileSync(new URL(path, import.meta.url), 'utf8');
 }
 
+function escapeRegExp(value: string) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 test('package config enables GitHub release updates and local release scripts', () => {
   const pkg = JSON.parse(read('../package.json'));
   const publish = pkg.build.publish?.[0];
 
-  assert.equal(pkg.version, '1.9.9');
+  assert.match(pkg.version, /^\d+\.\d+\.\d+$/);
+  assert.equal(pkg.version.split('.').every((part: string) => Number(part) >= 0 && Number(part) <= 9), true);
   assert.ok(pkg.dependencies['electron-updater']);
   assert.ok(pkg.dependencies['electron-log']);
   assert.equal(publish.provider, 'github');
@@ -21,9 +26,10 @@ test('package config enables GitHub release updates and local release scripts', 
 });
 
 test('electron main process owns updater checks, downloads, and install IPC', () => {
+  const pkg = JSON.parse(read('../package.json'));
   const main = read('../electron/main.cjs');
 
-  assert.match(main, /const APP_VERSION = '1\.9\.9'/);
+  assert.match(main, new RegExp(`const APP_VERSION = '${escapeRegExp(pkg.version)}'`));
   assert.match(main, /require\('electron-updater'\)/);
   assert.match(main, /autoUpdater\.autoDownload\s*=\s*false/);
   assert.match(main, /autoUpdater\.autoInstallOnAppQuit\s*=\s*true/);

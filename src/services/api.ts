@@ -388,8 +388,9 @@ export function importRHToolsBackup(payload: RHToolsBackup, mode: 'replace' | 'm
 }
 
 // ========== 资源库 (v1.3.4) ==========
-export type ResourceKind = 'image' | 'video' | 'audio' | 'set' | 'pose' | 'workflow';
+export type ResourceKind = 'image' | 'video' | 'audio' | 'panorama' | 'set' | 'pose' | 'workflow';
 export type ResourceMediaKind = 'image' | 'video' | 'audio';
+export type ResourceAddKind = ResourceMediaKind | 'panorama';
 export type ResourceMaterialSetKind = 'text' | 'image' | 'video' | 'audio';
 
 export interface ResourceCategory {
@@ -461,7 +462,7 @@ export interface AddResourceSetPayload {
 
 export interface AddResourcePayload {
   url: string;
-  kind: ResourceMediaKind;
+  kind: ResourceAddKind;
   categoryId?: string;
   title?: string;
   tags?: string[];

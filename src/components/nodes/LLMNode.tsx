@@ -35,6 +35,7 @@ import MaterialPreviewSection from './MaterialPreviewSection';
 import { useThemeStore } from '../../stores/theme';
 import MentionPromptInput from './MentionPromptInput';
 import SmartImage from '../SmartImage';
+import PromptTextarea from '../PromptTextarea';
 import { resolveMediaMentions, type MediaMention } from './mediaMentions';
 import { splitText } from '../../utils/textSplit';
 import { defaultSizeOf, placeBatchNodes, type Rect as PlacementRect } from '../../utils/nodePlacement';
@@ -844,12 +845,15 @@ const LLMNode = ({ id, data, selected }: NodeProps) => {
               )}
             </div>
           </div>
-          <textarea
+          <PromptTextarea
             ref={sysRef}
+            title="LLM 系统提示词"
             value={systemPrompt}
-            onChange={(e) => update({ system: e.target.value })}
+            onValueChange={(value) => update({ system: value })}
             placeholder="设定AI角色和行为..."
             className="w-full h-36 resize-none rounded bg-white/5 border border-white/10 px-2 py-1 text-[11px] text-white outline-none focus:border-white/30 placeholder:text-white/30 overflow-y-auto"
+            isDark={isDark}
+            isPixel={isPixel}
           />
         </div>
 
@@ -858,6 +862,7 @@ const LLMNode = ({ id, data, selected }: NodeProps) => {
           <label className="text-[10px] text-white/50 block mb-1">用户输入(优先取上游)</label>
           <MentionPromptInput
             editorRef={userRef}
+            title="LLM 用户输入"
             value={localPrompt}
             mentions={userPromptMentions}
             materials={orderedImages}

@@ -49,6 +49,8 @@ test('panorama 3d node exposes built-in generation and resource actions', () => 
   assert.match(source, /panoramaGeneratedUrl:\s*url/);
   assert.match(source, /imageUrls:\s*\[url\]/);
   assert.match(source, /addResourceItem/);
+  assert.match(source, /getResourceCategories\('panorama'\)/);
+  assert.match(source, /kind:\s*'panorama'/);
   assert.match(source, /'3D全景'/);
   assert.match(source, /generatedSourceUrl \|\| connectedSourceUrl \? 'preview' : 'text'/);
   assert.match(canvas, /'panorama-3d':\s*\{[\s\S]*panoramaRatio:\s*'ultrawide'/);

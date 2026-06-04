@@ -387,17 +387,18 @@ function App() {
       });
       return;
     }
+    const mediaKind = item.kind === 'panorama' ? 'image' : item.kind;
     const data: Record<string, any> = {
-      uploadType: item.kind,
+      uploadType: mediaKind,
       fileName: item.title || item.originalName || '资源库素材',
       fileSize: item.size || 0,
       mime: item.mime || '',
     };
-    if (item.kind === 'image') {
+    if (mediaKind === 'image') {
       data.imageUrl = item.fileUrl;
-    } else if (item.kind === 'video') {
+    } else if (mediaKind === 'video') {
       data.videoUrl = item.fileUrl;
-    } else if (item.kind === 'audio') {
+    } else if (mediaKind === 'audio') {
       data.audioUrl = item.fileUrl;
     }
     addNodeRef.current?.('upload', { data });
