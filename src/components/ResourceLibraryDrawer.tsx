@@ -27,6 +27,7 @@ import { isPortraitResourceItem } from '../utils/portraitResource';
 import { resourceItemToSendMaterials } from '../utils/sendMaterials';
 import { summarizeWorkflowResource } from '../utils/workflowResource';
 import LoopingVideo from './LoopingVideo';
+import SmartImage from './SmartImage';
 
 const KIND_META: Record<ResourceKind, { label: string; icon: typeof ImageIcon; accent: string }> = {
   image: { label: '图像', icon: ImageIcon, accent: '#fbbf24' },
@@ -494,11 +495,12 @@ export default function ResourceLibraryDrawer({ open, onClose, onInsertMaterial 
                 <div className="relative h-28 overflow-hidden bg-black/80">
                   {item.kind === 'image' && (
                     <>
-                      <img
+                      <SmartImage
                         src={item.thumbUrl || item.fileUrl}
                         alt={item.title}
                         className="resource-media w-full h-full object-cover transition-transform duration-200"
                         draggable={false}
+                        thumbSize={320}
                       />
                       <button
                         type="button"
@@ -552,7 +554,7 @@ export default function ResourceLibraryDrawer({ open, onClose, onInsertMaterial 
                                 title={child.name || child.text || child.url || ''}
                               >
                                 {child.kind === 'image' && child.url ? (
-                                  <img src={child.url} className="h-full w-full object-cover" draggable={false} />
+                                  <SmartImage src={child.url} className="h-full w-full object-cover" draggable={false} thumbSize={180} />
                                 ) : child.kind === 'video' ? (
                                   <Video size={18} className="text-rose-300" />
                                 ) : child.kind === 'audio' ? (

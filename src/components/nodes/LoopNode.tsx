@@ -9,6 +9,7 @@ import { useUpstreamMaterials, type MaterialKind, type Material } from './useUps
 import { topologicalSort } from '../../utils/topologicalSort';
 import { PORT_COLOR } from '../../config/portTypes';
 import LoopingVideo from '../LoopingVideo';
+import SmartImage from '../SmartImage';
 // v1.2.10.5: 节点落点防重叠 —— 多链克隆子图整组避让
 import { placeBatchNodes, rectOf, type Rect as PlacementRect } from '../../utils/nodePlacement';
 
@@ -846,7 +847,7 @@ const LoopNode = (p: NodeProps) => {
           {items.slice(0, 9).map((m, i) => (
             <div key={i} style={{ aspectRatio: '1 / 1', borderRadius: 4, overflow: 'hidden', background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)', border: isPixel ? '1px solid var(--px-ink)' : 'none', minWidth: 0 }}>
               {kind === 'image' ? (
-                <img src={m.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                <SmartImage src={m.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} thumbSize={180} />
               ) : kind === 'video' ? (
                 <LoopingVideo src={m.url} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} muted />
               ) : kind === 'audio' ? (

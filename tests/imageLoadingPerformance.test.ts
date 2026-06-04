@@ -6,14 +6,67 @@ function read(path: string) {
   return readFileSync(new URL(path, import.meta.url), 'utf8');
 }
 
-test('large canvas image previews defer decoding and network work', () => {
-  const materialThumbnail = read('../src/components/nodes/MaterialThumbnail.tsx');
-  const outputNode = read('../src/components/nodes/OutputNode.tsx');
-  const uploadNode = read('../src/components/nodes/UploadNode.tsx');
-  const panorama3dNode = read('../src/components/nodes/Panorama3DNode.tsx');
+test('local canvas image previews use cached backend thumbnails', () => {
+  const smartImage = read('../src/components/SmartImage.tsx');
+  const mediaPreview = read('../src/utils/mediaPreview.ts');
+  const filesRoute = read('../backend/src/routes/files.js');
 
-  assert.match(materialThumbnail, /src=\{material\.url\}[\s\S]*loading="lazy"[\s\S]*decoding="async"/);
-  assert.match(outputNode, /src=\{u\}[\s\S]*loading="lazy"[\s\S]*decoding="async"/);
-  assert.match(uploadNode, /src=\{item\.url\}[\s\S]*loading="lazy"[\s\S]*decoding="async"/);
-  assert.match(panorama3dNode, /src=\{outputUrl\}[\s\S]*loading="lazy"[\s\S]*decoding="async"/);
+  assert.match(smartImage, /previewImageUrl\(src,\s*thumbSize\)/);
+  assert.match(smartImage, /loading = 'lazy'/);
+  assert.match(smartImage, /decoding = 'async'/);
+  assert.match(smartImage, /data-full-src=\{src\}/);
+  assert.match(smartImage, /setFallback\(true\)/);
+
+  assert.match(mediaPreview, /\/api\/files\/thumbnail\?size=\$\{safeSize\}&url=/);
+  assert.match(mediaPreview, /LOCAL_FILE_PREFIX_RE/);
+
+  assert.match(filesRoute, /router\.get\('\/thumbnail'/);
+  assert.match(filesRoute, /sharp\(sourcePath/);
+  assert.match(filesRoute, /Cache-Control', 'public, max-age=31536000, immutable'/);
+  assert.match(filesRoute, /THUMBNAILS_DIR/);
+});
+
+test('high-traffic node previews render through SmartImage', () => {
+  const expectedSmartImageNodes = [
+    '../src/components/nodes/MaterialThumbnail.tsx',
+    '../src/components/nodes/OutputNode.tsx',
+    '../src/components/nodes/UploadNode.tsx',
+    '../src/components/nodes/ImageNode.tsx',
+    '../src/components/nodes/GridEditorNode.tsx',
+    '../src/components/nodes/Panorama3DNode.tsx',
+    '../src/components/nodes/LoopNode.tsx',
+    '../src/components/nodes/MaterialSetNode.tsx',
+    '../src/components/nodes/VideoNode.tsx',
+    '../src/components/nodes/SeedanceNode.tsx',
+    '../src/components/nodes/LLMNode.tsx',
+  ];
+
+  for (const file of expectedSmartImageNodes) {
+    const source = read(file);
+    assert.match(source, /import SmartImage from '\.\.\/SmartImage'/, `${file} imports SmartImage`);
+    assert.match(source, /<SmartImage[\s\S]*thumbSize=/, `${file} uses bounded preview size`);
+  }
+});
+
+test('sports theme edge motion degrades while the canvas is busy', () => {
+  const canvas = read('../src/components/Canvas.tsx');
+  const edge = read('../src/components/edges/DeletableEdge.tsx');
+  const css = read('../src/styles/index.css');
+  const main = read('../src/main.tsx');
+
+  assert.match(canvas, /EDGE_MOTION_HEAVY_EDGE_COUNT/);
+  assert.match(canvas, /data-t8-edge-motion/);
+  assert.match(canvas, /onMoveStart=\{handleViewportMoveStart\}/);
+  assert.match(canvas, /if \(isDraggingRef\.current\) return;/);
+  assert.match(canvas, /setDragSaveTick\(\(tick\) => tick \+ 1\)/);
+
+  assert.match(edge, /DECORATIVE_EDGE_MOTION_LIMIT/);
+  assert.match(edge, /shouldRenderPassBall/);
+  assert.match(edge, /shouldRenderSoccerBall/);
+  assert.match(edge, /\{shouldRenderPassBall && \(/);
+  assert.match(edge, /\{shouldRenderSoccerBall && \(/);
+
+  assert.match(css, /html\[data-t8-edge-motion="reduced"\]/);
+  assert.match(css, /prefers-reduced-motion: reduce/);
+  assert.match(main, /VITE_T8_STRICT_MODE/);
 });

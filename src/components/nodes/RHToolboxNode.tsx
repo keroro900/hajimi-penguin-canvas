@@ -37,6 +37,7 @@ import { useUpdateNodeData } from './useUpdateNodeData';
 import { useUpstreamMaterials, type Material } from './useUpstreamMaterials';
 import MaterialPreviewSection from './MaterialPreviewSection';
 import LoopingVideo from '../LoopingVideo';
+import SmartImage from '../SmartImage';
 import ResizableCorners from './ResizableCorners';
 
 const handleStyle: CSSProperties = {
@@ -592,7 +593,7 @@ const RHToolboxNode = ({ id, data, selected }: NodeProps) => {
 
           {!hasAutoOutput && (imageUrls.length > 0 || videoUrls.length > 0 || audioUrls.length > 0 || outputText) && (
             <div className="space-y-2 pt-2" style={{ borderTop: `1px solid ${border}` }}>
-              {imageUrls.map((url, index) => <img key={`${url}-${index}`} src={url} alt="RH工具箱输出" className="w-full rounded object-contain" />)}
+              {imageUrls.map((url, index) => <SmartImage key={`${url}-${index}`} src={url} alt="RH工具箱输出" className="w-full rounded object-contain" thumbSize={720} />)}
               {videoUrls.map((url, index) => <LoopingVideo key={`${url}-${index}`} src={url} controls className="w-full rounded" />)}
               {audioUrls.map((url, index) => <audio key={`${url}-${index}`} src={url} controls className="w-full h-8" />)}
               {outputText && <div className="rounded p-2 text-[11px] whitespace-pre-wrap" style={{ background: surface, border: `1px solid ${border}`, color: text }}>{outputText}</div>}

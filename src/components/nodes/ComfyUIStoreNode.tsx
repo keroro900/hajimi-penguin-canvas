@@ -33,6 +33,7 @@ import {
   normalizeExcludedMaterialIds,
 } from '../../utils/materialExclusion';
 import MaterialPreviewSection from './MaterialPreviewSection';
+import SmartImage from '../SmartImage';
 import ResizableCorners from './ResizableCorners';
 import { useOrderedMaterials } from './useOrderedMaterials';
 import { useUpdateNodeData } from './useUpdateNodeData';
@@ -608,7 +609,7 @@ const ComfyUIStoreNode = ({ id, data, selected }: NodeProps) => {
             {imageUrls.length > 0 && (
               <div className="grid grid-cols-2 gap-1.5">
                 {imageUrls.slice(0, 4).map((url, index) => (
-                  <img key={`${url}-${index}`} src={url} alt="ComfyUI 输出" className="w-full rounded object-contain" />
+                  <SmartImage key={`${url}-${index}`} src={url} alt="ComfyUI 输出" className="w-full rounded object-contain" thumbSize={420} />
                 ))}
               </div>
             )}

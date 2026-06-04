@@ -9,6 +9,7 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { AlertTriangle, AtSign, Image as ImageIcon, Music, Video as VideoIcon } from 'lucide-react';
+import SmartImage from '../SmartImage';
 import type { Material } from './useUpstreamMaterials';
 import {
   getUnresolvedMentionCount,
@@ -506,7 +507,7 @@ const MentionPromptInput = ({
                         }}
                       >
                         {material.kind === 'image' ? (
-                          <img src={material.url} alt="" draggable={false} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          <SmartImage src={material.url} alt="" draggable={false} style={{ width: '100%', height: '100%', objectFit: 'cover' }} thumbSize={160} />
                         ) : material.kind === 'video' ? (
                           <VideoIcon size={18} />
                         ) : material.kind === 'audio' ? (

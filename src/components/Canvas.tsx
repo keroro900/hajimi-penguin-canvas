@@ -559,13 +559,22 @@ const INITIAL_DATA: Record<string, Record<string, any>> = {
   'pick-from-set': { pickKind: 'image', pickIndex: 1 },
   'image-compare': { mode: 'slider', align: 'contain', split: 50, opacity: 50, threshold: 24 },
   'panorama-3d': {
-    panoramaRatio: 'wide',
-    panoramaCustomW: 16,
+    panoramaRatio: 'ultrawide',
+    panoramaCustomW: 21,
     panoramaCustomH: 9,
     panoramaYaw: 0,
     panoramaPitch: 0,
     panoramaFov: 75,
     panoramaAutoRotate: false,
+    panoramaPanelMode: 'text',
+    panoramaGenerationMode: 'text',
+    panoramaSizeLevel: '1K',
+    panoramaPrompt: '',
+    panoramaPromptFinal: '',
+    panoramaSourceUrl: '',
+    panoramaGeneratedUrl: '',
+    panoramaReferenceUrl: '',
+    panoramaGeneratedHistory: [],
     imageUrl: '',
     imageUrls: [],
     urls: [],
@@ -635,6 +644,8 @@ const EXECUTABLE_NODE_TYPES = new Set<string>([
 
 // 网格吸附步长 / 对齐阈值(世界坐标)
 const SNAP_GRID: [number, number] = [20, 20];
+const EDGE_MOTION_HEAVY_EDGE_COUNT = 36;
+const EDGE_MOTION_RELEASE_DELAY_MS = 160;
 const ALIGN_THRESHOLD = 6;
 
 interface SendNodeSpec {
@@ -1194,6 +1205,10 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
   const lastSavedByCanvasRef = useRef<Map<string, string>>(new Map());
   const nextNodeSerialIdRef = useRef(1);
   const allowEmptySaveCanvasIdsRef = useRef<Set<string>>(new Set());
+  const edgeMotionReleaseTimerRef = useRef<number | null>(null);
+  const [viewportMoving, setViewportMoving] = useState(false);
+  const [nodeDragging, setNodeDragging] = useState(false);
+  const [dragSaveTick, setDragSaveTick] = useState(0);
 
   // 选中节点 / 剪贴板
   const [selectedCount, setSelectedCount] = useState(0);
@@ -1237,6 +1252,30 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
     isConnectionDraggingRef.current = false;
     setConnectionPanMode(false);
   }, [setConnectionPanMode]);
+
+  const clearEdgeMotionReleaseTimer = useCallback(() => {
+    if (edgeMotionReleaseTimerRef.current) {
+      window.clearTimeout(edgeMotionReleaseTimerRef.current);
+      edgeMotionReleaseTimerRef.current = null;
+    }
+  }, []);
+
+  const releaseEdgeMotionSoon = useCallback((setter: (value: boolean) => void) => {
+    clearEdgeMotionReleaseTimer();
+    edgeMotionReleaseTimerRef.current = window.setTimeout(() => {
+      setter(false);
+      edgeMotionReleaseTimerRef.current = null;
+    }, EDGE_MOTION_RELEASE_DELAY_MS);
+  }, [clearEdgeMotionReleaseTimer]);
+
+  const handleViewportMoveStart = useCallback(() => {
+    clearEdgeMotionReleaseTimer();
+    setViewportMoving(true);
+  }, [clearEdgeMotionReleaseTimer]);
+
+  const handleViewportMoveEnd = useCallback(() => {
+    releaseEdgeMotionSoon(setViewportMoving);
+  }, [releaseEdgeMotionSoon]);
 
   // ===== SHIFT+拖拽 Handle 批量移线 =====
   // 按住 SHIFT 从节点入口(target handle)拖出，可一次性把所有入边移到另一个节点的入口。
@@ -1440,8 +1479,12 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       }
       saveTimersByCanvasRef.current.clear();
       pendingSaveByCanvasRef.current.clear();
+      if (edgeMotionReleaseTimerRef.current) {
+        window.clearTimeout(edgeMotionReleaseTimerRef.current);
+        edgeMotionReleaseTimerRef.current = null;
+      }
     };
-  }, []);
+  }, [assignActiveNodeSerials, releaseEdgeMotionSoon]);
 
   useEffect(() => {
     if (!activeId || !loaded || loadedCanvasId !== activeId) return;
@@ -1484,6 +1527,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
   // 自动保存(防抖 800ms,防空数据覆盖)
   useEffect(() => {
     if (!activeId || !loaded || loadedCanvasId !== activeId) return;
+    if (isDraggingRef.current) return;
     // 过滤 SHIFT 批量移线拖拽过程中的 phantom 节点与重定向边(不作为持久化快照)
     const persistNodes = nodes.filter((n) => n.id !== BULK_PHANTOM_ID);
     const persistEdges = edges.filter(
@@ -1541,7 +1585,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       }
     }, 800);
     saveTimersByCanvasRef.current.set(canvasIdForSave, timer);
-  }, [nodes, edges, activeId, loaded, loadedCanvasId, getViewport]);
+  }, [nodes, edges, activeId, loaded, loadedCanvasId, getViewport, dragSaveTick]);
 
   // 添加节点(供 Sidebar 调用) —— 默认落在当前视口中心
   // 可选 atScreen 传入屏幕坐标，节点会落在该点(用于右键画布空白区添加)
@@ -2527,6 +2571,9 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
   // 最终效果: 原节点留在原位(保留连线和数据), 新复制节点在拖放位置
   const onNodeDragStart = useCallback(
     (e: React.MouseEvent | MouseEvent, node: Node) => {
+      clearEdgeMotionReleaseTimer();
+      isDraggingRef.current = true;
+      setNodeDragging(true);
       altDragCloneRef.current = null;
       if (!e.altKey) return;
       // ALT 按下: 确定被拖动的节点集合
@@ -2561,7 +2608,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       }));
       altDragCloneRef.current = { placeholderIds };
     },
-    [nodes]
+    [clearEdgeMotionReleaseTimer, nodes]
   );
 
   // ===== 节点组(GroupBox) =====
@@ -2810,6 +2857,9 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
   );
 
   const onNodeDragStop = useCallback((_e: any, node: Node) => {
+    isDraggingRef.current = false;
+    setDragSaveTick((tick) => tick + 1);
+    releaseEdgeMotionSoon(setNodeDragging);
     setGuides({ vertical: [], horizontal: [] });
 
     // ===== ALT+拖动结束: ID 互换 =====
@@ -4655,6 +4705,10 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
 
   const isDark = theme === 'dark';
   const isPixel = style === 'pixel';
+  const isSportVisual = isSlamdunk || isSoccer;
+  const heavyEdgeMotion = isSportVisual && edges.length >= EDGE_MOTION_HEAVY_EDGE_COUNT;
+  const edgeMotionReduced = isSportVisual && (heavyEdgeMotion || viewportMoving || nodeDragging);
+  const heavyCanvasSurface = nodes.length >= 96 || edges.length >= EDGE_MOTION_HEAVY_EDGE_COUNT;
   const guideColor = themeTokens.edgeSelected;
   const edgeStroke = themeTokens.edge;
   const dotColor = themeTokens.gridDot;
@@ -4680,6 +4734,22 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
     [edgeStroke, isPixel]
   );
 
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const root = document.documentElement;
+    if (!isSportVisual) {
+      root.removeAttribute('data-t8-edge-motion');
+      root.removeAttribute('data-t8-edge-load');
+      return;
+    }
+    root.setAttribute('data-t8-edge-motion', edgeMotionReduced ? 'reduced' : 'full');
+    root.setAttribute('data-t8-edge-load', heavyEdgeMotion ? 'heavy' : 'normal');
+    return () => {
+      root.removeAttribute('data-t8-edge-motion');
+      root.removeAttribute('data-t8-edge-load');
+    };
+  }, [edgeMotionReduced, heavyEdgeMotion, isSportVisual]);
+
   if (!activeId) {
     return (
       <div
@@ -4697,8 +4767,10 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
 
   return (
     <div
-      className={`t8-canvas-shell flex-1 relative${connectionPanModeActive ? ' connection-pan-mode-active' : ''}`}
+      className={`t8-canvas-shell flex-1 relative${connectionPanModeActive ? ' connection-pan-mode-active' : ''}${edgeMotionReduced ? ' t8-edge-motion-reduced' : ''}${viewportMoving ? ' t8-viewport-moving' : ''}${nodeDragging ? ' t8-node-dragging' : ''}`}
       data-theme-visual={visualStyle}
+      data-edge-motion={edgeMotionReduced ? 'reduced' : isSportVisual ? 'full' : undefined}
+      data-edge-load={heavyEdgeMotion ? 'heavy' : undefined}
       style={{ background: bgColor }}
       onContextMenuCapture={onCanvasContextMenuCapture}
       onMouseMove={handleCanvasPointerMove}
@@ -4755,6 +4827,8 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         onNodeDragStart={onNodeDragStart}
         onNodeDrag={onNodeDrag}
         onNodeDragStop={onNodeDragStop}
+        onMoveStart={handleViewportMoveStart}
+        onMoveEnd={handleViewportMoveEnd}
         onSelectionContextMenu={onSelectionContextMenu}
         onNodeContextMenu={onNodeContextMenu}
         onPaneContextMenu={onPaneContextMenu}
@@ -4937,6 +5011,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
               : undefined,
             cursor: 'pointer',
             overflow: isOp || isNaruto || isEva || isYyh || isSlamdunk || isSoccer ? 'hidden' : undefined,
+            display: (viewportMoving || nodeDragging) && heavyCanvasSurface ? 'none' : undefined,
           }}
           maskColor={isOp ? 'rgba(15,124,140,.28)' : isNaruto ? 'rgba(255,91,31,.22)' : isEva ? 'rgba(156,255,0,.18)' : isYyh ? 'rgba(67,247,255,.16)' : isSlamdunk ? 'rgba(240,123,34,.22)' : isSoccer ? 'rgba(18,107,216,.22)' : isDark ? 'rgba(0,0,0,.6)' : 'rgba(255,255,255,.6)'}
           nodeColor={() => (isOp ? themeTokens.secondary : isNaruto ? themeTokens.accent : isEva ? themeTokens.danger : isYyh ? themeTokens.success : isSlamdunk ? themeTokens.accent : isSoccer ? themeTokens.accent : isDark ? '#a1a1aa' : '#52525b')}

@@ -84,7 +84,7 @@ export const NODE_REGISTRY: NodeMeta[] = [
   { type: 'aggregate-parser', label: '聚合解析', category: 'toolbox', description: '基于 ParseHub 的轻量自媒体聚合解析：输入短链/分享码/分享文案，合规确认后解析无水印媒体地址，可选保存到输出目录', icon: 'Link2', color: 'pink' },
 
   // ========== 3D 节点 ==========
-  { type: 'panorama-3d', label: '3D全景', category: '3d', description: 'Three.js 360 全景预览与取景导出，支持拖拽视角、缩放、视窗比例和自动旋转', icon: 'Globe2', color: 'sky' },
+  { type: 'panorama-3d', label: '3D全景', category: '3d', description: 'Three.js 360 全景预览与取景导出，内置 GPT Image 2 文生/图生 21:9 全景贴图生成', icon: 'Globe2', color: 'sky' },
 ];
 
 // 按分类分组,便于 Sidebar 渲染 (在这里过滤 hidden 节点 —— 它们仍在 NODE_REGISTRY 中保证节点类型注册)

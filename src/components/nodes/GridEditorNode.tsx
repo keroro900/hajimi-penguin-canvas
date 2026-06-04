@@ -34,6 +34,7 @@ import {
 import { useHasAutoOutput } from './useHasAutoOutput';
 import { useUpdateNodeData } from './useUpdateNodeData';
 import { useUpstreamMaterials } from './useUpstreamMaterials';
+import SmartImage from '../SmartImage';
 
 const COLOR = '#fb923c';
 
@@ -585,11 +586,12 @@ const GridEditorNode = ({ id, data, selected }: NodeProps) => {
                 >
                   {item ? (
                     <>
-                      <img
+                      <SmartImage
                         src={item.url}
                         alt={item.title || `cell-${index + 1}`}
                         draggable={false}
                         className="h-full w-full"
+                        thumbSize={320}
                         style={{ objectFit: cellObjectFit(config.fit), background: config.background }}
                       />
                       <div
@@ -700,13 +702,13 @@ const GridEditorNode = ({ id, data, selected }: NodeProps) => {
 
       {composedUrl && !hasAutoOutput && (
         <div className="border-t p-2" style={{ borderColor: 'var(--t8-border, rgba(255,255,255,.12))' }}>
-          <img src={composedUrl} alt="宫格结果" className="max-h-56 w-full rounded object-contain" />
+          <SmartImage src={composedUrl} alt="宫格结果" className="max-h-56 w-full rounded object-contain" thumbSize={720} />
         </div>
       )}
       {splitUrls.length > 1 && !hasAutoOutput && d.gridEditorLastAction === 'split' && (
         <div className="grid grid-cols-6 gap-1 border-t p-2" style={{ borderColor: 'var(--t8-border, rgba(255,255,255,.12))' }}>
           {splitUrls.slice(0, 12).map((url: string, index: number) => (
-            <img key={`${url}-${index}`} src={url} alt={`拆分 ${index + 1}`} className="aspect-square w-full rounded object-cover" />
+            <SmartImage key={`${url}-${index}`} src={url} alt={`拆分 ${index + 1}`} className="aspect-square w-full rounded object-cover" thumbSize={240} />
           ))}
         </div>
       )}

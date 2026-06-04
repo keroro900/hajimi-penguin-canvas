@@ -6,10 +6,13 @@ const express = require('express');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
+const sharp = require('sharp');
 const config = require('../config');
 const { tryDecodeDuckPayload } = require('../utils/duckPayload');
 
 const router = express.Router();
+const THUMBNAIL_IMAGE_RE = /\.(png|jpe?g|webp|gif|bmp|avif|tiff?)(?:$|\?)/i;
 
 // 配置 multer
 const storage = multer.diskStorage({
@@ -108,6 +111,62 @@ function resolveLocalFileUrl(url) {
   if (resolved !== base && !resolved.startsWith(base + path.sep)) return null;
   return resolved;
 }
+
+function clampThumbnailSize(value) {
+  const raw = Number.parseInt(String(value || ''), 10);
+  if (!Number.isFinite(raw)) return config.THUMBNAIL_SIZE || 320;
+  return Math.max(96, Math.min(1024, raw));
+}
+
+function thumbnailCacheFile(sourcePath, stat, size) {
+  const key = crypto
+    .createHash('sha1')
+    .update(`${sourcePath}|${stat.size}|${Math.round(stat.mtimeMs)}|${size}`)
+    .digest('hex')
+    .slice(0, 28);
+  return path.join(config.THUMBNAILS_DIR, `preview_${size}_${key}.webp`);
+}
+
+// GET /api/files/thumbnail?url=/files/input/x.png&size=360
+// 用于画布内预览：只为本地 input/output 图片生成轻量 webp 缩略图。
+router.get('/thumbnail', async (req, res) => {
+  try {
+    const url = String(req.query?.url || '').trim();
+    if (!url || !THUMBNAIL_IMAGE_RE.test(url.split('?')[0].split('#')[0])) {
+      return res.status(400).json({ success: false, error: '不支持的图片预览地址' });
+    }
+    const sourcePath = resolveLocalFileUrl(url);
+    if (!sourcePath) {
+      return res.status(400).json({ success: false, error: '只支持本地 input/output 图片缩略图' });
+    }
+    if (!fs.existsSync(sourcePath)) {
+      return res.status(404).json({ success: false, error: '源图片不存在' });
+    }
+    const stat = fs.statSync(sourcePath);
+    const size = clampThumbnailSize(req.query?.size);
+    const target = thumbnailCacheFile(sourcePath, stat, size);
+    if (!fs.existsSync(config.THUMBNAILS_DIR)) {
+      fs.mkdirSync(config.THUMBNAILS_DIR, { recursive: true });
+    }
+    if (!fs.existsSync(target)) {
+      await sharp(sourcePath, { animated: false, limitInputPixels: false })
+        .rotate()
+        .resize({
+          width: size,
+          height: size,
+          fit: 'inside',
+          withoutEnlargement: true,
+        })
+        .webp({ quality: config.THUMBNAIL_QUALITY || 78, effort: 4 })
+        .toFile(target);
+    }
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    res.type('image/webp');
+    return res.sendFile(target);
+  } catch (e) {
+    return res.status(500).json({ success: false, error: e?.message || String(e) });
+  }
+});
 
 function safeDuckExt(ext) {
   const clean = String(ext || 'bin')

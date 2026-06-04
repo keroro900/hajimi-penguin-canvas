@@ -5,6 +5,7 @@ import { useUpdateNodeData } from './useUpdateNodeData';
 import { generateImage } from '../../services/generation';
 import { IMAGE_MODELS } from '../../providers/models';
 import { useRunTrigger } from '../../hooks/useRunTrigger';
+import SmartImage from '../SmartImage';
 
 /**
  * PresetImageNode - 特殊图像节点(multi-angle-3d / panorama-720 / penguin-portrait)
@@ -215,13 +216,13 @@ const PresetImageNode = (p: NodeProps) => {
       {urls.length > 1 && (
         <div className="border-t border-white/10 p-2 grid grid-cols-2 gap-1">
           {urls.map((u, i) => (
-            <img key={i} src={u} alt={`#${i}`} className="w-full rounded object-cover" />
+            <SmartImage key={i} src={u} alt={`#${i}`} className="w-full rounded object-cover" thumbSize={240} />
           ))}
         </div>
       )}
       {urls.length === 1 && imageUrl && (
         <div className="border-t border-white/10 p-2">
-          <img src={imageUrl} alt="结果" className="w-full rounded object-contain" />
+          <SmartImage src={imageUrl} alt="结果" className="w-full rounded object-contain" thumbSize={720} />
         </div>
       )}
     </div>

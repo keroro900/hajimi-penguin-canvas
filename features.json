@@ -1,7 +1,7 @@
 {
   "$schema": "本文件为 T8-penguin-canvas 节点清单防丢失锁,任何节点删减都需要在 roadmap.md 中说明并更新本文件。",
-  "version": "1.9.9",
-  "lastUpdated": "2026-06-04-achievement-roadmap-public-v199",
+  "version": "2.0.0",
+  "lastUpdated": "2026-06-04-canvas-performance-release-v200",
   "packaging": {
     "description": "Electron NSIS 桌面端打包链路(v1.2.1 起标准化, 严禁未明确指令主动打包)。完整产物拓扑: app.asar(electron/{main,loader,preload}.cjs + node_modules) + app.asar.unpacked(node_modules/sharp + @img) + resources/backend-enc/*.t8c(extraResources, asar 外) + resources/frontend(extraResources, asar 外)。前端版本号由 vite define 注入 __APP_VERSION__、Sidebar 左下角自动同步。",
     "scripts": {
@@ -21,10 +21,11 @@
       "T8_PARSEHUB_PYTHON": "可选，覆盖聚合解析节点使用的 Python 3.12 解释器路径",
       "T8_PARSEHUB_LIB_PATHS": "可选，覆盖 ParseHub Python 依赖搜索路径；正式包默认使用 resources/tools/parsehub-pythonlibs"
     },
-    "version": "1.9.9",
-    "semverVersion": "1.9.9",
-    "versionNote": "v1.3.0 起统一采用 semver 三段阶段号 x.y.z；当前源码为 v1.9.9：修复 3D 全景节点在 Vite 开发环境从 public/vendor 动态导入 Three.js 导致启动白屏 overlay 的问题，并新增工具箱「聚合解析」节点，基于 ParseHub 2.0.24 解析 17+ 社媒分享短链/分享码，前端强制合规确认，后端通过 Python bridge 隔离依赖。v1.9.9 继续保留 Electron GitHub Release 自动更新、3D 全景节点、肖像大师保存到资源库、即梦 CLI Seedance 多素材参考；本次公开元数据同步记录主题成就 / 勋章 / 加密影片解锁系统规划，功能仍处规划阶段未开发。GitHub 公开源码仍排除本地私有计费/支付/充值实现。",
-    "installer": "本次按规范打包 Electron，目标产物为 dist_electron/T8-PenguinCanvas-Setup-1.9.9.exe，并额外生成 dist_electron/latest.yml 与 .exe.blockmap 供 GitHub Release 自动更新使用；正式用户包必须包含 tools/remove-ai-watermarks-runtime sidecar runtime、tools/ffmpeg-runtime/ffmpeg.exe，并通过 _post_build.cjs 校验。",
+    "version": "2.0.0",
+    "semverVersion": "2.0.0",
+    "versionNumberPolicy": "T8 版本号仍采用 x.y.z 三段，但每一段只允许 0-9；任一段到 9 后下一次发布必须向左进位，禁止任一段出现两位数字。例：1.9.9 的下一版必须是 2.0.0。",
+    "versionNote": "v1.3.0 起统一采用三段阶段号 x.y.z；当前源码为 v2.0.0：在 v1.9.9 的 3D 全景、聚合解析、自动更新与画布性能热修基础上，正式固化节点/主题性能开发规范。节点预览必须优先走 SmartImage + 本地 webp 缩略图，体育主题连线动画必须支持 busy/reduced 降级，开发环境默认关闭 StrictMode 双挂载，拖动中暂停重自动保存；后续新增节点、主题、素材预览、动效和背景水印都必须遵守 canvasPerformance.developmentContract。GitHub 公开源码仍排除本地私有计费/支付/充值实现；Electron 发布继续使用 GitHub Release latest.yml/blockmap 自动更新链路。",
+    "installer": "本次按规范打包 Electron，目标产物为 dist_electron/T8-PenguinCanvas-Setup-2.0.0.exe，并额外生成 dist_electron/latest.yml 与 .exe.blockmap 供 GitHub Release 自动更新使用；正式用户包必须包含 tools/remove-ai-watermarks-runtime sidecar runtime、tools/ffmpeg-runtime/ffmpeg.exe、tools/parsehub-bridge 与 tools/parsehub-pythonlibs，并通过 _post_build.cjs 校验。",
     "publicReleasePolicy": {
       "github": "GitHub 公开源码只保留通用画布、生成节点、扩展平台、资源库、主题、ComfyUI/RH 工具箱、云端上传等能力；本地私有计费/支付/充值能力不得进入公开仓库。",
       "neverStage": [
@@ -58,6 +59,52 @@
       "GitHub 公开推送必须排除 roadmap.md、skill.md 与所有本地私有计费/支付/充值实现；执行 git add 前后都要用 publicReleasePolicy.prePushScan 的关键字检查 staged diff",
       "打包完成后必须实测启动 win-unpacked/T8-PenguinCanvas.exe 检查日志: 环境=production / 数据目录=AppData/t8-penguin-canvas / GET / 200",
       "打包成功后不上传 dist_electron 和 build 目录到 git (已在 .gitignore)"
+    ]
+  },
+  "canvasPerformance": {
+    "version": "2.0.0",
+    "description": "大画布启动、图片预览和拖动画布性能热修与后续开发规范。",
+    "imagePreviewPipeline": {
+      "frontend": "高频节点预览统一使用 SmartImage + previewImageUrl，本地 /files/input 与 /files/output 图片自动请求 /api/files/thumbnail，原始素材 URL 保留在 data-full-src 与拖拽/下载/下游数据中。",
+      "backend": "backend/src/routes/files.js 提供 GET /api/files/thumbnail?url=&size=，用 sharp 生成 webp 缩略图并缓存到 THUMBNAILS_DIR，Cache-Control=immutable。",
+      "exceptions": "裁剪、去水印框选、图片编辑、图片对比等依赖原图像素或细节的视图继续使用原图。"
+    },
+    "edgeMotion": {
+      "themes": ["soccer-hero", "slamdunk"],
+      "policy": "体育主题连线动画在视口拖动、节点拖动或边数达到阈值时写入 data-t8-edge-motion=reduced，禁用 edge path 动画、filter 与运动球 SVG；DeletableEdge 只在当前体育主题且边数较低时渲染对应运动球。"
+    },
+    "startup": {
+      "devStrictMode": "开发环境默认不包 React StrictMode，设置 VITE_T8_STRICT_MODE=1 可恢复双挂载诊断。",
+      "autosave": "节点拖动期间自动保存跳过中间帧，拖动结束后触发一次最终快照保存。"
+    },
+    "developmentContract": {
+      "nodes": [
+        "新增节点只要在画布内展示本地图片预览，必须使用 SmartImage 或 previewImageUrl；只有裁剪、编辑、对比、去水印框选、像素测量等依赖原图细节或 naturalWidth/naturalHeight 的界面可直接加载原图。",
+        "节点 data 中必须保存原始素材 URL，缩略图 URL 只允许用于 img/src 展示；拖拽、下载、上传到云端、资源库入库、下游传递和生成请求不得把缩略图当原图。",
+        "图片列表默认 lazy/async，固定最大预览尺寸；不要在节点 render 中同步创建 Image、Canvas、Video、Audio 或执行大 JSON/stringify/排序/拓扑扫描。",
+        "节点内部需要读取上游素材时优先复用 useUpstreamMaterials、useOrderedMaterials、MaterialPreviewSection 等现有聚合组件，避免每个 render 全量遍历 ReactFlow nodes/edges。",
+        "长任务、轮询、RAF、定时器、全局事件、ResizeObserver、MutationObserver 必须只在必要状态开启，并在 unmount/状态切换时清理；隐藏、未运行、未 ready 的节点不得持续占用 RAF。",
+        "节点拖动、画布移动、批量选择期间不得触发昂贵副作用；会改变节点尺寸的媒体加载应有稳定容器、aspect-ratio 或 max-height，避免加载后大面积布局抖动。"
+      ],
+      "themes": [
+        "主题动效必须可降级：边数多、viewportMoving、nodeDragging、prefers-reduced-motion 或 data-t8-edge-motion=reduced 时，必须停用无限动画、filter、drop-shadow、运动粒子和 SVG animateMotion。",
+        "主题 CSS 不得给所有节点、所有边或大面积背景套高成本 filter/backdrop-filter/box-shadow 动画；强风格效果应放在少量静态背景层或 hover/selected 状态。",
+        "画布背景水印、纹理和主题地图必须 pointer-events:none、低 z-index、轻量静态化；不得覆盖图片/视频/文本预览，也不得随每帧 transform 重绘复杂滤镜。",
+        "MiniMap、Controls、HUD、右键菜单和浮动条必须跟随全局变量适配主题；新增主题要在 100+ 节点、36+ 边、拖动画布、拖动节点场景检查不卡顿。",
+        "主题音乐、视频背景、粒子、运动球等装饰默认静音/静态/按需启用，不能在进入画布时批量解码大媒体或创建大量动画实例。"
+      ],
+      "verification": [
+        "新增节点含图片预览时必须补或更新 tests/imageLoadingPerformance.test.ts，锁定 SmartImage/previewImageUrl 使用。",
+        "新增主题动效必须至少在足球小将/灌篮高手同类压力下验证 data-t8-edge-motion=reduced 生效，并检查 prefers-reduced-motion。",
+        "发布前至少跑 node --test tests\\imageLoadingPerformance.test.ts、npm run type-check、npm run build；若改 3D/Three.js 还要跑 tests\\panorama3d.test.ts。"
+      ]
+    },
+    "verification": [
+      "node --test tests\\imageLoadingPerformance.test.ts",
+      "node --test tests\\panorama3d.test.ts",
+      "node -c backend\\src\\routes\\files.js",
+      "npm run type-check",
+      "npm run build"
     ]
   },
   "layout": {
@@ -105,6 +152,9 @@
         "强风格官方主题可为 light/dark 分别提供水印资产；若深色水印包含黑底终端、警告面板或厚重贴片，浅色模式必须改用透明底线稿 / 印章 / HUD 版本，避免浅色画布出现突兀深色块",
         "框选/节点右键菜单、空白右键快速添加菜单、拖线候选菜单和选中节点右上角 RUN/关闭浮动条都属于全局主题控件，必须使用 t8-context-menu / t8-node-action-bar 语义类和 visuals.style 作为视觉判断来源，禁止仅按 legacyStyle=像素/科技分支导致 OP、火影、EVA 等主题残留白底或绿色按钮",
         "全局菜单新增动作时必须检查 light/dark 与九套官方主题的可读性；小图标和菜单图标仍需固定尺寸，避免 OP/像素风胶囊按钮把资源库、图像对比、批量下载等入口撑大",
+        "主题动效必须接入画布 busy/reduced 状态：当 html[data-t8-edge-motion='reduced']、.t8-viewport-moving、.t8-node-dragging 或 prefers-reduced-motion 生效时，必须关闭无限边动画、filter、drop-shadow、粒子、运动球与 SVG animateMotion",
+        "新增强风格主题必须做大画布性能验收：至少 100 个节点、36 条连线、拖动画布、拖动节点、MiniMap 与 Controls 可见场景；不得让装饰层、背景水印、连线动效或媒体预加载造成明显卡顿",
+        "主题背景、水印和地图纹理必须优先静态化、轻量化和低成本绘制；禁止对全画布或所有边/节点持续应用高成本 backdrop-filter、blur、drop-shadow、mix-blend-mode 动画",
         "节点 NodeID 徽标属于 ReactFlow 节点外层通用浮层，必须使用 .t8-node-serial-badge 全局样式；位置必须由 useNodeSerialBadgeAnchor() 测量真实可见节点卡片右上角并写入 --t8-node-serial-anchor-left/top，主题只能覆盖 --t8-node-serial-offset-x/y，禁止按标题图标宽度硬编码 left/top 或直接依赖 ReactFlow 外层宽度，避免不同节点、不同主题、长标题和 ResizeObserver 测量差异导致角标遮挡或漂离节点。"
       ],
       "music": {
@@ -2220,6 +2270,18 @@
         "解锁影片第一版建议后端解密到用户数据目录临时缓存，并复用资源库 Range 播放逻辑；该方案是轻量本地解锁保护，不宣称 DRM 级防破解。",
         "留存增强规划包括今日主题任务、周常创作护照、影片碎片、主题代表作、主题大师外观奖励和本地创作回顾；所有提醒必须可关闭或弱化，不打断画布主流程。"
       ]
+    },
+    "phase142": {
+      "label": "3D 全景节点内置 GPT Image 2 生成 (dev)",
+      "status": "implemented",
+      "items": [
+        "3D 全景节点新增「连接预览 / 文生全景 / 图生全景」分段入口；连接预览优先显示上游图片，生成模式优先显示节点内生成贴图。",
+        "文生全景和图生全景统一调用现有 /api/proxy/image 异步图像链路，模型固定 gpt-image-2，比例固定 21:9，尺寸开放 1K / 2K 且默认 1K，不新增独立后端路由或 API Key。",
+        "节点内固定保留 720 度 VR 全景提示词，并在发送前写入 panoramaPromptFinal；文生模式要求用户补充场景提示词，图生模式允许只接上游或上传参考图。",
+        "生成成功后写回 panoramaSourceUrl / panoramaGeneratedUrl / panoramaPrompt / panoramaPromptFinal / panoramaGenerationMode / panoramaSizeLevel / imageUrl / imageUrls / urls，并保留最近 3 次生成历史。",
+        "节点提供复制实际提示词、下载完整全景贴图、导出当前视角、上传节点内参考图和保存到资源库 image 分类「3D全景」等操作；失败时保留旧预览不清空。",
+        "新增 panorama3d 测试覆盖固定提示词、21:9 请求结构、文生/图生校验、历史上限、组件生成入口、资源库动作和默认 21:9 / 1K data。"
+      ]
     }
   },
   "categories": {
@@ -2518,7 +2580,7 @@
         {
           "type": "panorama-3d",
           "label": "3D全景",
-          "description": "Three.js 360 全景预览与取景导出，支持拖拽视角、缩放、视窗比例、自定义比例和自动旋转；输入 2:1 全景图后可导出当前取景画面"
+          "description": "Three.js 360 全景预览与取景导出，支持连接已有全景图，也可在节点内用 GPT Image 2 文生/图生 21:9 全景贴图；提供拖拽视角、缩放、比例控制、自动旋转、当前视角导出、完整贴图下载和保存到资源库「3D全景」分类"
         }
       ]
     }
@@ -3119,11 +3181,13 @@
     "loop",
     "pick-from-set",
     "drawing-board",
+    "panorama-3d",
     "cinematic",
     "video-motion",
     "multi-angle-visual",
     "portrait-master",
     "pose-master",
+    "aggregate-parser",
     "remove-ai-watermark"
   ],
   "nonExecutableNodeTypes": {

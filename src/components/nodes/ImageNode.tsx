@@ -5,6 +5,7 @@ import { useUpstreamMaterials, type Material } from './useUpstreamMaterials';
 import { useOrderedMaterials } from './useOrderedMaterials';
 import MaterialPreviewSection from './MaterialPreviewSection';
 import MentionPromptInput from './MentionPromptInput';
+import SmartImage from '../SmartImage';
 import { resolveMediaMentions, type MediaMention } from './mediaMentions';
 import {
   IMAGE_MODELS,
@@ -1599,7 +1600,7 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
               <div className="flex flex-wrap gap-1.5">
                 {mjSrefImages.map((url, i) => (
                   <div key={i} className="relative w-12 h-12 rounded overflow-hidden border border-purple-300/30">
-                    <img src={url} alt={`sref-${i}`} className="w-full h-full object-cover" />
+                    <SmartImage src={url} alt={`sref-${i}`} className="w-full h-full object-cover" thumbSize={160} />
                     <button
                       onClick={() => removeMjRef('sref', i)}
                       className="absolute top-0 right-0 w-4 h-4 bg-red-500/80 hover:bg-red-500 flex items-center justify-center rounded-bl"
@@ -1626,7 +1627,7 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
               <div className="flex flex-wrap gap-1.5">
                 {mjOrefImages.map((url, i) => (
                   <div key={i} className="relative w-12 h-12 rounded overflow-hidden border border-purple-300/30">
-                    <img src={url} alt={`oref-${i}`} className="w-full h-full object-cover" />
+                    <SmartImage src={url} alt={`oref-${i}`} className="w-full h-full object-cover" thumbSize={160} />
                     <button
                       onClick={() => removeMjRef('oref', i)}
                       className="absolute top-0 right-0 w-4 h-4 bg-red-500/80 hover:bg-red-500 flex items-center justify-center rounded-bl"
@@ -1739,10 +1740,11 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
       {/* 结果展示：仅在未外挂 OutputNode 时在节点内预览，避免与下游 OutputNode 重复 */}
       {imageUrl && !hasAutoOutput && (
         <div className="border-t border-white/10 p-2">
-          <img
+          <SmartImage
             src={imageUrl}
             alt="生成结果"
             className="w-full rounded object-cover"
+            thumbSize={720}
             data-drag-source
             data-drag-kind="image"
             data-drag-url={imageUrl}

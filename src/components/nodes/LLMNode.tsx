@@ -34,6 +34,7 @@ import { useOrderedMaterials } from './useOrderedMaterials';
 import MaterialPreviewSection from './MaterialPreviewSection';
 import { useThemeStore } from '../../stores/theme';
 import MentionPromptInput from './MentionPromptInput';
+import SmartImage from '../SmartImage';
 import { resolveMediaMentions, type MediaMention } from './mediaMentions';
 import { splitText } from '../../utils/textSplit';
 import { defaultSizeOf, placeBatchNodes, type Rect as PlacementRect } from '../../utils/nodePlacement';
@@ -1127,7 +1128,7 @@ const LLMNode = ({ id, data, selected }: NodeProps) => {
             {t.images && t.images.length > 0 && (
               <div className="flex gap-1 flex-wrap mt-1">
                 {t.images.map((u, j) => (
-                  <img
+                  <SmartImage
                     key={j}
                     src={u}
                     alt=""
@@ -1139,6 +1140,7 @@ const LLMNode = ({ id, data, selected }: NodeProps) => {
                     onMouseDown={(e) => beginMaterialDrag(e, { kind: 'image', url: u, sourceNodeId: id, previewUrl: u })}
                     className="w-12 h-12 object-cover rounded border border-white/10 cursor-grab"
                     title="按住 Ctrl 拖拽到其他节点"
+                    thumbSize={160}
                   />
                 ))}
               </div>

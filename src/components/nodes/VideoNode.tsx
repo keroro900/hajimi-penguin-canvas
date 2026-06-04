@@ -35,6 +35,7 @@ import { useOrderedMaterials } from './useOrderedMaterials';
 import MaterialPreviewSection from './MaterialPreviewSection';
 import MentionPromptInput from './MentionPromptInput';
 import LoopingVideo from '../LoopingVideo';
+import SmartImage from '../SmartImage';
 import { resolveMediaMentions, type MediaMention } from './mediaMentions';
 import { useDragMaterialStore, type MaterialPayload } from '../../stores/dragMaterial';
 import { useMaterialDropTarget } from '../../hooks/useMaterialDropTarget';
@@ -1082,7 +1083,7 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
               <div className="flex gap-1 flex-wrap">
                 {localRefImages.map((u, i) => (
                   <div key={`img-${i}`} className="relative w-10 h-10">
-                    <img
+                    <SmartImage
                       src={u}
                       alt=""
                       data-drag-source
@@ -1092,6 +1093,7 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
                       data-drag-node-id={id}
                       onMouseDown={(e) => beginMaterialDrag(e, { kind: 'image', url: u, sourceNodeId: id, previewUrl: u })}
                       className="w-10 h-10 object-cover rounded border border-white/10 cursor-grab"
+                      thumbSize={160}
                     />
                     <button
                       onClick={() => update({ localRefImages: localRefImages.filter((x) => x !== u) })}

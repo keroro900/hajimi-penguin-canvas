@@ -10,6 +10,7 @@ import { useOrderedMaterials } from './useOrderedMaterials';
 import MaterialPreviewSection from './MaterialPreviewSection';
 import MentionPromptInput from './MentionPromptInput';
 import LoopingVideo from '../LoopingVideo';
+import SmartImage from '../SmartImage';
 import { resolveMediaMentions, type MediaMention } from './mediaMentions';
 import { useThemeStore } from '../../stores/theme';
 import { logBus } from '../../stores/logs';
@@ -1004,7 +1005,7 @@ const RunningHubNode = ({ id, data, selected, type }: NodeProps) => {
             if (/\.(mp3|wav|ogg)$/i.test(u)) {
               return <audio key={i} src={u} controls className="w-full h-8" />;
             }
-            return <img key={i} src={u} alt={`输出 ${i}`} className="w-full rounded object-cover" />;
+            return <SmartImage key={i} src={u} alt={`输出 ${i}`} className="w-full rounded object-cover" thumbSize={720} />;
           })}
         </div>
       )}

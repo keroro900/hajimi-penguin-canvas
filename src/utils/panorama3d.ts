@@ -40,6 +40,98 @@ export const PANORAMA_RATIO_OPTIONS: Array<{ id: PanoramaRatioId; label: string 
   { id: 'custom', label: '自定义' },
 ];
 
+export type PanoramaGenerationMode = 'text' | 'image';
+export type PanoramaPanelMode = 'preview' | PanoramaGenerationMode;
+export type PanoramaSizeLevel = '1K' | '2K';
+
+export interface PanoramaGenerationHistoryItem {
+  url: string;
+  mode: PanoramaGenerationMode;
+  sizeLevel: PanoramaSizeLevel;
+  prompt: string;
+  promptFinal: string;
+  referenceUrl?: string;
+  createdAt: string;
+}
+
+export const PANORAMA_FIXED_PROMPT =
+  '将参考图生成一个720度的全景VR图，左右边缘100%像素级无缝衔接，可无限循环拼接；上下极点（南北极）自然过渡，无明显断层或拉伸，场景一致性，以及场景的逻辑性，封闭场景需要有门。';
+
+export const PANORAMA_SIZE_LEVELS: PanoramaSizeLevel[] = ['1K', '2K'];
+export const PANORAMA_PROMPT_TEMPLATES = ['室内展厅', '科幻基地', '古风庭院', '自然峡谷', '游戏关卡', '产品展台'];
+
+export function safePanoramaPanelMode(value: unknown): PanoramaPanelMode {
+  return value === 'preview' || value === 'image' ? value : 'text';
+}
+
+export function safePanoramaGenerationMode(value: unknown): PanoramaGenerationMode {
+  return value === 'image' ? 'image' : 'text';
+}
+
+export function safePanoramaSizeLevel(value: unknown): PanoramaSizeLevel {
+  return value === '2K' ? '2K' : '1K';
+}
+
+export function buildPanoramaPromptFinal(userPrompt: unknown) {
+  const extra = typeof userPrompt === 'string' ? userPrompt.trim() : '';
+  return extra ? `${PANORAMA_FIXED_PROMPT}\n${extra}` : PANORAMA_FIXED_PROMPT;
+}
+
+export function validatePanoramaGeneration(params: {
+  mode: PanoramaGenerationMode;
+  prompt?: unknown;
+  referenceUrl?: unknown;
+}) {
+  const prompt = typeof params.prompt === 'string' ? params.prompt.trim() : '';
+  const referenceUrl = typeof params.referenceUrl === 'string' ? params.referenceUrl.trim() : '';
+  if (params.mode === 'text' && !prompt) {
+    return { ok: false as const, error: '文生全景需要填写场景提示词' };
+  }
+  if (params.mode === 'image' && !referenceUrl) {
+    return { ok: false as const, error: '图生全景需要上游图片或节点内参考图' };
+  }
+  return { ok: true as const };
+}
+
+export function buildPanoramaImageRequest(params: {
+  mode: PanoramaGenerationMode;
+  prompt?: unknown;
+  sizeLevel?: unknown;
+  referenceUrl?: unknown;
+}) {
+  const prompt = typeof params.prompt === 'string' ? params.prompt.trim() : '';
+  const referenceUrl = typeof params.referenceUrl === 'string' ? params.referenceUrl.trim() : '';
+  const sizeLevel = safePanoramaSizeLevel(params.sizeLevel);
+  return {
+    model: 'gpt-image-2',
+    apiModel: 'gpt-image-2',
+    paramKind: 'gpt-size' as const,
+    prompt: buildPanoramaPromptFinal(prompt),
+    aspectRatio: '21:9',
+    aspect_ratio: '21:9',
+    sizeLevel,
+    image_size: sizeLevel,
+    images: params.mode === 'image' && referenceUrl ? [referenceUrl] : [],
+    n: 1,
+  };
+}
+
+export function prependPanoramaHistory(
+  current: unknown,
+  item: PanoramaGenerationHistoryItem,
+  maxItems = 3,
+): PanoramaGenerationHistoryItem[] {
+  const list = Array.isArray(current) ? current : [];
+  return [
+    item,
+    ...list
+      .filter((entry): entry is PanoramaGenerationHistoryItem => {
+        return !!entry && typeof entry === 'object' && typeof (entry as any).url === 'string';
+      })
+      .filter((entry) => entry.url !== item.url),
+  ].slice(0, Math.max(1, maxItems));
+}
+
 export function clampPanoramaNumber(value: unknown, min: number, max: number, fallback: number) {
   const n = Number(value);
   if (!Number.isFinite(n)) return fallback;

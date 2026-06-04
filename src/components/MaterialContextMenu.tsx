@@ -5,6 +5,7 @@ import { useCanvasStore } from '../stores/canvas';
 import * as api from '../services/api';
 import type { CloudUploadTargetConfig } from '../types/canvas';
 import type { ResourceCategory, ResourceKind, ResourceMaterialSetKind, ResourceMediaKind } from '../services/api';
+import SmartImage from './SmartImage';
 
 interface MenuState {
   x: number;
@@ -248,7 +249,7 @@ export default function MaterialContextMenu() {
       </div>
       {menu.kind === 'image' && menu.previewUrl && (
         <div className="h-24 bg-black overflow-hidden">
-          <img src={menu.previewUrl} className="w-full h-full object-cover" draggable={false} />
+          <SmartImage src={menu.previewUrl} className="w-full h-full object-cover" draggable={false} thumbSize={320} />
         </div>
       )}
       {menu.kind === 'set' && (

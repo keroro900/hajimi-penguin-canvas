@@ -1026,6 +1026,42 @@ body.cut-mode .react-flow__edge .react-flow__edge-interaction {
   pointer-events: none;
 }
 
+html[data-t8-edge-motion="reduced"] .react-flow__edge-path,
+html[data-t8-edge-motion="reduced"] .react-flow__connection-path,
+html[data-t8-edge-motion="reduced"] .t8-edge-yyh-red-segment,
+.t8-canvas-shell.t8-edge-motion-reduced .react-flow__edge-path,
+.t8-canvas-shell.t8-edge-motion-reduced .react-flow__connection-path,
+.t8-canvas-shell.t8-edge-motion-reduced .t8-edge-yyh-red-segment {
+  animation: none !important;
+  filter: none !important;
+}
+
+html[data-t8-edge-motion="reduced"] .t8-edge-pass-ball,
+html[data-t8-edge-motion="reduced"] .t8-edge-soccer-ball,
+.t8-canvas-shell.t8-edge-motion-reduced .t8-edge-pass-ball,
+.t8-canvas-shell.t8-edge-motion-reduced .t8-edge-soccer-ball {
+  display: none !important;
+}
+
+.t8-canvas-shell.t8-viewport-moving .react-flow__node,
+.t8-canvas-shell.t8-node-dragging .react-flow__node {
+  transition: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .react-flow__edge-path,
+  .react-flow__connection-path,
+  .t8-edge-yyh-red-segment {
+    animation: none !important;
+    filter: none !important;
+  }
+
+  .t8-edge-pass-ball,
+  .t8-edge-soccer-ball {
+    display: none !important;
+  }
+}
+
 /* === 批量移线 phantom 节点(透明锚点) === */
 .react-flow__node-bulkPhantom {
   width: 1px !important;

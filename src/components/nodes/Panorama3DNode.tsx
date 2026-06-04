@@ -3,28 +3,53 @@ import { Handle, Position, type NodeProps } from '@xyflow/react';
 import {
   AlertCircle,
   Box,
+  CheckCircle2,
+  Copy,
   Download,
   Globe2,
+  History,
   Loader2,
+  PackagePlus,
   Pause,
   Play,
   RotateCcw,
+  Sparkles,
+  Upload,
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
 import { useRunTrigger } from '../../hooks/useRunTrigger';
-import { uploadDataUrl } from '../../services/imageOps';
+import { uploadDataUrl, uploadFileBlob } from '../../services/imageOps';
+import { queryImageStatus, submitImageAsync } from '../../services/generation';
+import * as api from '../../services/api';
+import { logBus } from '../../stores/logs';
+import { taskCompletionSound } from '../../stores/taskCompletionSound';
 import {
+  PANORAMA_FIXED_PROMPT,
+  PANORAMA_PROMPT_TEMPLATES,
   PANORAMA_RATIO_OPTIONS,
+  PANORAMA_SIZE_LEVELS,
+  buildPanoramaImageRequest,
+  buildPanoramaPromptFinal,
   clampPanoramaNumber,
   isLikelyPanoramaImage,
   panoramaRenderSize,
+  prependPanoramaHistory,
   resolvePanoramaRatio,
+  safePanoramaGenerationMode,
+  safePanoramaPanelMode,
+  safePanoramaSizeLevel,
+  validatePanoramaGeneration,
+  type PanoramaGenerationHistoryItem,
+  type PanoramaGenerationMode,
+  type PanoramaPanelMode,
   type PanoramaRatioId,
+  type PanoramaSizeLevel,
 } from '../../utils/panorama3d';
 import { useUpdateNodeData } from './useUpdateNodeData';
 import { useUpstreamMaterials } from './useUpstreamMaterials';
 import { useHasAutoOutput } from './useHasAutoOutput';
+import SmartImage from '../SmartImage';
 
 const COLOR = '#38bdf8';
 
@@ -63,19 +88,82 @@ function cleanFileBase(value: string) {
   return (value.split('/').pop() || 'panorama').split('?')[0].replace(/\.[a-z0-9]{2,8}$/i, '') || 'panorama';
 }
 
+function generationModeLabel(mode: PanoramaGenerationMode) {
+  return mode === 'image' ? '图生全景' : '文生全景';
+}
+
+function compactPrompt(value: string, fallback = '全景场景') {
+  const text = value.replace(/\s+/g, ' ').trim();
+  if (!text) return fallback;
+  return text.length > 24 ? `${text.slice(0, 24)}...` : text;
+}
+
+async function copyText(value: string) {
+  if (navigator?.clipboard?.writeText) {
+    await navigator.clipboard.writeText(value);
+    return;
+  }
+  const textarea = document.createElement('textarea');
+  textarea.value = value;
+  textarea.style.position = 'fixed';
+  textarea.style.left = '-9999px';
+  document.body.appendChild(textarea);
+  textarea.select();
+  document.execCommand('copy');
+  textarea.remove();
+}
+
+function downloadUrl(url: string, filename: string) {
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+async function ensurePanoramaResourceCategory() {
+  const categories = await api.getResourceCategories('image');
+  if (!categories.success) throw new Error(categories.error || '读取资源库分类失败');
+  const existing = categories.data.find((cat) => cat.name === '3D全景');
+  if (existing) return existing;
+  const created = await api.addResourceCategory('image', '3D全景');
+  if (!created.success) throw new Error(created.error || '创建 3D全景 分类失败');
+  return created.data;
+}
+
 const Panorama3DNode = (p: NodeProps) => {
   const update = useUpdateNodeData(p.id);
   const upstream = useUpstreamMaterials(p.id);
   const hasAutoOutput = useHasAutoOutput(p.id);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const refInputRef = useRef<HTMLInputElement | null>(null);
   const runtimeRef = useRef<PanoramaRuntime>({ loadToken: 0 });
   const dragRef = useRef<DragState | null>(null);
   const viewRef = useRef({ yaw: 0, pitch: 0, fov: 75 });
   const d = (p.data as any) || {};
 
-  const source = upstream.images[0];
-  const sourceUrl = source?.url || d.panoramaSourceUrl || '';
+  const connectedSource = upstream.images[0];
+  const generationMode = safePanoramaGenerationMode(d.panoramaGenerationMode);
+  const generatedSourceUrl = typeof d.panoramaSourceUrl === 'string' ? d.panoramaSourceUrl : '';
+  const connectedSourceUrl = connectedSource?.url || '';
+  const panelMode: PanoramaPanelMode = safePanoramaPanelMode(
+    d.panoramaPanelMode
+      ?? d.panoramaGenerationMode
+      ?? (generatedSourceUrl || connectedSourceUrl ? 'preview' : 'text'),
+  );
+  const sourceUrl = panelMode === 'preview' && connectedSourceUrl
+    ? connectedSourceUrl
+    : generatedSourceUrl || connectedSourceUrl;
   const outputUrl = typeof d.imageUrl === 'string' ? d.imageUrl : '';
+  const sizeLevel: PanoramaSizeLevel = safePanoramaSizeLevel(d.panoramaSizeLevel);
+  const userPrompt = typeof d.panoramaPrompt === 'string' ? d.panoramaPrompt : '';
+  const promptFinal = buildPanoramaPromptFinal(userPrompt);
+  const localReferenceUrl = typeof d.panoramaReferenceUrl === 'string' ? d.panoramaReferenceUrl : '';
+  const imageReferenceUrl = connectedSource?.url || localReferenceUrl;
+  const generatedHistory: PanoramaGenerationHistoryItem[] = Array.isArray(d.panoramaGeneratedHistory)
+    ? d.panoramaGeneratedHistory.filter((item: any) => item && typeof item.url === 'string')
+    : [];
   const ratioId: PanoramaRatioId = (d.panoramaRatio || 'wide') as PanoramaRatioId;
   const customW = clampPanoramaNumber(d.panoramaCustomW, 1, 999, 16);
   const customH = clampPanoramaNumber(d.panoramaCustomH, 1, 999, 9);
@@ -83,16 +171,19 @@ const Panorama3DNode = (p: NodeProps) => {
   const pitch = clampPitch(d.panoramaPitch);
   const fov = clampFov(d.panoramaFov);
   const autoRotate = Boolean(d.panoramaAutoRotate);
+  const isGenerating = d.status === 'generating';
   const ratio = useMemo(() => resolvePanoramaRatio(ratioId, customW, customH), [customH, customW, ratioId]);
   const renderSize = useMemo(() => panoramaRenderSize(ratio), [ratio]);
   const isLikely = useMemo(
-    () => isLikelyPanoramaImage({ url: sourceUrl, label: source?.label, title: d.title, prompt: d.prompt }),
-    [d.prompt, d.title, source?.label, sourceUrl],
+    () => isLikelyPanoramaImage({ url: sourceUrl, label: connectedSource?.label, title: d.title, prompt: d.prompt }),
+    [d.prompt, d.title, connectedSource?.label, sourceUrl],
   );
 
-  const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  const [textureStatus, setTextureStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [error, setError] = useState('');
   const [isDragging, setIsDragging] = useState(false);
+  const [copyState, setCopyState] = useState('');
+  const [resourceState, setResourceState] = useState('');
 
   const drawFrame = useCallback(() => {
     const canvas = canvasRef.current;
@@ -195,12 +286,12 @@ const Panorama3DNode = (p: NodeProps) => {
     if (!sourceUrl) {
       runtimeRef.current.loadToken += 1;
       disposeTexture();
-      setStatus('idle');
+      setTextureStatus('idle');
       setError('');
       return;
     }
     const token = ++runtimeRef.current.loadToken;
-    setStatus('loading');
+    setTextureStatus('loading');
     setError('');
     let cancelled = false;
 
@@ -213,23 +304,23 @@ const Panorama3DNode = (p: NodeProps) => {
         img.onload = () => {
           if (cancelled || token !== runtimeRef.current.loadToken) return;
           if (!applyTexture(img)) {
-            setStatus('error');
+            setTextureStatus('error');
             setError('全景贴图加载失败');
             return;
           }
-          setStatus('ready');
+          setTextureStatus('ready');
           drawFrame();
         };
         img.onerror = () => {
           if (cancelled || token !== runtimeRef.current.loadToken) return;
-          setStatus('error');
+          setTextureStatus('error');
           setError('图片无法作为 3D 全景加载');
         };
         img.src = sourceUrl;
         if (img.complete && img.naturalWidth) img.onload?.(new Event('load'));
       } catch (e: any) {
         if (cancelled || token !== runtimeRef.current.loadToken) return;
-        setStatus('error');
+        setTextureStatus('error');
         setError(e?.message || 'Three.js 初始化失败');
       }
     })();
@@ -243,7 +334,7 @@ const Panorama3DNode = (p: NodeProps) => {
     const rt = runtimeRef.current;
     if (rt.animationId) cancelAnimationFrame(rt.animationId);
     rt.animationId = undefined;
-    if (!autoRotate || status !== 'ready') {
+    if (!autoRotate || textureStatus !== 'ready') {
       return;
     }
     let stopped = false;
@@ -264,7 +355,7 @@ const Panorama3DNode = (p: NodeProps) => {
       if (rt.animationId) cancelAnimationFrame(rt.animationId);
       rt.animationId = undefined;
     };
-  }, [autoRotate, drawFrame, status]);
+  }, [autoRotate, drawFrame, textureStatus]);
 
   useEffect(() => () => {
     const rt = runtimeRef.current;
@@ -279,7 +370,7 @@ const Panorama3DNode = (p: NodeProps) => {
   const setView = (patch: Record<string, any>) => update(patch);
 
   const onPointerDown = (event: ReactPointerEvent<HTMLCanvasElement>) => {
-    if (status !== 'ready') return;
+    if (textureStatus !== 'ready') return;
     event.preventDefault();
     event.stopPropagation();
     event.currentTarget.setPointerCapture?.(event.pointerId);
@@ -315,7 +406,7 @@ const Panorama3DNode = (p: NodeProps) => {
   };
 
   const onWheel = (event: React.WheelEvent<HTMLDivElement>) => {
-    if (status !== 'ready') return;
+    if (textureStatus !== 'ready') return;
     event.preventDefault();
     event.stopPropagation();
     const factor = event.deltaY < 0 ? 0.92 : 1 / 0.92;
@@ -325,11 +416,11 @@ const Panorama3DNode = (p: NodeProps) => {
   const resetView = () => update({ panoramaYaw: 0, panoramaPitch: 0, panoramaFov: 75 });
 
   const exportFrame = useCallback(async () => {
-    if (status !== 'ready' || !canvasRef.current) {
+    if (textureStatus !== 'ready' || !canvasRef.current) {
       update({ panoramaError: '请先连接并加载全景图' });
       return;
     }
-    update({ status: 'running', panoramaError: '' });
+    update({ status: 'generating', progress: '导出中', panoramaError: '' });
     try {
       if (!drawFrame()) throw new Error('当前画面不可导出');
       const dataUrl = canvasRef.current.toDataURL('image/png');
@@ -361,9 +452,206 @@ const Panorama3DNode = (p: NodeProps) => {
       update({ status: 'error', panoramaError: msg });
       setError(msg);
     }
-  }, [customH, customW, drawFrame, fov, pitch, ratioId, sourceUrl, status, update, yaw]);
+  }, [customH, customW, drawFrame, ratioId, sourceUrl, textureStatus, update]);
 
-  useRunTrigger(p.id, exportFrame, 'image');
+  const applyGeneratedPanorama = useCallback((url: string, params: {
+    mode: PanoramaGenerationMode;
+    prompt: string;
+    promptFinal: string;
+    sizeLevel: PanoramaSizeLevel;
+    referenceUrl?: string;
+  }) => {
+    const history = prependPanoramaHistory(generatedHistory, {
+      url,
+      mode: params.mode,
+      sizeLevel: params.sizeLevel,
+      prompt: params.prompt,
+      promptFinal: params.promptFinal,
+      referenceUrl: params.referenceUrl,
+      createdAt: new Date().toISOString(),
+    });
+    update({
+      status: 'success',
+      progress: '100%',
+      error: '',
+      panoramaError: '',
+      panoramaSourceUrl: url,
+      panoramaGeneratedUrl: url,
+      panoramaPrompt: params.prompt,
+      panoramaPromptFinal: params.promptFinal,
+      panoramaGenerationMode: params.mode,
+      panoramaPanelMode: params.mode,
+      panoramaSizeLevel: params.sizeLevel,
+      panoramaGeneratedHistory: history,
+      panoramaRatio: 'ultrawide',
+      imageUrl: url,
+      imageUrls: [url],
+      urls: [url],
+      usedI2I: params.mode === 'image',
+    });
+    taskCompletionSound.notifyComplete(p.id, 'image');
+  }, [generatedHistory, p.id, update]);
+
+  const generatePanorama = useCallback(async () => {
+    const mode: PanoramaGenerationMode = panelMode === 'image' ? 'image' : 'text';
+    const prompt = userPrompt.trim();
+    const referenceUrl = mode === 'image' ? imageReferenceUrl : '';
+    const validation = validatePanoramaGeneration({ mode, prompt, referenceUrl });
+    if (!validation.ok) {
+      update({
+        status: 'error',
+        panoramaError: validation.error,
+        panoramaPromptFinal: buildPanoramaPromptFinal(prompt),
+      });
+      setError(validation.error);
+      return;
+    }
+    const request = buildPanoramaImageRequest({ mode, prompt, sizeLevel, referenceUrl });
+    const finalPrompt = request.prompt;
+    update({
+      status: 'generating',
+      progress: '提交中',
+      error: '',
+      panoramaError: '',
+      panoramaPrompt: prompt,
+      panoramaPromptFinal: finalPrompt,
+      panoramaGenerationMode: mode,
+      panoramaPanelMode: mode,
+      panoramaSizeLevel: sizeLevel,
+    });
+    logBus.info(
+      `提交3D全景: ${generationModeLabel(mode)} 21:9 ${sizeLevel} 参考图=${request.images.length}`,
+      `panorama:${p.id.slice(0, 6)}`,
+    );
+    try {
+      const submit = await submitImageAsync(request);
+      if (submit.sync && submit.urls?.length) {
+        applyGeneratedPanorama(submit.urls[0], { mode, prompt, promptFinal: finalPrompt, sizeLevel, referenceUrl });
+        logBus.success(`3D全景生成完成 → ${submit.urls[0]}`, `panorama:${p.id.slice(0, 6)}`);
+        return;
+      }
+      const taskId = submit.taskId;
+      if (!taskId) throw new Error('提交成功但未返回任务 ID');
+      update({ progress: submit.progress || '0%', taskId });
+      const maxPoll = 1800;
+      const interval = 2000;
+      let lastProgress = '';
+      for (let i = 0; i < maxPoll; i++) {
+        await new Promise((resolve) => setTimeout(resolve, interval));
+        const q = await queryImageStatus(taskId, 'gpt-image-2');
+        if (q.progress && q.progress !== lastProgress) {
+          lastProgress = q.progress;
+          update({ progress: q.progress });
+          logBus.debug(`3D全景轮询 ${i + 1}/${maxPoll}: ${q.status} ${q.progress}`, `panorama:${p.id.slice(0, 6)}`);
+        }
+        if (q.status === 'completed' && q.urls?.length) {
+          applyGeneratedPanorama(q.urls[0], { mode, prompt, promptFinal: finalPrompt, sizeLevel, referenceUrl });
+          logBus.success(`3D全景生成完成 → ${q.urls[0]}`, `panorama:${p.id.slice(0, 6)}`);
+          return;
+        }
+        if (q.status === 'failed') {
+          throw new Error(q.error || '3D全景生成失败');
+        }
+      }
+      throw new Error('3D全景生成超时，请稍后查询或精简提示词重试');
+    } catch (e: any) {
+      const msg = e?.message || '3D全景生成失败';
+      update({
+        status: 'error',
+        error: msg,
+        panoramaError: msg,
+        progress: '',
+        panoramaPromptFinal: finalPrompt,
+      });
+      setError(msg);
+      logBus.error(msg, `panorama:${p.id.slice(0, 6)}`);
+    }
+  }, [applyGeneratedPanorama, imageReferenceUrl, p.id, panelMode, sizeLevel, update, userPrompt]);
+
+  const runNode = useCallback(async () => {
+    if (panelMode === 'preview') {
+      await exportFrame();
+      return;
+    }
+    await generatePanorama();
+  }, [exportFrame, generatePanorama, panelMode]);
+
+  const handleReferenceUpload = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      update({ panoramaError: '' });
+      const url = await uploadFileBlob(file, file.name || `panorama-reference-${Date.now()}.png`);
+      update({
+        panoramaReferenceUrl: url,
+        panoramaPanelMode: 'image',
+        panoramaGenerationMode: 'image',
+      });
+      logBus.success(`3D全景参考图已上传 → ${url}`, `panorama:${p.id.slice(0, 6)}`);
+    } catch (e: any) {
+      const msg = e?.message || '参考图上传失败';
+      update({ panoramaError: msg });
+      setError(msg);
+    } finally {
+      if (refInputRef.current) refInputRef.current.value = '';
+    }
+  }, [p.id, update]);
+
+  const copyPrompt = useCallback(async () => {
+    try {
+      await copyText(promptFinal);
+      setCopyState('已复制');
+      window.setTimeout(() => setCopyState(''), 1200);
+    } catch (e: any) {
+      setCopyState(e?.message || '复制失败');
+    }
+  }, [promptFinal]);
+
+  const savePanoramaResource = useCallback(async () => {
+    if (!sourceUrl) {
+      setResourceState('没有可保存的全景贴图');
+      return;
+    }
+    setResourceState('保存中');
+    try {
+      const category = await ensurePanoramaResourceCategory();
+      const title = `${compactPrompt(userPrompt || d.prompt || '3D全景贴图')} · ${sizeLevel}`;
+      const saved = await api.addResourceItem({
+        url: sourceUrl,
+        kind: 'image',
+        categoryId: category.id,
+        title,
+        tags: ['3D全景', 'panorama', 'VR', sizeLevel, generationModeLabel(generationMode)],
+        sourceNodeId: p.id,
+        favorite: false,
+      });
+      if (!saved.success) throw new Error(saved.error || '保存资源失败');
+      window.dispatchEvent(new CustomEvent('penguin:resources-changed'));
+      setResourceState(saved.data.duplicate ? '已在资源库' : '已保存');
+      window.setTimeout(() => setResourceState(''), 1800);
+    } catch (e: any) {
+      setResourceState(e?.message || '保存资源失败');
+    }
+  }, [d.prompt, generationMode, p.id, sizeLevel, sourceUrl, userPrompt]);
+
+  const useHistoryItem = useCallback((item: PanoramaGenerationHistoryItem) => {
+    update({
+      panoramaSourceUrl: item.url,
+      panoramaGeneratedUrl: item.url,
+      panoramaPrompt: item.prompt || '',
+      panoramaPromptFinal: item.promptFinal || buildPanoramaPromptFinal(item.prompt || ''),
+      panoramaGenerationMode: item.mode,
+      panoramaPanelMode: item.mode,
+      panoramaSizeLevel: item.sizeLevel,
+      imageUrl: item.url,
+      imageUrls: [item.url],
+      urls: [item.url],
+      status: 'success',
+      panoramaError: '',
+    });
+  }, [update]);
+
+  useRunTrigger(p.id, runNode, 'image');
 
   const nodeStyle = {
     width: 760,
@@ -373,6 +661,15 @@ const Panorama3DNode = (p: NodeProps) => {
 
   const savedError = typeof d.panoramaError === 'string' ? d.panoramaError : '';
   const hasSource = Boolean(sourceUrl);
+  const isGeneratedPreview = Boolean(generatedSourceUrl && sourceUrl === generatedSourceUrl);
+  const generatedSubtitle = isGenerating
+    ? `生成中 · 21:9 · ${sizeLevel}`
+    : hasSource
+    ? `${PANORAMA_RATIO_OPTIONS.find((x) => x.id === ratioId)?.label || '16:9'} · ${isGeneratedPreview ? `${sizeLevel} · GPT Image 2` : `FOV ${Math.round(fov)}°`}`
+    : '文生 / 图生 720VR';
+  const hasConnectedReference = Boolean(connectedSource?.url);
+  const hasLocalReference = Boolean(localReferenceUrl);
+  const activeReferenceUrl = imageReferenceUrl;
 
   return (
     <div className="t8-node relative transition-all" style={nodeStyle}>
@@ -390,7 +687,7 @@ const Panorama3DNode = (p: NodeProps) => {
           <div className="min-w-0 flex-1">
             <div className="text-sm font-bold text-[var(--t8-text-main)]">3D全景</div>
             <div className="text-[10px] text-[var(--t8-text-muted)]">
-              {hasSource ? `${PANORAMA_RATIO_OPTIONS.find((x) => x.id === ratioId)?.label || '16:9'} · FOV ${Math.round(fov)}°` : '连接 2:1 全景图'}
+              {generatedSubtitle}
             </div>
           </div>
           {isLikely && (
@@ -418,22 +715,176 @@ const Panorama3DNode = (p: NodeProps) => {
             {!hasSource && (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-slate-950 text-center text-xs text-slate-300">
                 <Box size={24} className="text-sky-300" />
-                <span>把全景图连接到左侧输入</span>
+                <span>连接或生成全景贴图</span>
               </div>
             )}
-            {status === 'loading' && (
+            {textureStatus === 'loading' && (
               <div className="absolute inset-0 flex items-center justify-center gap-2 bg-slate-950/70 text-xs font-bold text-slate-100">
                 <Loader2 size={15} className="animate-spin" />
                 加载中
               </div>
             )}
-            {(status === 'error' || savedError) && (
+            {isGenerating && (
+              <div className="absolute inset-0 flex items-center justify-center gap-2 bg-slate-950/75 text-xs font-bold text-slate-100">
+                <Loader2 size={15} className="animate-spin" />
+                {d.progress || '生成中'}
+              </div>
+            )}
+            {(textureStatus === 'error' || savedError) && (
               <div className="absolute inset-x-3 bottom-3 flex items-center gap-2 rounded-lg border border-red-400/25 bg-red-950/80 px-2 py-1.5 text-xs text-red-100">
                 <AlertCircle size={14} />
                 <span className="min-w-0 truncate">{error || savedError}</span>
               </div>
             )}
           </div>
+
+          <input ref={refInputRef} type="file" accept="image/*" className="hidden" onChange={handleReferenceUpload} />
+
+          <div className="grid grid-cols-3 gap-1.5">
+            {([
+              ['preview', '连接预览'],
+              ['text', '文生全景'],
+              ['image', '图生全景'],
+            ] as Array<[PanoramaPanelMode, string]>).map(([mode, label]) => (
+              <button
+                key={mode}
+                type="button"
+                className={`t8-btn min-h-8 px-2 text-[11px] ${panelMode === mode ? 't8-btn-primary' : ''}`}
+                onClick={() => update({
+                  panoramaPanelMode: mode,
+                  ...(mode === 'text' || mode === 'image' ? { panoramaGenerationMode: mode } : {}),
+                })}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {panelMode !== 'preview' && (
+            <div className="space-y-2 rounded-lg border border-[var(--t8-border)] bg-[var(--t8-bg-panel-muted)] p-2">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="rounded-md bg-sky-400/15 px-2 py-1 text-[10px] font-bold text-sky-200">GPT Image 2</span>
+                <span className="rounded-md bg-amber-400/15 px-2 py-1 text-[10px] font-bold text-amber-200">21:9</span>
+                {PANORAMA_SIZE_LEVELS.map((level) => (
+                  <button
+                    key={level}
+                    type="button"
+                    className={`t8-btn h-7 px-2 text-[10px] ${sizeLevel === level ? 't8-btn-primary' : ''}`}
+                    onClick={() => update({ panoramaSizeLevel: level })}
+                  >
+                    {level}
+                  </button>
+                ))}
+              </div>
+
+              <div className="rounded-md border border-sky-400/20 bg-sky-950/25 px-2 py-1.5 text-[10px] leading-relaxed text-sky-100">
+                {PANORAMA_FIXED_PROMPT}
+              </div>
+
+              <textarea
+                value={userPrompt}
+                onChange={(e) => update({
+                  panoramaPrompt: e.target.value,
+                  panoramaPromptFinal: buildPanoramaPromptFinal(e.target.value),
+                })}
+                rows={3}
+                placeholder={panelMode === 'image' ? '可选补充：场景风格、天气、镜头中心...' : '场景提示词'}
+                className="w-full resize-none rounded-md border border-[var(--t8-border)] bg-[var(--t8-bg-panel)] px-2 py-1.5 text-xs text-[var(--t8-text-main)] outline-none"
+              />
+
+              <div className="flex flex-wrap gap-1">
+                {PANORAMA_PROMPT_TEMPLATES.map((tpl) => (
+                  <button
+                    key={tpl}
+                    type="button"
+                    className="t8-btn h-7 px-2 text-[10px]"
+                    onClick={() => {
+                      const next = userPrompt.trim() ? `${userPrompt.trim()}，${tpl}` : tpl;
+                      update({ panoramaPrompt: next, panoramaPromptFinal: buildPanoramaPromptFinal(next) });
+                    }}
+                  >
+                    {tpl}
+                  </button>
+                ))}
+              </div>
+
+              {panelMode === 'image' && (
+                <div className="grid grid-cols-[1fr_auto_auto] items-center gap-2 rounded-md bg-[var(--t8-bg-panel)] px-2 py-1.5">
+                  <div className="min-w-0 text-[10px] text-[var(--t8-text-muted)]">
+                    {hasConnectedReference
+                      ? `上游第一张 · ${connectedSource?.label || '参考图'}`
+                      : hasLocalReference
+                      ? `节点内参考 · ${cleanFileBase(localReferenceUrl)}`
+                      : '等待参考图'}
+                  </div>
+                  <button type="button" className="t8-mini-icon-button" onClick={() => refInputRef.current?.click()} title="上传参考图">
+                    <Upload size={13} />
+                  </button>
+                  <button
+                    type="button"
+                    className="t8-mini-icon-button"
+                    onClick={() => update({ panoramaReferenceUrl: '' })}
+                    disabled={!hasLocalReference}
+                    title="清除节点内参考"
+                  >
+                    <RotateCcw size={13} />
+                  </button>
+                </div>
+              )}
+
+              {panelMode === 'image' && activeReferenceUrl && (
+                <div className="overflow-hidden rounded-md border border-[var(--t8-border)] bg-slate-950">
+                  <SmartImage src={activeReferenceUrl} alt="全景参考图" className="h-20 w-full object-contain" draggable={false} thumbSize={420} />
+                </div>
+              )}
+
+              <details className="rounded-md bg-[var(--t8-bg-panel)] px-2 py-1 text-[10px] text-[var(--t8-text-muted)]">
+                <summary className="cursor-pointer font-bold text-[var(--t8-text-main)]">实际发送</summary>
+                <div className="mt-1 max-h-24 overflow-y-auto whitespace-pre-wrap leading-relaxed">{promptFinal}</div>
+              </details>
+
+              <div className="grid grid-cols-4 gap-1.5">
+                <button type="button" className="t8-btn t8-btn-primary min-h-8 px-2 text-[11px]" onClick={generatePanorama} disabled={isGenerating}>
+                  {isGenerating ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+                  {d.panoramaGeneratedUrl ? '重新生成' : '生成全景'}
+                </button>
+                <button type="button" className="t8-btn min-h-8 px-2 text-[11px]" onClick={copyPrompt}>
+                  {copyState ? <CheckCircle2 size={13} /> : <Copy size={13} />}
+                  {copyState || '复制'}
+                </button>
+                <button type="button" className="t8-btn min-h-8 px-2 text-[11px]" onClick={savePanoramaResource} disabled={!sourceUrl || resourceState === '保存中'}>
+                  {resourceState === '保存中' ? <Loader2 size={13} className="animate-spin" /> : <PackagePlus size={13} />}
+                  {resourceState || '资源库'}
+                </button>
+                <button type="button" className="t8-btn min-h-8 px-2 text-[11px]" onClick={() => sourceUrl && downloadUrl(sourceUrl, `${cleanFileBase(sourceUrl)}-panorama.png`)} disabled={!sourceUrl}>
+                  <Download size={13} />
+                  贴图
+                </button>
+              </div>
+
+              {generatedHistory.length > 0 && (
+                <div className="space-y-1">
+                  <div className="flex items-center gap-1 text-[10px] font-bold text-[var(--t8-text-muted)]">
+                    <History size={12} /> 最近生成
+                  </div>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {generatedHistory.map((item) => (
+                      <button
+                        key={`${item.url}:${item.createdAt}`}
+                        type="button"
+                        className="group overflow-hidden rounded-md border border-[var(--t8-border)] bg-slate-950 text-left"
+                        onClick={() => useHistoryItem(item)}
+                        title={item.promptFinal}
+                      >
+                        <SmartImage src={item.url} alt="全景历史" className="h-12 w-full object-cover" draggable={false} thumbSize={240} />
+                        <div className="truncate px-1.5 py-1 text-[9px] text-slate-200">{item.sizeLevel} · {generationModeLabel(item.mode)}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="grid grid-cols-10 gap-1.5">
             {PANORAMA_RATIO_OPTIONS.map((item) => (
@@ -489,8 +940,8 @@ const Panorama3DNode = (p: NodeProps) => {
             <button type="button" className={`t8-btn py-2 text-xs ${autoRotate ? 't8-btn-primary' : ''}`} onClick={() => update({ panoramaAutoRotate: !autoRotate })} title="自动旋转">
               {autoRotate ? <Pause size={14} /> : <Play size={14} />}
             </button>
-            <button type="button" className="t8-btn t8-btn-primary py-2 text-xs" onClick={exportFrame} disabled={status !== 'ready'} title="导出当前画面">
-              {d.status === 'running' ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+            <button type="button" className="t8-btn t8-btn-primary py-2 text-xs" onClick={exportFrame} disabled={textureStatus !== 'ready' || isGenerating} title="导出当前画面">
+              {isGenerating && d.progress === '导出中' ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
             </button>
           </div>
 
@@ -502,7 +953,7 @@ const Panorama3DNode = (p: NodeProps) => {
 
           {outputUrl && !hasAutoOutput && (
             <div className="rounded-lg border border-[var(--t8-border)] bg-[var(--t8-bg-panel-muted)] p-2">
-              <img src={outputUrl} alt="导出画面" className="max-h-28 w-full rounded object-contain" draggable={false} loading="lazy" decoding="async" />
+              <SmartImage src={outputUrl} alt="导出画面" className="max-h-28 w-full rounded object-contain" draggable={false} thumbSize={720} />
             </div>
           )}
         </div>

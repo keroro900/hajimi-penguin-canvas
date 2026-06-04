@@ -21,6 +21,7 @@ import ResizableCorners from './ResizableCorners';
 import CollectionSplitButton from '../CollectionSplitButton';
 import ImageHoverPreview from '../ImageHoverPreview';
 import LoopingVideo from '../LoopingVideo';
+import SmartImage from '../SmartImage';
 import { decodeDuckFiles, type DuckDecodeFileItem } from '../../services/api';
 import { resolveThemeTemplate } from '../../theme/defaultTemplates';
 import {
@@ -623,12 +624,11 @@ const UploadNode = ({ id, data, selected }: NodeProps) => {
                 {mediaItems.map((item, i) => (
                   <div key={`${item.url}-${i}`} className="group/upload-image space-y-0.5">
                     <div className="relative">
-                      <img
+                      <SmartImage
                         src={item.url}
                         alt={item.name || `图像 ${i + 1}`}
                         className="w-full h-auto rounded block cursor-zoom-in"
-                        loading="lazy"
-                        decoding="async"
+                        thumbSize={mediaItems.length >= 2 ? 320 : 720}
                         style={{ background: '#0008', objectFit: 'contain', maxHeight: mediaItems.length >= 2 ? 120 : 480 }}
                         data-drag-source
                         data-drag-kind="image"

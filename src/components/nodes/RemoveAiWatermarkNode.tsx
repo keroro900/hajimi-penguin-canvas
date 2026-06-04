@@ -16,6 +16,7 @@ import { getMediaItemsFromData, type MediaItem, type MediaKind } from '../../uti
 import { useRunTrigger } from '../../hooks/useRunTrigger';
 import { useUpdateNodeData } from './useUpdateNodeData';
 import { useHasAutoOutput } from './useHasAutoOutput';
+import SmartImage from '../SmartImage';
 
 const MODE_OPTIONS: Array<{ value: AiWatermarkMode; label: string; hint: string }> = [
   { value: 'smart', label: '智能清理', hint: '可见水印 auto + 元数据清理' },
@@ -525,7 +526,7 @@ function RemoveAiWatermarkNode({ id, data, selected }: { id: string; data: any; 
         {!hasAutoOutput && outputUrls.length > 0 && (
           <div className="grid grid-cols-3 gap-1">
             {outputUrls.slice(0, 6).map((url) => (
-              <img key={url} src={url} alt="result" className="h-20 w-full rounded object-cover" />
+              <SmartImage key={url} src={url} alt="result" className="h-20 w-full rounded object-cover" thumbSize={240} />
             ))}
           </div>
         )}
