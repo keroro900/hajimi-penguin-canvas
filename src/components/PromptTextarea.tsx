@@ -10,7 +10,7 @@ import { Maximize2 } from 'lucide-react';
 import { useThemeStore } from '../stores/theme';
 import { useShortcutStore } from '../stores/shortcuts';
 import { formatShortcutList, matchesAnyShortcut } from '../utils/keyboardShortcuts';
-import PromptExpandModal from './PromptExpandModal';
+import PromptExpandModal, { type PromptExpandEditorKind } from './PromptExpandModal';
 
 interface PromptTextareaProps extends Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, 'value' | 'onChange'> {
   value: string;
@@ -20,6 +20,7 @@ interface PromptTextareaProps extends Omit<TextareaHTMLAttributes<HTMLTextAreaEl
   isDark?: boolean;
   isPixel?: boolean;
   mono?: boolean;
+  editorKind?: PromptExpandEditorKind;
 }
 
 const PromptTextarea = forwardRef<HTMLTextAreaElement, PromptTextareaProps>(function PromptTextarea({
@@ -30,6 +31,7 @@ const PromptTextarea = forwardRef<HTMLTextAreaElement, PromptTextareaProps>(func
   isDark: propIsDark,
   isPixel: propIsPixel,
   mono = false,
+  editorKind = 'text',
   className,
   onKeyDown,
   placeholder,
@@ -128,7 +130,8 @@ const PromptTextarea = forwardRef<HTMLTextAreaElement, PromptTextareaProps>(func
         isDark={isDark}
         isPixel={isPixel}
         readOnly={!!readOnly}
-        mono={mono}
+        mono={mono || editorKind === 'json'}
+        editorKind={editorKind}
       />
     </div>
   );

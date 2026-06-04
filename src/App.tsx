@@ -8,6 +8,10 @@ import type { AddNodeFn, InsertWorkflowFn } from './components/Canvas';
 import AppUpdaterButton from './components/AppUpdaterButton';
 import MaterialContextMenu from './components/MaterialContextMenu';
 import ErrorBoundary from './components/ErrorBoundary';
+import AchievementButton from './components/AchievementButton';
+import AchievementDrawer from './components/AchievementDrawer';
+import AchievementToast from './components/AchievementToast';
+import AchievementTracker from './components/AchievementTracker';
 import { RHToolsProvider } from './providers/RHToolsProvider';
 import * as api from './services/api';
 import type { NodeType } from './types/canvas';
@@ -424,6 +428,7 @@ function App() {
 
   return (
     <RHToolsProvider>
+    <AchievementTracker />
     <div
       className={`t8-app-shell h-screen flex flex-col overflow-hidden ${
         isPixel ? '' : isDark ? 'bg-zinc-950 text-white' : 'bg-zinc-50 text-zinc-900'
@@ -1233,6 +1238,7 @@ function App() {
             <Palette size={14} />
             <span className="text-[11px] truncate">{currentTemplate.name}</span>
           </button>
+          <AchievementButton isPixel={isPixel} isDark={isDark} />
           <button
             onClick={() => setResourceOpen(true)}
             className={
@@ -1300,6 +1306,8 @@ function App() {
         )}
       </Suspense>
       <MaterialContextMenu />
+      <AchievementDrawer />
+      <AchievementToast />
     </div>
     </RHToolsProvider>
   );

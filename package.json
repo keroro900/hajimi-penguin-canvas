@@ -1,7 +1,7 @@
 {
   "name": "t8-penguin-canvas",
   "private": false,
-  "version": "2.0.4",
+  "version": "2.0.5",
   "type": "module",
   "main": "electron/main.cjs",
   "description": "T8-penguin-canvas — AI 节点画布工作流工具（Web + Electron 桌面端）",
@@ -124,6 +124,13 @@
         "to": "frontend",
         "filter": [
           "**/*"
+        ]
+      },
+      {
+        "from": "shared",
+        "to": "shared",
+        "filter": [
+          "achievementManifest.json"
         ]
       },
       {

@@ -146,6 +146,17 @@ const AggregateParserNode = (p: NodeProps) => {
   const openAuthButtonLabel = desktopAuthAvailable ? '打开授权窗口' : '打开平台官网';
   const detectAuthButtonLabel = desktopAuthAvailable ? '检测授权' : '检查已粘贴 Cookie';
   const isRunning = status === 'generating' || status === 'running';
+  const authSteps = desktopAuthAvailable
+    ? [
+      { label: '打开官方登录页', active: Boolean(authProfile) && !cookieReady },
+      { label: '登录后检测授权', active: Boolean(authProfile) && !cookieReady },
+      { label: '解析或保存授权', active: cookieReady },
+    ]
+    : [
+      { label: '打开平台官网', active: Boolean(authProfile) && !cookieReady },
+      { label: '按指南复制 Cookie', active: Boolean(authProfile) && !cookieReady },
+      { label: '粘贴后解析', active: cookieReady },
+    ];
 
   useEffect(() => {
     if (persistedCookie) {
@@ -272,7 +283,9 @@ const AggregateParserNode = (p: NodeProps) => {
     setAuthBusy(true);
     try {
       const res = await electronParseAuth.login(authProfile.id);
-      setMessage(res?.message || (res?.success ? '已打开授权窗口' : '授权窗口打开失败'));
+      setMessage(res?.message || (res?.success
+        ? `已打开 ${authProfile.label} 官方登录窗口。登录完成后回到本节点点击“检测授权”，不需要手动复制 Cookie。`
+        : '授权窗口打开失败'));
     } catch (err: any) {
       setMessage(err?.message || '授权窗口打开失败');
     } finally {
@@ -299,9 +312,9 @@ const AggregateParserNode = (p: NodeProps) => {
         setCookieInput(data.cookie);
         update({ aggregateParserCookie: '' });
         const domainText = Array.isArray(data.domains) && data.domains.length ? ` · ${data.domains.join(' / ')}` : '';
-        setMessage(`${data.label || authProfile.label} 已授权：${data.count || 0} 个 Cookie，长度 ${data.length || data.cookie.length}${domainText}`);
+        setMessage(`${data.label || authProfile.label} 已授权：${data.count || 0} 个 Cookie，长度 ${data.length || data.cookie.length}${domainText}。现在可以直接解析，也可以点击“保存授权”供下次使用。`);
       } else {
-        setMessage(res?.message || '没有检测到平台 Cookie，请先在授权窗口完成登录');
+        setMessage(res?.message || `没有检测到 ${authProfile.label} Cookie。请确认授权窗口里已经登录账号，并停留在 ${authProfile.label} 官方页面，再回来点“检测授权”。`);
       }
     } catch (err: any) {
       setMessage(err?.message || '检测授权失败');
@@ -607,6 +620,22 @@ const AggregateParserNode = (p: NodeProps) => {
                   <Info size={12} className="mt-0.5 shrink-0" />
                   <span>{authModeHint}</span>
                 </div>
+                {authProfile && (
+                  <div className="mt-2 grid grid-cols-3 gap-1.5">
+                    {authSteps.map((step, index) => (
+                      <div
+                        key={step.label}
+                        className={`rounded-md border px-2 py-1 text-[10px] leading-tight ${
+                          step.active
+                            ? 'border-emerald-400/35 bg-emerald-400/10 text-[var(--t8-text-main)]'
+                            : 'border-[var(--t8-border)] bg-[var(--t8-bg-panel)] text-[var(--t8-text-muted)]'
+                        }`}
+                      >
+                        <strong className="mr-1">{index + 1}</strong>{step.label}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
               {authProfile && (
                 <button

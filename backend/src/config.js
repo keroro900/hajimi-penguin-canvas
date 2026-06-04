@@ -26,7 +26,7 @@ const config = {
   // 服务器
   HOST: process.env.HOST || '127.0.0.1',
   PORT: process.env.PORT || 18766, // 注意:与主项目 18765 错开
-  APP_VERSION: '2.0.4',
+  APP_VERSION: '2.0.5',
   NODE_ENV: process.env.NODE_ENV || (IS_PACKAGED ? 'production' : 'development'),
   IS_PACKAGED,
 
@@ -42,6 +42,7 @@ const config = {
   // 数据文件
   CANVAS_FILE: path.join(DATA_ROOT, 'data', 'canvas_list.json'),
   SETTINGS_FILE: path.join(DATA_ROOT, 'data', 'settings.json'),
+  ACHIEVEMENTS_FILE: path.join(DATA_ROOT, 'data', 'achievements.json'),
   RH_APPS_FILE: path.join(DATA_ROOT, 'data', 'rh_apps.json'),
   // v1.2.10+ RH 工具节点专用数据（与 rh_apps.json 完全分开）
   RH_TOOL_CATEGORIES_FILE: path.join(DATA_ROOT, 'data', 'rh_tool_categories.json'),

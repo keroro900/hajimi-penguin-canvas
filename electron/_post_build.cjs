@@ -254,6 +254,8 @@ function main() {
   checkFile(path.join(RES, 'backend-enc', 'routes', 'aiWatermark.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'routes', 'cloudUploads.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'routes', 'parseHub.t8c'));
+  checkFile(path.join(RES, 'backend-enc', 'routes', 'achievements.t8c'));
+  checkFile(path.join(RES, 'backend-enc', 'achievements', 'store.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'cloudUploads', 'settings.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'cloudUploads', 'uploader.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'providers', 'registry.t8c'));
@@ -273,6 +275,7 @@ function main() {
   console.log('\n[2] 前端 dist:');
   checkFile(path.join(RES, 'frontend', 'index.html'));
   checkFile(path.join(RES, 'frontend', 'assets'));
+  checkFile(path.join(RES, 'shared', 'achievementManifest.json'));
   checkFrontendAsset('classic-one-summer-day-', '.mp3');
   checkFrontendAsset('pixel-theme-of-sss-', '.mp3');
   checkFrontendAsset('op-battle-scars-', '.mp3');

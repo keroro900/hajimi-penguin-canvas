@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { useUpdateNodeData } from './useUpdateNodeData';
 import { useThemeStore } from '../../stores/theme';
+import { trackAchievementEvent } from '../../stores/achievements';
 import { useHiddenFeatureStore, isRhDuckUploadEnabled } from '../../stores/hiddenFeatures';
 import { PORT_COLOR } from '../../config/portTypes';
 import { useRunTrigger } from '../../hooks/useRunTrigger';
@@ -258,6 +259,9 @@ const UploadNode = ({ id, data, selected }: NodeProps) => {
     } as Edge));
     rf.addNodes(newNodes);
     rf.setEdges((eds) => [...eds, ...newEdges]);
+    if (outputFromRhDuckDecode) {
+      trackAchievementEvent({ type: 'hidden_mode.used', theme: 'rh', kind: 'rh-duck', nodeType: 'upload' });
+    }
   };
 
   // 接入运行总线, 供 NodeActionBar / 批量运行 调起

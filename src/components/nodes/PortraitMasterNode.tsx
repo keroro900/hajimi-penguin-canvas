@@ -69,6 +69,7 @@ import {
 } from '../../data/portraitMasterAdvancedOptions';
 import { useRunTrigger } from '../../hooks/useRunTrigger';
 import { useThemeStore } from '../../stores/theme';
+import { trackAchievementEvent } from '../../stores/achievements';
 import { useHiddenFeatureStore, isYyhPortraitEnabled } from '../../stores/hiddenFeatures';
 import { resolveThemeTemplate } from '../../theme/defaultTemplates';
 import { materialSetItemFromText, materialSetItemsToData } from '../../utils/materialSet';
@@ -1381,6 +1382,9 @@ const PortraitMasterNode = ({ id, data, selected }: NodeProps) => {
       },
       status: 'success',
     });
+    if (yyhHiddenMode) {
+      trackAchievementEvent({ type: 'hidden_mode.used', theme: 'yyh', kind: 'yyh-portrait', nodeType: 'portrait-master' });
+    }
 
     const nodes = rf.getNodes();
     const edges = rf.getEdges();

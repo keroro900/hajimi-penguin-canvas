@@ -23,11 +23,16 @@ test('shared prompt editor components expose modal and textarea affordances', ()
   assert.match(modal, /Ctrl\+Enter 完成/);
   assert.match(modal, /Esc 取消/);
   assert.match(modal, /readOnly \? '当前字段为只读，可查看或复制。'/);
+  assert.match(modal, /editorKind\?:\s*PromptExpandEditorKind/);
+  assert.match(modal, /格式化 JSON/);
+  assert.match(modal, /校验 JSON/);
+  assert.match(modal, /整理列表/);
 
   assert.match(textarea, /PromptExpandModal/);
   assert.match(textarea, /data-prompt-expand-trigger/);
   assert.match(textarea, /matchesAnyShortcut\(expandCombos,\s*event\.nativeEvent\)/);
   assert.match(textarea, /shortcuts\['editor\.expand-prompt'\]/);
+  assert.match(textarea, /editorKind=\{editorKind\}/);
 });
 
 test('mention prompt input keeps media mentions in expanded editor', () => {
@@ -89,4 +94,28 @@ test('dynamic RH and ComfyUI text parameters use expanded prompt editing', () =>
   assert.match(comfyStore, /import PromptTextarea from '\.\.\/PromptTextarea'/);
   assert.match(comfyStore, /title=\{`ComfyUI 参数 · \$\{param\.label\}`\}/);
   assert.match(comfyStore, /onValueChange=\{\(value\) => setParam\(param\.key,\s*value\)\}/);
+});
+
+test('configuration JSON and list editors reuse expanded prompt editing', () => {
+  const apiSettings = read('../src/components/ApiSettings.tsx');
+  const comfyMaker = read('../src/components/nodes/ComfyUIAppMakerNode.tsx');
+  const rhMaker = read('../src/components/nodes/RHToolboxMakerNode.tsx');
+  const rhEditor = read('../src/components/nodes/RHToolEditorModal.tsx');
+
+  assert.match(apiSettings, /import PromptTextarea from '\.\/PromptTextarea'/);
+  assert.match(apiSettings, /title="ComfyUI Workflow JSON"/);
+  assert.match(apiSettings, /title="ComfyUI fields JSON"/);
+  assert.match(apiSettings, /editorKind="json"/);
+  assert.match(apiSettings, /editorKind="lines"/);
+  assert.match(apiSettings, /title=\{`\$\{provider\.label \|\| protocolLabel\} 图像模型`\}/);
+
+  assert.match(comfyMaker, /import PromptTextarea from '\.\.\/PromptTextarea'/);
+  assert.match(comfyMaker, /title="ComfyUI Workflow JSON"/);
+  assert.match(comfyMaker, /title="ComfyUI 自动映射排除规则"/);
+
+  assert.match(rhMaker, /title="RH 工具能力标签"/);
+  assert.match(rhMaker, /title="RH 工具 manifest JSON"/);
+  assert.match(rhMaker, /readOnly/);
+
+  assert.match(rhEditor, /title="RH 超市应用简介"/);
 });

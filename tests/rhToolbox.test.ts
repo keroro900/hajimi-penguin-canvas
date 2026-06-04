@@ -27,6 +27,7 @@ test('RH toolbox node is registered as a visible executable RH node', () => {
 test('RH toolbox manifest keeps draft tools disabled until webappId is supplied', async () => {
   const { RH_TOOLBOX_MANIFEST } = await loadRhToolboxManifest();
   const {
+    buildRhToolboxQuickActions,
     filterRhToolboxTools,
     listRhToolboxTools,
     normalizeRhToolboxManifest,
@@ -41,6 +42,14 @@ test('RH toolbox manifest keeps draft tools disabled until webappId is supplied'
   assert.deepEqual(
     filterRhToolboxTools(manifest, { capability: 'image.cutout', includeDisabled: true }).map((tool) => tool.id),
     ['image-cutout-template'],
+  );
+  assert.deepEqual(
+    buildRhToolboxQuickActions(manifest, 'image', { includeDisabled: true }).map((action) => [action.toolId, action.label, action.enabled]),
+    [['image-cutout-template', '抠图', false]],
+  );
+  assert.deepEqual(
+    buildRhToolboxQuickActions(manifest, 'video', { includeDisabled: true }).map((action) => action.toolId),
+    ['video-upscale-template'],
   );
 });
 
@@ -117,6 +126,8 @@ test('RH toolbox service exposes a single callable runner for future quick actio
   assert.match(service, /submitRh/);
   assert.match(service, /queryRh/);
   assert.match(component, /runRhToolboxTool/);
+  assert.match(component, /buildRhToolboxQuickActions/);
+  assert.match(component, /快捷接入位/);
   assert.match(component, /MaterialPreviewSection/);
 });
 

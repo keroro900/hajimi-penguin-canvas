@@ -26,6 +26,7 @@ import * as LucideIcons from 'lucide-react';
 import { useCanvasStore } from '../stores/canvas';
 import { useThemeStore } from '../stores/theme';
 import { useShortcutStore } from '../stores/shortcuts';
+import { trackAchievementEvent } from '../stores/achievements';
 import { getTemplateMode, resolveThemeTemplate } from '../theme/defaultTemplates';
 import { useRunBusStore } from '../stores/runBus';
 import { useGroupBusStore, GROUP_COLORS, DEFAULT_GROUP_NAME } from '../stores/groupBus';
@@ -1221,6 +1222,8 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
   const [viewportMoving, setViewportMoving] = useState(false);
   const [nodeDragging, setNodeDragging] = useState(false);
   const [dragSaveTick, setDragSaveTick] = useState(0);
+  const lastDone = useRunBusStore((s) => s.lastDone);
+  const lastAchievementDoneTsRef = useRef(0);
 
   // 选中节点 / 剪贴板
   const [selectedCount, setSelectedCount] = useState(0);
@@ -1307,6 +1310,19 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
   useEffect(() => {
     edgesRef.current = edges;
   }, [edges]);
+
+  useEffect(() => {
+    if (!lastDone?.ok || !lastDone.ts || lastAchievementDoneTsRef.current === lastDone.ts) return;
+    lastAchievementDoneTsRef.current = lastDone.ts;
+    const node = nodesRef.current.find((item) => item.id === lastDone.id);
+    const nodeType = String(node?.type || 'unknown');
+    trackAchievementEvent({ type: 'node.run_success', theme: visualStyle, nodeType });
+    if (nodeType === 'panorama-3d') {
+      trackAchievementEvent({ type: 'panorama.generated', theme: visualStyle, nodeType });
+    } else if (nodeType === 'aggregate-parser') {
+      trackAchievementEvent({ type: 'parsehub.resolved', theme: visualStyle, nodeType });
+    }
+  }, [lastDone, visualStyle]);
 
   const assignActiveNodeSerials = useCallback((incomingNodes: Node[], existingNodes?: Node[]) => {
     const result = assignFreshNodeSerials(incomingNodes, existingNodes || nodesRef.current, nextNodeSerialIdRef.current);
@@ -1633,8 +1649,9 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         data: { ...(INITIAL_DATA[type] || {}), ...(options?.data || {}) },
       };
       setNodes((prev) => [...prev, ...assignActiveNodeSerials([newNode], prev)]);
+      trackAchievementEvent({ type: 'node.created', theme: visualStyle, nodeType: type });
     },
-    [screenToFlowPosition, nodes, getViewport, setCenter, assignActiveNodeSerials]
+    [screenToFlowPosition, nodes, getViewport, setCenter, assignActiveNodeSerials, visualStyle]
   );
 
   const createUploadNodesFromFiles = useCallback(
@@ -2204,6 +2221,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         if (!result.success) throw new Error(result.error || '保存工作流失败');
         window.dispatchEvent(new CustomEvent('penguin:resources-changed'));
         const duplicate = Boolean((result as any).duplicate || (result.data as any)?.duplicate);
+        if (!duplicate) trackAchievementEvent({ type: 'workflow.saved', kind: 'workflow', category: 'workflow' });
         logBus.success(duplicate ? `资源库已有相同工作流：${manifest.title}` : `已保存工作流：${manifest.title}`, '资源库');
         return true;
       } catch (e: any) {
@@ -2240,7 +2258,11 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
           sourceNodeId: items[0].sourceNodeId,
           sourceCanvasId: items[0].sourceCanvasId || activeId || undefined,
         });
-        if (result.success) saved += 1;
+        if (result.success) {
+          saved += 1;
+          const duplicate = Boolean((result as any).duplicate || (result.data as any)?.duplicate);
+          if (!duplicate) trackAchievementEvent({ type: 'resource.saved', kind, category: 'send-material' });
+        }
         else failures.push(result.error || `${PORT_LABEL[kind]}入库失败`);
         continue;
       }
@@ -2252,7 +2274,11 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         sourceNodeId: items[0]?.sourceNodeId,
         sourceCanvasId: items[0]?.sourceCanvasId || activeId || undefined,
       });
-      if (result.success) saved += 1;
+      if (result.success) {
+        saved += 1;
+        const duplicate = Boolean((result as any).duplicate || (result.data as any)?.duplicate);
+        if (!duplicate) trackAchievementEvent({ type: 'resource.saved', kind: `${kind}-set`, category: 'send-material-set' });
+      }
       else failures.push(result.error || `${PORT_LABEL[kind]}素材集入库失败`);
     }
     window.dispatchEvent(new CustomEvent('penguin:resources-changed'));

@@ -24,6 +24,7 @@ import { queryImageStatus, submitImageAsync } from '../../services/generation';
 import * as api from '../../services/api';
 import { logBus } from '../../stores/logs';
 import { taskCompletionSound } from '../../stores/taskCompletionSound';
+import { trackAchievementEvent } from '../../stores/achievements';
 import {
   PANORAMA_FIXED_PROMPT,
   PANORAMA_PROMPT_TEMPLATES,
@@ -32,6 +33,7 @@ import {
   buildPanoramaImageRequest,
   buildPanoramaPromptFinal,
   clampPanoramaNumber,
+  estimatePanoramaImageQuality,
   isLikelyPanoramaImage,
   panoramaRenderSize,
   prependPanoramaHistory,
@@ -43,6 +45,7 @@ import {
   type PanoramaGenerationHistoryItem,
   type PanoramaGenerationMode,
   type PanoramaPanelMode,
+  type PanoramaImageQuality,
   type PanoramaRatioId,
   type PanoramaSizeLevel,
 } from '../../utils/panorama3d';
@@ -192,6 +195,7 @@ const Panorama3DNode = (p: NodeProps) => {
   const [isDragging, setIsDragging] = useState(false);
   const [copyState, setCopyState] = useState('');
   const [resourceState, setResourceState] = useState('');
+  const [quality, setQuality] = useState<PanoramaImageQuality | null>(null);
 
   const drawFrame = useCallback(() => {
     const canvas = canvasRef.current;
@@ -296,6 +300,7 @@ const Panorama3DNode = (p: NodeProps) => {
       disposeTexture();
       setTextureStatus('idle');
       setError('');
+      setQuality(null);
       return;
     }
     const token = ++runtimeRef.current.loadToken;
@@ -317,11 +322,13 @@ const Panorama3DNode = (p: NodeProps) => {
             return;
           }
           setTextureStatus('ready');
+          setQuality(estimatePanoramaImageQuality(img));
           drawFrame();
         };
         img.onerror = () => {
           if (cancelled || token !== runtimeRef.current.loadToken) return;
           setTextureStatus('error');
+          setQuality(null);
           setError('图片无法作为 3D 全景加载');
         };
         img.src = sourceUrl;
@@ -329,6 +336,7 @@ const Panorama3DNode = (p: NodeProps) => {
       } catch (e: any) {
         if (cancelled || token !== runtimeRef.current.loadToken) return;
         setTextureStatus('error');
+        setQuality(null);
         setError(e?.message || 'Three.js 初始化失败');
       }
     })();
@@ -638,6 +646,7 @@ const Panorama3DNode = (p: NodeProps) => {
         throw new Error('后端未按全景类型保存，请重启开发后端后再试。');
       }
       window.dispatchEvent(new CustomEvent('penguin:resources-changed'));
+      if (!saved.data.duplicate) trackAchievementEvent({ type: 'resource.saved', kind: 'panorama', category: category.id });
       setResourceState(saved.data.duplicate ? '已在资源库' : '已保存');
       window.setTimeout(() => setResourceState(''), 1800);
     } catch (e: any) {
@@ -681,6 +690,11 @@ const Panorama3DNode = (p: NodeProps) => {
   const hasConnectedReference = Boolean(connectedSource?.url);
   const hasLocalReference = Boolean(localReferenceUrl);
   const activeReferenceUrl = imageReferenceUrl;
+  const qualityClass = quality?.level === 'warning'
+    ? 'border-amber-400/35 bg-amber-400/10 text-amber-100'
+    : quality?.level === 'unknown'
+    ? 'border-slate-400/25 bg-slate-400/10 text-[var(--t8-text-muted)]'
+    : 'border-emerald-400/25 bg-emerald-400/10 text-emerald-100';
 
   return (
     <div className="t8-node relative transition-all" style={nodeStyle}>
@@ -962,6 +976,16 @@ const Panorama3DNode = (p: NodeProps) => {
             <div className="rounded-md bg-[var(--t8-bg-panel-muted)] px-2 py-1">Pitch {Math.round(pitch)}°</div>
             <div className="rounded-md bg-[var(--t8-bg-panel-muted)] px-2 py-1">{renderSize.width}×{renderSize.height}</div>
           </div>
+
+          {textureStatus === 'ready' && quality && (
+            <div className={`rounded-md border px-2 py-1.5 text-[10px] leading-relaxed ${qualityClass}`} title={quality.hint}>
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-bold">{quality.seamLabel}</span>
+                <span>{quality.seamScore == null ? '像素不可读' : `${quality.seamScore}/100`} · {quality.aspectLabel}</span>
+              </div>
+              <div className="mt-0.5 opacity-80">{quality.hint}</div>
+            </div>
+          )}
 
           {outputUrl && !hasAutoOutput && (
             <div className="rounded-lg border border-[var(--t8-border)] bg-[var(--t8-bg-panel-muted)] p-2">

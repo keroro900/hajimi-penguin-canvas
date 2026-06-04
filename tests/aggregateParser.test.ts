@@ -57,6 +57,10 @@ test('aggregate parser frontend enforces compliance and friendly controls', () =
   assert.match(source, /desktopAuthAvailable/);
   assert.match(source, /浏览器手动模式/);
   assert.match(source, /桌面自动模式/);
+  assert.match(source, /authSteps/);
+  assert.match(source, /登录完成后回到本节点点击/);
+  assert.match(source, /不需要手动复制 Cookie/);
+  assert.match(source, /现在可以直接解析，也可以点击“保存授权”/);
   assert.match(source, /127\.0\.0\.1 页面不能跨站读取/);
   assert.match(source, /要自动获取，请使用 Electron 桌面端/);
   assert.match(source, /打开平台官网/);

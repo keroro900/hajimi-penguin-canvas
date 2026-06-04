@@ -5,6 +5,7 @@ import {
   PANORAMA_FIXED_PROMPT,
   buildPanoramaImageRequest,
   buildPanoramaPromptFinal,
+  classifyPanoramaSeamScore,
   isLikelyPanoramaImage,
   panoramaRenderSize,
   prependPanoramaHistory,
@@ -51,11 +52,25 @@ test('panorama 3d node exposes built-in generation and resource actions', () => 
   assert.match(source, /addResourceItem/);
   assert.match(source, /getResourceCategories\('panorama'\)/);
   assert.match(source, /kind:\s*'panorama'/);
+  assert.match(source, /estimatePanoramaImageQuality/);
+  assert.match(source, /quality\.seamLabel/);
+  assert.match(source, /quality\.seamScore/);
   assert.match(source, /'3D全景'/);
   assert.match(source, /generatedSourceUrl \|\| connectedSourceUrl \? 'preview' : 'text'/);
   assert.match(canvas, /'panorama-3d':\s*\{[\s\S]*panoramaRatio:\s*'ultrawide'/);
   assert.match(canvas, /'panorama-3d':\s*\{[\s\S]*panoramaGenerationMode:\s*'text'/);
   assert.match(canvas, /'panorama-3d':\s*\{[\s\S]*panoramaSizeLevel:\s*'1K'/);
+});
+
+test('panorama seam score classification gives actionable labels', () => {
+  assert.deepEqual(classifyPanoramaSeamScore(96), {
+    level: 'excellent',
+    seamLabel: '接缝优秀',
+    hint: '左右边缘像素差异很小，适合继续预览或入库。',
+  });
+  assert.equal(classifyPanoramaSeamScore(80).level, 'good');
+  assert.equal(classifyPanoramaSeamScore(40).level, 'warning');
+  assert.equal(classifyPanoramaSeamScore(null).level, 'unknown');
 });
 
 test('resolvePanoramaRatio returns presets and sanitized custom ratios', () => {

@@ -19,9 +19,12 @@ import { logBus } from '../../stores/logs';
 import {
   RH_TOOLBOX_ALL_CATEGORY_ID,
   RH_TOOLBOX_CAPABILITY_LABELS,
+  RH_TOOLBOX_QUICK_SURFACE_LABELS,
+  buildRhToolboxQuickActions,
   filterRhToolboxTools,
   listRhToolboxTools,
   normalizeRhToolboxManifest,
+  type RhToolboxQuickSurface,
   type RhToolboxTool,
   type RhToolboxUserParam,
 } from '../../utils/rhToolbox';
@@ -54,6 +57,8 @@ const STATUS_LABEL: Record<string, string> = {
   success: '已完成',
   error: '失败',
 };
+
+const QUICK_SURFACES: RhToolboxQuickSurface[] = ['image', 'video', 'text', 'audio'];
 
 function capabilityLabel(capability: string): string {
   return RH_TOOLBOX_CAPABILITY_LABELS[capability] || capability;
@@ -168,6 +173,14 @@ const RHToolboxNode = ({ id, data, selected }: NodeProps) => {
     for (const tool of enabledTools) counts.set(tool.categoryId, (counts.get(tool.categoryId) || 0) + 1);
     return counts;
   }, [enabledTools]);
+  const quickActionGroups = useMemo(
+    () =>
+      QUICK_SURFACES.map((surface) => ({
+        surface,
+        actions: buildRhToolboxQuickActions(manifest, surface, { includeDisabled: true }).slice(0, 4),
+      })).filter((group) => group.actions.length > 0),
+    [manifest],
+  );
 
   const accent = activeTool?.ui?.accent || (isPixel ? 'var(--px-ink)' : isLight ? '#0891b2' : '#67e8f9');
   const bg = isPixel ? 'var(--px-surface)' : isLight ? '#ffffff' : 'rgba(18, 24, 27, 0.96)';
@@ -218,6 +231,18 @@ const RHToolboxNode = ({ id, data, selected }: NodeProps) => {
       audioUrls: [],
       outputText: '',
       error: '',
+    });
+  };
+
+  const openQuickAction = (toolId: string) => {
+    const tool = enabledTools.find((item) => item.id === toolId);
+    if (tool) {
+      setActiveTool(tool);
+      return;
+    }
+    update({
+      rhToolboxSearchQuery: toolId,
+      rhToolboxCategoryId: RH_TOOLBOX_ALL_CATEGORY_ID,
     });
   };
 
@@ -391,6 +416,42 @@ const RHToolboxNode = ({ id, data, selected }: NodeProps) => {
             );
           })}
         </div>
+        {quickActionGroups.length > 0 && (
+          <div className="rounded-lg p-2 space-y-1.5" style={{ background: surface, border: `1px solid ${border}` }}>
+            <div className="flex items-center gap-1 text-[10px] font-bold" style={{ color: text }}>
+              <Sparkles size={11} style={{ color: accent }} />
+              快捷接入位
+            </div>
+            <div className="space-y-1">
+              {quickActionGroups.map((group) => (
+                <div key={group.surface} className="flex items-center gap-1">
+                  <span className="w-8 shrink-0 text-[10px]" style={{ color: subText }}>
+                    {RH_TOOLBOX_QUICK_SURFACE_LABELS[group.surface]}
+                  </span>
+                  <div className="flex min-w-0 flex-1 gap-1 overflow-hidden">
+                    {group.actions.map((action) => (
+                      <button
+                        key={`${group.surface}-${action.toolId}`}
+                        type="button"
+                        onClick={() => openQuickAction(action.toolId)}
+                        title={action.enabled ? action.title : `${action.title} · ${action.reason || '待配置'}`}
+                        className="nodrag shrink-0 rounded-full px-2 py-0.5 text-[10px]"
+                        style={{
+                          background: action.enabled ? (action.accent || accent) : bg,
+                          color: action.enabled ? (isPixel ? 'var(--px-surface)' : '#001018') : subText,
+                          border: `1px solid ${action.enabled ? (action.accent || accent) : border}`,
+                          opacity: action.enabled ? 1 : 0.72,
+                        }}
+                      >
+                        {action.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto px-3 py-2 nodrag nowheel" onMouseDown={(e) => e.stopPropagation()}>
