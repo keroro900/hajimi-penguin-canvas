@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 
 function read(path: string) {
   return readFileSync(new URL(path, import.meta.url), 'utf8');
@@ -31,11 +31,20 @@ test('local canvas image previews use cached backend thumbnails', () => {
 });
 
 test('initial canvas boot keeps heavy nodes behind lazy boundaries', () => {
+  const index = read('../index.html');
   const app = read('../src/App.tsx');
   const canvas = read('../src/components/Canvas.tsx');
 
+  assert.ok(existsSync(new URL('../public/infinite-canvas-loading.png', import.meta.url)));
+  assert.match(index, /<div class="t8-boot-screen"/);
+  assert.match(index, /src="\/infinite-canvas-loading\.png"/);
+  assert.match(index, /t8-boot-progress-fill/);
+  assert.match(index, /t8-boot-progress-spark/);
+  assert.match(index, /prefers-reduced-motion/);
   assert.match(app, /const Canvas = lazy\(\(\) => import\('\.\/components\/Canvas'\)\)/);
-  assert.match(app, /CanvasBootFallback/);
+  assert.match(app, /function InfiniteCanvasBootLoading/);
+  assert.match(app, /src="\/infinite-canvas-loading\.png"/);
+  assert.match(app, /<Suspense fallback=\{<InfiniteCanvasBootLoading \/>}/);
   assert.match(canvas, /function lazyCanvasNode/);
   assert.match(canvas, /const Panorama3DNode = lazyCanvasNode\(\(\) => import\('\.\/nodes\/Panorama3DNode'\)/);
   assert.match(canvas, /const ImageNode = lazyCanvasNode\(\(\) => import\('\.\/nodes\/ImageNode'\)/);

@@ -44,7 +44,14 @@ const DEFAULT_OPTIONS: AiWatermarkOptions = {
   device: 'auto',
   steps: 50,
   humanize: 0,
+  unsharp: 0,
   maxResolution: 0,
+  minResolution: 1024,
+  controlnetScale: 1,
+  auto: false,
+  adaptivePolish: false,
+  restoreFaces: false,
+  restoreFacesWeight: 0.5,
   protectText: false,
   protectFaces: false,
   keepStandardMetadata: true,
@@ -53,6 +60,10 @@ const DEFAULT_OPTIONS: AiWatermarkOptions = {
 
 function normalizeMode(value: any): AiWatermarkMode {
   return MODE_OPTIONS.some((item) => item.value === value) ? value : 'smart';
+}
+
+function normalizePipeline(value: any): 'default' | 'controlnet' {
+  return value === 'controlnet' || value === 'ctrlregen' ? 'controlnet' : 'default';
 }
 
 function formatMediaSummary(items: MediaItem[]) {
@@ -189,7 +200,12 @@ function RemoveAiWatermarkNode({ id, data, selected }: { id: string; data: any; 
         if (!cancelled) setStatus(next);
       })
       .catch((error) => {
-        if (!cancelled) setStatus({ installed: false, markKeys: ['gemini', 'doubao', 'jimeng'], optionalFeatures: { invisible: false, lama: false, detect: false, trustmark: false }, setupHints: [error?.message || '状态检查失败'] });
+        if (!cancelled) setStatus({
+          installed: false,
+          markKeys: ['gemini', 'doubao', 'jimeng'],
+          optionalFeatures: { invisible: false, lama: false, detect: false, trustmark: false, restore: false, auto: false, controlnet: false, adaptivePolish: false },
+          setupHints: [error?.message || '状态检查失败'],
+        });
       })
       .finally(() => {
         if (!cancelled) setStatusLoading(false);
@@ -305,6 +321,10 @@ function RemoveAiWatermarkNode({ id, data, selected }: { id: string; data: any; 
   const marks = ['auto', ...((status?.markKeys || ['gemini', 'doubao', 'jimeng']).filter((item) => item !== 'auto'))];
   const canUseInvisible = status?.optionalFeatures?.invisible;
   const canUseLama = status?.optionalFeatures?.lama;
+  const canUseAutoTune = status?.optionalFeatures?.auto !== false;
+  const canUseControlnet = status?.optionalFeatures?.controlnet !== false;
+  const canUseRestore = status?.optionalFeatures?.restore === true;
+  const pipeline = normalizePipeline(options.pipeline);
   const error = localError || d.error || '';
 
   return (
@@ -469,10 +489,11 @@ function RemoveAiWatermarkNode({ id, data, selected }: { id: string; data: any; 
               </div>
               <div>
                 <FieldLabel>管线</FieldLabel>
-                <select className="t8-select w-full px-2 py-1 text-xs" value={options.pipeline || 'default'} onChange={(e) => patchOptions({ pipeline: e.target.value as any })}>
+                <select className="t8-select w-full px-2 py-1 text-xs" value={pipeline} onChange={(e) => patchOptions({ pipeline: e.target.value as any })}>
                   <option value="default">default</option>
-                  <option value="ctrlregen">ctrlregen</option>
+                  <option value="controlnet" disabled={!canUseControlnet}>controlnet{canUseControlnet ? '' : ' (需 0.8.9)'}</option>
                 </select>
+                <SmallHint>ControlNet 保留文字 / 人脸结构，替代旧保护开关。</SmallHint>
               </div>
               <div>
                 <FieldLabel>步数</FieldLabel>
@@ -481,7 +502,7 @@ function RemoveAiWatermarkNode({ id, data, selected }: { id: string; data: any; 
               <div>
                 <FieldLabel>强度</FieldLabel>
                 <NumberInput value={options.strength === undefined ? '' : Number(options.strength)} min={0} max={1} step={0.05} onChange={(value) => patchOptions({ strength: value === '' ? undefined : value })} />
-                <SmallHint>留空使用 0.8.7 的来源自适应强度；有残留再手动调高。</SmallHint>
+                <SmallHint>留空使用 0.8.9 的 OpenAI / Google / 未知来源自适应强度。</SmallHint>
               </div>
               <div>
                 <FieldLabel>长边上限</FieldLabel>
@@ -489,12 +510,34 @@ function RemoveAiWatermarkNode({ id, data, selected }: { id: string; data: any; 
                 <SmallHint>0 为原图；非 0 会按至少 256px 处理。</SmallHint>
               </div>
               <div>
+                <FieldLabel>长边下限</FieldLabel>
+                <NumberInput value={Number(options.minResolution ?? 1024)} min={0} max={8192} step={64} onChange={(value) => patchOptions({ minResolution: value === '' ? 1024 : value })} />
+                <SmallHint>小图默认升到 1024 再扩散，0 关闭。</SmallHint>
+              </div>
+              <div>
                 <FieldLabel>胶片颗粒</FieldLabel>
                 <NumberInput value={Number(options.humanize ?? 0)} min={0} max={20} step={0.5} onChange={(value) => patchOptions({ humanize: value === '' ? 0 : value })} />
               </div>
-              <ToggleRow label="保护文字（实验）" checked={options.protectText === true} onChange={(value) => patchOptions({ protectText: value })} />
-              <ToggleRow label="保护人脸（实验）" checked={options.protectFaces === true} onChange={(value) => patchOptions({ protectFaces: value })} />
-              <SmallHint>0.8.7 起两项默认关闭；开启后更保真，但可能让 SynthID 残留。</SmallHint>
+              <div>
+                <FieldLabel>锐化</FieldLabel>
+                <NumberInput value={Number(options.unsharp ?? 0)} min={0} max={3} step={0.1} onChange={(value) => patchOptions({ unsharp: value === '' ? 0 : value })} />
+              </div>
+              <div>
+                <FieldLabel>结构强度</FieldLabel>
+                <NumberInput value={Number(options.controlnetScale ?? 1)} min={0} max={3} step={0.1} onChange={(value) => patchOptions({ controlnetScale: value === '' ? 1 : value })} />
+              </div>
+              <div>
+                <FieldLabel>脸部权重</FieldLabel>
+                <NumberInput value={Number(options.restoreFacesWeight ?? 0.5)} min={0} max={1} step={0.05} onChange={(value) => patchOptions({ restoreFacesWeight: value === '' ? 0.5 : value })} />
+              </div>
+              <ToggleRow label="自动策略 (0.8.9)" checked={options.auto === true || options.autoTune === true} onChange={(value) => patchOptions({ auto: value })} />
+              <ToggleRow label="自适应细节抛光" checked={options.adaptivePolish === true} onChange={(value) => patchOptions({ adaptivePolish: value })} />
+              <ToggleRow label={`GFPGAN 脸部恢复${canUseRestore ? '' : '（未装 restore）'}`} checked={options.restoreFaces === true} onChange={(value) => patchOptions({ restoreFaces: value })} />
+              {canUseAutoTune ? (
+                <SmallHint>自动策略会由上游按图像内容选择管线、脸部恢复和细节抛光；手动选 controlnet 会覆盖自动管线。</SmallHint>
+              ) : (
+                <SmallHint>当前 runtime 不是 0.8.9，新参数会自动降级为旧版可识别参数。</SmallHint>
+              )}
             </div>
           </div>
         )}

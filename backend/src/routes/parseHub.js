@@ -18,7 +18,7 @@ const router = express.Router();
 
 function normalizeMode(value) {
   const text = String(value || '').trim().toLowerCase();
-  return text === 'download' ? 'download' : 'parse';
+  return text === 'parse' ? 'parse' : 'download';
 }
 
 router.get('/status', async (_req, res) => {

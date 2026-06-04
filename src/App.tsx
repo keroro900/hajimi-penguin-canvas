@@ -95,16 +95,17 @@ async function workflowResourceToFragment(item: ResourceItem) {
   return workflowManifestToFragment(await res.json());
 }
 
-function CanvasBootFallback({ isPixel, isDark }: { isPixel: boolean; isDark: boolean }) {
+function InfiniteCanvasBootLoading() {
   return (
-    <div
-      className={`flex-1 min-w-0 flex items-center justify-center ${
-        isPixel ? 'px-panel' : isDark ? 'bg-zinc-950 text-zinc-400' : 'bg-zinc-50 text-zinc-500'
-      }`}
-      style={{ background: 'var(--t8-bg-app)', color: 'var(--t8-text-muted)' }}
-    >
-      <div className={isPixel ? 'px-panel px-panel--small px-title text-xs' : 'text-xs font-medium'}>
-        正在加载画布...
+    <div className="t8-boot-screen" role="status" aria-label="正在打开画布工作台">
+      <img className="t8-boot-art" src="/infinite-canvas-loading.png" alt="" aria-hidden="true" />
+      <div className="t8-boot-progress-shell" aria-hidden="true">
+        <span className="t8-boot-progress-label">正在启动...</span>
+        <div className="t8-boot-progress-track">
+          <span className="t8-boot-progress-fill" />
+          <span className="t8-boot-progress-spark" />
+        </div>
+        <span className="t8-boot-progress-percent">Loading</span>
       </div>
     </div>
   );
@@ -1278,7 +1279,7 @@ function App() {
       <div className="flex-1 flex overflow-hidden">
         <Sidebar onAddNode={handleAddNode} />
         <ErrorBoundary fallbackTitle="画布渲染出错了，已被错误边界捕获">
-          <Suspense fallback={<CanvasBootFallback isPixel={isPixel} isDark={isDark} />}>
+          <Suspense fallback={<InfiniteCanvasBootLoading />}>
             <Canvas onAddNodeRef={addNodeRef} onInsertWorkflowRef={insertWorkflowRef} />
           </Suspense>
         </ErrorBoundary>

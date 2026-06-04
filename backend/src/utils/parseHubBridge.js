@@ -423,10 +423,18 @@ function buildSummaryText(result) {
   if (result.content) lines.push(`正文：${result.content}`);
   if (result.media.length > 0) {
     lines.push('');
-    lines.push('解析到的无水印/原始媒体地址：');
+    if (result.mode === 'download') {
+      lines.push('已保存到本地输出目录的媒体地址：');
+    } else {
+      lines.push('解析到的远端媒体地址：');
+    }
     result.media.forEach((item, index) => {
       lines.push(`${index + 1}. [${item.kind}] ${item.url}`);
     });
+    if (result.mode !== 'download') {
+      lines.push('');
+      lines.push('提示：平台 CDN 地址可能带防盗链、Cookie 或临时签名，浏览器直接打开出现 403 不一定代表解析错误；需要稳定预览和下游复用时，请使用保存到输出目录模式。');
+    }
   }
   lines.push('');
   lines.push('合规提醒：仅用于本人拥有版权、已获授权或平台允许保存的内容。');

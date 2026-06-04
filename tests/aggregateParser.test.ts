@@ -4,6 +4,8 @@ import { createRequire } from 'node:module';
 import { readFileSync } from 'node:fs';
 
 const require = createRequire(import.meta.url);
+const path = require('node:path');
+const config = require('../backend/src/config.js');
 const parseHubBridge = require('../backend/src/utils/parseHubBridge.js');
 
 function read(rel: string) {
@@ -24,6 +26,8 @@ test('aggregate parser node is registered in toolbox with media ports', () => {
   assert.match(types, /\|\s*'aggregate-parser'/);
   assert.match(canvas, /const AggregateParserNode = lazyCanvasNode\(\(\) => import\('\.\/nodes\/AggregateParserNode'\)/);
   assert.match(canvas, /'aggregate-parser':\s*AggregateParserNode/);
+  assert.match(canvas, /'aggregate-parser':\s*\{[\s\S]*aggregateParserMode:\s*'download'/);
+  assert.match(canvas, /'aggregate-parser':\s*\{[\s\S]*aggregateParserModeUserSet:\s*false/);
   assert.match(canvas, /'aggregate-parser':\s*\{[\s\S]*aggregateParserAcceptedCompliance:\s*false/);
   assert.match(canvas, /'cinematic',\s*'video-motion',\s*'multi-angle-visual',\s*'portrait-master',\s*'pose-master',\s*'aggregate-parser'/);
   assert.match(actionBar, /'portrait-master',\s*'pose-master',\s*'aggregate-parser'/);
@@ -40,7 +44,11 @@ test('aggregate parser frontend enforces compliance and friendly controls', () =
   assert.match(source, /getAggregateParserStatus/);
   assert.match(source, /resolveAggregateMedia/);
   assert.match(source, /ParseHub/);
-  assert.match(source, /解析无水印地址/);
+  assert.match(source, /解析并保存到输出目录/);
+  assert.match(source, /只解析远端地址/);
+  assert.match(source, /aggregateParserModeUserSet/);
+  assert.match(source, /远端 CDN 链接可能需要平台请求头/);
+  assert.match(source, /出现 403 不一定是解析失败/);
   assert.match(source, /代理 \/ Cookie/);
   assert.match(source, /授权助手/);
   assert.match(source, /normalizeCookieInput/);
@@ -113,6 +121,7 @@ test('aggregate parser backend is mounted and packaged', () => {
   assert.match(server, /const parseHubRouter = require\('\.\/routes\/parseHub'\)/);
   assert.match(server, /app\.use\('\/api\/parsehub', parseHubRouter\)/);
   assert.match(route, /acceptedCompliance !== true/);
+  assert.match(route, /text === 'parse' \? 'parse' : 'download'/);
   assert.match(route, /classifyParseHubError/);
   assert.match(route, /runParseHubBridge/);
   assert.match(postBuild, /routes', 'parseHub\.t8c'/);
@@ -162,8 +171,41 @@ test('normalizeParseHubResult extracts remote and live-photo media links', () =>
   assert.equal(result.platformName, '抖音');
   assert.equal(result.media.length, 4);
   assert.deepEqual(result.media.map((item: any) => item.kind), ['video', 'image', 'image', 'video']);
-  assert.match(result.outputText, /解析到的无水印\/原始媒体地址/);
+  assert.match(result.outputText, /解析到的远端媒体地址/);
+  assert.match(result.outputText, /出现 403 不一定代表解析错误/);
   assert.match(result.outputText, /合规提醒/);
+});
+
+test('normalizeParseHubResult prefers downloaded output files over remote CDN links', () => {
+  const localPath = path.join(config.OUTPUT_DIR, 'parsehub', 'demo.mp4');
+  const result = parseHubBridge.normalizeParseHubResult({
+    parsehubVersion: '2.0.24',
+    pythonVersion: '3.12.9',
+    parsed: {
+      platform: 'douyin',
+      platformName: '抖音',
+      type: 'video',
+      title: 'download demo',
+      raw_url: 'https://v.douyin.com/demo',
+      media: [
+        { kind: 'video', url: 'https://v26-web.douyinvod.com/temporary-video', ext: 'mp4' },
+      ],
+    },
+    download: {
+      output_dir: path.dirname(localPath),
+      media: [
+        { kind: 'video', path: localPath, ext: 'mp4' },
+      ],
+    },
+  });
+
+  assert.equal(result.mode, 'download');
+  assert.equal(result.media.length, 1);
+  assert.equal(result.media[0].kind, 'video');
+  assert.equal(result.media[0].source, 'download');
+  assert.equal(result.media[0].url, '/files/output/parsehub/demo.mp4');
+  assert.doesNotMatch(result.outputText, /douyinvod/);
+  assert.match(result.outputText, /已保存到本地输出目录的媒体地址/);
 });
 
 test('parsehub runtime paths include bridge and generated dependency slot', () => {

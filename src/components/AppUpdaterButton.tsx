@@ -33,8 +33,8 @@ function statusLabel(status: T8UpdaterStatus): string {
     const percent = status.progress?.percent ?? 0;
     return `${Math.max(0, Math.min(100, percent)).toFixed(0)}%`;
   }
-  if (status.status === 'downloaded') return '重启';
-  if (status.status === 'installing') return '安装中';
+  if (status.status === 'downloaded') return '安装';
+  if (status.status === 'installing') return '向导';
   if (status.status === 'not-available') return '最新';
   if (status.status === 'error') return '失败';
   if (status.status === 'disabled') return '桌面版';
@@ -43,7 +43,7 @@ function statusLabel(status: T8UpdaterStatus): string {
 
 function primaryLabel(status: T8UpdaterStatus): string {
   if (status.status === 'available') return '下载';
-  if (status.status === 'downloaded' || status.downloaded) return '重启安装';
+  if (status.status === 'downloaded' || status.downloaded) return '打开安装向导';
   if (status.status === 'checking') return '检查中';
   if (status.status === 'downloading') return '下载中';
   return '检查';

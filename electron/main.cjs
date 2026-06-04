@@ -14,7 +14,7 @@ const fs = require('fs');
 const net = require('net');
 const { spawn } = require('child_process');
 
-const APP_VERSION = '2.0.2';
+const APP_VERSION = '2.0.4';
 const UPDATE_DISABLED_MESSAGE = '开发模式不会检查 GitHub Release 更新';
 
 // 允许在 Linux/某些机型上规避 GPU 沙盒导致的启动延迟
@@ -511,7 +511,7 @@ function ensureAutoUpdater() {
     }
 
     autoUpdater.autoDownload = false;
-    autoUpdater.autoInstallOnAppQuit = true;
+    autoUpdater.autoInstallOnAppQuit = false;
     autoUpdater.allowPrerelease = false;
 
     autoUpdater.on('checking-for-update', () => {
@@ -566,7 +566,7 @@ function ensureAutoUpdater() {
       emitUpdaterStatus({
         status: 'downloaded',
         availableVersion: version || null,
-        message: '更新已下载',
+        message: '更新已下载，点击后会打开安装向导',
         progress: null,
         downloaded: true,
         error: null,
@@ -651,8 +651,10 @@ function installDownloadedUpdate() {
       status: emitUpdaterStatus({ message: '还没有已下载的更新' }),
     };
   }
-  setImmediate(() => ready.updater.quitAndInstall(true, true));
-  return { success: true, status: emitUpdaterStatus({ status: 'installing', message: '正在重启安装' }) };
+  // Keep the NSIS installer visible. Silent install made the app disappear with
+  // no obvious installer window, which is confusing for normal users.
+  setImmediate(() => ready.updater.quitAndInstall(false, true));
+  return { success: true, status: emitUpdaterStatus({ status: 'installing', message: '正在打开安装向导，请按提示完成安装' }) };
 }
 
 function startInitialUpdateCheck() {

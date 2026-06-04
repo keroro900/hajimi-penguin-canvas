@@ -28,17 +28,21 @@ test('package config enables GitHub release updates and local release scripts', 
 test('electron main process owns updater checks, downloads, and install IPC', () => {
   const pkg = JSON.parse(read('../package.json'));
   const main = read('../electron/main.cjs');
+  const installerNsh = read('../electron/build-resources/installer.nsh');
 
   assert.match(main, new RegExp(`const APP_VERSION = '${escapeRegExp(pkg.version)}'`));
   assert.match(main, /require\('electron-updater'\)/);
   assert.match(main, /autoUpdater\.autoDownload\s*=\s*false/);
-  assert.match(main, /autoUpdater\.autoInstallOnAppQuit\s*=\s*true/);
+  assert.match(main, /autoUpdater\.autoInstallOnAppQuit\s*=\s*false/);
   assert.match(main, /autoUpdater\.on\('download-progress'/);
   assert.match(main, /ipcMain\.handle\('t8pc:updater:status'/);
   assert.match(main, /ipcMain\.handle\('t8pc:updater:check'/);
   assert.match(main, /ipcMain\.handle\('t8pc:updater:download'/);
   assert.match(main, /ipcMain\.handle\('t8pc:updater:install'/);
-  assert.match(main, /quitAndInstall\(true,\s*true\)/);
+  assert.match(main, /quitAndInstall\(false,\s*true\)/);
+  assert.match(main, /打开安装向导/);
+  assert.match(installerNsh, /!macro customInit/);
+  assert.match(installerNsh, /SetSilent\s+normal/);
 });
 
 test('preload and frontend expose a narrow updater surface', () => {
@@ -55,6 +59,7 @@ test('preload and frontend expose a narrow updater surface', () => {
   assert.match(app, /<AppUpdaterButton isPixel=\{isPixel\} isDark=\{isDark\} \/>/);
   assert.match(button, /status\.status === 'available'/);
   assert.match(button, /status\.status === 'downloaded'/);
+  assert.match(button, /打开安装向导/);
 });
 
 test('release scripts verify installer, blockmap, latest.yml, and GitHub assets', () => {

@@ -1,7 +1,7 @@
 {
   "$schema": "本文件为 T8-penguin-canvas 节点清单防丢失锁,任何节点删减都需要在 roadmap.md 中说明并更新本文件。",
-  "version": "2.0.2",
-  "lastUpdated": "2026-06-04-aggregate-parser-auth-electron-release-v202",
+  "version": "2.0.4",
+  "lastUpdated": "2026-06-04-ai-watermark-089-release-v204",
   "packaging": {
     "description": "Electron NSIS 桌面端打包链路(v1.2.1 起标准化, 严禁未明确指令主动打包)。完整产物拓扑: app.asar(electron/{main,loader,preload}.cjs + node_modules) + app.asar.unpacked(node_modules/sharp + @img) + resources/backend-enc/*.t8c(extraResources, asar 外) + resources/frontend(extraResources, asar 外)。前端版本号由 vite define 注入 __APP_VERSION__、Sidebar 左下角自动同步。",
     "scripts": {
@@ -21,11 +21,12 @@
       "T8_PARSEHUB_PYTHON": "可选，覆盖聚合解析节点使用的 Python 3.12 解释器路径",
       "T8_PARSEHUB_LIB_PATHS": "可选，覆盖 ParseHub Python 依赖搜索路径；正式包默认使用 resources/tools/parsehub-pythonlibs"
     },
-    "version": "2.0.2",
-    "semverVersion": "2.0.2",
+    "version": "2.0.4",
+    "semverVersion": "2.0.4",
     "versionNumberPolicy": "T8 版本号仍采用 x.y.z 三段，但每一段只允许 0-9；任一段到 9 后下一次发布必须向左进位，禁止任一段出现两位数字。例：1.9.9 的下一版必须是 2.0.0。",
-    "versionNote": "v1.3.0 起统一采用三段阶段号 x.y.z；当前发布为 v2.0.2：在 v2.0.1 全局提示词大编辑器、3D 全景资源库与即梦 CLI 多参考修复基础上，补齐聚合解析 Cookie 授权助手的浏览器手动模式 / Electron 桌面自动模式区分，继续保留开发首屏懒加载、图片缩略图队列和画布性能规范。GitHub 公开源码仍排除本地私有计费/支付/充值实现；Electron 发布继续使用 GitHub Release latest.yml/blockmap 自动更新链路。",
-    "installer": "本次按规范打包 Electron 并发布 GitHub Release v2.0.2 自动更新资产；必须生成并上传 T8-PenguinCanvas-Setup-2.0.2.exe、.exe.blockmap 与 latest.yml，且 npm run release:verify 通过后才可宣布自动更新版本发布完成。",
+    "versionNote": "v1.3.0 起统一采用三段阶段号 x.y.z；当前源码版本为 v2.0.4：在 v2.0.3 前台安装向导、聚合解析默认保存到输出目录基础上，同步 wiltodelta/remove-ai-watermarks 0.8.9 的 ControlNet/auto/adaptive-polish/GFPGAN 参数与运行时规范，并随 Electron 包发布 GitHub Release 自动更新资产。GitHub 公开源码仍排除本地私有计费/支付/充值实现；Electron 发布继续使用 GitHub Release latest.yml/blockmap 自动更新链路。",
+    "installer": "本次按规范打包 Electron 并发布 GitHub Release v2.0.4 自动更新资产时，必须生成并上传 T8-PenguinCanvas-Setup-2.0.4.exe、.exe.blockmap 与 latest.yml，且 npm run release:verify 通过后才可宣布自动更新版本发布完成；安装阶段必须前台显示 NSIS 安装向导。",
+    "updaterInstallMode": "自动更新下载完成后不得静默安装：main.cjs 必须设置 autoInstallOnAppQuit=false，显式安装调用 quitAndInstall(false,true)；electron/build-resources/installer.nsh 通过 SetSilent normal 让新版 NSIS 安装器即使收到旧客户端传入的 /S 也尽量切回前台安装向导。",
     "publicReleasePolicy": {
       "github": "GitHub 公开源码只保留通用画布、生成节点、扩展平台、资源库、主题、ComfyUI/RH 工具箱、云端上传等能力；本地私有计费/支付/充值能力不得进入公开仓库。",
       "neverStage": [
@@ -62,7 +63,7 @@
     ]
   },
   "canvasPerformance": {
-    "version": "2.0.2",
+    "version": "2.0.4",
     "description": "大画布启动、图片预览和拖动画布性能热修与后续开发规范。",
     "imagePreviewPipeline": {
       "frontend": "高频节点预览统一使用 SmartImage + previewImageUrl，本地 /files/input 与 /files/output 图片接近视口后才请求 /api/files/thumbnail，原始素材 URL 保留在 data-full-src 与拖拽/下载/下游数据中。",
@@ -335,12 +336,12 @@
   "repository": "https://github.com/T8mars/T8-penguin-canvas",
   "aiWatermarkRuntime": {
     "upstream": "https://github.com/wiltodelta/remove-ai-watermarks",
-    "upstreamVersion": "0.8.7",
-    "upstreamCommit": "b25276c",
+    "upstreamVersion": "0.8.9",
+    "upstreamCommit": "4a6cd71",
     "upstreamLicense": "MIT",
     "nodeType": "remove-ai-watermark",
     "category": "auxiliary",
-    "fullInstall": "remove-ai-watermarks[gpu,detect,trustmark,lama]",
+    "fullInstall": "remove-ai-watermarks[gpu,detect,trustmark,lama,restore]",
     "runtimeResolutionOrder": [
       "T8_REMOVE_AI_WATERMARKS_RUNTIME sidecar root",
       "Electron resources/tools/remove-ai-watermarks",
@@ -368,8 +369,9 @@
       "不要复制上游算法源码到 T8；通过 CLI/Python 包能力探测消费上游。",
       "上游新增 mark 时优先依赖 watermark_registry.mark_keys() 动态暴露，前端只补充显示文案或兜底。",
       "上游新增 mode/options 时扩展 runner 参数映射、节点 UI 和 tests/aiWatermarkRunner.test.ts，不破坏旧画布数据字段。",
-      "0.8.7 起 invisible 的文字/人脸保护改为 opt-in：T8 只在用户开启时发送 --protect-text / --protect-faces，禁止再发送旧 --no-protect-* 参数。",
-      "0.8.7 起未填写 strength 时由上游按 C2PA/SynthID 来源自适应 OpenAI/Google/未知强度，T8 UI 默认留空，不再诱导用户固定 0.30。",
+      "0.8.9 起 invisible 的文字/人脸保真改为 --pipeline controlnet + --restore-faces；T8 UI 不再暴露旧 protectText/protectFaces 主路径，但 runner 对 0.8.7 runtime 继续版本感知兼容旧 --protect-text / --protect-faces。",
+      "0.8.9 起 T8 透出 --auto、--adaptive-polish、--min-resolution、--controlnet-scale、--unsharp 与 GFPGAN restore-faces；auto 模式下不强行发送默认 --pipeline，让上游按内容自动选择。",
+      "未填写 strength 时由上游按 C2PA/SynthID 来源自适应 OpenAI/Google/未知强度，T8 UI 默认留空，不再诱导用户固定 0.30。",
       "每次同步上游后必须重新跑 status/capability、代表性 process smoke、node --test tests/*.test.ts、npm run build 和 Electron 打包后置检查。"
     ]
   },
@@ -415,7 +417,8 @@
     },
     "complianceRule": [
       "前端节点必须保留合规确认复选框和免责提醒；后端 /api/parsehub/resolve 必须要求 acceptedCompliance=true。",
-      "默认只解析媒体地址；保存到本地输出目录必须由用户显式选择 download 模式。",
+      "聚合解析默认使用 download 模式保存到本地 output/parsehub；parse 只解析远端地址作为高级/调试模式保留。",
+      "抖音等平台返回的远端 CDN 地址可能带防盗链、Cookie 或临时签名，浏览器直接打开 403 不一定代表解析错误；面向普通用户应优先使用本地输出 URL。",
       "Cookie / 代理为可选高级项，不写入日志，不自动保存到全局设置。"
     ],
     "upstreamUpdateRule": [
@@ -1970,10 +1973,10 @@
       "items": [
         "remove-ai-watermark 节点固定桥接 wiltodelta/remove-ai-watermarks，上游算法不复制到 T8；T8 负责画布节点、媒体解析、CLI/Python 调用、输出转存和错误文案。",
         "后端 runner 优先探测 T8_REMOVE_AI_WATERMARKS_RUNTIME、Electron resources/tools/remove-ai-watermarks sidecar、T8_REMOVE_AI_WATERMARKS_BIN、T8_REMOVE_AI_WATERMARKS_SRC、开发期 _external clone，再 fallback PATH CLI。",
-        "状态接口动态返回 upstream version、markKeys 与 optionalFeatures(invisible/lama/detect/trustmark)，前端 mark 列表必须以动态结果为准并以 auto/gemini/doubao/jimeng 兜底。",
-        "完整能力依赖 remove-ai-watermarks[gpu,detect,trustmark,lama]、CUDA Torch、OpenCV 兼容版本和 LaMA/invisible 可选模型；缺依赖时后端必须优雅显示未安装或能力不可用，不允许炸后端。",
+        "状态接口动态返回 upstream version、markKeys 与 optionalFeatures(invisible/lama/detect/trustmark/restore/auto/controlnet/adaptivePolish)，前端 mark 列表必须以动态结果为准并以 auto/gemini/doubao/jimeng 兜底。",
+        "完整能力依赖 remove-ai-watermarks[gpu,detect,trustmark,lama,restore]、CUDA Torch、OpenCV 兼容版本和 LaMA/invisible/GFPGAN 可选模型；缺依赖时后端必须优雅显示未安装或能力不可用，不允许炸后端。",
         "隐形水印参数在 T8 层钳制安全边界：steps 至少 4，非 0 maxResolution 至少 256，strength 至少保证一个 diffusion timestep，避免上游 diffusers 空 latent 崩溃。",
-        "已同步上游 0.8.7：visible/identify 动态覆盖 Gemini、豆包、即梦可见标记；invisible 默认走上游来源自适应强度，文字/人脸保护为实验 opt-in，仅开启时发送 --protect-text / --protect-faces。",
+        "已同步上游 0.8.9：visible/identify 动态覆盖 Gemini、豆包、即梦可见标记；invisible 默认走上游来源自适应强度，并支持 auto、controlnet、min-resolution、adaptive-polish、unsharp 与 GFPGAN restore-faces；旧 0.8.7 runtime 仍版本感知兼容 protect flags。",
         "Electron 用户包若要开箱可用，必须准备 tools/remove-ai-watermarks-runtime sidecar runtime，electron-builder 会复制到 resources/tools/remove-ai-watermarks；正式发版可设置 T8_REQUIRE_AI_WATERMARK_RUNTIME=1 强制缺失即失败。",
         "上游仓库更新后只同步 registry、命令参数、mark/mode/options 与能力探测适配；新增能力必须补 tests/aiWatermarkRunner.test.ts 并更新 README/features/skill 的 MIT attribution 与打包说明。"
       ]
@@ -2243,7 +2246,7 @@
         "修复 3D 全景节点从 /public/vendor/js/three-0.160.0.module.js 动态 import 导致 Vite 开发环境白屏 overlay 的问题；节点现在通过项目依赖 import('three') 按需加载 Three.js，避免 public 目录资源被源代码直接 import。",
         "3D 全景自动旋转只在贴图 ready 且用户开启 panoramaAutoRotate 时启动 requestAnimationFrame，未就绪或未开启时不再持续占用渲染循环。",
         "MaterialThumbnail、UploadNode、OutputNode 与 3D 全景导出预览图片统一增加 loading=\"lazy\" 与 decoding=\"async\"，降低大画布启动时全量缩略图同步请求和解码造成的白屏/图片迟迟不显示问题。",
-        "Electron 更新下载完成后的重启安装改为 quitAndInstall(true, true)，v1.9.9 起后续版本更新应走静默安装并自动重启新版，减少安装向导打断。",
+        "Electron 更新下载完成后的重启安装曾在 v1.9.9 改为 quitAndInstall(true, true) 静默安装；该策略已被 v2.0.3 前台安装向导规范覆盖，后续不得继续使用静默安装。",
         "新增 tests/imageLoadingPerformance.test.ts 与 panorama3d 回归断言，锁定 Three.js 依赖加载方式和关键图片预览懒加载策略。",
         "公开版本同步到 1.9.9：package.json、package-lock.json、vite.config.ts/js、electron/main.cjs、backend/src/config.js APP_VERSION、features.json、README.md 同步；本次按规范打包 Electron 并作为 v1.9.8 自动更新基线的跨版本验收包。"
       ]
@@ -2256,7 +2259,7 @@
         "节点 UI 强制合规确认，清晰提示版权、平台条款、隐私、DRM/付费内容与 Cookie 风险；后端 /api/parsehub/resolve 同样要求 acceptedCompliance=true，避免绕过前端直接解析。",
         "解析能力通过 ParseHub 2.0.24 提供，覆盖 Twitter/X、Instagram、YouTube、Facebook、Threads、Bilibili、抖音、TikTok、微博、小红书、贴吧、微信公众号、快手、酷安、皮皮虾、最右、小黑盒等 17 个平台。",
         "新增 Python bridge：tools/parsehub-bridge/parsehub_bridge.py 只读 stdin JSON、只写 stdout JSON；Node 后端 backend/src/utils/parseHubBridge.js 负责 Python runtime 发现、PYTHONPATH 注入、超时控制、结果归一和本地 output URL 映射。",
-        "新增后端路由 backend/src/routes/parseHub.js：GET /api/parsehub/status 检查运行时与平台，POST /api/parsehub/resolve 支持 parse 与 download 两种模式；默认只解析远端媒体地址，download 模式才保存到 output/parsehub。",
+        "新增后端路由 backend/src/routes/parseHub.js：GET /api/parsehub/status 检查运行时与平台，POST /api/parsehub/resolve 支持 parse 与 download 两种模式；后续 v2.0.3 起默认 download 保存到 output/parsehub，parse 仅作为远端地址高级模式保留。",
         "新增前端服务 src/services/parseHub.ts 与节点组件 src/components/nodes/AggregateParserNode.tsx；运行成功后写出 outputText/textSegments/imageUrls/videoUrls/audioUrls，并为文本摘要创建或更新下游 OutputNode，媒体仍走通用 autoOutput。",
         "Electron 打包增加 tools/parsehub-bridge 与 tools/parsehub-pythonlibs extraResources；scripts/dist-release.cjs 注入 T8_REQUIRE_PARSEHUB_RUNTIME=1，electron/_post_build.cjs 校验 bridge、parsehub 依赖、parseHub 路由和 parseHubBridge 工具的加密产物。",
         "新增 tests/aggregateParser.test.ts，覆盖节点注册、端口、前端合规 UI、后端挂载、Electron 打包资源和 ParseHub 结果归一；已验证 bridge status 返回 ParseHub 2.0.24 / Python 3.12.9 / 17 平台，npm run type-check 与 npm run build 通过。"
@@ -2311,6 +2314,50 @@
         "聚合解析面板继续保留合规确认、Cookie 风险提示、免责警告和手动 Cookie 获取指南；Cookie 只用于本次请求或 Electron 本机授权库，不作为全局设置持久化。",
         "新增测试锁定聚合解析节点注册、合规 UI、按钮交互区域、手动/自动授权文案、Electron IPC 暴露、ParseHub 错误分级和结果归一，避免后续迭代重新混淆手动与自动模式。",
         "公开版本同步到 2.0.2：package.json、package-lock.json、vite.config.ts/js、electron/main.cjs、backend/src/config.js APP_VERSION、features.json、README.md 同步；本次按规范打包 Electron 并发布 GitHub Release 自动更新资产。"
+      ]
+    },
+    "phase145": {
+      "label": "自动更新前台安装向导 (v2.0.3)",
+      "status": "implemented",
+      "items": [
+        "自动更新下载完成后不再静默安装：electron/main.cjs 设置 autoInstallOnAppQuit=false，只有用户显式点击“打开安装向导”才触发安装。",
+        "显式安装调用 quitAndInstall(false,true)，让 NSIS 安装器以前台向导方式出现；状态文案改为“正在打开安装向导，请按提示完成安装”。",
+        "新增 electron/build-resources/installer.nsh，通过 customInit + SetSilent normal 让新版安装器即使收到旧客户端传入的 /S，也尽量恢复为前台安装向导。",
+        "顶部更新按钮把“重启安装”改为“打开安装向导”，减少用户误以为应用会后台自动完成安装的困惑。",
+        "公开版本同步到 2.0.3：package.json、package-lock.json、vite.config.ts/js、electron/main.cjs、backend/src/config.js APP_VERSION、features.json、README.md 同步；本次仅修改源码，发布自动更新包需后续按 dist:release 流程执行。"
+      ]
+    },
+    "phase146": {
+      "label": "聚合解析默认保存到输出目录 (v2.0.3)",
+      "status": "implemented",
+      "items": [
+        "聚合解析新建节点默认 aggregateParserMode='download'，后端 /api/parsehub/resolve 未传 mode 时也默认 download，避免普通用户拿到会过期或 403 的平台 CDN 远端地址。",
+        "旧画布中未记录用户手动选择的 aggregateParserMode='parse' 会自动迁移为 download；从 v2.0.3 起用户主动切到远端地址模式会写 aggregateParserModeUserSet=true 并保留高级选择。",
+        "保留“只解析远端地址”高级模式，但节点 UI 明确提示远端 CDN 链接可能需要平台请求头、Cookie 或临时签名，直接打开 403 不一定代表解析失败。",
+        "ParseHub 归一化层在存在 download.media 时优先输出 /files/output/parsehub 本地 URL，OutputNode 和下游 video/image/audio 字段不再优先使用 douyinvod 等临时远端地址。",
+        "结果摘要按模式区分“已保存到本地输出目录的媒体地址”和“解析到的远端媒体地址”，并在远端模式补充 403/防盗链提醒。"
+      ]
+    },
+    "phase147": {
+      "label": "去AI水印上游 0.8.9 同步 (v2.0.4)",
+      "status": "implemented",
+      "items": [
+        "本地外部 clone E:/PenguinPravite/_external/remove-ai-watermarks 已快进到 wiltodelta/remove-ai-watermarks v0.8.9 / 4a6cd71，T8 仍只桥接 CLI/Python 包，不复制上游算法源码。",
+        "runner 按实际 runtime version 做 CLI 参数兼容：0.8.9+ 使用 --pipeline controlnet、--auto、--adaptive-polish、--min-resolution、--controlnet-scale、--unsharp 与 --restore-faces；旧 0.8.7 runtime 继续兼容 ctrlregen 与 --protect-text / --protect-faces。",
+        "去水印节点 UI 把旧文字/人脸保护开关升级为自动策略、ControlNet 结构强度、小图 min-resolution、humanize/unsharp、自适应细节抛光和 GFPGAN 脸部恢复，旧画布中的 ctrlregen 会显示为 controlnet。",
+        "状态接口 optionalFeatures 新增 restore、auto、controlnet、adaptivePolish；开发环境实测 resolver=local external clone、version=0.8.9、markKeys=gemini/doubao/jimeng。",
+        "验证通过 node --test tests/aiWatermarkRunner.test.ts、node -c backend/src/tools/aiWatermark/runner.js、node -c backend/src/routes/aiWatermark.js、npm run type-check、npm run build、全量 node --test tests/*.test.ts，并用临时 PNG 跑通 metadata-check 真实 CLI smoke。",
+        "公开版本同步到 2.0.4：package.json、package-lock.json、vite.config.ts/js、electron/main.cjs、backend/src/config.js APP_VERSION、features.json、README.md 同步；本次按规范打包 Electron 并发布 GitHub Release 自动更新资产。"
+      ]
+    },
+    "phase148": {
+      "label": "v2.0.4 clean public Electron 自动更新发布",
+      "status": "implemented",
+      "items": [
+        "发布包必须从公开提交的 clean worktree 构建，不使用本地 dirty 工作区里的私有充值 overlay；skill.md、roadmap.md、public/vendor/js/three-0.160.0.module.js 和私有计费/支付/充值实现继续禁止进入公开源码与 release 源码包。",
+        "Electron 发布继续走 npm run dist:release：build、encrypt、electron-builder、_post_build、GitHub Release 上传与 release:verify 连续通过后，才算自动更新版本发布完成。",
+        "自动更新安装体验沿用 v2.0.3 前台安装向导规范：autoInstallOnAppQuit=false，显式安装调用 quitAndInstall(false,true)，NSIS customInit 尽量把旧客户端传入的 /S 切回可见向导。",
+        "打包后必须复验 dist_electron/latest.yml 版本、GitHub Release v2.0.4 资产、win-unpacked 启动冒烟和 packaged 日志中的更新检查路径。"
       ]
     }
   },
@@ -2558,7 +2605,7 @@
         {
           "type": "remove-ai-watermark",
           "label": "去AI水印",
-          "description": "接入 wiltodelta/remove-ai-watermarks 0.8.7，可处理 Gemini / 豆包 / 即梦等已知可见 AI 水印、框选擦除(cv2/LaMA)、来源自适应隐形水印、AI 元数据清理与来源鉴别；支持本地 Python 包或 Electron sidecar runtime，视频/音频首阶段支持元数据检查和清理"
+          "description": "接入 wiltodelta/remove-ai-watermarks 0.8.9，可处理 Gemini / 豆包 / 即梦等已知可见 AI 水印、框选擦除(cv2/LaMA)、来源自适应隐形水印、ControlNet 结构保留、GFPGAN 脸部恢复、AI 元数据清理与来源鉴别；支持本地 Python 包或 Electron sidecar runtime，视频/音频首阶段支持元数据检查和清理"
         },
         {
           "type": "video-output",
@@ -2599,7 +2646,7 @@
         {
           "type": "aggregate-parser",
           "label": "聚合解析",
-          "description": "基于 ParseHub 的轻量自媒体聚合解析节点：输入短链、作品链接、分享码或分享文案，合规确认后解析无水印/原始媒体地址；可选使用代理/Cookie，默认只解析地址，显式选择后可保存到 output/parsehub"
+          "description": "基于 ParseHub 的轻量自媒体聚合解析节点：输入短链、作品链接、分享码或分享文案，合规确认后默认保存到 output/parsehub；可选使用代理/Cookie，远端地址解析作为高级模式保留"
         }
       ]
     },
