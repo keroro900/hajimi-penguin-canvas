@@ -14,7 +14,7 @@ My favorite girl Go YounJung
 >
 > GitHub：<https://github.com/T8mars/T8-penguin-canvas>
 
-一个面向 AI 创作的 **节点式画布**：拖拽节点、连线编排、生成图像 / 视频 / 音频、调用 LLM、串接 RunningHub 工作流，叠加批量执行、智能对齐、打组、主题模板与终端日志。Web 浏览器即可使用，亦可一键打包为 Windows 桌面端（NSIS 安装包）。
+一个面向 AI 创作的 **节点式画布**：拖拽节点、连线编排、生成图像 / 视频 / 音频、调用 LLM、串接 RunningHub 工作流，叠加批量执行、智能对齐、打组、主题模板与终端日志。Web 浏览器和桌面端均可使用。
 
 ![status](https://img.shields.io/badge/version-v2.0.6-brightgreen) ![node](https://img.shields.io/badge/node-%E2%89%A518-blue) ![react](https://img.shields.io/badge/react-19-61dafb) ![electron](https://img.shields.io/badge/electron-33-47848f) ![license](https://img.shields.io/badge/license-MIT-yellow)
 
@@ -68,7 +68,7 @@ My favorite girl Go YounJung
 - 🖌️ **图层画板节点**（v1.9.0 增强）：工具分类开放画板节点，支持 16:9 / 9:16 等画布比例、空白图层、图层组折叠、可见 / 锁定状态、载入上游或本地图片、手绘 / 文字 / 图形 / 箭头、缩放旋转、套索 / 钢笔非破坏式抠图、放大编辑窗口、导入导出画板 JSON 与运行输出 PNG；放大窗口复用完整图层面板并按设备像素比重绘，避免图片被低清预览二次放大
 - 🔑 **分类独立 API Key 可选 · 默认折叠**（v1.2.6）：gpt-image / nano-banana / mj / veo / grok / seedance / suno 七个分类 Key 未填自动 fallback 贞贞通用 Key，新手默认折叠不被干扰
 - 🧭 **扩展 API 平台高级入口**（v1.9.5 强化）：API 设置页默认折叠的「扩展 API 平台【高级/可选】」可配置 OpenAI 兼容、ModelScope、火山引擎、本地 ComfyUI、即梦 CLI；ModelScope 图像生成新增 LoRA 管理与节点内多选，默认带 Infinite-Canvas 同步的 LoRA 列表，LLM 继续走稳定 `/v1/chat/completions`，火山 / ModelScope 会自动合并默认模型列表，即梦 CLI 支持只返回 submit_id 后继续查询下载图像 / 视频；ComfyUI 字段映射会清理非 fixed 的旧 value，保证 Prompt、上游图片、宽高等运行时输入真正生效
-- 🧽 **去AI水印辅助节点**（已适配上游 0.8.9）：桥接 `wiltodelta/remove-ai-watermarks`，支持 Gemini / 豆包 / 即梦等可见水印识别去除、框选擦除（cv2 / LaMA）、来源自适应隐形水印、ControlNet 结构保留、GFPGAN 脸部恢复、AI 元数据检查 / 清理和来源鉴别；开发环境可使用本地 Python 包，用户 Electron 完整包可通过 `tools/remove-ai-watermarks-runtime` sidecar runtime 随包分发
+- 🧽 **去AI水印辅助节点**（已适配上游 0.8.9）：桥接 `wiltodelta/remove-ai-watermarks`，支持 Gemini / 豆包 / 即梦等可见水印识别去除、框选擦除（cv2 / LaMA）、来源自适应隐形水印、ControlNet 结构保留、可选 GFPGAN 脸部修复、AI 元数据检查 / 清理和来源鉴别
 - 🧲 **智能对齐辅助线 + snap-to-grid**：拖动时检测同列 / 同行 / 居中对齐并弱吸附
 - 📦 **GroupBox 打组**：框选 ≥2 节点一键套色框容器，可拖拽联动、整体执行、12 色调色板
 - 🖱️ **右键画布快速添加节点**：菜单列出 7 个高频节点（upload / text / image / video / seedance / audio / llm）
@@ -79,8 +79,6 @@ My favorite girl Go YounJung
 - 🎭 **公开主题设计规范**：见 [`docs/theme-design-guide.md`](docs/theme-design-guide.md)，用户可按规范制作、导入和分享更好看的主题画布
 - 🖥️ **终端日志面板**：底部抽屉式实时日志，对齐主项目 logBus 协议
 - 🛡️ **防空数据覆盖**：双层防护（前端 + 后端）保护已保存画布数据
-- 📦 **一键 Electron 打包**：bytenode + T8ENC1 加密后端 + NSIS 安装包，开箱即用桌面端
-
 ---
 
 ## 🚀 快速开始
@@ -89,7 +87,6 @@ My favorite girl Go YounJung
 
 - **Node.js ≥ 18**
 - Windows / macOS / Linux 浏览器（推荐 Chromium 内核）
-- （可选）Windows 系统用于 Electron 桌面端打包
 
 ### 安装
 
@@ -132,23 +129,6 @@ npm run dev
 
 ---
 
-## 🖥️ Electron 桌面端打包
-
-```bash
-# 一键出 Windows NSIS 安装包
-npm run dist
-```
-
-产物：`dist_electron/T8-PenguinCanvas-Setup-<version>.exe`（安装包大小以实际构建为准）
-
-打包链路：`vite build` → `bytenode + T8ENC1` 加密后端为 `.t8c` 字节码 → `electron-builder --win --x64` 出 NSIS 安装包 → `_post_build.cjs` 自动校验后端加密路由、前端 dist、主题音乐资源和去AI水印 runtime slot 完整性。
-
-去AI水印完整能力依赖 Python / Torch / 上游 `remove-ai-watermarks`。源码默认不提交这类大体积运行时；如果要做可离线使用的用户 Electron 包，请先把准备好的 sidecar runtime 放入 `tools/remove-ai-watermarks-runtime/`，打包时会复制为 `resources/tools/remove-ai-watermarks/`。正式分发包建议设置 `T8_REQUIRE_AI_WATERMARK_RUNTIME=1` 后再执行 `npm run dist`，这样缺少 runtime 会直接失败，避免用户装包后节点不可用。当前桥接已按上游 0.8.9 调整：隐形水印强度留空时由上游按来源自适应，小图默认使用 `--min-resolution 1024` 质量增强，可选 `--auto`、`--pipeline controlnet`、`--adaptive-polish`、`--unsharp` 和 `--restore-faces`；重新打包离线用户包时必须同步升级 sidecar runtime。
-
-详细 SOP 与历史踩坑修复记录维护在本地私有 `skill.md`，该文件不随公开仓库发布。
-
----
-
 ## 🧱 技术栈
 
 | 层 | 技术 |
@@ -157,7 +137,7 @@ npm run dist
 | 样式 | Tailwind CSS 3 · CSS Modules · 主题模板（科技风 / 像素糖果风 / OP 风格 / RH 风格 / 火影忍者风格 / EVA 风格 / 幽游白书风格 / 灌篮高手风格 / 足球小将风格 / 七龙珠风格） |
 | 画布引擎 | @xyflow/react 12 · zustand 5 · lucide-react |
 | 后端 | Node.js · Express · sharp（图像处理） · multer（上传） |
-| 桌面端 | Electron 33 · electron-builder 25 · bytenode 1.5 · T8ENC1（自研 AES-256-CBC 二次加密） |
+| 桌面端 | Electron 33 |
 | AI 上游 | 贞贞工坊（图像/视频/Suno）· RunningHub · 任意 OpenAI 兼容 LLM |
 
 ---
@@ -188,13 +168,10 @@ T8-penguin-canvas/
 │   ├── providers/           # 模型注册表
 │   ├── utils/               # topologicalSort / wheelBlock
 │   └── types/canvas.ts
-├── electron/                # Electron 主进程（CommonJS）
+├── electron/                # 桌面端主进程与 preload
 │   ├── main.cjs             # 主进程 + 后端拉起 + IPC
-│   ├── loader.cjs           # bytenode .jsc loader 复刻 + MODULE_NOT_FOUND 兜底
-│   ├── encrypt.cjs          # T8ENC1 加密脚本
-│   ├── preload.cjs          # IPC 桥接
-│   └── _post_build.cjs      # 打包后置校验
-├── features.json            # 节点防丢失锁 + 接口快照 + 打包 SOP
+│   └── preload.cjs          # IPC 桥接
+├── features.json            # 节点防丢失锁 + 接口快照
 ├── skill.md                 # 本地私有手册（不提交 GitHub）
 ├── vite.config.ts           # 前端 11422 + /api → 18766 代理
 ├── start-dev.bat            # Windows 一键启动
@@ -323,7 +300,6 @@ MIT License © T8mars
 - 主作者：[T8mars](https://github.com/T8mars)
 - 灵感来源：PenguinPravite · Infinite Canvas · zhenzhen-web
 - 致谢上游服务：贞贞工坊（T8star）· RunningHub · OpenAI 兼容生态
-- 去AI水印辅助节点桥接 [wiltodelta/remove-ai-watermarks](https://github.com/wiltodelta/remove-ai-watermarks)（MIT License），算法能力由上游 Python 包 / CLI 提供；完整 Electron 用户包可随 `resources/tools/remove-ai-watermarks` sidecar runtime 分发
-- 桌面端打包方案：bytenode + electron-builder + NSIS
+- 去AI水印辅助节点桥接 [wiltodelta/remove-ai-watermarks](https://github.com/wiltodelta/remove-ai-watermarks)（MIT License），算法能力由上游 Python 包 / CLI 提供
 
 如果这个项目对你有帮助，欢迎给一个 ⭐ Star！
