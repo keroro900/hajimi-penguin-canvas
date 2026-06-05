@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import {
   BUILT_IN_THEME_TEMPLATES,
+  dragonBallShenronHiddenMusicUrl,
   dragonBallThemeMusicUrl,
   evaThemeMusicUrl,
   getTemplateMode,
@@ -322,11 +323,12 @@ function fallbackMusic(legacyStyle: LegacyThemeStyle, visuals?: ThemeVisuals): T
       preset: 'ki-burst',
       source: 'url',
       url: dragonBallThemeMusicUrl,
-      hiddenTitle: '神龙模式',
+      hiddenTitle: 'CHA-LA HEAD-CHA-LA',
+      hiddenUrl: dragonBallShenronHiddenMusicUrl,
       hiddenVolume: 0.2,
       volume: 0.18,
       bpm: 156,
-      copyrightNote: '七龙珠第一部开场曲默认音乐文件；公开分发前请确认音乐授权边界。',
+      copyrightNote: '七龙珠第一部开场曲默认音乐文件；神龙隐藏模式会切换到 CHA-LA HEAD-CHA-LA，可在主题模板中上传替换。公开分发前请确认音乐授权边界。',
     };
   }
   if (legacyStyle === 'tech' || visualStyle === 'tech') {

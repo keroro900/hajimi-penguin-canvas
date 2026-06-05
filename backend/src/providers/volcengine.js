@@ -114,6 +114,29 @@ function selectedModel(requested, models, fallback) {
   return model;
 }
 
+function volcengineErrorCode(raw) {
+  return String(raw?.error?.code || raw?.code || raw?.ResponseMetadata?.Error?.Code || '').trim();
+}
+
+function volcengineErrorMessage(raw) {
+  const code = volcengineErrorCode(raw);
+  const message = String(
+    raw?.error?.message ||
+    raw?.message ||
+    raw?.detail ||
+    raw?.ResponseMetadata?.Error?.Message ||
+    '',
+  ).replace(/\s+/g, ' ').trim();
+  if (/modelnotopen/i.test(code) || /has not activated the model/i.test(message)) {
+    const modelMatch = message.match(/model\s+([A-Za-z0-9_.:-]+)/i);
+    const model = String(modelMatch?.[1] || '').replace(/[.。]+$/, '');
+    return `火山方舟模型未开通${model ? `：${model}` : ''}。请在火山方舟控制台开通对应 Seedance / Seedream 模型服务，或在节点里切换到已开通模型后重试。`;
+  }
+  if (message) return message.slice(0, 300);
+  if (code) return code;
+  return '';
+}
+
 async function responseJson(res) {
   const text = await res.text();
   if (!text) return {};
@@ -124,11 +147,42 @@ async function responseJson(res) {
   }
 }
 
+const VIDEO_URL_KEYS = [
+  'url', 'uri', 'value', 'src', 'path',
+  'video', 'videos', 'video_url', 'videoUrl', 'video_urls', 'videoUrls',
+  'mp4_url', 'mp4Url', 'output_url', 'outputUrl',
+  'file_url', 'fileUrl', 'download_url', 'downloadUrl', 'preview_url', 'previewUrl',
+  'last_frame_url', 'lastFrameUrl',
+];
+
+const VIDEO_CONTAINER_KEYS = [
+  'data', 'result', 'results', 'output', 'outputs', 'content', 'choices',
+  'message', 'file', 'files', 'media', 'assets',
+];
+
+function normalizeMediaUrlCandidate(value) {
+  return String(value || '')
+    .trim()
+    .replace(/[),.;\]}]+$/g, '');
+}
+
 function collectMediaUrls(value, out = []) {
   if (!value) return out;
   if (typeof value === 'string') {
     const text = value.trim();
-    if (/^(https?:\/\/|data:(?:image|video)\/|\/files\/output\/)/i.test(text)) out.push(text);
+    if (/^[{[]/.test(text)) {
+      try {
+        return collectMediaUrls(JSON.parse(text), out);
+      } catch {
+        // Some upstreams return human-readable text with an embedded URL.
+      }
+    }
+    if (/^(https?:\/\/|data:video\/|\/(?:files\/output|output|assets)\/)/i.test(text)) {
+      out.push(normalizeMediaUrlCandidate(text));
+      return out;
+    }
+    const embeddedUrls = text.match(/https?:\/\/[^\s"'<>\\]+|\/(?:files\/output|output|assets)\/[^\s"'<>\\]+/gi) || [];
+    for (const url of embeddedUrls) out.push(normalizeMediaUrlCandidate(url));
     return out;
   }
   if (Array.isArray(value)) {
@@ -136,12 +190,10 @@ function collectMediaUrls(value, out = []) {
     return out;
   }
   if (typeof value !== 'object') return out;
-  for (const key of [
-    'url', 'uri', 'value',
-    'video_url', 'videoUrl', 'video_urls', 'videoUrls', 'videos',
-    'file_url', 'fileUrl', 'download_url', 'downloadUrl',
-    'data', 'output', 'outputs', 'results',
-  ]) {
+  for (const key of VIDEO_CONTAINER_KEYS) {
+    if (Object.prototype.hasOwnProperty.call(value, key)) collectMediaUrls(value[key], out);
+  }
+  for (const key of VIDEO_URL_KEYS) {
     if (Object.prototype.hasOwnProperty.call(value, key)) collectMediaUrls(value[key], out);
   }
   return out;
@@ -284,7 +336,16 @@ async function generateImage(provider, input = {}, options = {}) {
     });
     const raw = await responseJson(res);
     if (!res.ok) {
-      return { ok: false, code: 'http_error', providerId: provider.id, protocol: 'volcengine', error: `火山图像调用失败：HTTP ${res.status}`, raw };
+      const upstreamMessage = volcengineErrorMessage(raw);
+      const code = /modelnotopen/i.test(volcengineErrorCode(raw)) ? 'model_not_open' : 'http_error';
+      return {
+        ok: false,
+        code,
+        providerId: provider.id,
+        protocol: 'volcengine',
+        error: `火山图像调用失败：HTTP ${res.status}${upstreamMessage ? `，${upstreamMessage}` : ''}`,
+        raw,
+      };
     }
     const imageUrls = openaiCompatible.extractImageUrls(raw);
     if (!imageUrls.length) {
@@ -396,7 +457,16 @@ async function generateVideo(provider, input = {}, options = {}) {
     });
     const raw = await responseJson(res);
     if (!res.ok) {
-      return { ok: false, code: 'http_error', providerId: provider.id, protocol: 'volcengine', error: `火山视频提交失败：HTTP ${res.status}`, raw };
+      const upstreamMessage = volcengineErrorMessage(raw);
+      const code = /modelnotopen/i.test(volcengineErrorCode(raw)) ? 'model_not_open' : 'http_error';
+      return {
+        ok: false,
+        code,
+        providerId: provider.id,
+        protocol: 'volcengine',
+        error: `火山视频提交失败：HTTP ${res.status}${upstreamMessage ? `，${upstreamMessage}` : ''}`,
+        raw,
+      };
     }
     const taskId = extractTaskId(raw);
     const directUrls = [...new Set(collectMediaUrls(raw))];

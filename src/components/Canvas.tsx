@@ -26,7 +26,7 @@ import * as LucideIcons from 'lucide-react';
 import { useCanvasStore } from '../stores/canvas';
 import { useThemeStore } from '../stores/theme';
 import { useShortcutStore } from '../stores/shortcuts';
-import { trackAchievementEvent } from '../stores/achievements';
+import { trackAchievementEvent, useAchievementStore } from '../stores/achievements';
 import { getTemplateMode, resolveThemeTemplate } from '../theme/defaultTemplates';
 import { useRunBusStore } from '../stores/runBus';
 import { useGroupBusStore, GROUP_COLORS, DEFAULT_GROUP_NAME } from '../stores/groupBus';
@@ -1272,6 +1272,11 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
   const [dragSaveTick, setDragSaveTick] = useState(0);
   const lastDone = useRunBusStore((s) => s.lastDone);
   const lastAchievementDoneTsRef = useRef(0);
+  const achievementProfileLoaded = useAchievementStore((state) => Boolean(state.profile));
+  const achievementTrackingEnabled = useAchievementStore((state) => state.profile?.preferences?.enabled !== false);
+  const rhDuckDecodedUnlocked = useAchievementStore((state) => Boolean(state.profile?.unlockedAchievements?.['rh-duck-decoded']));
+  const yyhPortraitOutputUnlocked = useAchievementStore((state) => Boolean(state.profile?.unlockedAchievements?.['yyh-portrait-output']));
+  const hiddenOutputSyncRef = useRef<Set<string>>(new Set());
 
   // 选中节点 / 剪贴板
   const [selectedCount, setSelectedCount] = useState(0);
@@ -1358,6 +1363,42 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
   useEffect(() => {
     edgesRef.current = edges;
   }, [edges]);
+
+  useEffect(() => {
+    if (!loaded || !achievementProfileLoaded || !achievementTrackingEnabled) return;
+    const syncOnce = (key: string, payload: Parameters<typeof trackAchievementEvent>[0]) => {
+      if (hiddenOutputSyncRef.current.has(key)) return;
+      hiddenOutputSyncRef.current.add(key);
+      trackAchievementEvent(payload);
+    };
+    const hasRhDuckDecodedOutput = nodes.some((node) => Boolean((node.data as any)?.rhDuckDecoded));
+    if (hasRhDuckDecodedOutput && !rhDuckDecodedUnlocked) {
+      syncOnce('rh-duck-used-output', {
+        type: 'hidden_mode.used',
+        theme: 'rh',
+        kind: 'rh-duck',
+        mode: 'used',
+        nodeType: 'upload',
+      });
+    }
+    const hasYyhPortraitHiddenOutput = nodes.some((node) => Boolean((node.data as any)?.yyhPortraitHidden));
+    if (hasYyhPortraitHiddenOutput && !yyhPortraitOutputUnlocked) {
+      syncOnce('yyh-portrait-used-output', {
+        type: 'hidden_mode.used',
+        theme: 'yyh',
+        kind: 'yyh-portrait',
+        mode: 'used',
+        nodeType: 'portrait-master',
+      });
+    }
+  }, [
+    achievementProfileLoaded,
+    achievementTrackingEnabled,
+    loaded,
+    nodes,
+    rhDuckDecodedUnlocked,
+    yyhPortraitOutputUnlocked,
+  ]);
 
   useEffect(() => {
     if (!lastDone?.ok || !lastDone.ts || lastAchievementDoneTsRef.current === lastDone.ts) return;

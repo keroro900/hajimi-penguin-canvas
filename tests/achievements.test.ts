@@ -119,14 +119,14 @@ test('achievement backend records active time, hidden mode, and film placeholder
   const hiddenEnabled = await fetch(`${base}/api/achievements/event`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ type: 'hidden_mode.enabled', theme: 'rh', kind: 'rh-duck', nodeType: 'upload' }),
+    body: JSON.stringify({ type: 'hidden_mode.enabled', theme: 'rh', kind: 'rh-duck', mode: 'enabled', nodeType: 'upload' }),
   }).then((res) => res.json());
   assert.equal(hiddenEnabled.success, true);
 
   const hiddenUsed = await fetch(`${base}/api/achievements/event`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ type: 'hidden_mode.used', theme: 'rh', kind: 'rh-duck', nodeType: 'upload' }),
+    body: JSON.stringify({ type: 'hidden_mode.used', theme: 'rh', kind: 'rh-duck', mode: 'used', nodeType: 'upload' }),
   }).then((res) => res.json());
   assert.equal(hiddenUsed.success, true);
 
@@ -168,7 +168,7 @@ test('achievement backend records active time, hidden mode, and film placeholder
   const dragonHidden = await fetch(`${base}/api/achievements/event`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ type: 'hidden_mode.enabled', theme: 'dragon-ball', kind: 'dragon-ball-shenron' }),
+    body: JSON.stringify({ type: 'hidden_mode.enabled', theme: 'dragon-ball', kind: 'dragon-ball-shenron', mode: 'enabled' }),
   }).then((res) => res.json());
   assert.equal(dragonHidden.success, true);
 
@@ -196,6 +196,44 @@ test('achievement backend records active time, hidden mode, and film placeholder
   assert.equal(profile.data.summary.creativeReview.topTheme.theme, 'tech');
   assert.equal(profile.data.summary.themeShowcases.pixel.hasShowcase, true);
   assert.equal(profile.data.summary.themeShowcases.pixel.topCategory, 'image_uncategorized');
+});
+
+test('achievement backend reports disabled tracking instead of silently losing hidden progress', (t) => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 't8-achievements-disabled-'));
+  const config = require('../backend/src/config.js');
+  const oldFile = config.ACHIEVEMENTS_FILE;
+  config.ACHIEVEMENTS_FILE = path.join(tmpDir, 'data', 'achievements.json');
+  t.after(() => {
+    config.ACHIEVEMENTS_FILE = oldFile;
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  const store = require('../backend/src/achievements/store.js');
+  const disabled = store.setPreferences({ enabled: false });
+  assert.equal(disabled.profile.preferences.enabled, false);
+
+  const ignored = store.recordEvent({
+    type: 'hidden_mode.enabled',
+    theme: 'rh',
+    kind: 'rh-duck',
+    mode: 'enabled',
+    nodeType: 'upload',
+  });
+  assert.equal(ignored.ignored, true);
+  assert.equal(ignored.ignoredReason, 'achievement-tracking-disabled');
+  assert.equal(ignored.profile.themeStats.rh.hiddenModes['rh-duck'], undefined);
+
+  store.setPreferences({ enabled: true });
+  const recorded = store.recordEvent({
+    type: 'hidden_mode.enabled',
+    theme: 'rh',
+    kind: 'rh-duck',
+    mode: 'enabled',
+    nodeType: 'upload',
+  });
+  assert.equal(recorded.ignored, false);
+  assert.equal(recorded.profile.themeStats.rh.hiddenModes['rh-duck'].enabled, 1);
+  assert.ok(recorded.profile.unlockedAchievements['rh-duck-door']);
 });
 
 test('achievement backend preserves cumulative time during schema migration and backup recovery', (t) => {
@@ -265,6 +303,7 @@ test('achievement backend preserves cumulative time during schema migration and 
 
 test('achievement frontend and server are wired without recording prompt content', () => {
   const app = read('../src/App.tsx');
+  const tracker = read('../src/components/AchievementTracker.tsx');
   const canvas = read('../src/components/Canvas.tsx');
   const dragonRadar = read('../src/components/DragonBallRadar.tsx');
   const nodeActionBar = read('../src/components/NodeActionBar.tsx');
@@ -290,6 +329,10 @@ test('achievement frontend and server are wired without recording prompt content
   assert.match(canvas, /type:\s*'parsehub\.resolved'/);
   assert.match(canvas, /type:\s*'workflow\.saved'/);
   assert.match(canvas, /type:\s*'resource\.saved'/);
+  assert.match(canvas, /rhDuckDecodedUnlocked/);
+  assert.match(canvas, /yyhPortraitOutputUnlocked/);
+  assert.match(canvas, /rhDuckDecoded[\s\S]*hidden_mode\.used[\s\S]*kind:\s*'rh-duck'[\s\S]*mode:\s*'used'/);
+  assert.match(canvas, /yyhPortraitHidden[\s\S]*hidden_mode\.used[\s\S]*kind:\s*'yyh-portrait'[\s\S]*mode:\s*'used'/);
   assert.match(canvas, /DragonBallRadar/);
   assert.match(dragonRadar, /dragon_ball\.collected/);
   assert.match(dragonRadar, /dragon_ball\.set_completed/);
@@ -306,8 +349,15 @@ test('achievement frontend and server are wired without recording prompt content
   assert.match(drawer, /隐藏任务/);
   assert.match(drawer, /奖励影片/);
   assert.match(drawer, /hiddenModeHint/);
+  assert.match(drawer, /本地成就统计已关闭/);
+  assert.match(drawer, /开启并补记/);
   assert.match(drawer, /handleImportFile/);
   assert.match(drawer, /importData\(raw\)/);
+  assert.match(tracker, /rhDuckUploadCount/);
+  assert.match(tracker, /yyhPortraitCount/);
+  assert.match(tracker, /shenronUnlockedAt/);
+  assert.match(tracker, /dragon-ball-set-completed/);
+  assert.match(tracker, /mode:\s*'enabled'/);
   assert.match(toast, /openDrawer\(item\.filmTitle \? 'films' : 'themes', item\.themeId\)/);
   assert.match(ceremony, /t8-hidden-ceremony/);
   assert.match(ceremony, /SHENRON MODE/);
@@ -315,13 +365,15 @@ test('achievement frontend and server are wired without recording prompt content
   assert.match(achievementStore, /ceremonies/);
   assert.match(api, /AchievementWeeklyPassport/);
   assert.match(api, /AchievementCreativeReview/);
-  assert.match(nodeActionBar, /hidden_mode\.enabled/);
-  assert.match(upload, /hidden_mode\.used/);
-  assert.match(portrait, /hidden_mode\.used/);
+  assert.match(nodeActionBar, /hidden_mode\.enabled[\s\S]*mode:\s*'enabled'/);
+  assert.match(upload, /hidden_mode\.used[\s\S]*mode:\s*'used'/);
+  assert.match(portrait, /hidden_mode\.used[\s\S]*mode:\s*'used'/);
   assert.match(server, /achievementsRouter/);
   assert.match(server, /\/api\/achievements/);
   assert.match(api, /recordAchievementEvent/);
+  assert.match(api, /ignoredReason/);
   assert.match(store, /const event = \{/);
+  assert.match(store, /ignoredReason:\s*'achievement-tracking-disabled'/);
   assert.match(store, /buildDailyTasks/);
   assert.match(store, /buildWeeklyPassport/);
   assert.match(store, /buildCreativeReview/);

@@ -425,7 +425,8 @@ export default function ThemeMusicToggle({ template }: ThemeMusicToggleProps) {
       return {
         title: base?.hiddenTitle || '神龙模式',
         preset: 'shenron-aura' as ThemeMusicPreset,
-        source: 'synth' as ThemeMusicSource,
+        source: (base?.hiddenUrl ? 'url' : 'synth') as ThemeMusicSource,
+        url: base?.hiddenUrl,
         volume: base?.hiddenVolume ?? 0.2,
         bpm: 72,
         copyrightNote: base?.copyrightNote,

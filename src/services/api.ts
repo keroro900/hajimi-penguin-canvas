@@ -658,6 +658,7 @@ export interface AchievementEventPayload {
   amountSeconds?: number;
   nodeType?: string;
   kind?: string;
+  mode?: string;
   category?: string;
 }
 
@@ -797,6 +798,7 @@ export interface AchievementProfileData {
   summary: AchievementSummary;
   event?: Record<string, any>;
   ignored?: boolean;
+  ignoredReason?: string;
 }
 
 export function getAchievementProfile() {

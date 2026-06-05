@@ -98,6 +98,63 @@ test('Volcengine video generation submits content array and polls returned task 
   assert.deepEqual(result.videoUrls, ['https://volc.example.com/out.mp4']);
 });
 
+test('Volcengine video generation explains ModelNotOpen 404 as model activation issue', async () => {
+  const provider = {
+    id: 'volcengine',
+    protocol: 'volcengine',
+    baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
+    apiKey: 'ark-secret',
+    videoModels: ['doubao-seedance-2-0-260128'],
+  };
+
+  const result = await volcengine.generateVideo(provider, {
+    prompt: 'cat waves',
+    model: 'doubao-seedance-2-0-260128',
+    duration: 4,
+    resolution: '480p',
+  }, {
+    fetchImpl: async () => jsonResponse({
+      error: {
+        code: 'ModelNotOpen',
+        message: 'Your account has not activated the model doubao-seedance-2-0-260128. Please activate the model service in the Ark Console.',
+        type: 'Not Found',
+      },
+    }, 404),
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.code, 'model_not_open');
+  assert.match(result.error, /火山方舟模型未开通/);
+  assert.match(result.error, /doubao-seedance-2-0-260128/);
+  assert.match(result.error, /控制台开通/);
+});
+
+test('Volcengine image generation explains ModelNotOpen 404 as model activation issue', async () => {
+  const provider = {
+    id: 'volcengine',
+    protocol: 'volcengine',
+    baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
+    apiKey: 'ark-secret',
+    imageModels: ['doubao-seedream-4-0-250828'],
+  };
+
+  const result = await volcengine.generateImage(provider, {
+    prompt: 'cat',
+    model: 'doubao-seedream-4-0-250828',
+  }, {
+    fetchImpl: async () => jsonResponse({
+      error: {
+        code: 'ModelNotOpen',
+        message: 'Your account has not activated the model doubao-seedream-4-0-250828.',
+      },
+    }, 404),
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.code, 'model_not_open');
+  assert.match(result.error, /火山方舟模型未开通/);
+});
+
 test('Volcengine video generation normalizes Ark root base URL and multimodal references', async () => {
   const calls: any[] = [];
   const provider = {
@@ -142,6 +199,83 @@ test('Volcengine video generation normalizes Ark root base URL and multimodal re
   assert.equal(calls[0].body.content[4].type, 'audio_url');
   assert.equal(calls[0].body.content[4].role, 'reference_audio');
   assert.deepEqual(result.videoUrls, ['https://volc.example.com/root.mp4']);
+});
+
+test('Volcengine video generation extracts nested Ark task content video URL', async () => {
+  const calls: any[] = [];
+  const provider = {
+    id: 'volcengine',
+    protocol: 'volcengine',
+    baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
+    apiKey: 'ark-secret',
+    videoModels: ['doubao-seedance-2-0-fast-260128'],
+  };
+
+  const result = await volcengine.generateVideo(provider, {
+    prompt: 'woman dances',
+    model: 'doubao-seedance-2-0-fast-260128',
+    ratio: '16:9',
+    duration: 4,
+    resolution: '480p',
+    images: ['https://input.example.com/ref.png'],
+  }, {
+    pollIntervalMs: 1,
+    fetchImpl: async (url: string, init: any = {}) => {
+      if (init.method === 'POST') {
+        calls.push({ url, init, body: JSON.parse(init.body) });
+        return jsonResponse({
+          id: 'task-nested',
+          content: [{ type: 'image_url', image_url: { url: 'https://input.example.com/ref.png' } }],
+        });
+      }
+      calls.push({ url, init });
+      return jsonResponse({
+        data: {
+          task_status: 'SUCCESS',
+          result: {
+            content: {
+              video_url: { url: 'https://volc.example.com/nested.mp4' },
+            },
+          },
+        },
+      });
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(calls.length, 2);
+  assert.deepEqual(result.videoUrls, ['https://volc.example.com/nested.mp4']);
+});
+
+test('Volcengine video generation extracts URLs embedded in task content strings', async () => {
+  const provider = {
+    id: 'volcengine',
+    protocol: 'volcengine',
+    baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
+    apiKey: 'ark-secret',
+    videoModels: ['doubao-seedance-2-0-fast-260128'],
+  };
+
+  const result = await volcengine.generateVideo(provider, {
+    prompt: 'robot waves',
+    model: 'doubao-seedance-2-0-fast-260128',
+    duration: 4,
+    resolution: '480p',
+  }, {
+    pollIntervalMs: 1,
+    fetchImpl: async (_url: string, init: any = {}) => {
+      if (init.method === 'POST') return jsonResponse({ id: 'task-json-string' });
+      return jsonResponse({
+        data: {
+          status: 'SUCCEEDED',
+          content: '{"image_url":{"url":"https://input.example.com/ref.png"},"mp4_url":"https://volc.example.com/from-string.mp4"}',
+        },
+      });
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.videoUrls, ['https://volc.example.com/from-string.mp4']);
 });
 
 test('Volcengine testProvider rejects Access Key ID in Ark API Key field without probing network', async () => {

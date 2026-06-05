@@ -81,18 +81,31 @@ test('ApiSettings Volcengine panel separates Ark API Key from AK/SK credentials'
   assert.match(apiSettingsSource, /Access Key ID（AK，素材签名）/);
   assert.match(apiSettingsSource, /Secret Access Key（SK，素材签名）/);
   assert.match(apiSettingsSource, /目前它只作为素材签名类能力的预留凭证/);
+  assert.match(apiSettingsSource, /Seedance2\.0 开通提醒/);
+  assert.match(apiSettingsSource, /doubao-seedance-2-0-260128/);
+  assert.match(apiSettingsSource, /doubao-seedance-2-0-fast-260128/);
+  assert.match(apiSettingsSource, /ModelNotOpen \/ HTTP 404/);
 });
 
 test('Dragon Ball theme defaults to bundled mp3 music and packaging validates the asset', () => {
   const postBuild = readFileSync(new URL('../electron/_post_build.cjs', import.meta.url), 'utf8');
   const musicAsset = new URL('../src/assets/theme-music/dragonball-makafushigi-adventure.mp3', import.meta.url);
+  const hiddenMusicAsset = new URL('../src/assets/theme-music/dragonball-shenron-cha-la-head-cha-la.mp3', import.meta.url);
 
   assert.equal(existsSync(musicAsset), true);
+  assert.equal(existsSync(hiddenMusicAsset), true);
   assert.match(defaultTemplatesSource, /dragonBallThemeMusicUrl = new URL\('\.\.\/assets\/theme-music\/dragonball-makafushigi-adventure\.mp3'/);
+  assert.match(defaultTemplatesSource, /dragonBallShenronHiddenMusicUrl = new URL\('\.\.\/assets\/theme-music\/dragonball-shenron-cha-la-head-cha-la\.mp3'/);
   assert.match(defaultTemplatesSource, /id: DRAGON_BALL_TEMPLATE_ID[\s\S]*source: 'url'[\s\S]*url: dragonBallThemeMusicUrl/);
   assert.match(defaultTemplatesSource, /title: '摩诃不思议 Adventure'/);
+  assert.match(defaultTemplatesSource, /hiddenTitle: 'CHA-LA HEAD-CHA-LA'/);
+  assert.match(defaultTemplatesSource, /hiddenUrl: dragonBallShenronHiddenMusicUrl/);
   assert.match(themeTemplateManagerSource, /dragonBallThemeMusicUrl/);
+  assert.match(themeTemplateManagerSource, /dragonBallShenronHiddenMusicUrl/);
   assert.match(themeTemplateManagerSource, /visualStyle === 'dragon-ball'[\s\S]*source: 'url'[\s\S]*url: dragonBallThemeMusicUrl/);
+  assert.match(themeTemplateManagerSource, /visualStyle === 'dragon-ball'[\s\S]*hiddenUrl: dragonBallShenronHiddenMusicUrl/);
   assert.match(postBuild, /checkFrontendAsset\('dragonball-makafushigi-adventure-', '\.mp3'\)/);
+  assert.match(postBuild, /checkFrontendAsset\('dragonball-shenron-cha-la-head-cha-la-', '\.mp3'\)/);
   assert.match(featuresSource, /"dragon-ball-style": "dragonball-makafushigi-adventure\.mp3"/);
+  assert.match(featuresSource, /"dragon-ball-shenron-hidden": "dragonball-shenron-cha-la-head-cha-la\.mp3"/);
 });

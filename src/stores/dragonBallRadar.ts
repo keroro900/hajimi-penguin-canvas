@@ -67,6 +67,24 @@ function initialNextSpawnAt() {
   return Date.now() + DRAGON_BALL_SPAWN_INTERVAL_MS;
 }
 
+function buildCollectedForShenronTest(
+  now = Date.now(),
+  missingStar: DragonBallStar = 7,
+): Partial<Record<DragonBallStar, DragonBallCollected>> {
+  const collected: Partial<Record<DragonBallStar, DragonBallCollected>> = {};
+  for (const star of DRAGON_BALL_STARS) {
+    if (star === missingStar) continue;
+    collected[star] = {
+      star,
+      x: 0,
+      y: 0,
+      collectedAt: now,
+      expiresAt: now + DRAGON_BALL_COLLECT_TTL_MS,
+    };
+  }
+  return collected;
+}
+
 export function pruneDragonBallCollected(
   collected: Partial<Record<DragonBallStar, DragonBallCollected>>,
   now = Date.now(),
@@ -255,3 +273,15 @@ export const useDragonBallRadarStore = create<DragonBallRadarState>()(
     },
   ),
 );
+
+export function seedDragonBallRadarForShenronTest(missingStar: DragonBallStar = 7, now = Date.now()) {
+  useDragonBallRadarStore.setState({
+    collected: buildCollectedForShenronTest(now, missingStar),
+    activeSpawn: null,
+    trackingTarget: null,
+    nextSpawnAt: now + 1_000,
+    shenronUnlockedAt: null,
+    shenronModeActive: false,
+    shenronAnimationUntil: 0,
+  });
+}

@@ -1,7 +1,53 @@
 {
   "$schema": "本文件为 T8-penguin-canvas 节点清单防丢失锁,任何节点删减都需要在 roadmap.md 中说明并更新本文件。",
-  "version": "2.0.7",
-  "lastUpdated": "2026-06-05-dragonball-shenron-electron-release",
+  "version": "2.0.8",
+  "lastUpdated": "2026-06-06-volcengine-seedance-electron-release",
+  "electronReleaseV208": {
+    "version": "2.0.8",
+    "status": "electron-release",
+    "date": "2026-06-06",
+    "description": "v2.0.8 聚焦火山 Seedance 2.0 任务结果解析、隐藏模式成就补记、七龙珠神龙体验与 Electron 自动更新发布稳定性，按规范打包并发布新的自动更新版本。",
+    "highlights": [
+      "火山引擎 Seedance 2.0 任务完成后兼容顶层 content、result/content、mp4_url、output_url、src/path 与 JSON 字符串里的视频 URL，修复“任务完成但没有返回视频”的误报。",
+      "补充火山 Seedance 2.0 真实最低配置冒烟：doubao-seedance-2-0-fast-260128、4s、480p、首帧图生视频可返回视频地址；日志和文档不得泄漏 API Key 或完整签名 URL。",
+      "隐藏模式成就链路继续加固：统计关闭提示、重新开启后的隐藏状态补记、七龙珠神龙与 RH 隐藏模式事件统一进入成就进度。",
+      "七龙珠神龙模式补齐隐藏音乐、普通/神龙双模式切换、神龙主题可读性和雷达倒计时/收集状态体验。",
+      "火山引擎 API 设置继续补充 Ark API Key 与模型开通提示，ModelNotOpen / 401 等错误给出更明确的中文说明。",
+      "发布继续遵守公开源码安全边界：GitHub 源码和 Source code 包不包含计费/支付/充值实现，本机 Electron 自动更新包可通过 ignored local-private 加密扩展带入本地私有能力。"
+    ],
+    "sourceSync": [
+      "package.json / package-lock.json",
+      "vite.config.ts / vite.config.js",
+      "electron/main.cjs APP_VERSION",
+      "backend/src/config.js APP_VERSION",
+      "features.json",
+      "README.md",
+      "release-notes/v2.0.8.md"
+    ],
+    "electronRelease": {
+      "script": "npm run dist:release",
+      "assets": [
+        "dist_electron/T8-PenguinCanvas-Setup-2.0.8.exe",
+        "dist_electron/T8-PenguinCanvas-Setup-2.0.8.exe.blockmap",
+        "dist_electron/latest.yml"
+      ],
+      "updater": "GitHub Release v2.0.8 作为 latest.yml 自动更新源；安装继续使用前台 NSIS 向导，不静默安装。"
+    },
+    "publicSafety": [
+      "公开源码继续禁止 skill.md、roadmap.md、local-private/**、私有充值 UI/路由/API/密钥进入 GitHub。",
+      "发布前必须运行 npm run public:check 并检查 staged 文件列表。",
+      "Electron 用户包可在本机 dist:release 时包含 ignored local-private 加密扩展；GitHub Source code zip/tar.gz 不包含这些源码。"
+    ],
+    "verification": [
+      "node --test tests\\volcengineProvider.test.ts tests\\achievements.test.ts tests\\dragonBallRadar.test.ts tests\\advancedProviderFrontend.test.ts tests\\apiSettingsTheme.test.ts",
+      "npm run type-check",
+      "npm run build",
+      "npm run public:check",
+      "npm run dist:release",
+      "npm run release:verify",
+      "win-unpacked 启动冒烟"
+    ]
+  },
   "electronReleaseV207": {
     "version": "2.0.7",
     "status": "electron-release",
@@ -413,11 +459,11 @@
       "T8_RUNTIME_CACHE_DIR": "可选，覆盖运行时归档解压缓存目录；默认打包模式为 %APPDATA%/t8-penguin-canvas/runtime-cache",
       "T8_ENABLE_LOCAL_PRIVATE": "可选，0=强制关闭本机 local-private/extensions 私有扩展；默认只要本机 ignored 私有扩展存在，开发环境和本机打包 release 都会自动带入。GitHub/clean clone 因为没有 local-private 目录，所以不会带充值实现。"
     },
-    "version": "2.0.7",
-    "semverVersion": "2.0.7",
+    "version": "2.0.8",
+    "semverVersion": "2.0.8",
     "versionNumberPolicy": "T8 版本号仍采用 x.y.z 三段，但每一段只允许 0-9；任一段到 9 后下一次发布必须向左进位，禁止任一段出现两位数字。例：1.9.9 的下一版必须是 2.0.0。",
-    "versionNote": "v1.3.0 起统一采用三段阶段号 x.y.z；当前源码版本为 v2.0.7：集中发布七龙珠神龙隐藏模式 PNG 过场、龙珠雷达/成就仪式感、3D 全景机位与热点、火山引擎 Seedream/Seedance 修复、本地私有扩展拆分和多项交互稳定性修复。本次按规范打包 Electron 并发布 GitHub Release 自动更新资产；GitHub 公开源码仍排除本地私有计费/支付/充值实现。",
-    "installer": "v2.0.7 按 npm run dist:release 生成 T8-PenguinCanvas-Setup-2.0.7.exe、.exe.blockmap 与 latest.yml，并发布 GitHub Release 自动更新资产；安装继续走前台 NSIS 向导，保留桌面和开始菜单快捷方式。",
+    "versionNote": "v1.3.0 起统一采用三段阶段号 x.y.z；当前源码版本为 v2.0.8：集中修复火山引擎 Seedance 2.0 任务完成后 content/result 等返回字段的视频提取、隐藏模式成就补记、七龙珠神龙模式切换/音乐/可读性和扩展平台提示。本次按规范打包 Electron 并发布 GitHub Release 自动更新资产；GitHub 公开源码仍排除本地私有计费/支付/充值实现。",
+    "installer": "v2.0.8 按 npm run dist:release 生成 T8-PenguinCanvas-Setup-2.0.8.exe、.exe.blockmap 与 latest.yml，并发布 GitHub Release 自动更新资产；安装继续走前台 NSIS 向导，保留桌面和开始菜单快捷方式。",
     "updaterInstallMode": "自动更新下载完成后不得静默安装：main.cjs 必须设置 autoInstallOnAppQuit=false，显式安装调用 quitAndInstall(false,true)；electron/build-resources/installer.nsh 通过 SetSilent normal 让新版 NSIS 安装器即使收到旧客户端传入的 /S 也尽量切回前台安装向导。",
     "installerShortcutPolicy": "安装完成后必须创建桌面和开始菜单快捷方式：package.json build.nsis.createDesktopShortcut 必须为 \"always\"，createStartMenuShortcut 必须为 true；electron/build-resources/installer.nsh 必须保留 customInstall 兜底 CreateShortCut \"$newStartMenuLink\" 与 \"$DESKTOP\\${SHORTCUT_NAME}.lnk\"，防止更新安装/keepShortcuts 路径遗漏入口。",
     "updaterEntryPolicy": "顶栏桌面更新入口不得只因 window.t8pc.updater 缺失就静默消失；Electron UA 或 t8pc.getInfo/openExternal 可用时必须显示诊断入口，提示重新安装完整桌面包，Web/纯浏览器环境才隐藏。状态为 not-available 时按钮仍保留“更新”字样，避免用户误以为自动更新入口被删除。",
@@ -439,7 +485,7 @@
       "prePushScan": "每次推送前运行 npm run public:check，并检查 staged 文件不包含 roadmap.md、skill.md、私有扩展目录、私有 UI、私有路由、支付路径、密钥字段或中文充值实现；本地开发和打包若需要私有能力，只能通过 ignored local-private/extensions 扩展加载。"
     },
     "localPrivateExtensions": {
-      "status": "implemented-v2.0.7-release",
+      "status": "implemented-v2.0.8-release",
       "purpose": "把本机私有计费/支付能力从已跟踪公开文件中拆出，避免每次 Git 推送都需要手动拆 hunk。",
       "publicHooks": [
         "backend/src/extensions/localExtensions.js 只负责发现并注册本地私有后端扩展，不包含具体业务逻辑。",
@@ -451,7 +497,7 @@
         ".gitignore 统一忽略 /local-private/**，旧私有路由和私有 UI 路径仍保持忽略兜底。",
         "scripts/check-public-clean.cjs / npm run public:check 会扫描 staged 路径和 diff，防止误提交私有文件或实现关键字。",
         "公开文件 backend/src/config.js、backend/src/server.js、src/App.tsx、src/services/api.ts、electron/_post_build.cjs 不应再保留私有业务 diff。",
-        "v2.0.7 发布时继续用 scripts/check-public-clean.cjs 扫描 staged 路径和新增文本，skill.md / roadmap.md / local-private/** 不进入公开提交。"
+        "v2.0.8 发布时继续用 scripts/check-public-clean.cjs 扫描 staged 路径和新增文本，skill.md / roadmap.md / local-private/** 不进入公开提交。"
       ]
     },
     "checklist": [
@@ -672,9 +718,10 @@
           "yyh-hidden": "yyh-hidden-tonight.mp3",
           "slamdunk-style": "slamdunk-kimi-ga-suki.mp3",
           "soccer-hero-style": "soccer-tsubasa-burning-hero.mid",
-          "dragon-ball-style": "dragonball-makafushigi-adventure.mp3"
+          "dragon-ball-style": "dragonball-makafushigi-adventure.mp3",
+          "dragon-ball-shenron-hidden": "dragonball-shenron-cha-la-head-cha-la.mp3"
         },
-        "rule": "主题音乐默认静音，通常只在用户主动点击播放按钮后播放；RH 鸭鸭隐藏模式会自动切换 rh-hidden-saya.mp3，幽游白书肖像大师隐藏模式会自动切换 yyh-hidden-tonight.mp3，二者都会解除静音。模板编辑器支持上传替换，导出模板可携带 data:audio/*。"
+        "rule": "主题音乐默认静音，通常只在用户主动点击播放按钮后播放；RH 鸭鸭隐藏模式会自动切换 rh-hidden-saya.mp3，幽游白书肖像大师隐藏模式会自动切换 yyh-hidden-tonight.mp3，七龙珠神龙隐藏模式会自动切换 dragonball-shenron-cha-la-head-cha-la.mp3。模板编辑器支持上传替换，导出模板可携带 data:audio/*。"
       }
     },
     "styles": {
@@ -820,7 +867,7 @@
           "nodeFrame": "capsule-card",
           "headerMark": "DRAGON RADAR"
         },
-        "music": "dragonball-makafushigi-adventure.mp3；ThemeMusicToggle 以 URL 音频播放，ki-burst 仅作为合成兜底 preset；默认静音，用户可在主题模板中上传或填写授权音频 URL 替换，公开分发前确认音频授权边界"
+        "music": "普通模式使用 dragonball-makafushigi-adventure.mp3；神龙隐藏模式使用 dragonball-shenron-cha-la-head-cha-la.mp3；ThemeMusicToggle 以 URL 音频播放，ki-burst / shenron-aura 仅作为合成兜底 preset；默认静音，用户可在主题模板中上传或填写授权音频 URL 替换，公开分发前确认音频授权边界"
       }
     },
     "defaultStyle": "pixel",
@@ -2906,6 +2953,17 @@
         "成就系统补齐主题详情、完成度、隐藏模式仪式感、有效时长持久化和导入导出；奖励影片未提供前继续显示待解锁占位。",
         "本地私有扩展拆分为 local-private ignored overlay，公开源码只保留通用 extension hook；本机 Electron 打包可包含加密私有扩展，GitHub 源码不包含实现。",
         "公开版本同步到 2.0.7：package.json、package-lock.json、vite.config.ts/js、electron/main.cjs、backend/src/config.js APP_VERSION、features.json、README.md 与 release-notes/v2.0.7.md 同步；本次按规范打包 Electron 并发布 GitHub Release 自动更新资产。"
+      ]
+    },
+    "phase152": {
+      "label": "火山 Seedance 2.0 结果解析与 Electron 自动更新发布 (v2.0.8)",
+      "status": "implemented",
+      "items": [
+        "Volcengine provider 的视频 URL 收集器对齐 Infinite-Canvas 思路，兼容 content/result/output/mp4_url/output_url/src/path/preview_url 和 JSON 字符串返回，避免成功任务误报空视频。",
+        "新增 tests/volcengineProvider.test.ts 回归：嵌套 Ark task content、content JSON 字符串、ModelNotOpen 友好提示和真实 URL 提取边界。",
+        "成就系统与隐藏模式补记继续修复，确保统计关闭/重新开启、七龙珠神龙和 RH 隐藏模式事件能正确影响成就进度。",
+        "七龙珠神龙模式补齐隐藏音乐、普通/隐藏双模式切换、雷达状态和主题可读性；相关 CSS、store、Tracker 与测试同步。",
+        "公开版本同步到 2.0.8：package.json、package-lock.json、vite.config.ts/js、electron/main.cjs、backend/src/config.js APP_VERSION、features.json、README.md 与 release-notes/v2.0.8.md 同步；本次按规范打包 Electron 并发布 GitHub Release 自动更新资产。"
       ]
     }
   },

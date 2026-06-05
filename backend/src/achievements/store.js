@@ -477,6 +477,7 @@ function sanitizeEvent(payload) {
   }
   if (payload?.nodeType) event.nodeType = safeText(payload.nodeType);
   if (payload?.kind) event.kind = safeText(payload.kind);
+  if (payload?.mode) event.mode = safeText(payload.mode);
   if (payload?.category) event.category = safeText(payload.category);
   return event;
 }
@@ -761,7 +762,7 @@ function recordEvent(payload) {
   const event = sanitizeEvent(payload);
   if (!event) return { ...publicData(data), ignored: true };
   if (data.preferences?.enabled === false && event.type !== 'theme.switched') {
-    return { ...publicData(data), ignored: true };
+    return { ...publicData(data), ignored: true, ignoredReason: 'achievement-tracking-disabled' };
   }
   applyEventToStats(data, event);
   data.events.push(event);

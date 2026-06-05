@@ -173,6 +173,7 @@ export default function AchievementDrawer() {
   const unlocked = profile?.unlockedAchievements || {};
   const films = achievementManifest.films;
   const preferences = profile?.preferences || { enabled: true, showToast: true, showTopBadge: true };
+  const trackingEnabled = preferences.enabled !== false;
   const dailySuggestions = useMemo(() => {
     return achievementManifest.themes
       .map((theme) => {
@@ -230,11 +231,12 @@ export default function AchievementDrawer() {
 
   const renderTask = (definition: AchievementDefinition) => {
     const isUnlocked = Boolean(unlocked[definition.id]);
+    const trackingDisabled = !trackingEnabled && !isUnlocked;
     const progress = progressFor(selectedThemeStats, definition);
     return (
       <article
         key={definition.id}
-        className={`t8-achievement-theme-task ${isUnlocked ? 'is-unlocked' : ''} ${definition.hidden ? 'is-hidden-task' : ''}`}
+        className={`t8-achievement-theme-task ${isUnlocked ? 'is-unlocked' : ''} ${definition.hidden ? 'is-hidden-task' : ''} ${trackingDisabled ? 'is-tracking-disabled' : ''}`}
       >
         <div className="t8-achievement-theme-task__icon">
           {isUnlocked ? <CheckCircle2 size={17} /> : definition.hidden ? <Eye size={16} /> : <Medal size={16} />}
@@ -246,6 +248,11 @@ export default function AchievementDrawer() {
           </div>
           <p>{definition.description}</p>
           {definition.hidden && <div className="t8-achievement-theme-task__hint">{hiddenModeHint(definition)}</div>}
+          {trackingDisabled && (
+            <div className="t8-achievement-theme-task__disabled">
+              本地成就统计已关闭，完成动作不会写入；开启后，当前仍处于隐藏模式的入口会自动补记一次。
+            </div>
+          )}
           <div className="t8-achievement-theme-task__meta">
             <span>{currentValueLabel(selectedThemeStats, definition)}</span>
             <span>{isUnlocked ? `完成于 ${new Date(unlocked[definition.id].unlockedAt).toLocaleString()}` : progressTextFor(selectedThemeStats, definition)}</span>
@@ -399,6 +406,17 @@ export default function AchievementDrawer() {
         <main className="t8-achievement-drawer__body">
           {error && <div className="t8-achievement-alert">{error}</div>}
           {loading && !profile && <div className="t8-achievement-empty">正在加载成就数据...</div>}
+          {!trackingEnabled && (
+            <div className="t8-achievement-alert t8-achievement-alert--disabled">
+              <div>
+                <strong>本地成就统计已关闭</strong>
+                <span>时长、运行、隐藏模式和龙珠收集事件现在都会被忽略；开启后会自动补记当前仍开启的隐藏模式。</span>
+              </div>
+              <button type="button" className="t8-btn t8-btn-primary" onClick={() => void setPreferences({ enabled: true })}>
+                开启并补记
+              </button>
+            </div>
+          )}
 
           {activeTab === 'overview' && (
             <div className="t8-achievement-section">

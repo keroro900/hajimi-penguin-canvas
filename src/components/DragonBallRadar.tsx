@@ -335,6 +335,7 @@ export default function DragonBallRadar({ visualStyle, viewportMoving, nodeDragg
               type: 'hidden_mode.enabled',
               theme: 'dragon-ball',
               kind: 'dragon-ball-shenron',
+              mode: 'enabled',
             });
           }
         }
@@ -375,6 +376,7 @@ export default function DragonBallRadar({ visualStyle, viewportMoving, nodeDragg
         type: 'hidden_mode.enabled',
         theme: 'dragon-ball',
         kind: 'dragon-ball-shenron',
+        mode: 'enabled',
       });
     }
   };

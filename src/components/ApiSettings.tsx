@@ -118,10 +118,10 @@ const ADVANCED_PROVIDER_GUIDES: Record<AdvancedProviderProtocol, {
   },
   volcengine: {
     subtitle: '接入火山方舟 / Seedream / Seedance',
-    description: '适合用火山引擎做 Seedream 图像、Seedance 视频或方舟聊天模型。生成调用使用方舟 Ark API Key，不使用 Access Key ID / Secret Access Key。',
+    description: '适合用火山引擎做 Seedream 图像、Seedance 视频或方舟聊天模型。生成调用使用方舟 Ark API Key，不使用 Access Key ID / Secret Access Key；使用 Seedance2.0 前需要先在火山方舟控制台开通对应模型服务。',
     nodeScopes: ['图像节点', '视频节点', 'LLM 节点'],
     connectionHint: 'Base URL 填火山方舟 API 地址；Seedream / Seedance / LLM 生成必须填方舟 Ark API Key。Access Key ID / Secret Access Key 是另一类凭证，请放到下方火山 AK/SK 高级项。',
-    modelHint: '图像、视频、聊天模型分别按火山控制台里的模型接入点填写，每行一个。',
+    modelHint: '图像、视频、聊天模型分别按火山控制台里的模型接入点填写，每行一个。Seedance2.0 / Seedance2.0 Fast 如果未在方舟控制台开通，提交会返回 ModelNotOpen / HTTP 404。',
     baseUrlPlaceholder: 'https://ark.cn-beijing.volces.com/api/v3',
     keyLabel: '方舟 Ark API Key（生成用，不是 AK/SK）',
   },
@@ -1413,6 +1413,13 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
                   你在火山账号里看到的 Access Key ID / Secret Access Key 不能填在这里，
                   需要放到下方「火山 AK/SK」高级项；目前它只作为素材签名类能力的预留凭证。
                 </p>
+                <div className="mt-2 rounded-lg border border-amber-500/40 bg-amber-400/15 px-3 py-2">
+                  <div className="font-bold">Seedance2.0 开通提醒</div>
+                  <p>
+                    使用 doubao-seedance-2-0-260128 或 doubao-seedance-2-0-fast-260128 前，
+                    需要先在火山方舟控制台开通对应模型服务；未开通时上游会返回 ModelNotOpen / HTTP 404。
+                  </p>
+                </div>
               </div>
             )}
             {provider.protocol === 'modelscope' && (

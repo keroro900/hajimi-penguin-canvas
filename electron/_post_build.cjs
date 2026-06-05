@@ -353,6 +353,7 @@ function main() {
   checkFrontendAsset('slamdunk-kimi-ga-suki-', '.mp3');
   checkFrontendAsset('soccer-tsubasa-burning-hero-', '.mid');
   checkFrontendAsset('dragonball-makafushigi-adventure-', '.mp3');
+  checkFrontendAsset('dragonball-shenron-cha-la-head-cha-la-', '.mp3');
 
   console.log('\n[3] 清除可能混入的明文后端源码:');
   nukePlainBackend();

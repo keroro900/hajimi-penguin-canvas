@@ -214,6 +214,52 @@ html[data-theme-visual="dragon-ball"] .t8-topbar .t8-btn:hover {
   transform: translate(-1px, -1px);
 }
 
+html[data-theme-visual="dragon-ball"] .t8-dragonball-mode-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  height: 29px;
+  padding: 2px;
+  border: 2px solid var(--db-ink);
+  border-radius: 999px;
+  background: color-mix(in srgb, #08102b 84%, var(--db-blue) 16%);
+  box-shadow: 3px 3px 0 var(--db-ink);
+}
+
+html[data-theme-visual="dragon-ball"] .t8-dragonball-mode-switch__option {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-width: 50px;
+  min-height: 21px;
+  padding: 0 9px;
+  border: 0 !important;
+  border-radius: 999px !important;
+  background: transparent !important;
+  color: #fff8d6 !important;
+  box-shadow: none !important;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+html[data-theme-visual="dragon-ball"] .t8-dragonball-mode-switch__option.is-active {
+  background: var(--db-orb) !important;
+  color: #7c2d12 !important;
+  text-shadow: none;
+}
+
+html[data-theme-visual="dragon-ball"][data-dragonball-mode="shenron"] .t8-dragonball-mode-switch {
+  background: color-mix(in srgb, var(--db-card) 88%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--db-orange) 22%, transparent), 3px 3px 0 color-mix(in srgb, #02120f 72%, transparent);
+}
+
+html[data-theme-visual="dragon-ball"][data-dragonball-mode="shenron"] .t8-dragonball-mode-switch__option.is-active {
+  background: linear-gradient(180deg, var(--db-orange-hot), var(--db-orange)) !important;
+  color: var(--t8-accent-text) !important;
+}
+
 html[data-theme-visual="dragon-ball"] .t8-sidebar {
   position: relative;
   background:

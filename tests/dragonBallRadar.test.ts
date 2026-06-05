@@ -38,6 +38,7 @@ test('Dragon Ball radar keeps the minimap marker until successful collection and
   assert.match(radar, /style=\{\{ left: `\$\{activeSpawn\.mapX\}%`, top: `\$\{activeSpawn\.mapY\}%` \}\}/);
   assert.match(radar, /if \(!trackingTarget\) handleSpawnClick\(\)/);
   assert.match(radar, /type:\s*'hidden_mode\.enabled'[\s\S]*kind:\s*'dragon-ball-shenron'/);
+  assert.match(radar, /kind:\s*'dragon-ball-shenron'[\s\S]*mode:\s*'enabled'/);
 
   assert.match(css, /data-dragonball-mode="shenron"/);
   assert.match(css, /\.t8-dragonball-radar__feedback/);
@@ -82,6 +83,26 @@ test('Dragon Ball radar lives in the toolbar and uses classic star layouts', () 
   assert.match(css, /\.t8-dragonball-orb\[data-star="7"\][\s\S]*nth-child\(5\)[\s\S]*left:\s*70%[\s\S]*top:\s*50%/);
 });
 
+test('Dragon Ball Shenron mode can be toggled back from the topbar after unlock', () => {
+  const app = read('../src/App.tsx');
+  const store = read('../src/stores/dragonBallRadar.ts');
+  const css = read('../src/styles/theme-dragonball.css');
+
+  assert.match(app, /useDragonBallRadarStore/);
+  assert.match(app, /shenronUnlockedAt/);
+  assert.match(app, /shenronModeActive/);
+  assert.match(app, /t8-dragonball-mode-switch/);
+  assert.match(app, /handleDragonBallModeSwitch\(false\)/);
+  assert.match(app, /handleDragonBallModeSwitch\(true\)/);
+  assert.match(app, /切回七龙珠普通模式/);
+  assert.match(app, /切换到神龙隐藏模式/);
+  assert.match(app, /import\.meta\.env\.DEV[\s\S]*t8DragonBalls/);
+  assert.match(store, /seedDragonBallRadarForShenronTest/);
+  assert.match(store, /nextSpawnAt:\s*now \+ 1_000/);
+  assert.match(css, /\.t8-dragonball-mode-switch \{/);
+  assert.match(css, /\.t8-dragonball-mode-switch__option\.is-active/);
+});
+
 test('Dragon Ball radar intervals do not depend on mutable store objects', () => {
   const radar = read('../src/components/DragonBallRadar.tsx');
   const spawnEffect = radar.match(
@@ -99,17 +120,22 @@ test('Dragon Ball radar intervals do not depend on mutable store objects', () =>
   assert.doesNotMatch(deps, /\bnodeDragging\b/);
 });
 
-test('Dragon Ball hidden music uses a synth Shenron preset instead of loading another startup asset', () => {
+test('Dragon Ball hidden music uses bundled CHA-LA HEAD-CHA-LA with Shenron synth fallback', () => {
   const types = read('../src/theme/types.ts');
   const music = read('../src/components/ThemeMusicToggle.tsx');
   const defaults = read('../src/theme/defaultTemplates.ts');
+  const assetUrl = new URL('../src/assets/theme-music/dragonball-shenron-cha-la-head-cha-la.mp3', import.meta.url);
 
+  assert.equal(existsSync(assetUrl), true, 'Shenron hidden music should be checked into src/assets');
   assert.match(types, /'shenron-aura'/);
   assert.match(music, /useDragonBallRadarStore/);
   assert.match(music, /shenronHiddenMusicActive/);
   assert.match(music, /preset:\s*'shenron-aura'/);
-  assert.match(music, /source:\s*'synth'/);
-  assert.match(defaults, /hiddenTitle:\s*'神龙模式'/);
+  assert.match(music, /source:\s*\(base\?\.hiddenUrl \? 'url' : 'synth'\)/);
+  assert.match(music, /url:\s*base\?\.hiddenUrl/);
+  assert.match(defaults, /dragonBallShenronHiddenMusicUrl/);
+  assert.match(defaults, /hiddenTitle:\s*'CHA-LA HEAD-CHA-LA'/);
+  assert.match(defaults, /hiddenUrl:\s*dragonBallShenronHiddenMusicUrl/);
 });
 
 test('Dragon Ball Shenron hidden skin owns readable light and dark palettes', () => {
