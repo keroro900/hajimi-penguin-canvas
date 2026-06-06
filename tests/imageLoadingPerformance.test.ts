@@ -30,6 +30,19 @@ test('local canvas image previews use cached backend thumbnails', () => {
   assert.match(filesRoute, /THUMBNAILS_DIR/);
 });
 
+test('local file uploads allow generated PNGs up to 20MB and report oversize as JSON', () => {
+  const config = read('../backend/src/config.js');
+  const filesRoute = read('../backend/src/routes/files.js');
+
+  assert.match(config, /MAX_FILE_SIZE:\s*20\s*\*\s*1024\s*\*\s*1024/);
+  assert.match(filesRoute, /const uploadSingleFile = upload\.single\('file'\)/);
+  assert.match(filesRoute, /err instanceof multer\.MulterError/);
+  assert.match(filesRoute, /err\.code === 'LIMIT_FILE_SIZE'/);
+  assert.match(filesRoute, /res\.status\(413\)\.json/);
+  assert.match(filesRoute, /code:\s*'file_too_large'/);
+  assert.match(filesRoute, /formatUploadLimit\(config\.MAX_FILE_SIZE\)/);
+});
+
 test('initial canvas boot keeps heavy nodes behind lazy boundaries', () => {
   const index = read('../index.html');
   const app = read('../src/App.tsx');

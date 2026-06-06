@@ -1380,6 +1380,21 @@ html[data-theme-visual="op"] .t8-group-box__handle {
   pointer-events: none;
 }
 
+.panorama-avatar-overlay-toggle {
+  box-shadow: none !important;
+}
+
+.panorama-avatar-overlay-toggle.is-active {
+  border-color: var(--t8-border-strong);
+  background: var(--t8-accent);
+  color: var(--t8-accent-text);
+  box-shadow: none !important;
+}
+
+.panorama-avatar-overlay-toggle.is-active:hover {
+  background: var(--t8-accent-hover);
+}
+
 .t8-image-preview-trigger {
   border-color: color-mix(in srgb, var(--t8-border-strong, #38bdf8) 72%, transparent);
   background:
