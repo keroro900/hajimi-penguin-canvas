@@ -8,6 +8,11 @@ import type { CloudUploadTargetConfig } from '../types/canvas';
 import type { ResourceCategory, ResourceKind, ResourceMaterialSetKind, ResourceMediaKind } from '../services/api';
 import type { PromptTemplateKind } from '../data/promptTemplateLibrary';
 import {
+  getPromptTemplateCategories,
+  getPromptTemplateCategoryLabel,
+  type PromptTemplateCategory,
+} from '../data/promptTemplateLibrary';
+import {
   createPromptTemplateFromMaterial,
   loadPromptTemplateUserState,
   savePromptTemplateUserState,
@@ -57,6 +62,7 @@ export default function MaterialContextMenu() {
   const [categories, setCategories] = useState<ResourceCategory[]>([]);
   const [cloudTargets, setCloudTargets] = useState<CloudUploadTargetConfig[]>([]);
   const [cloudUploadingId, setCloudUploadingId] = useState('');
+  const [promptCategoryId, setPromptCategoryId] = useState('');
   const [message, setMessage] = useState('');
   const [cloudResult, setCloudResult] = useState<api.CloudUploadAssetResult | null>(null);
 
@@ -65,6 +71,7 @@ export default function MaterialContextMenu() {
     setMessage('');
     setCloudUploadingId('');
     setCloudResult(null);
+    setPromptCategoryId('');
   }, []);
 
   const loadCategories = useCallback(async (kind: ResourceKind) => {
@@ -109,6 +116,7 @@ export default function MaterialContextMenu() {
         promptTemplateNegative: source.getAttribute('data-prompt-template-negative') || '',
       };
       setMenu(next);
+      setPromptCategoryId(next.promptTemplateCategoryId || '');
       setMessage('');
       setCloudResult(null);
       loadCategories(kind);
@@ -129,6 +137,7 @@ export default function MaterialContextMenu() {
         materialSetItems,
       });
       setMessage('');
+      setPromptCategoryId('');
       setCloudResult(null);
       loadCategories('set');
     };
@@ -194,6 +203,19 @@ export default function MaterialContextMenu() {
     }
   };
 
+  const promptTemplateState = menu && menu.kind !== 'set' ? loadPromptTemplateUserState() : null;
+  const promptTemplateKind = menu && menu.kind !== 'set'
+    ? normalizePromptTemplateKind(String(menu.promptTemplateKind || ''), menu.kind === 'image' ? 'image' : 'video')
+    : 'image';
+  const promptTemplateCategories: PromptTemplateCategory[] = promptTemplateState
+    ? getPromptTemplateCategories(promptTemplateKind, promptTemplateState.customCategories)
+    : [];
+  const selectedPromptCategoryId =
+    promptCategoryId ||
+    menu?.promptTemplateCategoryId ||
+    promptTemplateCategories[0]?.id ||
+    '';
+
   const saveToPromptTemplate = () => {
     if (!menu || menu.kind === 'set' || !menu.url) return;
     let prompt = (menu.promptTemplatePrompt || '').trim();
@@ -213,7 +235,7 @@ export default function MaterialContextMenu() {
       negative: menu.promptTemplateNegative,
       title: titleBase || prompt.slice(0, 32),
       templateKind: menu.promptTemplateKind,
-      categoryId: menu.promptTemplateCategoryId,
+      categoryId: selectedPromptCategoryId,
       sourceNodeId: menu.sourceNodeId,
     });
     const current = loadPromptTemplateUserState();
@@ -223,6 +245,31 @@ export default function MaterialContextMenu() {
     });
     window.dispatchEvent(new CustomEvent('penguin:prompt-templates-changed', { detail: { id: item.id } }));
     setMessage(`已保存到提示词模板库：${item.titleZh}`);
+  };
+
+  const createPromptTemplateCategory = () => {
+    if (!menu || menu.kind === 'set') return;
+    const name = window.prompt(promptTemplateKind === 'image' ? '新建图像模板分类' : '新建视频模板分类');
+    if (!name?.trim()) return;
+    const current = loadPromptTemplateUserState();
+    const id = `custom-${promptTemplateKind}-${Date.now().toString(36)}`;
+    const category: PromptTemplateCategory = {
+      id,
+      kind: promptTemplateKind,
+      labelZh: name.trim(),
+      labelEn: name.trim(),
+      descriptionZh: '从素材右键保存时创建的分类',
+      descriptionEn: 'Created while saving material to prompt templates',
+      order: 1000 + current.customCategories.length,
+      builtIn: false,
+    };
+    savePromptTemplateUserState({
+      ...current,
+      customCategories: [...current.customCategories, category],
+    });
+    setPromptCategoryId(id);
+    window.dispatchEvent(new CustomEvent('penguin:prompt-templates-changed', { detail: { categoryId: id } }));
+    setMessage(`已创建模板分类：${category.labelZh}`);
   };
 
   const createCategory = async () => {
@@ -319,12 +366,39 @@ export default function MaterialContextMenu() {
       )}
       {menu.kind !== 'set' && (
         <div
-          className="py-1"
+          className="space-y-1 py-1 px-2"
           style={{
             borderBottom: isPixel ? '2px solid #1A1410' : `1px solid ${isDark ? 'rgba(255,255,255,.08)' : 'rgba(0,0,0,.06)'}`,
           }}
         >
-          <button className={itemCls} onClick={saveToPromptTemplate}>
+          <div className="flex items-center gap-1.5">
+            <select
+              value={selectedPromptCategoryId}
+              onChange={(event) => setPromptCategoryId(event.target.value)}
+              className="min-w-0 flex-1 rounded border px-2 py-1.5 text-[11px] outline-none"
+              style={{
+                borderColor: isPixel ? '#1A1410' : isDark ? 'rgba(255,255,255,.16)' : 'rgba(0,0,0,.14)',
+                background: isPixel ? '#FFF7C2' : isDark ? 'rgba(255,255,255,.08)' : '#fff',
+                color: isPixel ? '#1A1410' : isDark ? '#fff' : '#18181b',
+              }}
+              title="选择保存到哪个提示词模板分类"
+            >
+              {promptTemplateCategories.map((cat) => (
+                <option key={cat.id} value={cat.id}>
+                  {getPromptTemplateCategoryLabel(cat, 'zh')}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className={isPixel ? 'px-btn px-btn--sm px-btn--ghost !px-2 !py-1' : 'rounded border px-2 py-1.5 text-[11px] hover:bg-black/5'}
+              onClick={createPromptTemplateCategory}
+              title="新建模板分类"
+            >
+              <FolderPlus size={12} />
+            </button>
+          </div>
+          <button className={`${itemCls} !px-1`} onClick={saveToPromptTemplate}>
             <BookmarkPlus size={12} />
             <span className="truncate">保存到提示词模板库</span>
           </button>

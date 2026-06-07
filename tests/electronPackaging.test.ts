@@ -41,6 +41,7 @@ test('Electron packaging verifies encrypted local extension hook points', () => 
   const postBuild = read('../electron/_post_build.cjs');
 
   assert.match(postBuild, /extensions['"], ['"]runtimeHooks\.t8c/);
+  assert.match(postBuild, /routes['"], ['"]figma\.t8c/);
   const localHook = new URL('../local-private/extensions/build/post-build.cjs', import.meta.url);
   if (existsSync(localHook)) {
     const localPostBuild = read('../local-private/extensions/build/post-build.cjs');

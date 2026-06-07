@@ -589,6 +589,12 @@ export interface EagleImportResult {
   failures: Array<{ kind: string; name: string; error: string }>;
 }
 
+export interface FigmaImportResult {
+  base: string;
+  sent: number;
+  result?: any;
+}
+
 export function sendToEagle(payload: {
   materials: EagleImportMaterial[];
   tags?: string[];
@@ -596,6 +602,17 @@ export function sendToEagle(payload: {
   eagleApiBase?: string;
 }) {
   return safeRequest<EagleImportResult>(`${BASE}/eagle/import`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function sendToFigma(payload: {
+  materials: EagleImportMaterial[];
+  tags?: string[];
+  figmaApiBase?: string;
+}) {
+  return safeRequest<FigmaImportResult>(`${BASE}/figma/import`, {
     method: 'POST',
     body: JSON.stringify(payload),
   });

@@ -1597,11 +1597,16 @@ html[data-theme-visual="op"] .t8-group-box__handle {
 }
 
 .llm-chat-action-button--single {
-  right: 31px;
+  right: 58px;
 }
 
 .llm-chat-action-button--smart {
+  right: 31px;
+}
+
+.llm-chat-action-button--delete {
   right: 4px;
+  color: var(--t8-danger, #f87171);
 }
 
 .llm-chat-action-button:hover,
