@@ -321,6 +321,7 @@ function main() {
   checkFile(path.join(RES, 'backend-enc', 'achievements', 'store.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'cloudUploads', 'settings.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'cloudUploads', 'uploader.t8c'));
+  checkFile(path.join(RES, 'backend-enc', 'extensions', 'runtimeHooks.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'providers', 'registry.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'providers', 'mediaResolver.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'providers', 'adapters.t8c'));

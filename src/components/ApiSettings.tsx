@@ -23,6 +23,7 @@ import {
   type ComfyFieldMapping,
 } from '../utils/comfyuiWorkflow';
 import PromptTextarea from './PromptTextarea';
+import { LocalSettingsAddonSlot } from 'virtual:t8-local-extensions';
 
 interface ApiSettingsModalProps {
   open: boolean;
@@ -267,6 +268,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
 
   const [inputs, setInputs] = useState<Record<KeyField, string>>(emptyMap());
   const [shows, setShows] = useState<Record<KeyField, boolean>>(emptyShow());
+  const [clearedFields, setClearedFields] = useState<Partial<Record<KeyField, boolean>>>({});
   const [saved, setSaved] = useState(false);
   // v1.2.10.2: 文件自动保存路径输入
   const [fileSavePathInput, setFileSavePathInput] = useState<string>('');
@@ -305,6 +307,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
     if (open) {
       setInputs(emptyMap());
       setShows(emptyShow());
+      setClearedFields({});
       revealedRef.current = {};
       setSaved(false);
       setBackupMessage('');
@@ -339,6 +342,14 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
 
   const setInputAt = (f: KeyField, v: string) => {
     setInputs((prev) => ({ ...prev, [f]: v }));
+    if (v.trim()) {
+      setClearedFields((prev) => {
+        if (!prev[f]) return prev;
+        const next = { ...prev };
+        delete next[f];
+        return next;
+      });
+    }
   };
 
   const getCurrentEditableSettings = (): Partial<ApiSettings> => ({
@@ -457,6 +468,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
       return nextInputs;
     });
     setShows(emptyShow());
+    setClearedFields({});
     revealedRef.current = {};
     if (typeof patch.fileSavePath === 'string') setFileSavePathInput(patch.fileSavePath);
     if (typeof patch.canvasAutoSavePath === 'string') setCanvasAutoSavePathInput(patch.canvasAutoSavePath);
@@ -501,6 +513,13 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
   // 眼睛点击: 如果要切为“显示”且当前 input 为空但后端已存在 key,
   // 调 /api/settings/raw 拿明文填充。
   const handleToggleShow = async (f: KeyField) => {
+    if (clearedFields[f]) {
+      setClearedFields((prev) => {
+        const next = { ...prev };
+        delete next[f];
+        return next;
+      });
+    }
     const newShow = !shows[f];
     if (newShow && !inputs[f].trim() && (settings as any)[f]) {
       try {
@@ -517,9 +536,33 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
     setShows((prev) => ({ ...prev, [f]: newShow }));
   };
 
+  const handleClearClassifiedKey = (f: KeyField) => {
+    if (clearedFields[f]) {
+      setClearedFields((prev) => {
+        const next = { ...prev };
+        delete next[f];
+        return next;
+      });
+      return;
+    }
+    setInputs((prev) => ({ ...prev, [f]: '' }));
+    setShows((prev) => ({ ...prev, [f]: false }));
+    if (revealedRef.current) {
+      delete (revealedRef.current as any)[f];
+    }
+    const hasSaved = !!String((settings as any)?.[f] || '').trim();
+    if (hasSaved) {
+      setClearedFields((prev) => ({ ...prev, [f]: true }));
+    }
+  };
+
   const handleSave = async () => {
     const patch: Partial<ApiSettings> = {};
     for (const f of ALL_FIELDS) {
+      if (clearedFields[f]) {
+        (patch as any)[f] = '';
+        continue;
+      }
       const v = inputs[f].trim();
       if (!v) continue;
       // 眼睛拉出明文未修改 → 跳过，不走一道上行请求
@@ -564,6 +607,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
       return;
     }
     await save(patch);
+    setClearedFields({});
     setSaved(true);
     setTimeout(() => {
       setSaved(false);
@@ -2016,13 +2060,20 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
     const rawVal = (settings as any)[f] as string | undefined;
     const hasSaved = !!rawVal;
     const maskedDisplay = toMaskedDisplay(rawVal);
+    const pendingClear = !!clearedFields[f];
+    const showClearButton = !!opts.fallbackHint;
+    const clearDisabled = showClearButton && !pendingClear && !hasSaved && !inputs[f].trim();
     return (
       <div key={f} className="space-y-2">
         <label className={`text-sm font-medium flex items-center gap-2 flex-wrap ${labelCls}`}>
           <span className={`w-2 h-2 rounded-full ${spec.bullet}`} />
           {spec.label}
           <span className={`text-[11px] font-normal ${hintCls}`}>{spec.desc}</span>
-          {hasSaved && (
+          {pendingClear ? (
+            <span className="t8-api-settings-badge text-[10px] font-bold px-1.5 py-0.5 rounded border" data-tone="muted">
+              保存后清空
+            </span>
+          ) : hasSaved && (
             <span className="t8-api-settings-badge text-[10px] font-bold px-1.5 py-0.5 rounded border" data-tone="success">
               ✓ 已保存 {maskedDisplay}
             </span>
@@ -2038,17 +2089,31 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
             type={shows[f] ? 'text' : 'password'}
             value={inputs[f]}
             onChange={(e) => setInputAt(f, e.target.value)}
-            placeholder={hasSaved ? '留空保持不变 / 输入新值覆盖' : (opts.fallbackHint ? '留空则使用通用 Key / 输入独立 Key' : '请输入 sk-...')}
+            placeholder={pendingClear ? '已标记清空，保存后回到通用 Key' : (hasSaved ? '留空保持不变 / 输入新值覆盖' : (opts.fallbackHint ? '留空则使用通用 Key / 输入独立 Key' : '请输入 sk-...'))}
             className={inputCls}
             autoComplete="off"
           />
           <button
+            type="button"
             onClick={() => handleToggleShow(f)}
             className={eyeBtnCls}
             title={shows[f] ? '隐藏' : '显示明文'}
+            aria-label={`${spec.label}${shows[f] ? '隐藏' : '显示明文'}`}
           >
             {shows[f] ? <EyeOff size={16} /> : <Eye size={16} />}
           </button>
+          {showClearButton && (
+            <button
+              type="button"
+              onClick={() => handleClearClassifiedKey(f)}
+              className={`${eyeBtnCls} disabled:opacity-40 disabled:cursor-not-allowed`}
+              title={clearDisabled ? '当前没有可清空的分类独立 Key' : (pendingClear ? '取消清空' : '清空该分类独立 Key')}
+              aria-label={`${spec.label}${pendingClear ? '取消清空' : '清空'}`}
+              disabled={clearDisabled}
+            >
+              {pendingClear ? <X size={16} /> : <Trash2 size={16} />}
+            </button>
+          )}
         </div>
         {(opts.baseUrlNote || renderGetKeyButtons(spec.field)) && (
           <div className={`flex items-center gap-2 flex-wrap text-[11px] ${hintCls}`}>
@@ -2115,6 +2180,13 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
         <div className="t8-api-settings-body p-5 space-y-5 overflow-y-auto">
           {/* 三套通用 Key */}
           {renderKey(COMMON_KEYS[0], { baseUrlNote: `Base URL 锁定: ${FIXED_ZHENZHEN_BASE}` })}
+          <LocalSettingsAddonSlot
+            open={open}
+            isPixel={isPixel}
+            isDark={isDark}
+            settings={settings as any}
+            onSaved={load}
+          />
           {renderKey(COMMON_KEYS[1], { baseUrlNote: `Base URL: ${RH_BASE}` })}
           {renderKey(COMMON_KEYS[2], { baseUrlNote: `Base URL 锁定: ${FIXED_ZHENZHEN_BASE} (与贞贞同地址, Key 独立)` })}
 

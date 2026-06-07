@@ -21,6 +21,7 @@ export interface GenerateImageRequest {
   // 兼容旧参数:若传了 size(像素串)则优先用、image 单张也会并入 images
   size?: string;
   image?: string;
+  providerParams?: Record<string, any>;
 }
 
 export interface GenerateImageResult {
@@ -224,6 +225,7 @@ export interface FalSubmitRequest {
   enable_web_search?: boolean;
   /** 'image_url'(上传贞贞取 URL) | 'base64' 默认 'image_url' */
   image_mode?: 'image_url' | 'base64';
+  providerParams?: Record<string, any>;
 }
 
 export interface FalSubmitResult {
@@ -600,6 +602,7 @@ export interface VideoFalSubmitRequest {
   soraBlockIp?: boolean;
   /** sora-fal: 最多 2 个 character id，逗号分隔 */
   soraCharacterIds?: string;
+  providerParams?: Record<string, any>;
 }
 
 export interface VideoFalSubmitResult {
@@ -673,6 +676,7 @@ export interface VideoSubmitRequest {
    *  - seedance: base64 dataURL,最多 3 张(同 veo)
    */
   images?: string[];
+  providerParams?: Record<string, any>;
 }
 
 export async function submitVideo(req: VideoSubmitRequest): Promise<{ taskId: string }> {
@@ -737,6 +741,7 @@ export interface SeedanceSubmitRequest {
   videos?: string[];
   /** 参考音频 URL 多个 */
   audios?: string[];
+  providerParams?: Record<string, any>;
 }
 
 export async function submitSeedance(req: SeedanceSubmitRequest): Promise<{ taskId: string }> {
@@ -784,6 +789,7 @@ export interface AudioSubmitRequest {
   continue_clip_id?: string;
   continue_at?: number;
   cover_clip_id?: string;
+  providerParams?: Record<string, any>;
 }
 
 export async function submitAudio(
@@ -837,9 +843,13 @@ export async function queryAudio(clipIds: string[], saveLocal: boolean = true): 
  */
 export async function uploadAudioForSuno(
   file: File,
+  providerParams?: Record<string, any>,
 ): Promise<{ clipId: string; uploadId: string; filename: string; size: number; mime: string }> {
   const fd = new FormData();
   fd.append('file', file, file.name);
+  if (providerParams && Object.keys(providerParams).length > 0) {
+    fd.append('providerParams', JSON.stringify(providerParams));
+  }
   const r = await fetch('/api/proxy/audio/upload', { method: 'POST', body: fd });
   const data = await r.json();
   if (!r.ok || !data.success) throw new Error(data?.error || `HTTP ${r.status}`);

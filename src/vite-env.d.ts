@@ -2,9 +2,11 @@
 
 declare module 'virtual:t8-local-extensions' {
   import type { FC } from 'react';
-  import type { LocalTopbarSlotProps } from './extensions/localExtensionTypes';
+  import type { LocalNodeAddonSlotProps, LocalSettingsAddonSlotProps, LocalTopbarSlotProps } from './extensions/localExtensionTypes';
 
   export const LocalTopbarSlot: FC<LocalTopbarSlotProps>;
+  export const LocalNodeAddonSlot: FC<LocalNodeAddonSlotProps>;
+  export const LocalSettingsAddonSlot: FC<LocalSettingsAddonSlotProps>;
   export const LocalModalSlot: FC;
 }
 

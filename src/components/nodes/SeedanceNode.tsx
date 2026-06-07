@@ -34,6 +34,7 @@ import {
   filterExcludedMaterials,
   normalizeExcludedMaterialIds,
 } from '../../utils/materialExclusion';
+import { LocalNodeAddonSlot } from 'virtual:t8-local-extensions';
 
 /**
  * SeedanceNode — 字节 Seedance 2.0 视频分镜节点
@@ -77,6 +78,7 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
   const isPixel = themeStyle === 'pixel';
 
   const d = (data as any) || {};
+  const providerParams = (d?.providerParams && typeof d.providerParams === 'object') ? d.providerParams : {};
   const advancedProviders = useApiKeysStore((s) => s.settings.advancedProviders);
   const videoAdvancedProviders = useMemo(
     () => advancedProvidersForNode(advancedProviders, 'video'),
@@ -380,6 +382,7 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
         return_last_frame: returnLastFrame,
         watermark,
         web_search: webSearch,
+        providerParams,
       };
       if (seed !== -1) payload.seed = seed;
       if (firstFrame) payload.firstFrame = firstFrame;
@@ -587,6 +590,21 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
             </select>
           </div>
         )}
+
+        <LocalNodeAddonSlot
+          nodeId={id}
+          nodeType="seedance"
+          data={d}
+          update={update}
+          context={{
+            providerSource: isExternalSelected ? providerSelection.providerSource : 'zhenzhen',
+            providerId: providerSelection.providerId,
+            providerModel: isExternalSelected ? externalProviderModel : model,
+            model,
+            apiModel: model,
+            providerKind: 'seedance',
+          }}
+        />
 
         {/* Duration / Ratio */}
         <div className="grid grid-cols-2 gap-1.5">

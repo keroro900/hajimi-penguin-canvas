@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 
 function read(rel: string) {
   return readFileSync(new URL(rel, import.meta.url), 'utf8');
@@ -35,4 +35,17 @@ test('dir packaging verification ignores stale release metadata unless update ar
   assert.match(postBuild, /const hasBlockmap = fs\.existsSync\(blockmap\)/);
   assert.match(postBuild, /!strict && !hasInstaller && !hasBlockmap/);
   assert.match(postBuild, /skipping installer\/latest\.yml checks for dir build/);
+});
+
+test('Electron packaging verifies encrypted local extension hook points', () => {
+  const postBuild = read('../electron/_post_build.cjs');
+
+  assert.match(postBuild, /extensions['"], ['"]runtimeHooks\.t8c/);
+  const localHook = new URL('../local-private/extensions/build/post-build.cjs', import.meta.url);
+  if (existsSync(localHook)) {
+    const localPostBuild = read('../local-private/extensions/build/post-build.cjs');
+    assert.match(localPostBuild, /zhenzhenGroups\.t8c/);
+    assert.match(localPostBuild, /private New API group source must be encrypted/);
+    assert.match(localPostBuild, /backend-enc['"], ['"]local-private/);
+  }
 });

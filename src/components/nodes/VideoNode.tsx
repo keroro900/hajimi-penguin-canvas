@@ -52,6 +52,7 @@ import {
   filterExcludedMaterials,
   normalizeExcludedMaterialIds,
 } from '../../utils/materialExclusion';
+import { LocalNodeAddonSlot } from 'virtual:t8-local-extensions';
 
 /**
  * VideoNode - 异步视频生成(完全对齐 gpt-image-2-web)
@@ -519,7 +520,7 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
           images = refs;
         }
 
-        const falReq: VideoFalSubmitRequest = { apiModel, prompt: finalPrompt };
+        const falReq: VideoFalSubmitRequest = { apiModel, prompt: finalPrompt, providerParams };
         if (images && images.length) falReq.images = images;
 
         if (falReg.paramKind === 'veo-fal') {
@@ -609,7 +610,7 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
       }
 
       // 按 kind 走不同字段(完全对齐 gpt-image-2-web payload)
-      const payload: VideoSubmitRequest = { model: apiModel, prompt: finalPrompt };
+      const payload: VideoSubmitRequest = { model: apiModel, prompt: finalPrompt, providerParams };
       if (modelDef.kind === 'grok') {
         payload.ratio = ratio;
         payload.duration = Number(duration) || modelDef.defaultDuration || 15;
@@ -853,6 +854,22 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
             </select>
           </div>
         )}
+
+        <LocalNodeAddonSlot
+          nodeId={id}
+          nodeType="video"
+          data={d}
+          update={update}
+          context={{
+            providerSource: isExternalSelected ? providerSelection.providerSource : 'zhenzhen',
+            providerId: providerSelection.providerId,
+            providerModel: isExternalSelected ? externalProviderModel : apiModel,
+            model: apiModel,
+            apiModel,
+            mainId,
+            providerKind: isFal ? 'fal' : modelDef.kind,
+          }}
+        />
 
         {/* === FAL 专属参数面板 === */}
         {showBuiltinFalControls && falReg?.paramKind === 'veo-fal' && (

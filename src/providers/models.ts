@@ -68,14 +68,14 @@ export const IMAGE_MODELS: ImageModelDef[] = [
   },
   {
     id: 'nano-banana-2',
-    apiModel: 'nano-banana-2',
+    apiModel: 'gemini-3.1-flash-image-preview',
     label: 'Nano Banana 2',
     tabLabel: '香蕉2',
     provider: 'zhenzhen',
     paramKind: 'banana-ratio',
     capabilities: ['t2i', 'i2i'],
     apiModelOptions: [
-      { value: 'nano-banana-2', label: 'nano-banana-2 (Flash)' },
+      { value: 'gemini-3.1-flash-image-preview', label: 'nano-banana-2 (Flash)' },
       { value: 'nano-banana-2-fal', label: 'nano-banana-2-fal' },
     ],
     aspectRatios: BANANA_FLASH_RATIOS,

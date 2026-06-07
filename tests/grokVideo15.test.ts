@@ -87,8 +87,22 @@ test('Veo Omni uses the Comfly /v1/videos multipart protocol', () => {
   assert.match(proxyRoute, /const VEO_OMNI_UPSTREAM_MODEL = 'omni_flash-10s'/);
   assert.match(proxyRoute, /\/v1\/videos/);
   assert.match(proxyRoute, /form\.append\('input_reference'/);
-  assert.match(proxyRoute, /rememberTaskKey\(taskId, apiKey, \{ model: VEO_OMNI_PUBLIC_MODEL \}\)/);
+  assert.match(proxyRoute, /rememberTaskKey\(taskId, apiKey, \{ model: VEO_OMNI_PUBLIC_MODEL,/);
   assert.match(proxyRoute, /isVeoOmniModel\(queryModel\)/);
   assert.ok(videoNode.includes('payload.duration = 10'));
   assert.match(videoNode, /veo-omni-10s 需要 1 张参考图/);
+});
+
+test('FAL routes use the common zhenzhen key instead of group tokens', () => {
+  const proxyRoute = read('../backend/src/routes/proxy.js');
+  const imageNode = read('../src/components/nodes/ImageNode.tsx');
+  const videoNode = read('../src/components/nodes/VideoNode.tsx');
+
+  assert.match(proxyRoute, /FAL 全部固定使用通用贞贞 API Key/);
+  assert.match(proxyRoute, /ensureDefaultZhenzhenKey\(settings, res, '图像 FAL'\)/);
+  assert.match(proxyRoute, /ensureDefaultZhenzhenKey\(settings, res, '视频 FAL'\)/);
+  assert.doesNotMatch(proxyRoute, /route: 'image\/fal\/submit'[\s\S]*?applyZhenzhenProviderContext/);
+  assert.doesNotMatch(proxyRoute, /route: 'video\/fal\/submit'[\s\S]*?applyZhenzhenProviderContext/);
+  assert.match(imageNode, /providerKind: isFal \? 'fal' : modelDef\.paramKind/);
+  assert.match(videoNode, /providerKind: isFal \? 'fal' : modelDef\.kind/);
 });

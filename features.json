@@ -1,7 +1,41 @@
 {
   "$schema": "本文件为 T8-penguin-canvas 节点清单防丢失锁,任何节点删减都需要在 roadmap.md 中说明并更新本文件。",
-  "version": "2.1.0",
-  "lastUpdated": "2026-06-07-source-prompt-library-remote-comfyui",
+  "version": "2.1.1",
+  "lastUpdated": "2026-06-08-new-api-groups-nano-banana-2",
+  "sourceReleaseV211": {
+    "version": "2.1.1",
+    "status": "source-only",
+    "date": "2026-06-08",
+    "description": "v2.1.1 源码发布：新增 New API 分组令牌高级模式所需的公开扩展插槽和 providerParams 透传，补齐分类独立 API Key 清空按钮，修复 Nano Banana 2 真实上游模型映射。本次按用户要求只推 GitHub 源码，不打包 Electron，不创建或更新 GitHub Release 自动更新资产。",
+    "highlights": [
+      "公开源码新增 LocalSettingsAddonSlot / LocalNodeAddonSlot 与后端 runtimeHooks，供本机 ignored 私有扩展接入 New API 分组令牌 UI 和按节点分组选择；公开仓库本身不包含私有分组令牌实现。",
+      "图像、视频、Seedance、音频节点把 providerParams 透传到后端代理，后端可通过通用 hook 解析分组令牌；普通用户不启用高级模式时仍只使用原贞贞通用 Key / 分类独立 Key。",
+      "FAL 图像和视频路线固定使用通用贞贞 API Key，不参与 New API 分组令牌，避免 fallback 模型因分组选择走错 Key。",
+      "分类独立 API Key 设置为每个系列增加清空按钮，支持保存后明确清空单个分类 Key，而不是只能覆盖或显示。",
+      "Nano Banana 2 UI 仍显示 nano-banana-2 (Flash)，真实上游提交修正为 gemini-3.1-flash-image-preview；旧画布保存的 nano-banana-2 会在前端和后端兜底归一。",
+      "后端增加无效令牌缓存失效 hook，私有分组令牌扩展可在 New API 后台删除/重建令牌后自动丢弃旧 key，避免继续复用过期缓存。"
+    ],
+    "sourceSync": [
+      "package.json / package-lock.json",
+      "vite.config.ts / vite.config.js",
+      "electron/main.cjs APP_VERSION",
+      "backend/src/config.js APP_VERSION",
+      "features.json",
+      "README.md",
+      "release-notes/v2.1.1.md"
+    ],
+    "releaseBoundary": [
+      "本次只推 GitHub 源码，不运行 npm run dist:release，不打包 Electron，不发布 GitHub Release 或 latest.yml。",
+      "公开提交继续禁止 skill.md、roadmap.md、local-private/** 和任何私有计费/支付/充值/分组令牌实现进入 GitHub。",
+      "Electron 用户包如需带入 ignored local-private 分组令牌实现，必须后续重新走加密打包和 release 验证流程。"
+    ],
+    "verification": [
+      "node --test tests\\imageModelMapping.test.ts tests\\advancedProviderFrontend.test.ts tests\\apiSettingsTheme.test.ts tests\\electronPackaging.test.ts tests\\grokVideo15.test.ts tests\\localExtensionHooks.test.ts",
+      "npm run type-check",
+      "npm run build",
+      "npm run public:check"
+    ]
+  },
   "sourceReleaseV210": {
     "version": "2.1.0",
     "status": "source-only",
@@ -407,7 +441,7 @@
       "图像、视频、SD2.0、音频、LLM、3D 全景、预设图像、文本节点、RunningHub、RH 工具箱、ComfyUI 超市参数已接入",
       "图像、视频、SD2.0、音频、LLM 和输出素材把生成 Prompt 写入 data-prompt-template-*，供右键保存模板使用"
     ],
-    "developerRule": "后续新增面向创作的 prompt 输入框时，优先使用 PromptTextarea 或 MentionPromptInput 并传入 promptTemplateKind='image' 或 'video'；配置型 JSON/列表字段不要显示模板库按钮。新增媒体素材卡片若有生成 Prompt，应补 data-prompt-template-kind/category/prompt/negative 属性，让右键保存到模板库能带走配套素材。新增内置小类必须同步 tests/promptTemplateLibrary.test.ts，保证每个内置小类至少 100 条模板，且同类标题/正文不重复；用户可见标题不能出现 Infinite-Canvas 等上游来源前缀，也不能用 21:9、2x2、3x3 这类规格数字开头；视频模板必须写成 Seedance 可执行结构：主体与动作、场景与氛围、镜头执行、时间节奏、稳定约束，禁止只写地点、情绪、风格或“创作目标”；严禁用机械换词凑数量。"
+    "developerRule": "后续新增面向创作的 prompt 输入框时，优先使用 PromptTextarea 或 MentionPromptInput 并传入 promptTemplateKind='image' 或 'video'；配置型 JSON/列表字段不要显示模板库按钮。新增媒体素材卡片若有生成 Prompt，应补 data-prompt-template-kind/category/prompt/negative 属性，让右键保存到模板库能带走配套素材。新增内置小类必须同步 tests/promptTemplateLibrary.test.ts，保证每个内置小类至少 100 条模板，且同类标题/正文不重复；用户可见标题不能出现 Infinite-Canvas 等上游来源前缀，也不能用 21:9、2x2、3x3 这类规格数字开头；视频模板必须写成 Seedance 可执行结构：主体与动作、场景与氛围、镜头执行、时间节奏、稳定约束，禁止只写地点、情绪、风格或“创作目标”；严禁用机械换词凑数量。",
     "verification": [
       "node --test tests\\promptTemplateLibrary.test.ts",
       "node --test tests\\promptEditor.test.ts tests\\promptTemplateLibrary.test.ts",
@@ -553,11 +587,11 @@
       "T8_RUNTIME_CACHE_DIR": "可选，覆盖运行时归档解压缓存目录；默认打包模式为 %APPDATA%/t8-penguin-canvas/runtime-cache",
       "T8_ENABLE_LOCAL_PRIVATE": "可选，0=强制关闭本机 local-private/extensions 私有扩展；默认只要本机 ignored 私有扩展存在，开发环境和本机打包 release 都会自动带入。GitHub/clean clone 因为没有 local-private 目录，所以不会带充值实现。"
     },
-    "version": "2.1.0",
-    "semverVersion": "2.1.0",
+    "version": "2.1.1",
+    "semverVersion": "2.1.1",
     "versionNumberPolicy": "T8 版本号仍采用 x.y.z 三段，但每一段只允许 0-9；任一段到 9 后下一次发布必须向左进位，禁止任一段出现两位数字。例：1.9.9 的下一版必须是 2.0.0。",
-    "versionNote": "v1.3.0 起统一采用三段阶段号 x.y.z；当前源码版本为 v2.1.0：集中发布提示词模板库媒体附件、素材右键保存模板、模板懒加载预览、Remote ComfyUI 高危开关和 Docker Web+后端部署。本次只推 GitHub 源码并合并 main，不打包 Electron，不发布 GitHub Release 自动更新资产；GitHub 公开源码仍排除本地私有计费/支付/充值实现。",
-    "installer": "v2.1.0 为 source-only 版本，不生成 T8-PenguinCanvas-Setup-2.1.0.exe、.blockmap 或 latest.yml；如需 Electron 自动更新包，后续必须重新走 clean public worktree + npm run dist:release + npm run release:verify。",
+    "versionNote": "v1.3.0 起统一采用三段阶段号 x.y.z；当前源码版本为 v2.1.1：集中发布 New API 分组令牌高级模式所需的公开扩展插槽、providerParams 透传、分类独立 API Key 清空按钮和 Nano Banana 2 真实模型映射修复。本次只推 GitHub 源码，不打包 Electron，不发布 GitHub Release 自动更新资产；GitHub 公开源码仍排除本地私有计费/支付/充值/分组令牌实现。",
+    "installer": "v2.1.1 为 source-only 版本，不生成 T8-PenguinCanvas-Setup-2.1.1.exe、.blockmap 或 latest.yml；如需 Electron 自动更新包，后续必须重新走 clean public worktree + npm run dist:release + npm run release:verify。",
     "updaterInstallMode": "自动更新下载完成后不得静默安装：main.cjs 必须设置 autoInstallOnAppQuit=false，显式安装调用 quitAndInstall(false,true)；electron/build-resources/installer.nsh 通过 SetSilent normal 让新版 NSIS 安装器即使收到旧客户端传入的 /S 也尽量切回前台安装向导。",
     "installerShortcutPolicy": "安装完成后必须创建桌面和开始菜单快捷方式：package.json build.nsis.createDesktopShortcut 必须为 \"always\"，createStartMenuShortcut 必须为 true；electron/build-resources/installer.nsh 必须保留 customInstall 兜底 CreateShortCut \"$newStartMenuLink\" 与 \"$DESKTOP\\${SHORTCUT_NAME}.lnk\"，防止更新安装/keepShortcuts 路径遗漏入口。",
     "updaterEntryPolicy": "顶栏桌面更新入口不得只因 window.t8pc.updater 缺失就静默消失；Electron UA 或 t8pc.getInfo/openExternal 可用时必须显示诊断入口，提示重新安装完整桌面包，Web/纯浏览器环境才隐藏。状态为 not-available 时按钮仍保留“更新”字样，避免用户误以为自动更新入口被删除。",
@@ -579,7 +613,7 @@
       "prePushScan": "每次推送前运行 npm run public:check，并检查 staged 文件不包含 roadmap.md、skill.md、私有扩展目录、私有 UI、私有路由、支付路径、密钥字段或中文充值实现；本地开发和打包若需要私有能力，只能通过 ignored local-private/extensions 扩展加载。"
     },
     "localPrivateExtensions": {
-      "status": "implemented-v2.1.0-source",
+      "status": "implemented-v2.1.1-source",
       "purpose": "把本机私有计费/支付能力从已跟踪公开文件中拆出，避免每次 Git 推送都需要手动拆 hunk。",
       "publicHooks": [
         "backend/src/extensions/localExtensions.js 只负责发现并注册本地私有后端扩展，不包含具体业务逻辑。",
@@ -591,7 +625,7 @@
         ".gitignore 统一忽略 /local-private/**，旧私有路由和私有 UI 路径仍保持忽略兜底。",
         "scripts/check-public-clean.cjs / npm run public:check 会扫描 staged 路径和 diff，防止误提交私有文件或实现关键字。",
         "公开文件 backend/src/config.js、backend/src/server.js、src/App.tsx、src/services/api.ts、electron/_post_build.cjs 不应再保留私有业务 diff。",
-        "v2.1.0 源码推送时继续用 scripts/check-public-clean.cjs 扫描 staged 路径和新增文本，skill.md / roadmap.md / local-private/** 不进入公开提交。"
+        "v2.1.1 源码推送时继续用 scripts/check-public-clean.cjs 扫描 staged 路径和新增文本，skill.md / roadmap.md / local-private/** 不进入公开提交。"
       ]
     },
     "checklist": [
@@ -3096,6 +3130,19 @@
         "Veo 分类显示名改为 Veo，默认具体模型切到 `veo-omni-10s`，后端按 `/v1/videos` multipart 与 `omni_flash-10s` 上游模型调用。",
         "上传素材 20MB 上限、画布崩溃恢复、模型注意事项文案、3D 节点右栏布局和视频模型帮助一起进入公开源码。",
         "公开版本同步到 2.0.9：package.json、package-lock.json、vite.config.ts/js、electron/main.cjs、backend/src/config.js APP_VERSION、features.json、README.md 与 release-notes/v2.0.9.md 同步；本次按规范打包 Electron 并发布 GitHub Release 自动更新资产。"
+      ]
+    },
+    "phase156": {
+      "label": "New API 分组令牌公开扩展点与 Nano Banana 2 映射修复 (v2.1.1)",
+      "status": "implemented",
+      "items": [
+        "新增公开本地扩展插槽 LocalSettingsAddonSlot / LocalNodeAddonSlot 与后端 runtimeHooks，方便 ignored local-private 扩展接入 New API 分组令牌高级模式，同时保持 GitHub 源码不包含私有实现。",
+        "图像、视频、Seedance、音频节点和 generation service 支持 providerParams 透传；后端 zhenzhen.resolveApiKey hook 可按节点所选分组替换实际 API Key，普通用户不启用高级模式时不改变旧流程。",
+        "FAL 图像/视频提交与查询固定使用通用贞贞 API Key，不接 New API 分组令牌；Sora2/Veo/Grok 等旧 FAL 通道继续保留兼容。",
+        "分类独立 API Key 设置页每个系列新增清空按钮，保存后可明确清空对应分类 Key。",
+        "Nano Banana 2 的 UI 选项继续显示 nano-banana-2 (Flash)，但真实上游模型改为 gemini-3.1-flash-image-preview；旧画布保存值在 ImageNode 与 proxy 后端两侧兜底归一。",
+        "新增 imageModelMapping、localExtensionHooks 等回归测试，并同步 advanced provider、API 设置、Electron 打包检查与 FAL key 边界测试。",
+        "公开版本同步到 2.1.1：package.json、package-lock.json、vite.config.ts/js、electron/main.cjs、backend/src/config.js APP_VERSION、features.json、README.md 与 release-notes/v2.1.1.md 同步；本次只推 GitHub 源码，不打包 Electron，不发布 GitHub Release 自动更新资产。"
       ]
     }
   },
