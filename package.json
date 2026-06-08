@@ -1,7 +1,7 @@
 {
   "name": "t8-penguin-canvas",
   "private": false,
-  "version": "2.1.3",
+  "version": "2.1.4",
   "type": "module",
   "main": "electron/main.cjs",
   "description": "T8-penguin-canvas — AI 节点画布工作流工具（Web + Electron 桌面端）",
@@ -29,6 +29,7 @@
     "dev": "concurrently \"cd backend && npm start\" \"vite\"",
     "dev:vite": "vite",
     "dev:backend": "cd backend && npm start",
+    "figma:bridge": "node tools/figma-bridge/server.cjs",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
@@ -157,6 +158,13 @@
       {
         "from": "tools/parsehub-bridge",
         "to": "tools/parsehub-bridge",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "tools/figma-bridge",
+        "to": "tools/figma-bridge",
         "filter": [
           "**/*"
         ]
