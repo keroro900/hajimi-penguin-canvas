@@ -2183,6 +2183,275 @@ html[data-theme-visual="saint-seiya"] .t8-saint-sanctuary__minimap-ping-layer .t
   height: 31px;
 }
 
+html[data-theme-visual="saint-seiya"][data-saint-mode="hades"] .react-flow__minimap {
+  border-color: #ffe68a !important;
+  background:
+    radial-gradient(circle at 76% 28%, rgba(255, 230, 138, 0.28) 0 3px, transparent 4px),
+    radial-gradient(circle at 16% 72%, rgba(103, 232, 249, 0.24) 0 2px, transparent 3px),
+    radial-gradient(circle at 50% 54%, rgba(151, 72, 186, 0.28) 0 19%, transparent 35%),
+    conic-gradient(from 218deg at 50% 56%, transparent 0 18deg, rgba(255, 230, 138, 0.18) 20deg 23deg, transparent 25deg 56deg, rgba(103, 232, 249, 0.16) 58deg 61deg, transparent 63deg 108deg, rgba(255, 106, 185, 0.12) 110deg 114deg, transparent 116deg),
+    linear-gradient(135deg, rgba(7, 15, 37, 0.98), rgba(19, 32, 62, 0.96) 46%, rgba(44, 18, 58, 0.96)) !important;
+  background-size: auto, auto, auto, auto, auto !important;
+  color: #fff7db !important;
+  box-shadow:
+    0 0 0 2px rgba(255, 230, 138, 0.9),
+    0 0 0 5px rgba(5, 12, 30, 0.9),
+    0 0 28px rgba(151, 72, 186, 0.38),
+    4px 4px 0 rgba(0, 0, 0, 0.72) !important;
+  isolation: isolate;
+}
+
+html[data-theme-visual="saint-seiya"][data-saint-mode="hades"] .react-flow__minimap::before {
+  content: "MEIKAI RADAR";
+  left: 13px;
+  top: 10px;
+  z-index: 5;
+  padding: 4px 9px;
+  border-color: rgba(255, 230, 138, 0.82);
+  background:
+    linear-gradient(90deg, rgba(8, 15, 35, 0.92), rgba(37, 24, 63, 0.82));
+  color: #ffe68a;
+  letter-spacing: 0;
+  box-shadow: 0 0 12px rgba(255, 230, 138, 0.28);
+}
+
+html[data-theme-visual="saint-seiya"][data-saint-mode="hades"] .react-flow__minimap::after {
+  content: "";
+  position: absolute;
+  inset: 10px;
+  z-index: 1;
+  pointer-events: none;
+  border-radius: 12px;
+  background:
+    linear-gradient(90deg, transparent 0 9%, rgba(255, 230, 138, 0.56) 10% 13%, transparent 14% 20%, rgba(255, 230, 138, 0.36) 21% 23%, transparent 24% 76%, rgba(255, 230, 138, 0.36) 77% 79%, transparent 80% 86%, rgba(255, 230, 138, 0.56) 87% 90%, transparent 91%),
+    radial-gradient(ellipse at 50% 102%, rgba(103, 232, 249, 0.28) 0 8%, transparent 9%),
+    repeating-linear-gradient(90deg, transparent 0 19px, rgba(255, 230, 138, 0.16) 20px 21px, transparent 22px 35px);
+  opacity: 0.72;
+  clip-path: polygon(0 22%, 100% 22%, 94% 100%, 6% 100%);
+}
+
+html[data-theme-visual="saint-seiya"][data-saint-mode="hades"] .react-flow__minimap svg {
+  filter:
+    drop-shadow(0 0 5px rgba(255, 230, 138, 0.38))
+    drop-shadow(0 0 12px rgba(103, 232, 249, 0.16));
+}
+
+html[data-theme-visual="saint-seiya"][data-saint-mode="hades"] .react-flow__minimap-mask {
+  fill: rgba(25, 45, 82, 0.34) !important;
+  stroke: rgba(103, 232, 249, 0.86) !important;
+  stroke-width: 4px !important;
+}
+
+html[data-theme-visual="saint-seiya"][data-saint-mode="hades"] .react-flow__minimap-node {
+  fill: #fff4a3 !important;
+  stroke: rgba(5, 12, 30, 0.96) !important;
+  stroke-width: 1.4px !important;
+  filter:
+    drop-shadow(0 0 4px rgba(255, 230, 138, 0.72))
+    drop-shadow(0 0 8px rgba(151, 72, 186, 0.34));
+}
+
+html[data-theme-visual="saint-seiya"] .t8-saint-sanctuary__minimap-ping-layer.is-hades {
+  background:
+    radial-gradient(circle at 50% 52%, transparent 0 35%, rgba(255, 230, 138, 0.14) 36% 37%, transparent 38% 100%),
+    radial-gradient(circle at 50% 52%, transparent 0 54%, rgba(103, 232, 249, 0.16) 55% 56%, transparent 57% 100%);
+}
+
+html[data-theme-visual="saint-seiya"] .t8-saint-sanctuary__minimap-ping-layer.is-hades .t8-saint-sanctuary__ping {
+  z-index: 8;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  border-color: #fff7db;
+  color: #120b1f;
+  transform: translate(-50%, -50%) scale(0.92);
+  box-shadow:
+    0 0 0 3px rgba(5, 12, 30, 0.82),
+    0 0 0 5px rgba(255, 230, 138, 0.30),
+    0 0 17px rgba(255, 230, 138, 0.56),
+    0 0 28px rgba(151, 72, 186, 0.34);
+}
+
+html[data-theme-visual="saint-seiya"] .t8-saint-sanctuary__minimap-ping-layer.is-hades .t8-saint-sanctuary__ping.is-opening {
+  transform: translate(-50%, -50%) scale(1);
+}
+
+html[data-theme-visual="saint-seiya"] .t8-saint-hades-minimap__gate,
+html[data-theme-visual="saint-seiya"] .t8-saint-hades-minimap__river,
+html[data-theme-visual="saint-seiya"] .t8-saint-hades-minimap__orbit,
+html[data-theme-visual="saint-seiya"] .t8-saint-hades-minimap__scanner,
+html[data-theme-visual="saint-seiya"] .t8-saint-hades-minimap__athena,
+html[data-theme-visual="saint-seiya"] .t8-saint-hades-minimap__label,
+html[data-theme-visual="saint-seiya"] .t8-saint-hades-minimap__temples {
+  position: absolute;
+  pointer-events: none;
+}
+
+html[data-theme-visual="saint-seiya"] .t8-saint-hades-minimap__gate {
+  left: 28px;
+  bottom: -16px;
+  width: 78px;
+  height: 58px;
+  z-index: 3;
+  border-radius: 50% 50% 6px 6px;
+  background:
+    radial-gradient(ellipse at 50% 64%, rgba(255, 247, 219, 0.94) 0 14%, rgba(255, 230, 138, 0.64) 15% 26%, rgba(103, 232, 249, 0.28) 27% 42%, transparent 43%),
+    conic-gradient(from 140deg at 50% 82%, transparent 0 42deg, rgba(255, 230, 138, 0.7) 45deg 56deg, transparent 58deg 302deg, rgba(255, 230, 138, 0.7) 304deg 315deg, transparent 318deg);
+  filter: drop-shadow(0 0 16px rgba(255, 230, 138, 0.56));
+  opacity: 0.96;
+  animation: saint-hades-gate-pulse 2.8s ease-in-out infinite;
+}
+
+html[data-theme-visual="saint-seiya"] .t8-saint-hades-minimap__river {
+  left: -18px;
+  top: 90px;
+  z-index: 2;
+  width: 280px;
+  height: 34px;
+  transform: rotate(-15deg);
+  background:
+    linear-gradient(90deg, transparent, rgba(67, 210, 235, 0.16) 12%, rgba(255, 230, 138, 0.38) 42%, rgba(151, 72, 186, 0.28) 70%, transparent),
+    repeating-linear-gradient(90deg, transparent 0 14px, rgba(255, 247, 219, 0.36) 15px 18px, transparent 19px 34px);
+  filter: blur(0.2px) drop-shadow(0 0 9px rgba(103, 232, 249, 0.34));
+  opacity: 0.76;
+  clip-path: polygon(0 34%, 22% 8%, 48% 50%, 70% 24%, 100% 44%, 100% 78%, 68% 58%, 48% 84%, 22% 44%, 0 74%);
+  animation: saint-hades-river-flow 4.8s linear infinite;
+}
+
+html[data-theme-visual="saint-seiya"] .t8-saint-hades-minimap__orbit {
+  left: 47px;
+  top: 13px;
+  z-index: 2;
+  width: 136px;
+  height: 136px;
+  border: 1px solid rgba(255, 230, 138, 0.48);
+  border-radius: 50%;
+  box-shadow:
+    inset 0 0 0 1px rgba(103, 232, 249, 0.16),
+    0 0 20px rgba(255, 230, 138, 0.12);
+}
+
+html[data-theme-visual="saint-seiya"] .t8-saint-hades-minimap__orbit::before,
+html[data-theme-visual="saint-seiya"] .t8-saint-hades-minimap__orbit::after {
+  content: "";
+  position: absolute;
+  inset: 13px;
+  border-radius: 50%;
+  border: 1px dashed rgba(255, 247, 219, 0.26);
+}
+
+html[data-theme-visual="saint-seiya"] .t8-saint-hades-minimap__orbit::after {
+  inset: 35px;
+  border-style: solid;
+  border-color: rgba(103, 232, 249, 0.26);
+}
+
+html[data-theme-visual="saint-seiya"] .t8-saint-hades-minimap__scanner {
+  left: 47px;
+  top: 13px;
+  z-index: 3;
+  width: 136px;
+  height: 136px;
+  border-radius: 50%;
+  background:
+    conic-gradient(from -35deg, rgba(255, 230, 138, 0.32) 0 18deg, transparent 20deg 360deg);
+  mix-blend-mode: screen;
+  opacity: 0.72;
+  animation: saint-hades-radar-sweep 4.2s linear infinite;
+}
+
+html[data-theme-visual="saint-seiya"] .t8-saint-hades-minimap__athena {
+  right: 23px;
+  top: 24px;
+  z-index: 4;
+  width: 24px;
+  height: 38px;
+  background:
+    linear-gradient(90deg, transparent 0 42%, #fff7db 43% 57%, transparent 58%),
+    radial-gradient(circle at 50% 20%, #fff7db 0 5px, rgba(255, 230, 138, 0.72) 6px 9px, transparent 10px),
+    linear-gradient(180deg, rgba(255, 230, 138, 0.86), rgba(151, 72, 186, 0.14));
+  clip-path: polygon(50% 0, 62% 24%, 94% 18%, 70% 47%, 78% 100%, 50% 76%, 22% 100%, 30% 47%, 6% 18%, 38% 24%);
+  filter: drop-shadow(0 0 9px rgba(255, 230, 138, 0.58));
+}
+
+html[data-theme-visual="saint-seiya"] .t8-saint-hades-minimap__label {
+  left: 14px;
+  top: 35px;
+  z-index: 4;
+  color: rgba(255, 247, 219, 0.86);
+  font-family: var(--t8-font-display);
+  font-size: 7px;
+  font-weight: 950;
+  letter-spacing: 0;
+  text-transform: uppercase;
+  text-shadow: 0 0 7px rgba(255, 230, 138, 0.4);
+}
+
+html[data-theme-visual="saint-seiya"] .t8-saint-hades-minimap__temples {
+  left: 47px;
+  top: 13px;
+  z-index: 4;
+  width: 136px;
+  height: 136px;
+  border-radius: 50%;
+}
+
+html[data-theme-visual="saint-seiya"] .t8-saint-hades-minimap__temples i {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 15px;
+  height: 12px;
+  margin-left: -7.5px;
+  margin-top: -6px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 230, 138, 0.74);
+  border-radius: 4px;
+  background: rgba(8, 15, 35, 0.78);
+  color: #ffe68a;
+  font-family: var(--t8-font-display);
+  font-size: 7px;
+  font-style: normal;
+  font-weight: 950;
+  line-height: 1;
+  box-shadow: 0 0 8px rgba(255, 230, 138, 0.18);
+  transform:
+    rotate(calc(var(--saint-temple-index) * 30deg))
+    translateY(-58px)
+    rotate(calc(var(--saint-temple-index) * -30deg));
+}
+
+@keyframes saint-hades-radar-sweep {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes saint-hades-river-flow {
+  from {
+    background-position: 0 0, 0 0;
+  }
+  to {
+    background-position: 0 0, 96px 0;
+  }
+}
+
+@keyframes saint-hades-gate-pulse {
+  0%,
+  100% {
+    transform: scale(0.94);
+    opacity: 0.74;
+  }
+  50% {
+    transform: scale(1.08);
+    opacity: 1;
+  }
+}
+
 html[data-theme-visual="saint-seiya"] .t8-saint-battle--dock {
   position: fixed !important;
   top: 98px !important;
@@ -3063,7 +3332,10 @@ html[data-theme-visual="saint-seiya"] .t8-saint-battle__line.is-current {
 
 @media (prefers-reduced-motion: reduce) {
   .t8-saint-sanctuary__ping,
-  .t8-saint-hades-cutscene__zodiac {
+  .t8-saint-hades-cutscene__zodiac,
+  .t8-saint-hades-minimap__gate,
+  .t8-saint-hades-minimap__river,
+  .t8-saint-hades-minimap__scanner {
     animation: none;
   }
 

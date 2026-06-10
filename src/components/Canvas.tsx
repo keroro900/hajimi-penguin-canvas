@@ -797,6 +797,7 @@ const EXECUTABLE_NODE_TYPES = new Set<string>([
   'video', 'seedance', 'audio', 'llm', 'runninghub', 'runninghub-wallet',
   // v1.2.10.1: rh-tools 与 RunningHub 同质，同样可被批量运行调起
   'rh-tools', 'rh-toolbox', 'fal-toolbox', 'comfyui-store',
+  'grok-oauth-agent',
   'resize', 'upscale', 'grid-crop', 'grid-editor', 'remove-bg', 'combine', 'image-compare', 'drawing-board',
   'panorama-3d',
   'frame-extractor', 'frame-pair',
@@ -5421,10 +5422,19 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
 
       // 提取输出项 (去重 + 过滤 + 同类型内序号)
       const seen = new Set<string>();
+      const seenTexts = new Set<string>();
+      const texts: string[] = [];
       const imgs: string[] = [];
       const vids: string[] = [];
       const auds: string[] = [];
       const mods: string[] = [];
+      const pushTxt = (value: any) => {
+        if (typeof value !== 'string') return;
+        const text = value.trim();
+        if (!text || seenTexts.has(text)) return;
+        seenTexts.add(text);
+        texts.push(text);
+      };
       const pushImg = (u: any) => {
         if (typeof u !== 'string' || !u || seen.has(u)) return;
         seen.add(u);
@@ -5445,6 +5455,11 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         seen.add(u);
         mods.push(u);
       };
+      pushTxt(d.outputText);
+      pushTxt(d.reply);
+      if (Array.isArray(d.textSegments)) d.textSegments.forEach(pushTxt);
+      if (Array.isArray(d.segments)) d.segments.forEach(pushTxt);
+      if (Array.isArray(d.texts)) d.texts.forEach(pushTxt);
       pushImg(d.imageUrl);
       if (Array.isArray(d.imageUrls)) d.imageUrls.forEach(pushImg);
       // d.urls 是通用产物数组（RH/FAL 使用），可能同时含图/视频/音频/3D 模型。
@@ -5480,7 +5495,8 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       // v1.2.8.2: 支持 audioUrls 数组 (LoopNode 聚合多个音频产物)
       if (Array.isArray(d.audioUrls)) d.audioUrls.forEach(pushAud);
       // 合成 items: 靠 kindIndex 让下游 OutputNode 能准确拾取对应索引的那一项
-      const items: Array<{ kind: 'image' | 'video' | 'audio'; url: string; kindIndex: number }> = [
+      const items: Array<{ kind: 'text' | 'image' | 'video' | 'audio'; url: string; kindIndex: number }> = [
+        ...texts.map((url, i) => ({ kind: 'text' as const, url, kindIndex: i })),
         ...imgs.map((url, i) => ({ kind: 'image' as const, url, kindIndex: i })),
         ...vids.map((url, i) => ({ kind: 'video' as const, url, kindIndex: i })),
         ...auds.map((url, i) => ({ kind: 'audio' as const, url, kindIndex: i })),

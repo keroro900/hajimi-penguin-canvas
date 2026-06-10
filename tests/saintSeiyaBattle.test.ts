@@ -230,3 +230,16 @@ test('Saint Seiya auto battle prefers unlocked skills and ultimate moves', () =>
   const attackEvents = report.events.filter((event) => event.kind === 'player-attack' || event.kind === 'enemy-attack');
   assert.ok(attackEvents.every((event) => event.effectId && event.effectStyle && event.soundCue));
 });
+
+test('Saint Seiya Hades radar keeps chest ping inside the minimap frame', () => {
+  const component = readFileSync(resolve(repoRoot, 'src/components/SaintSeiyaSanctuary.tsx'), 'utf8');
+  const css = readFileSync(resolve(repoRoot, 'src/styles/theme-saintseiya.css'), 'utf8');
+
+  assert.match(component, /const minimapPingInset = hadesModeActive \? 14 : 8/);
+  assert.match(component, /const minimapPingTopMax = hadesModeActive \? 82 : 92/);
+  assert.match(component, /Math\.min\(100 - minimapPingInset, activeChest\.mapX\)/);
+  assert.match(component, /Math\.min\(minimapPingTopMax, 18 \+ activeChest\.mapY \* 0\.74\)/);
+  assert.match(css, /minimap-ping-layer\.is-hades \.t8-saint-sanctuary__ping[\s\S]*width:\s*30px/);
+  assert.match(css, /transform:\s*translate\(-50%, -50%\) scale\(0\.92\)/);
+  assert.match(css, /minimap-ping-layer\.is-hades \.t8-saint-sanctuary__ping\.is-opening[\s\S]*scale\(1\)/);
+});

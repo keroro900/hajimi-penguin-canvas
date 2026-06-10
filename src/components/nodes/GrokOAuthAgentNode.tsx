@@ -155,10 +155,11 @@ interface GrokChatSettings {
 }
 
 const handleStyle: CSSProperties = {
-  width: 12,
-  height: 12,
-  border: 'none',
-  zIndex: 20,
+  width: 16,
+  height: 16,
+  border: '2px solid rgba(255,247,219,0.96)',
+  boxShadow: '0 0 0 2px rgba(5,12,30,0.82), 0 0 14px rgba(255,224,113,0.42)',
+  zIndex: 120,
 };
 
 function makeId(prefix: string) {
@@ -789,6 +790,65 @@ function buildLegacyArtifactsFromData(data: any): GrokAgentArtifact[] {
   return artifacts.slice(-MAX_AGENT_ARTIFACTS);
 }
 
+function buildArtifactOutputPatch(artifact: GrokAgentArtifact, options: {
+  prompt?: string;
+  summary?: string;
+  lastPublishedArtifactId?: string;
+  lastQuickOutputId?: string;
+  quickLastRunSummary?: string;
+} = {}): Record<string, any> {
+  const allUrls = dedupeStringArray(artifact.urls || artifact.url);
+  const primaryUrl = String(artifact.url || allUrls[0] || '').trim();
+  const urls = primaryUrl ? [primaryUrl] : [];
+  const textValue = String(artifact.text || '').trim();
+  const label = artifactKindLabel(artifact.kind);
+  const summary = options.summary || `${label} 已输出到画布素材`;
+  const patch: Record<string, any> = {
+    status: 'success',
+    error: '',
+    progress: 100,
+    progressMessage: '',
+    lastRunSummary: summary,
+    promptResolved: artifact.prompt || options.prompt || '',
+    outputText: '',
+    text: '',
+    reply: '',
+    urls: [],
+    generatedImages: [],
+    imageUrl: '',
+    imageUrls: [],
+    directImageUrl: '',
+    directImageUrls: [],
+    videoUrl: '',
+    videoUrls: [],
+    directVideoUrl: '',
+    directVideoUrls: [],
+    audioUrl: '',
+    audioUrls: [],
+    directAudioUrl: '',
+    directAudioUrls: [],
+  };
+  if (options.lastPublishedArtifactId) patch.lastPublishedArtifactId = options.lastPublishedArtifactId;
+  if (options.lastQuickOutputId) patch.lastQuickOutputId = options.lastQuickOutputId;
+  if (options.quickLastRunSummary) patch.quickLastRunSummary = options.quickLastRunSummary;
+  if (artifact.kind === 'image') {
+    patch.imageUrl = urls[0] || '';
+    patch.imageUrls = urls;
+  } else if (artifact.kind === 'video') {
+    patch.videoUrl = urls[0] || '';
+    patch.videoUrls = urls;
+  } else if (artifact.kind === 'audio') {
+    patch.audioUrl = urls[0] || '';
+    patch.audioUrls = urls;
+  } else {
+    patch.outputText = textValue;
+    patch.text = textValue;
+    patch.reply = textValue;
+    patch.prompt = options.prompt || artifact.prompt || '';
+  }
+  return patch;
+}
+
 function copyText(text: string) {
   if (!text) return;
   void navigator.clipboard?.writeText?.(text);
@@ -827,6 +887,8 @@ const GrokOAuthAgentNode = ({ id, data, selected }: NodeProps) => {
   const mode = (d.mode || 'chat') as GrokOAuthMode;
   const localPrompt = String(d.prompt || '');
   const promptMentions = (Array.isArray(d.promptMentions) ? d.promptMentions : []) as MediaMention[];
+  const quickPrompt = String(d.quickPrompt || '');
+  const quickPromptMentions = (Array.isArray(d.quickPromptMentions) ? d.quickPromptMentions : []) as MediaMention[];
   const materialOrder = Array.isArray(d.materialOrder) ? d.materialOrder : [];
   const statusText = String(d.status || 'idle');
   const isBusy = ['running', 'streaming', 'submitting', 'polling'].includes(statusText);
@@ -902,6 +964,7 @@ const GrokOAuthAgentNode = ({ id, data, selected }: NodeProps) => {
   const oauthLoginUrl = String(d.oauthLoginUrl || '');
   const oauthLoginSessionId = String(d.oauthLoginSessionId || '');
   const lastArtifact = agentArtifacts.find((item) => item.id === d.lastArtifactId) || agentArtifacts[agentArtifacts.length - 1] || null;
+  const quickLastRunSummary = String(d.quickLastRunSummary || '').trim();
   const statusMessage = loginPolling
     ? '等待 Grok 授权；如果页面显示无法建立连接，请复制授权码粘贴到下方。'
     : status?.loggedIn
@@ -991,49 +1054,11 @@ const GrokOAuthAgentNode = ({ id, data, selected }: NodeProps) => {
       return;
     }
     publishingArtifactIdsRef.current.add(current.id);
-    const allUrls = dedupeStringArray(current.urls || current.url);
-    const primaryUrl = String(current.url || allUrls[0] || '').trim();
-    const urls = primaryUrl ? [primaryUrl] : [];
-    const textValue = String(current.text || '').trim();
-    const patch: Record<string, any> = {
-      status: 'success',
-      error: '',
+    const patch = buildArtifactOutputPatch(current, {
       lastPublishedArtifactId: current.id,
-      lastRunSummary: `已发布 ${artifactKindLabel(current.kind)} 到画布输出`,
-      promptResolved: current.prompt || d.promptResolved || '',
-      outputText: '',
-      text: '',
-      reply: '',
-      urls: [],
-      generatedImages: [],
-      imageUrl: '',
-      imageUrls: [],
-      directImageUrl: '',
-      directImageUrls: [],
-      videoUrl: '',
-      videoUrls: [],
-      directVideoUrl: '',
-      directVideoUrls: [],
-      audioUrl: '',
-      audioUrls: [],
-      directAudioUrl: '',
-      directAudioUrls: [],
-    };
-    if (current.kind === 'image') {
-      patch.imageUrl = urls[0] || '';
-      patch.imageUrls = urls;
-    } else if (current.kind === 'video') {
-      patch.videoUrl = urls[0] || '';
-      patch.videoUrls = urls;
-    } else if (current.kind === 'audio') {
-      patch.audioUrl = urls[0] || '';
-      patch.audioUrls = urls;
-    } else {
-      patch.outputText = textValue;
-      patch.text = textValue;
-      patch.reply = textValue;
-      patch.prompt = localPrompt;
-    }
+      summary: `已发布 ${artifactKindLabel(current.kind)} 到画布输出`,
+      prompt: current.prompt || d.promptResolved || localPrompt,
+    });
     const nextArtifacts = artifactsRef.current.map((item) => item.id === current.id ? { ...item, publishedAt: Date.now() } : item);
     setAgentArtifacts(nextArtifacts, patch);
     logBus.success(`已发布 ${artifactKindLabel(current.kind)} 到画布输出`, `grok:${id}`);
@@ -1617,6 +1642,161 @@ const GrokOAuthAgentNode = ({ id, data, selected }: NodeProps) => {
     }
   }, [appendArtifact, appendMessage, autoIntent, autoPublishArtifacts, chatSettings.contextLimit, clearTransientLocalMaterials, contextCompressedCount, contextSummary, d.grokConversationId, d.requestId, d.videoModel, id, isBusy, localPrompt, mentionMaterials, mode, modePayload, orderedAudios, orderedTexts, payloadBase, persistLocalMaterials, persistPrompt, promptMentions, publishArtifact, status, update, updateMessage]);
 
+  const handleQuickRun = useCallback(async (override?: { prompt?: string; mentions?: MediaMention[] }) => {
+    if (isBusy) return;
+    const rawRunPrompt = typeof override?.prompt === 'string' ? override.prompt : quickPrompt;
+    const rawRunMentions = Array.isArray(override?.mentions) ? override.mentions : quickPromptMentions;
+    const normalizedInput = normalizePromptMentionTokens(rawRunPrompt, rawRunMentions, mentionMaterials);
+    const runPrompt = normalizedInput.text;
+    const runMentions = normalizedInput.mentions;
+    if (normalizedInput.changed) {
+      update({ quickPrompt: runPrompt, quickPromptMentions: runMentions });
+    }
+    const slash = parseSlashCommand(runPrompt);
+    const promptBody = slash ? slash.body : runPrompt;
+    const effectiveMentions = slash ? shiftMentionsForSlashBody(runMentions, slash.bodyStart) : runMentions;
+    const runPromptResolved = buildPrompt(promptBody, orderedTexts, effectiveMentions, mentionMaterials);
+    const refMedia = referencedMediaByMentions(effectiveMentions, mentionMaterials);
+    const hasAudioInput = orderedAudios.length > 0 || refMedia.audios.length > 0;
+    const inferredMode = slash ? slash.mode : (autoIntent ? inferModeFromPrompt(runPromptResolved || promptBody, mode, hasAudioInput) : mode);
+    const command = slash?.command || (inferredMode === 'image' ? 'image' : inferredMode === 'video' ? 'video' : inferredMode === 'tts' ? 'tts' : inferredMode === 'stt' ? 'stt' : 'chat');
+    const base = payloadBase(inferredMode, promptBody, effectiveMentions);
+    const videoModel = normalizeGrokVideoModel(d.videoModel || VIDEO_MODELS[0]);
+    if (inferredMode === 'video' && isGrokImageOnlyVideoModel(videoModel) && base.images.length === 0) {
+      update({ status: 'error', error: 'grok-imagine-video-1.5-preview 只支持图生视频：请连接至少 1 张图片，或切换到 grok-imagine-video 做文生视频。' });
+      return;
+    }
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setStreamingReply('');
+    update({
+      mode: inferredMode,
+      status: 'running',
+      error: '',
+      progress: 1,
+      progressMessage: 'Grok OAuth 简易生成中...',
+      requestId: '',
+      lastSlashCommand: command,
+    });
+    let shouldClearTransientMaterials = false;
+    let shouldClearQuickPromptAfterDispatch = false;
+    try {
+      const latestStatus = status || await getGrokOAuthStatus();
+      if (latestStatus.available === false || latestStatus.moduleEnabled === false) {
+        throw new Error(latestStatus.message || GROK_OAUTH_PRIVATE_DISABLED_MESSAGE);
+      }
+      if (!latestStatus.loggedIn) throw new Error('请先点击“登录 / 绑定”完成 Grok OAuth 授权。');
+      if (inferredMode !== 'stt' && !base.prompt) throw new Error('请填写 Prompt，或连接上游文本节点。');
+      if (inferredMode === 'stt' && !(modePayload('stt', base) as any).audioUrl) throw new Error('STT 需要连接上游音频，或节点已有音频输出。');
+
+      shouldClearTransientMaterials = !persistLocalMaterials && localMaterialsRef.current.length > 0;
+      shouldClearQuickPromptAfterDispatch = !persistPrompt && (runPrompt.trim().length > 0 || runMentions.length > 0);
+      if (shouldClearQuickPromptAfterDispatch) {
+        update({ quickPrompt: '', quickPromptMentions: [] });
+      }
+
+      const turnId = makeId('quick_turn');
+      const runtimeModePayload = modePayload(inferredMode, base) as any;
+      if (inferredMode === 'chat') {
+        runtimeModePayload.messages = [
+          { role: 'user', content: base.prompt },
+        ];
+      }
+      const modelValue = String(runtimeModePayload.model || '');
+      const sourceArtifactIds = Array.isArray(base.sourceArtifactIds) ? base.sourceArtifactIds : [];
+      const parentArtifactId = String(base.parentArtifactId || sourceArtifactIds[0] || '');
+      let finalReply = '';
+      let latestEventArtifact: GrokAgentArtifact | null = null;
+      const result = await streamGrokOAuthAgent(
+        {
+          ...base,
+          ...runtimeModePayload,
+          mode: inferredMode,
+          command,
+          slashCommand: slash?.command || '',
+          turnId,
+          conversationId: String(d.grokConversationId || 'default'),
+          conversationContextLimit: 1,
+          sourceArtifactIds,
+          parentArtifactId,
+          conversationMessages: [],
+          conversationArtifacts: artifactsRef.current.slice(-16).map((artifact) => ({
+            id: artifact.id,
+            refId: artifact.refId,
+            kind: artifact.kind,
+            title: artifact.title,
+            text: artifact.text,
+            url: artifact.url,
+            urls: artifact.urls,
+            prompt: artifact.prompt,
+            model: artifact.model,
+            parentId: artifact.parentId,
+            sourceArtifactIds: artifact.sourceArtifactIds,
+            createdAt: artifact.createdAt,
+          })),
+        },
+        {
+          signal: controller.signal,
+          onDelta: (delta) => {
+            finalReply += delta;
+          },
+          onEvent: (event) => {
+            if (event.type === 'tool.progress' || event.event === 'tool.progress') {
+              update({
+                status: inferredMode === 'video' ? 'polling' : 'running',
+                progress: Number(event.progress || 0),
+                requestId: event.requestId || d.requestId || '',
+                progressMessage: event.message || 'Grok OAuth 简易生成中...',
+              });
+            }
+            if (event.type === 'artifact.preview' || event.event === 'artifact.preview' || event.type === 'artifact.completed' || event.event === 'artifact.completed') {
+              const artifact = eventToArtifact(event, inferredMode, base.prompt, modelValue);
+              if (artifact) latestEventArtifact = artifact;
+            }
+            if (event.type === 'message.completed' || event.event === 'message.completed') {
+              const textValue = String(event.text || event.result?.text || '').trim();
+              if (textValue && !finalReply) finalReply = textValue;
+            }
+          },
+        },
+      );
+
+      const textOut = String(result?.text || result?.reply || finalReply || '').trim();
+      const fallbackArtifact = resultToArtifact(inferredMode, { ...(result || {}), text: textOut || result?.text, reply: textOut || result?.reply }, base.prompt, modelValue);
+      const outputArtifact = latestEventArtifact || fallbackArtifact;
+      if (!outputArtifact) throw new Error('Grok OAuth 没有返回可输出内容。');
+      outputArtifact.id = outputArtifact.id || makeId('quick_artifact');
+      outputArtifact.turnId = outputArtifact.turnId || turnId;
+      outputArtifact.command = outputArtifact.command || command;
+      outputArtifact.sourceArtifactIds = outputArtifact.sourceArtifactIds?.length ? outputArtifact.sourceArtifactIds : sourceArtifactIds;
+      outputArtifact.parentId = outputArtifact.parentId || parentArtifactId || undefined;
+      outputArtifact.prompt = outputArtifact.prompt || base.prompt;
+      outputArtifact.model = outputArtifact.model || modelValue;
+      const label = artifactKindLabel(outputArtifact.kind);
+      update(buildArtifactOutputPatch(outputArtifact, {
+        prompt: base.prompt,
+        summary: `${label} 已输出到画布素材`,
+        quickLastRunSummary: `${label} · 已输出`,
+        lastQuickOutputId: outputArtifact.id,
+      }));
+      taskCompletionSound.notifyComplete(id, 'grok-oauth-agent');
+      logBus.success(`Grok OAuth 简易生成完成：${label}`, `grok:${id}`);
+    } catch (e: any) {
+      if (e?.name === 'AbortError') {
+        update({ status: 'idle', error: '已中止 Grok OAuth 任务。', progressMessage: '' });
+      } else {
+        const message = e?.message || String(e);
+        update({ status: 'error', error: message, progressMessage: '' });
+        logBus.error(message, `grok:${id}`);
+      }
+    } finally {
+      abortRef.current = null;
+      setStreamingReply('');
+      if (shouldClearTransientMaterials) clearTransientLocalMaterials();
+    }
+  }, [autoIntent, clearTransientLocalMaterials, d.grokConversationId, d.requestId, d.videoModel, id, isBusy, mentionMaterials, mode, modePayload, orderedAudios, orderedTexts, payloadBase, persistLocalMaterials, persistPrompt, quickPrompt, quickPromptMentions, status, update]);
+
   const handleStop = useCallback(() => {
     abortRef.current?.abort();
   }, []);
@@ -1714,7 +1894,7 @@ const GrokOAuthAgentNode = ({ id, data, selected }: NodeProps) => {
     setStudioOpen(true);
   }, [localPrompt, promptMentions, update]);
 
-  useRunTrigger(id, handleRun, 'grok-oauth-agent');
+  useRunTrigger(id, handleQuickRun, 'grok-oauth-agent');
 
   const renderModeParams = (compact = false) => {
     if (mode === 'chat') {
@@ -1825,12 +2005,12 @@ const GrokOAuthAgentNode = ({ id, data, selected }: NodeProps) => {
   );
 
   const totalMaterials = orderedTexts.length + orderedImages.length + orderedVideos.length + orderedAudios.length;
-  const latestSummary = lastArtifact
+  const latestSummary = quickLastRunSummary || (lastArtifact
     ? `${artifactKindLabel(lastArtifact.kind)} · ${lastArtifact.publishedAt ? '已发布' : '待发布'}`
-    : (d.lastRunSummary || '还没有产物');
+    : (d.lastRunSummary || '还没有产物'));
 
   return (
-    <div className="relative flex flex-col" style={rootStyle}>
+    <div className="t8-grok-oauth-agent-node relative flex flex-col" style={rootStyle}>
       <input
         ref={uploadInputRef}
         type="file"
@@ -1839,11 +2019,11 @@ const GrokOAuthAgentNode = ({ id, data, selected }: NodeProps) => {
         className="hidden"
         onChange={handleLocalMaterialFiles}
       />
-      <Handle type="target" position={Position.Left} className="!border-0" style={{ ...handleStyle, background: PORT_COLOR.any, left: -6, top: '50%' }} />
-      <Handle id="text" type="source" position={Position.Right} className="!border-0" title="文本输出" style={{ ...handleStyle, background: PORT_COLOR.text, right: -6, top: '34%' }} />
-      <Handle id="image" type="source" position={Position.Right} className="!border-0" title="图像输出" style={{ ...handleStyle, background: PORT_COLOR.image, right: -6, top: '44%' }} />
-      <Handle id="video" type="source" position={Position.Right} className="!border-0" title="视频输出" style={{ ...handleStyle, background: PORT_COLOR.video, right: -6, top: '54%' }} />
-      <Handle id="audio" type="source" position={Position.Right} className="!border-0" title="音频输出" style={{ ...handleStyle, background: PORT_COLOR.audio, right: -6, top: '64%' }} />
+      <Handle type="target" position={Position.Left} className="t8-grok-oauth-agent-handle" style={{ ...handleStyle, background: PORT_COLOR.any, left: -12, top: '50%' }} />
+      <Handle id="text" type="source" position={Position.Right} className="t8-grok-oauth-agent-handle" title="文本输出" style={{ ...handleStyle, background: PORT_COLOR.text, right: -12, top: '34%' }} />
+      <Handle id="image" type="source" position={Position.Right} className="t8-grok-oauth-agent-handle" title="图像输出" style={{ ...handleStyle, background: PORT_COLOR.image, right: -12, top: '44%' }} />
+      <Handle id="video" type="source" position={Position.Right} className="t8-grok-oauth-agent-handle" title="视频输出" style={{ ...handleStyle, background: PORT_COLOR.video, right: -12, top: '54%' }} />
+      <Handle id="audio" type="source" position={Position.Right} className="t8-grok-oauth-agent-handle" title="音频输出" style={{ ...handleStyle, background: PORT_COLOR.audio, right: -12, top: '64%' }} />
 
       <div className="flex items-center gap-2 px-3 py-2" style={{ borderBottom: `1px solid ${border}` }}>
         <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ background: surfaceStrong, color: accent, border: `1px solid ${border}` }}>
@@ -1877,14 +2057,40 @@ const GrokOAuthAgentNode = ({ id, data, selected }: NodeProps) => {
           <div className="truncate" style={{ color: subText }}>{latestSummary}</div>
         </div>
 
+        <div className="rounded p-2 space-y-2" style={{ background: surface, color: text, border: `1px solid ${border}` }}>
+          <div className="flex items-center justify-between gap-2 text-[11px]">
+            <span className="font-bold flex items-center gap-1"><Send size={12} /> 简易生成</span>
+            <span className="text-[10px]" style={{ color: subText }}>直接输出到右侧素材</span>
+          </div>
+          {modeChips}
+          {renderModeParams(true)}
+          <MentionPromptInput
+            title="Grok 简易 Prompt"
+            value={quickPrompt}
+            mentions={quickPromptMentions}
+            materials={mentionMaterials}
+            onChange={(value, mentions) => update({ quickPrompt: value, quickPromptMentions: mentions })}
+            onSubmit={(value, mentions) => void handleQuickRun({ prompt: value, mentions })}
+            placeholder="写一句话直接生成，也可以 @ 引用上游或产物"
+            isDark={isDark}
+            isPixel={isPixel}
+            promptTemplateKind={mode === 'video' ? 'video' : 'image'}
+            className="w-full min-h-[76px] rounded-lg px-2 py-2 text-[12px] leading-relaxed outline-none"
+            style={{ background: bg, color: text, border: `1px solid ${border}` }}
+          />
+          <div className="text-[10px] leading-relaxed" style={{ color: subText }}>
+            小节点简易生成不会写入 Grok 创作台历史；需要连续对话、产物库和版本引用时打开创作台。
+          </div>
+        </div>
+
         <div className="grid grid-cols-2 gap-2">
           {isBusy ? (
             <button type="button" onClick={handleStop} className="nodrag rounded px-2 py-1.5 text-[11px] font-bold flex items-center justify-center gap-1" style={{ background: surface, color: text, border: `1px solid ${border}` }}>
               <Square size={12} /> 停止
             </button>
           ) : (
-            <button type="button" onClick={() => void handleRun()} className="nodrag rounded px-2 py-1.5 text-[11px] font-bold flex items-center justify-center gap-1" style={{ background: surfaceStrong, color: text, border: `1px solid ${border}` }}>
-              <Send size={12} /> 快速运行
+            <button type="button" onClick={() => void handleQuickRun()} className="nodrag rounded px-2 py-1.5 text-[11px] font-bold flex items-center justify-center gap-1" style={{ background: surfaceStrong, color: text, border: `1px solid ${border}` }}>
+              <Send size={12} /> 简易生成
             </button>
           )}
           <button type="button" disabled={!lastArtifact || !!lastArtifact?.publishedAt} onClick={() => publishArtifact(lastArtifact)} className="nodrag rounded px-2 py-1.5 text-[11px] font-bold flex items-center justify-center gap-1 disabled:opacity-45" style={{ background: surface, color: text, border: `1px solid ${border}` }}>

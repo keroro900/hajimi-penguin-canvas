@@ -53,14 +53,6 @@ const handleStyle: CSSProperties = {
   zIndex: 20,
 };
 
-const STATUS_LABEL: Record<string, string> = {
-  idle: '待命',
-  submitting: '提交中',
-  polling: '运行中',
-  success: '已完成',
-  error: '失败',
-};
-
 const FAL_TOOLBOX_FAVORITES_KEY = 't8:fal-toolbox:favorites:v1';
 const FAL_TOOLBOX_RECENTS_KEY = 't8:fal-toolbox:recents:v1';
 const FAL_BILLING_NOTICE = 'Fal模型会先预扣3.4币，生成完成后多退少补';
@@ -530,9 +522,6 @@ const FalToolboxNode = ({ id, data, selected }: NodeProps) => {
           {activeTool ? `${activeTool.title} · ${activeTool.capabilities.map(capabilityLabel).join(' / ')}` : 'FAL 模型能力超市'}
         </div>
       </div>
-      <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ color: accent, background: surface, border: `1px solid ${border}` }}>
-        {STATUS_LABEL[status] || status}
-      </span>
     </div>
   );
 

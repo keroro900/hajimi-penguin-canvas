@@ -697,8 +697,10 @@ export default function SaintSeiyaSanctuary({ visualStyle, viewportMoving, nodeD
   const playerMpMax = latestBattleEvent?.playerMaxMp ?? battle?.report?.playerMaxMp ?? 1;
   const unlockCloth = clothUnlock ? SAINT_SEIYA_CLOTH_BY_ID[clothUnlock.clothId] : null;
   const unlockGoldUi = unlockCloth?.rank === 'gold' ? SAINT_GOLD_CLOTH_UI[unlockCloth.id] : null;
-  const minimapPingLeft = activeChest ? Math.max(8, Math.min(92, activeChest.mapX)) : 50;
-  const minimapPingTop = activeChest ? Math.max(24, Math.min(92, 18 + activeChest.mapY * 0.74)) : 50;
+  const minimapPingInset = hadesModeActive ? 14 : 8;
+  const minimapPingTopMax = hadesModeActive ? 82 : 92;
+  const minimapPingLeft = activeChest ? Math.max(minimapPingInset, Math.min(100 - minimapPingInset, activeChest.mapX)) : 50;
+  const minimapPingTop = activeChest ? Math.max(24, Math.min(minimapPingTopMax, 18 + activeChest.mapY * 0.74)) : 50;
 
   return (
     <>
@@ -923,9 +925,27 @@ export default function SaintSeiyaSanctuary({ visualStyle, viewportMoving, nodeD
 
       {activeChest && chestCloth && (
         <div
-          className="t8-saint-sanctuary__minimap-ping-layer nodrag nopan"
+          className={`t8-saint-sanctuary__minimap-ping-layer nodrag nopan ${hadesModeActive ? 'is-hades' : 'is-sanctuary'}`}
           data-canvas-floating-ui="saint-seiya-minimap-ping"
+          data-saint-rank={activeChest.rank}
         >
+          {hadesModeActive && (
+            <>
+              <span className="t8-saint-hades-minimap__gate" aria-hidden="true" />
+              <span className="t8-saint-hades-minimap__river" aria-hidden="true" />
+              <span className="t8-saint-hades-minimap__orbit" aria-hidden="true" />
+              <span className="t8-saint-hades-minimap__scanner" aria-hidden="true" />
+              <span className="t8-saint-hades-minimap__athena" aria-hidden="true" />
+              <span className="t8-saint-hades-minimap__label" aria-hidden="true">HADES MAP</span>
+              <span className="t8-saint-hades-minimap__temples" aria-hidden="true">
+                {SAINT_SEIYA_GOLD_CLOTHS.map((cloth, index) => (
+                  <i key={cloth.id} style={{ '--saint-temple-index': index } as any}>
+                    {index + 1}
+                  </i>
+                ))}
+              </span>
+            </>
+          )}
           <button
             type="button"
             className={`t8-saint-sanctuary__ping is-${activeChest.rank} ${openingTarget?.chestId === activeChest.id ? 'is-opening' : ''}`}

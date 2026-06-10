@@ -399,6 +399,16 @@ html[data-theme-visual] .t8-canvas-shell::after,
   pointer-events: all;
 }
 
+.t8-canvas-shell .react-flow__node-grok-oauth-agent,
+.t8-canvas-shell .react-flow__node:has(.t8-grok-oauth-agent-node),
+.t8-grok-oauth-agent-node {
+  overflow: visible !important;
+}
+
+.t8-grok-oauth-agent-handle {
+  pointer-events: all !important;
+}
+
 html[data-theme-visual] .t8-canvas-shell .react-flow__controls,
 .t8-canvas-shell[data-theme-visual] .react-flow__controls {
   left: var(--t8-floating-control-left, 14px) !important;

@@ -76,6 +76,13 @@ test('Saint Seiya sanctuary HUD avoids duplicate maps and runs battles automatic
   assert.match(css, /react-flow__minimap\s*\{[\s\S]*overflow:\s*hidden\s*!important/);
   assert.match(css, /react-flow__minimap svg\s*\{[\s\S]*margin-top:\s*0\s*!important/);
   assert.match(css, /\.t8-saint-sanctuary__minimap-ping-layer\s*\{[\s\S]*overflow:\s*hidden/);
+  assert.match(css, /MEIKAI RADAR/);
+  assert.match(css, /data-saint-mode="hades"\] \.react-flow__minimap::after/);
+  assert.match(css, /\.t8-saint-hades-minimap__gate/);
+  assert.match(css, /\.t8-saint-hades-minimap__river/);
+  assert.match(css, /\.t8-saint-hades-minimap__scanner/);
+  assert.match(css, /\.t8-saint-hades-minimap__temples i/);
+  assert.match(css, /@keyframes saint-hades-radar-sweep/);
   assert.match(css, /\.t8-saint-battle--dock\s*\{[\s\S]*right:\s*14px\s*!important/);
   assert.match(css, /\.t8-saint-battle--dock\s*\{[\s\S]*top:\s*98px\s*!important/);
   assert.match(css, /\.t8-saint-gold-track/);
@@ -95,6 +102,9 @@ test('Saint Seiya sanctuary HUD avoids duplicate maps and runs battles automatic
   assert.match(css, /data-gold-cloth="sagittarius"/);
   assert.match(css, /data-theme-mode="dark"/);
   assert.match(component, /saint-seiya-minimap-ping/);
+  assert.match(component, /is-hades/);
+  assert.match(component, /t8-saint-hades-minimap__gate/);
+  assert.match(component, /t8-saint-hades-minimap__temples/);
   assert.match(component, /saint-seiya-battle-log/);
   assert.match(component, /自动战斗中/);
   assert.match(component, /battleHideRemaining/);
@@ -553,7 +563,14 @@ test('achievement frontend and server are wired without recording prompt content
   assert.match(api, /AchievementWeeklyPassport/);
   assert.match(api, /AchievementCreativeReview/);
   assert.match(nodeActionBar, /hidden_mode\.enabled[\s\S]*mode:\s*'enabled'/);
+  assert.match(nodeActionBar, /rhDuckHiddenUpload:\s*enabled/);
+  assert.match(nodeActionBar, /const enabled = !rhDuckMode/);
+  assert.match(nodeActionBar, /clearRhDuckUpload\(selectedExe\.id\)/);
   assert.match(upload, /hidden_mode\.used[\s\S]*mode:\s*'used'/);
+  assert.match(upload, /rhDuckHiddenUpload/);
+  assert.match(upload, /const rhDuckPersistentMode[\s\S]*rhDuckStoredMode[\s\S]*rhDuckStoreMode/);
+  assert.match(upload, /uploadType:\s*rhDuckMode\s*\?\s*'image'\s*:\s*lockedUploadType/);
+  assert.match(upload, /RED 模式已锁定图像/);
   assert.match(portrait, /hidden_mode\.used[\s\S]*mode:\s*'used'/);
   assert.match(server, /achievementsRouter/);
   assert.match(server, /\/api\/achievements/);

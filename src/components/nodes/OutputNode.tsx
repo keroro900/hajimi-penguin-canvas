@@ -393,7 +393,7 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
 
     // === pickKind / pickIndex 过滤 ===
     // Canvas 自动创建多个 OutputNode 映射上游多项输出时,
-    // 会在 data 里标记 pickKind ('image'/'video'/'audio') + pickIndex,
+    // 会在 data 里标记 pickKind ('text'/'image'/'video'/'audio') + pickIndex,
     // 则本节点只保留对应 kind 的第 pickIndex 项, 避免多图场景下
     // 所有 OutputNode 都重复显示全部输出。
     // 手动连连的 OutputNode 不带 pickKind => 保留原语义 (显示上游全部).
@@ -416,7 +416,13 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
     const pickIndex: number | undefined =
       typeof d.pickIndex === 'number' ? d.pickIndex : undefined;
     if (pickKind && typeof pickIndex === 'number') {
-      if (pickKind === 'image') {
+      if (pickKind === 'text') {
+        out.texts = out.texts[pickIndex] ? [out.texts[pickIndex]] : [];
+        out.images = [];
+        out.videos = [];
+        out.audios = [];
+        out.models = [];
+      } else if (pickKind === 'image') {
         out.images = out.images[pickIndex] ? [out.images[pickIndex]] : [];
         out.videos = [];
         out.audios = [];

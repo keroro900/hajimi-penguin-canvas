@@ -150,17 +150,27 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
   const [editingUrl, setEditingUrl] = useState<string | null>(null);
 
   const d = data as any;
+  const rhDuckStoredMode =
+    d?.rhDuckHiddenUpload === false
+      ? false
+      : Boolean(d?.rhDuckHiddenUpload || d?.rhDuckMode || d?.rhDuckUploadMode);
+  const rhDuckStoreMode = isRhDuckUploadEnabled(rhDuckUploadIds, id);
+  const rhDuckPersistentMode = Boolean(isRhVisual && type === 'upload' && (rhDuckStoredMode || rhDuckStoreMode));
   const lockedUploadType: UploadKind | null =
-    type === 'model-3d-upload' || d?.lockedUploadType === 'model3d' ? 'model3d' : null;
-  const uploadType: UploadKind | null = d?.uploadType ?? lockedUploadType;
+    type === 'model-3d-upload' || d?.lockedUploadType === 'model3d'
+      ? 'model3d'
+      : rhDuckPersistentMode
+        ? 'image'
+        : null;
+  const uploadType: UploadKind | null =
+    lockedUploadType === 'image' ? 'image' : d?.uploadType ?? lockedUploadType;
   const meta = uploadType ? KIND_META[uploadType] : null;
   const mediaItems = uploadType ? getMediaItemsFromData(d, uploadType) : [];
   const url: string | undefined = mediaItems[0]?.url;
   const rhDuckMode = Boolean(
     isRhVisual &&
       uploadType === 'image' &&
-      mediaItems.length > 0 &&
-      isRhDuckUploadEnabled(rhDuckUploadIds, id),
+      (rhDuckStoredMode || rhDuckStoreMode),
   );
   const yyhPortraitUploadMode = Boolean(isYyhVisual && d?.yyhPortraitHidden);
 
@@ -308,11 +318,12 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
 
   /** 重置:清空所有字段,回到默认拖拽上传状态 */
   const handleReset = () => {
-    clearRhDuckUpload(id);
+    if (!rhDuckMode) clearRhDuckUpload(id);
     update({
       ...createEmptyUploadMediaData(),
-      uploadType: lockedUploadType,
-      lockedUploadType: lockedUploadType || undefined,
+      uploadType: rhDuckMode ? 'image' : lockedUploadType,
+      lockedUploadType: lockedUploadType === 'model3d' ? 'model3d' : undefined,
+      ...(rhDuckMode ? { rhDuckHiddenUpload: true } : {}),
     });
     setError(null);
   };
@@ -349,7 +360,10 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
         uploaded.push(await uploadSingleFile(file, kind));
       }
       const base = uploadType === kind ? mediaItems : [];
-      update(createUploadDataFromItems(kind, [...base, ...uploaded]));
+      update({
+        ...createUploadDataFromItems(kind, [...base, ...uploaded]),
+        ...(rhDuckMode ? { rhDuckHiddenUpload: true } : {}),
+      });
       if (skipped > 0) {
         setError(`已上传 ${uploaded.length} 个${KIND_META[kind].label}，跳过 ${skipped} 个非同类型文件`);
       }
@@ -628,6 +642,8 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
             >
               {lockedUploadType === 'model3d'
                 ? '支持 glb / gltf / obj / fbx / stl / usdz / zip'
+                : rhDuckMode
+                  ? 'RED 模式已锁定图像 · 清空素材后仍保持'
                 : '自动识别 图像 / 视频 / 音频 / 3D模型 · 支持同类型批量'}
             </span>
           </div>

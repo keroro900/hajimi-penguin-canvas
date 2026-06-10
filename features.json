@@ -1,7 +1,52 @@
 {
   "$schema": "本文件为 T8-penguin-canvas 节点清单防丢失锁,任何节点删减都需要在 roadmap.md 中说明并更新本文件。",
-  "version": "2.1.5",
-  "lastUpdated": "2026-06-10-grok-agent-prompt-context",
+  "version": "2.1.6",
+  "lastUpdated": "2026-06-11-electron-release-v216",
+  "electronReleaseV216": {
+    "version": "2.1.6",
+    "status": "electron-release",
+    "date": "2026-06-11",
+    "description": "v2.1.6 Electron 自动更新发布：打包 v2.1.5 源码能力并补齐 Grok OAuth Agent 快捷生成、Fal 超市状态徽章、RH RED 上传模式持久化、圣斗士冥界雷达与 GPT Image 2 尺寸快捷模型等热修。",
+    "highlights": [
+      "Grok OAuth Agent 小节点可在不打开 Grok 创作台的情况下简易生成，文本 / 图像 / 视频 / 音频结果统一写入 OutputNode，不再把大结果堆在节点内部。",
+      "Grok OAuth Agent 左右输入 / 输出端口样式加固，避免被节点外框裁切。",
+      "Fal 超市右上角移除“待命”徽章，超市首页保留模型能力说明和预扣 3.4 币提示。",
+      "RH 隐藏 RED 上传模式改为节点级持久化，删除素材后仍保持 RED 模式，不自动退回普通上传节点。",
+      "圣斗士冥界篇雷达 / 小地图重绘，宝箱和巡查指针固定在主题雷达框内，巡查钟盘保持居中并避免跑出地图。",
+      "GPT Image 2 新增 gpt-image-2-2K 与 gpt-image-2-4K 两个贞贞 API 快捷模型，不走 FAL，保留原 gpt-image-2 使用方式。"
+    ],
+    "releaseFiles": [
+      "package.json",
+      "package-lock.json",
+      "vite.config.ts",
+      "vite.config.js",
+      "electron/main.cjs",
+      "backend/src/config.js",
+      "features.json",
+      "README.md",
+      "release-notes/v2.1.6.md"
+    ],
+    "packaging": {
+      "script": "npm run dist:release",
+      "installer": "dist_electron/T8-PenguinCanvas-Setup-2.1.6.exe",
+      "blockmap": "dist_electron/T8-PenguinCanvas-Setup-2.1.6.exe.blockmap",
+      "latestYml": "dist_electron/latest.yml",
+      "updater": "GitHub Release v2.1.6 作为 latest.yml 自动更新源；安装继续使用前台 NSIS 向导，不静默安装。"
+    },
+    "releaseBoundary": [
+      "公开源码继续禁止 skill.md、roadmap.md、local-private/**、hermes-agent/**、Electron 缓存目录和任何私有计费/支付/充值/分组令牌实现进入 GitHub。",
+      "RH 工具箱制作器与 FAL 应用制作工具仍为本地开发工具，不进入公开源码和公开打包产物。",
+      "真实 Grok OAuth 私有调用继续通过本机 ignored local-private 扩展 / 加密链路处理，公开仓库只保留安全外壳。"
+    ],
+    "verification": [
+      "node --test tests\\saintSeiyaBattle.test.ts tests\\grokOAuthAgent.test.ts tests\\achievements.test.ts",
+      "npm run type-check",
+      "npm run build",
+      "npm run public:check",
+      "npm run dist:release",
+      "npm run release:verify"
+    ]
+  },
   "sourceReleaseV215": {
     "version": "2.1.5",
     "status": "source-only",
@@ -210,7 +255,9 @@
     "capabilities": [
       "侧边栏新增 GROK OAuth 分类，包含 Grok OAuth Agent 主节点，不混入现有图像/视频/LLM/音频节点。",
       "节点支持流式聊天、图像、视频、TTS、STT 五种模式，读取上游 text/image/video/audio 与节点内 Prompt；产物默认进入 Grok 创作台产物库，不再自动把所有结果写入 outputText/imageUrls/videoUrls/audioUrls。",
-      "画布上的节点保持小巧，只显示登录状态、素材数、消息数、产物数、打开创作台、快速运行和发布最新；完整对话、参数、素材预览和产物卡放在 createPortal 打开的 Grok 创作台中。",
+      "画布上的节点保持小巧，只显示登录状态、素材数、消息数、产物数、打开创作台、简易生成和发布最新；完整对话、参数、素材预览和产物卡放在 createPortal 打开的 Grok 创作台中。",
+      "画布小节点新增简易 Prompt 生成区：不进入 Grok 创作台也能填写 Prompt、使用提示词模板库、放大编辑和 @ 引用素材，并支持 /image /video /audio /tts /stt。",
+      "小节点简易生成完成后不会写入 agentMessages / agentArtifacts；文本、图像、视频、音频会直接覆盖标准 outputText/imageUrls/videoUrls/audioUrls 输出字段，由右侧输出素材节点展示。",
       "产物卡支持图像/视频/音频/文本预览、下载、复制 Prompt 和“发布到画布输出”；只有发布后才写入标准 text/image/video/audio 输出字段并触发下游 OutputNode。",
       "Grok 创作台 Prompt 支持 Enter 直接运行、Shift+Enter 换行；运行时会使用输入框最新文本，避免刚输入后回车跑旧 prompt。",
       "Grok 创作台新增“提示词持久化”开关，默认关闭：任务验证通过并发送后自动清空 Prompt 和 @ 引用；开启后保留输入，方便连续微调。",
@@ -1155,11 +1202,11 @@
       "T8_RUNTIME_CACHE_DIR": "可选，覆盖运行时归档解压缓存目录；默认打包模式为 %APPDATA%/t8-penguin-canvas/runtime-cache",
       "T8_ENABLE_LOCAL_PRIVATE": "可选，0=强制关闭本机 local-private/extensions 私有扩展；默认只要本机 ignored 私有扩展存在，开发环境和本机打包 release 都会自动带入。GitHub/clean clone 因为没有 local-private 目录，所以不会带充值实现。"
     },
-    "version": "2.1.4",
-    "semverVersion": "2.1.4",
+    "version": "2.1.6",
+    "semverVersion": "2.1.6",
     "versionNumberPolicy": "T8 版本号仍采用 x.y.z 三段，但每一段只允许 0-9；任一段到 9 后下一次发布必须向左进位，禁止任一段出现两位数字。例：1.9.9 的下一版必须是 2.0.0。",
-    "versionNote": "v1.3.0 起统一采用三段阶段号 x.y.z；当前发布版本为 v2.1.4：集中打包 Figma Bridge 可用化、云端上传连通性、Prompt/@ 媒体引用、放置栏恢复、顶部画布教程入口和 LLM 默认模型调整。本次按规范打包 Electron 并发布 GitHub Release 自动更新资产；GitHub 公开源码仍排除本地私有计费/支付/充值/分组令牌实现。",
-    "installer": "v2.1.4 生成 T8-PenguinCanvas-Setup-2.1.4.exe、T8-PenguinCanvas-Setup-2.1.4.exe.blockmap 与 latest.yml；发布必须走 clean public worktree + npm run dist:release + npm run release:verify。",
+    "versionNote": "v1.3.0 起统一采用三段阶段号 x.y.z；当前发布版本为 v2.1.6：打包 v2.1.5 源码能力，并补齐 Grok OAuth Agent 快捷生成、Fal 超市状态徽章、RH RED 上传模式持久化、圣斗士冥界雷达与 GPT Image 2 尺寸快捷模型等热修。本次按规范打包 Electron 并发布 GitHub Release 自动更新资产；GitHub 公开源码仍排除本地私有计费/支付/充值/分组令牌实现。",
+    "installer": "v2.1.6 生成 T8-PenguinCanvas-Setup-2.1.6.exe、T8-PenguinCanvas-Setup-2.1.6.exe.blockmap 与 latest.yml；发布必须走 clean public worktree + npm run dist:release + npm run release:verify。",
     "updaterInstallMode": "自动更新下载完成后不得静默安装：main.cjs 必须设置 autoInstallOnAppQuit=false，显式安装调用 quitAndInstall(false,true)；electron/build-resources/installer.nsh 通过 SetSilent normal 让新版 NSIS 安装器即使收到旧客户端传入的 /S 也尽量切回前台安装向导。",
     "installerShortcutPolicy": "安装完成后必须创建桌面和开始菜单快捷方式：package.json build.nsis.createDesktopShortcut 必须为 \"always\"，createStartMenuShortcut 必须为 true；electron/build-resources/installer.nsh 必须保留 customInstall 兜底 CreateShortCut \"$newStartMenuLink\" 与 \"$DESKTOP\\${SHORTCUT_NAME}.lnk\"，防止更新安装/keepShortcuts 路径遗漏入口。",
     "updaterEntryPolicy": "顶栏桌面更新入口不得只因 window.t8pc.updater 缺失就静默消失；Electron UA 或 t8pc.getInfo/openExternal 可用时必须显示诊断入口，提示重新安装完整桌面包，Web/纯浏览器环境才隐藏。状态为 not-available 时按钮仍保留“更新”字样，避免用户误以为自动更新入口被删除。",

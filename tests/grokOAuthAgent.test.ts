@@ -67,6 +67,8 @@ test('Grok OAuth public backend exposes hook-backed routes with private-module f
 test('Grok OAuth frontend service and node use an Agent studio with manual publishing', () => {
   const service = read('../src/services/grokOAuth.ts');
   const node = read('../src/components/nodes/GrokOAuthAgentNode.tsx');
+  const canvas = read('../src/components/Canvas.tsx');
+  const output = read('../src/components/nodes/OutputNode.tsx');
 
   assert.match(service, /streamGrokOAuthChat/);
   assert.match(service, /streamGrokOAuthAgent/);
@@ -101,6 +103,7 @@ test('Grok OAuth frontend service and node use an Agent studio with manual publi
   assert.match(node, /const MAX_GROK_CONTEXT_LIMIT = 80/);
   assert.match(node, /旧输出已收纳到 Grok 创作台产物库/);
   assert.match(node, /streamGrokOAuthAgent/);
+  assert.match(node, /function buildArtifactOutputPatch/);
   assert.match(node, /const shouldShowToolMessage = inferredMode !== 'chat'/);
   assert.match(node, /if \(toolMessageId\) updateMessage\(toolMessageId/);
   assert.match(node, /function buildConversationContext/);
@@ -116,6 +119,7 @@ test('Grok OAuth frontend service and node use an Agent studio with manual publi
   assert.match(node, /conversationMessages: inferredMode === 'chat' \? chatConversationMessages/);
   assert.match(node, /artifact\.completed/);
   assert.match(node, /publishArtifact/);
+  assert.match(node, /const patch = buildArtifactOutputPatch\(current/);
   assert.match(node, /lastPublishedArtifactId/);
   assert.match(node, /lastRunSummary: newestArtifact \? `\$\{artifactKindLabel\(newestArtifact\.kind\)\} 已进入创作台产物库`/);
   assert.doesNotMatch(node, /generateGrokOAuthImage/);
@@ -129,6 +133,17 @@ test('Grok OAuth frontend service and node use an Agent studio with manual publi
   assert.match(node, /outputText/);
   assert.match(node, /MentionPromptInput/);
   assert.match(node, /onSubmit=\{\(value, mentions\) => onRun\(\{ prompt: value, mentions \}\)\}/);
+  assert.match(node, /const quickPrompt = String\(d\.quickPrompt \|\| ''\)/);
+  assert.match(node, /const quickPromptMentions = \(Array\.isArray\(d\.quickPromptMentions\) \? d\.quickPromptMentions : \[\]\) as MediaMention\[\]/);
+  assert.match(node, /const handleQuickRun = useCallback/);
+  assert.match(node, /title="Grok 简易 Prompt"/);
+  assert.match(node, /onSubmit=\{\(value, mentions\) => void handleQuickRun\(\{ prompt: value, mentions \}\)\}/);
+  assert.match(node, /promptTemplateKind=\{mode === 'video' \? 'video' : 'image'\}/);
+  assert.match(node, /小节点简易生成不会写入 Grok 创作台历史/);
+  assert.match(node, /update\(\{ quickPrompt: '', quickPromptMentions: \[\] \}\)/);
+  assert.match(node, /update\(buildArtifactOutputPatch\(outputArtifact/);
+  assert.match(node, /quickLastRunSummary/);
+  assert.match(node, /conversationMessages: \[\]/);
   assert.match(node, /uploadFile/);
   assert.match(node, /GROK_UPLOAD_ACCEPT/);
   assert.match(node, /grokLocalMaterials/);
@@ -161,7 +176,7 @@ test('Grok OAuth frontend service and node use an Agent studio with manual publi
   assert.match(node, /clearTransientLocalMaterials/);
   assert.match(node, /grokLocalMaterials:\s*\[\]/);
   assert.match(node, /shouldClearTransientMaterials = !persistLocalMaterials/);
-  assert.match(node, /const primaryUrl = String\(current\.url \|\| allUrls\[0\] \|\| ''\)\.trim\(\)/);
+  assert.match(node, /const primaryUrl = String\(artifact\.url \|\| allUrls\[0\] \|\| ''\)\.trim\(\)/);
   assert.match(node, /const urls = primaryUrl \? \[primaryUrl\] : \[\]/);
   assert.match(node, /generatedImages:\s*\[\]/);
   assert.match(node, /directImageUrls:\s*\[\]/);
@@ -179,7 +194,14 @@ test('Grok OAuth frontend service and node use an Agent studio with manual publi
   assert.match(node, /nodeId=\{id\}/);
   assert.match(node, /sourceNodeId=\{nodeId\}/);
   assert.match(node, /useUpstreamMaterials/);
-  assert.match(node, /useRunTrigger\(id, handleRun, 'grok-oauth-agent'\)/);
+  assert.match(node, /useRunTrigger\(id, handleQuickRun, 'grok-oauth-agent'\)/);
+  assert.match(node, /onRun=\{\(override\) => void handleRun\(override\)\}/);
+  assert.match(canvas, /'grok-oauth-agent'/);
+  assert.match(canvas, /pushTxt\(d\.outputText\)/);
+  assert.match(canvas, /kind:\s*'text' \| 'image' \| 'video' \| 'audio'/);
+  assert.match(output, /pickKind === 'text'/);
+  assert.match(node, /t8-grok-oauth-agent-node/);
+  assert.match(node, /t8-grok-oauth-agent-handle/);
 });
 
 test('Grok OAuth Agent supports slash commands and continuous artifact references', () => {
