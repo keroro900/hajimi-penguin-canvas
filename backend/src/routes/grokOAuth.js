@@ -106,6 +106,23 @@ function arrayOf(value) {
   return value ? [value] : [];
 }
 
+const VIDEO_DONE_STATUSES = new Set(['done', 'completed', 'complete', 'succeeded', 'success', 'finished', 'ready']);
+
+function hasVideoOutput(data = {}) {
+  return Boolean(data.videoUrl || (Array.isArray(data.videoUrls) && data.videoUrls.length > 0));
+}
+
+function isCompletedVideoStatus(status) {
+  return VIDEO_DONE_STATUSES.has(String(status || '').toLowerCase());
+}
+
+function assertCompletedVideoHasOutput(data = {}) {
+  if (!isCompletedVideoStatus(data.status) || hasVideoOutput(data)) return;
+  const error = new Error('Grok OAuth 视频任务完成但没有返回视频地址。');
+  error.code = 'completed_without_video_url';
+  throw error;
+}
+
 async function normalizeMediaOutputs(data = {}) {
   const patch = {};
   const remoteImageUrls = arrayOf(data.imageUrls || data.images || data.urls).concat(arrayOf(data.imageUrl));
@@ -456,14 +473,13 @@ router.post('/agent/stream', async (req, res) => {
         return endAgentSse(res, first, meta);
       }
       if (!requestId) {
-        sendSse(res, 'tool.progress', { ...meta, mode, message: first.message || '视频任务已提交，等待上游返回结果...', progress: first.progress || 10, result: first });
-        return endAgentSse(res, first, meta);
+        throw new Error('Grok OAuth 视频任务已提交但没有返回 requestId，无法轮询结果。');
       }
       sendSse(res, 'tool.progress', {
         ...meta,
         mode,
         requestId,
-        message: first.message || '视频任务已提交，正在轮询...',
+        message: first.message ? `${first.message} 正在轮询结果...` : '视频任务已提交，正在轮询结果...',
         progress: first.progress || 8,
         result: first,
       });
@@ -483,7 +499,8 @@ router.post('/agent/stream', async (req, res) => {
           result: data,
         });
         if (data.status === 'failed' || data.error) throw new Error(data.error || data.message || 'Grok OAuth 视频生成失败');
-        if (data.videoUrl || (Array.isArray(data.videoUrls) && data.videoUrls.length > 0) || data.status === 'completed' || data.status === 'succeeded') {
+        assertCompletedVideoHasOutput(data);
+        if (hasVideoOutput(data) || isCompletedVideoStatus(data.status)) {
           const artifact = decorateAgentArtifact(artifactFromResult('video', data), meta);
           sendSse(res, 'artifact.completed', { ...meta, mode, artifact, result: data, progress: 100 });
           return endAgentSse(res, data, meta);

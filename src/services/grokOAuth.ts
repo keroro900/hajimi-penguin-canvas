@@ -316,6 +316,22 @@ function fallbackArtifact(kind: 'text' | 'image' | 'video' | 'audio' | 'transcri
   return artifact;
 }
 
+const VIDEO_DONE_STATUSES = new Set(['done', 'completed', 'complete', 'succeeded', 'success', 'finished', 'ready']);
+
+function hasVideoOutput(result: GrokOAuthMediaResult = {}) {
+  return Boolean(result.videoUrl || (Array.isArray(result.videoUrls) && result.videoUrls.length > 0));
+}
+
+function isCompletedVideoStatus(status: unknown) {
+  return VIDEO_DONE_STATUSES.has(String(status || '').toLowerCase());
+}
+
+function completedVideoWithoutOutputError() {
+  const error = new Error('Grok OAuth 视频任务完成但没有返回视频地址。') as Error & { code?: string };
+  error.code = 'completed_without_video_url';
+  return error;
+}
+
 function agentEventMeta(payload: GrokOAuthMaterialPayload, mode: string) {
   const sourceArtifactIds = Array.isArray(payload.sourceArtifactIds)
     ? payload.sourceArtifactIds.map((item: any) => String(item || '').trim()).filter(Boolean)
@@ -409,12 +425,15 @@ async function runLegacyGrokOAuthAgentFallback(
   if (mode === 'video') {
     const first = await submitGrokOAuthVideo(payload);
     const requestId = first.requestId || first.id || first.taskId || first.generationId;
-    if (first.videoUrl || (Array.isArray(first.videoUrls) && first.videoUrls.length > 0) || !requestId) {
-      const artifact = first.videoUrl || first.videoUrls ? withAgentArtifactMeta(fallbackArtifact('video', first), meta) : undefined;
-      if (artifact) emit({ type: 'artifact.completed', event: 'artifact.completed', ...meta, artifact, result: first, progress: 100 });
+    if (hasVideoOutput(first)) {
+      const artifact = withAgentArtifactMeta(fallbackArtifact('video', first), meta);
+      emit({ type: 'artifact.completed', event: 'artifact.completed', ...meta, artifact, result: first, progress: 100 });
       emit({ type: 'turn.completed', event: 'turn.completed', ...meta, result: first, progress: typeof first.progress === 'number' ? first.progress : 100, message: 'Grok OAuth Agent 任务完成' });
       emit({ type: 'done', event: 'done', ...meta, done: true, result: first });
       return first;
+    }
+    if (!requestId) {
+      throw new Error('Grok OAuth 视频任务已提交但没有返回 requestId，无法轮询结果。');
     }
     emit({
       type: 'tool.progress',
@@ -422,7 +441,7 @@ async function runLegacyGrokOAuthAgentFallback(
       ...meta,
       requestId,
       progress: first.progress || 8,
-      message: first.message || '视频任务已提交，旧接口兼容轮询中...',
+      message: first.message ? `${first.message} 旧接口兼容轮询中...` : '视频任务已提交，旧接口兼容轮询中...',
       result: first,
     });
     for (let i = 0; i < 120; i += 1) {
@@ -438,7 +457,8 @@ async function runLegacyGrokOAuthAgentFallback(
         result,
       });
       if (result.status === 'failed' || result.error) throw new Error(result.error || result.message || 'Grok OAuth 视频生成失败');
-      if (result.videoUrl || (Array.isArray(result.videoUrls) && result.videoUrls.length > 0) || result.status === 'completed' || result.status === 'succeeded') {
+      if (isCompletedVideoStatus(result.status) && !hasVideoOutput(result)) throw completedVideoWithoutOutputError();
+      if (hasVideoOutput(result) || isCompletedVideoStatus(result.status)) {
         const artifact = withAgentArtifactMeta(fallbackArtifact('video', result), meta);
         emit({ type: 'artifact.completed', event: 'artifact.completed', ...meta, artifact, result, progress: 100 });
         emit({ type: 'turn.completed', event: 'turn.completed', ...meta, result, progress: 100, message: 'Grok OAuth Agent 任务完成' });

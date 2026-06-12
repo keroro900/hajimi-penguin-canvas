@@ -3,7 +3,10 @@ import { Handle, Position, useReactFlow, type NodeProps } from '@xyflow/react';
 import { AlertCircle, Loader2, Video as VideoIcon, Sparkles, Square, X } from 'lucide-react';
 import {
   VIDEO_MODELS,
+  GROK_VIDEO_1_5_NEW_SIZES,
+  grokVideo15NewSizeFromRatio,
   isFalVideoModel,
+  isGrokVideo15NewModel,
   VIDEO_FAL_REGISTRY,
   VEO_FAL_RATIOS,
   VEO_FAL_DURATIONS,
@@ -58,7 +61,7 @@ import { LocalNodeAddonSlot } from 'virtual:t8-local-extensions';
  * VideoNode - 异步视频生成(完全对齐 gpt-image-2-web)
  * 支持:
  *   - Veo      (kind=veo)       — 默认 veo-omni-10s / 旧 Veo 3.1 子模型 / images(≤3)
- *   - Grok Video(kind=grok)     — Grok Video 1.5 FAL 默认 / 旧版 FAL / grok-video-3 / images(≤7)
+ *   - Grok Video(kind=grok)     — Zhenzhen Grok 1.5 New / Grok Video 1.5 FAL / 旧版 FAL / grok-video-3 / images
  *   - Sora2    (kind=sora)      — Zhenzhen API + FAL 双渠道 / Base64 参考图(≤1)
  *   - Seedance  (kind=seedance) — 零破坏兼容旧 veo 字段
  * 流程: submit → poll(5s 间隔) → 转存 → 展示
@@ -148,18 +151,28 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
   const isFal = isFalVideoModel(apiModel);
   const falReg = isFal ? VIDEO_FAL_REGISTRY[apiModel] : null;
   const isGrokFalV15 = apiModel === 'grok-imagine-video-1.5';
+  const isGrok15New = !isExternalSelected && isGrokVideo15NewModel(apiModel);
+  const grok15NewSize = d?.size === '1280x720' || d?.size === '720x1280'
+    ? d.size
+    : grokVideo15NewSizeFromRatio(ratio);
   const isSoraZhenzhen = !isExternalSelected && modelDef.kind === 'sora' && !isFal;
   const isVeoOmni = !isExternalSelected && apiModel === 'veo-omni-10s';
   const showBuiltinFalControls = !isExternalSelected && isFal && !!falReg;
   const showGenericVideoControls = isExternalSelected || !isFal;
   const ratioOptions = isJimengSeedanceSelected
     ? ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9']
+    : isGrok15New
+    ? ['16:9', '9:16']
     : modelDef.ratios;
   const durationOptions = isJimengSeedanceSelected
     ? [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+    : isGrok15New
+    ? []
     : modelDef.durations || [];
   const resolutionOptions = isJimengSeedanceSelected
     ? ['480p', '720p', '1080p']
+    : isGrok15New
+    ? []
     : modelDef.resolutions || [];
   // veo-fal 专属
   const vfRatio: string = d?.vfRatio || '16:9';
@@ -269,6 +282,8 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
   const maxMentionRefs =
     isVeoOmni
       ? 1
+      : isGrok15New
+      ? 1
       : isJimengSeedanceSelected
       ? JIMENG_SEEDANCE_LIMITS.images
       : isFal && falReg
@@ -344,6 +359,7 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
       duration: def.defaultDuration ?? def.durations?.[0],
       resolution: def.defaultResolution || '',
       ...(nextModel === 'grok-imagine-video-1.5' ? { gkfMode: 'image_to_video' } : {}),
+      ...(isGrokVideo15NewModel(nextModel) ? { ratio: '16:9', resolution: '' } : {}),
     });
   };
 
@@ -458,6 +474,11 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
     if (isVeoOmni && imageUrls.length === 0) {
       setError('veo-omni-10s 需要 1 张参考图');
       logBus.error('生成中止: veo-omni-10s 缺少参考图', src);
+      return;
+    }
+    if (isGrok15New && imageUrls.length === 0) {
+      setError('Grok 1.5 New 需要 1 张参考图');
+      logBus.error('生成中止: Grok 1.5 New 缺少参考图', src);
       return;
     }
     taskCompletionSound.primeAudio();
@@ -594,7 +615,7 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
       // 参考图预处理:
       //   - Grok: 直接传 URL (本地 /files/* 也可,后端会转上游 URL)
       //   - Veo / Sora2 / Seedance: 转 base64
-      const refs = imageUrls.slice(0, isVeoOmni ? 1 : modelDef.maxRefImages);
+      const refs = imageUrls.slice(0, (isVeoOmni || isGrok15New) ? 1 : modelDef.maxRefImages);
       let images: string[] | undefined;
       if (modelDef.supportImages && refs.length > 0) {
         if (modelDef.kind === 'grok') {
@@ -611,7 +632,9 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
 
       // 按 kind 走不同字段(完全对齐 gpt-image-2-web payload)
       const payload: VideoSubmitRequest = { model: apiModel, prompt: finalPrompt, providerParams };
-      if (modelDef.kind === 'grok') {
+      if (isGrok15New) {
+        payload.size = grok15NewSize;
+      } else if (modelDef.kind === 'grok') {
         payload.ratio = ratio;
         payload.duration = Number(duration) || modelDef.defaultDuration || 15;
         payload.resolution = resolution || modelDef.defaultResolution || '720P';
@@ -636,7 +659,9 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
 
       logBus.info(
         `提交任务: kind=${modelDef.kind} model=${apiModel} ratio=${ratio}` +
-        (modelDef.kind === 'grok'
+        (isGrok15New
+          ? ` size=${payload.size} v1-multipart`
+          : modelDef.kind === 'grok'
           ? ` duration=${payload.duration}s resolution=${payload.resolution}`
           : modelDef.kind === 'sora'
             ? ` duration=${payload.duration}s private=${payload.private}`
@@ -686,7 +711,7 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
     if (payload.kind === 'image' && payload.url) {
       const cur = Array.isArray(d?.localRefImages) ? d.localRefImages : [];
       if (cur.indexOf(payload.url) !== -1) return;
-      const cap = isJimengSeedanceSelected ? JIMENG_SEEDANCE_LIMITS.images : (modelDef.maxRefImages || 7) + 4;
+      const cap = isGrok15New ? 1 : isJimengSeedanceSelected ? JIMENG_SEEDANCE_LIMITS.images : (modelDef.maxRefImages || 7) + 4;
       if (cur.length >= cap) return;
       update({ localRefImages: [...cur, payload.url] });
     } else if (payload.kind === 'video' && payload.url && isJimengSeedanceSelected) {
@@ -842,6 +867,7 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
                 update({
                   model: nextModel,
                   ...(nextModel === 'grok-imagine-video-1.5' ? { gkfMode: 'image_to_video' } : {}),
+                  ...(isGrokVideo15NewModel(nextModel) ? { ratio: '16:9', size: '1280x720', resolution: '' } : {}),
                   ...(nextModel === 'sora-2-zhenzhen' ? { ratio: '16:9', duration: 15, resolution: '' } : {}),
                   ...(nextModel === 'veo-omni-10s' ? { ratio: '16:9', duration: 10, resolution: '' } : {}),
                 });
@@ -1056,6 +1082,32 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
           </div>
         )}
 
+        {isGrok15New && (
+          <>
+            <div>
+              <label className="text-[10px] text-white/50 block mb-1">尺寸</label>
+              <select
+                value={grok15NewSize}
+                onChange={(e) => {
+                  const nextSize = e.target.value;
+                  update({
+                    size: nextSize,
+                    ratio: nextSize === '720x1280' ? '9:16' : '16:9',
+                  });
+                }}
+                className="w-full rounded bg-white/5 border border-white/10 px-2 py-1 text-xs text-white outline-none focus:border-white/30"
+              >
+                {GROK_VIDEO_1_5_NEW_SIZES.map((item) => (
+                  <option key={item.value} value={item.value} className="bg-zinc-900">{item.label}</option>
+                ))}
+              </select>
+            </div>
+            <div className="rounded border border-white/10 bg-white/5 px-2 py-1.5 text-[10px] leading-relaxed text-white/45">
+              Grok 1.5 New 需要 1 张参考图；按 Comfly 原节点提交 model / prompt / size / input_reference，时长由具体模型 6s / 10s / 15s 决定。
+            </div>
+          </>
+        )}
+
         {isJimengSeedanceSelected && (
           <div className="rounded border border-white/10 bg-white/5 p-1.5 space-y-1">
             <div className="flex items-center justify-between gap-2">
@@ -1084,7 +1136,7 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
         )}
 
         {/* 比例(非 FAL 时显示原始控件) */}
-        {showGenericVideoControls && (
+        {showGenericVideoControls && !isGrok15New && (
         <div className="grid grid-cols-2 gap-1.5">
           <div>
             <label className="text-[10px] text-white/50 block mb-1">比例</label>

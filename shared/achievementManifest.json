@@ -413,6 +413,84 @@
           "condition": { "type": "hidden", "kind": "saint-seiya-hades", "mode": "used", "count": 1 }
         }
       ]
+    },
+    {
+      "style": "tetris",
+      "label": "俄罗斯方块主题",
+      "shortLabel": "方块",
+      "accent": "#16c6d9",
+      "featured": [
+        {
+          "idSuffix": "first-drop",
+          "title": "第一块落下",
+          "description": "在俄罗斯方块主题下开始第一局小游戏。",
+          "rarity": "bronze",
+          "condition": { "type": "counter", "metric": "tetrisGamesStarted", "count": 1 }
+        },
+        {
+          "idSuffix": "tetris-clear",
+          "title": "四行清屏",
+          "description": "在俄罗斯方块主题小游戏里完成一次四消。",
+          "rarity": "silver",
+          "condition": { "type": "counter", "metric": "tetrisTetrises", "count": 1 }
+        },
+        {
+          "idSuffix": "level-10",
+          "title": "十级冲刺",
+          "description": "在俄罗斯方块主题小游戏里达到 Lv10。",
+          "rarity": "silver",
+          "condition": { "type": "counter", "metric": "tetrisLevel10Reached", "count": 1 }
+        },
+        {
+          "idSuffix": "level-50",
+          "title": "半百高压",
+          "description": "在俄罗斯方块主题小游戏里达到 Lv50。",
+          "rarity": "gold",
+          "condition": { "type": "counter", "metric": "tetrisLevel50Reached", "count": 1 }
+        },
+        {
+          "idSuffix": "chapter-one",
+          "title": "第一章完工",
+          "description": "完成俄罗斯方块主题小游戏的第一个 5 级章节。",
+          "rarity": "bronze",
+          "condition": { "type": "counter", "metric": "tetrisChaptersCompleted", "count": 1 }
+        },
+        {
+          "idSuffix": "chapter-five",
+          "title": "五章连跑",
+          "description": "累计完成 5 个俄罗斯方块章节。",
+          "rarity": "silver",
+          "condition": { "type": "counter", "metric": "tetrisChaptersCompleted", "count": 5 }
+        },
+        {
+          "idSuffix": "chapter-50",
+          "title": "Lv50 章节通关",
+          "description": "完成 Lv50 的高压章节。",
+          "rarity": "gold",
+          "condition": { "type": "counter", "metric": "tetrisChapter50Completed", "count": 1 }
+        },
+        {
+          "idSuffix": "clean-lv30",
+          "title": "纯手感通过",
+          "description": "不使用清底行完成 Lv30 章节挑战。",
+          "rarity": "gold",
+          "condition": { "type": "counter", "metric": "tetrisCleanLv30Completed", "count": 1 }
+        },
+        {
+          "idSuffix": "finale",
+          "title": "终章堆栈大师",
+          "description": "完成 Lv99 终章。",
+          "rarity": "master",
+          "condition": { "type": "counter", "metric": "tetrisFinaleCompleted", "count": 1 }
+        },
+        {
+          "idSuffix": "hundred-lines",
+          "title": "百行堆栈",
+          "description": "在俄罗斯方块主题小游戏里累计清除 100 行。",
+          "rarity": "master",
+          "condition": { "type": "counter", "metric": "tetrisLinesCleared", "count": 100 }
+        }
+      ]
     }
   ],
   "films": [

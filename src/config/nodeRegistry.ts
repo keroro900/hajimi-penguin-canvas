@@ -43,6 +43,10 @@ export const NODE_REGISTRY: NodeMeta[] = [
   // ========== GROK OAuth Agent ==========
   { type: 'grok-oauth-agent', label: 'Grok OAuth Agent', category: 'grok', description: '独立 Grok / xAI OAuth Agent 工作台：流式聊天、图像、视频、TTS、STT，多模态输入并输出四类素材', icon: 'Bot', color: 'emerald' },
 
+  // ========== Codex CLI Agent ==========
+  { type: 'codex-cli-agent', label: 'Codex CLI Agent', category: 'codex', description: '面向创作者的 Codex CLI 工作台：流式对话、图像生成提示词、Skill 调用、产物库和版本树', icon: 'TerminalSquare', color: 'sky' },
+  { type: 'codex-image-conjure', label: 'Codex 生图工作台', category: 'codex', description: '基于 Codex CLI imagegen 的专用生图工作台：提示词模板、片段、参考图和公共图库', icon: 'ImagePlus', color: 'sky' },
+
   // ========== ComfyUI 本地工作流节点 ==========
   { type: 'comfyui-store', label: 'ComfyUI超市', category: 'comfyui', description: 'ComfyUI 应用库：导入制作好的工作流应用，接上游素材后一键运行', icon: 'Boxes', color: 'cyan' },
   { type: 'comfyui-app-maker', label: 'ComfyUI应用制作工具', category: 'comfyui', description: '上传 ComfyUI API Workflow JSON，自动识别参数并保存为可复用应用', icon: 'FileJson', color: 'emerald' },
@@ -91,6 +95,7 @@ export const NODE_REGISTRY: NodeMeta[] = [
   { type: 'portrait-master', label: '肖像大师', category: 'toolbox', description: '捏人 Prompt 设计器：五官、发型、服饰、配饰、气质神情等 9 大类词库，支持随机、锁定、权重和运行输出文本', icon: 'UserRoundCog', color: 'pink' },
   { type: 'pose-master', label: '姿势大师', category: 'toolbox', description: '人体线稿姿态编辑器：支持多人姿势、抓取移动、OpenPose/COCO 预览输出、keypoints JSON 与中英文 prompt', icon: 'PersonStanding', color: 'pink' },
   { type: 'aggregate-parser', label: '聚合解析', category: 'toolbox', description: '基于 ParseHub 的轻量自媒体聚合解析：输入短链/分享码/分享文案，合规确认后默认保存到输出目录；远端地址解析作为高级模式保留', icon: 'Link2', color: 'pink' },
+  { type: 'batch-processor', label: '批量素材处理', category: 'toolbox', description: '批量导入文件或文件夹，在节点内完成命名、去黑边、抠图、扩图、高清放大和进度反馈，不自动铺满画布输出节点', icon: 'Files', color: 'pink' },
   { type: 'topaz-image-upscale', label: 'Topaz图像高清化', category: 'toolbox', description: '调用本机 Topaz Gigapixel AI / Gigapixel 8，对上游图像做本地高清放大；需要用户已安装并登录软件', icon: 'Image', color: 'pink' },
   { type: 'topaz-video-upscale', label: 'Topaz视频高清化', category: 'toolbox', description: '调用本机 Topaz Video AI 自带 ffmpeg，对上游视频做放大与补帧；需要用户已安装并登录软件', icon: 'Video', color: 'pink' },
 
@@ -105,6 +110,7 @@ export const NODE_GROUPS: Record<string, { label: string; nodes: NodeMeta[] }> =
   rh: { label: 'RH', nodes: NODE_REGISTRY.filter((n) => n.category === 'rh' && !n.hidden) },
   fal: { label: 'FAL工具箱', nodes: NODE_REGISTRY.filter((n) => n.category === 'fal' && !n.hidden) },
   grok: { label: 'GROK OAuth', nodes: NODE_REGISTRY.filter((n) => n.category === 'grok' && !n.hidden) },
+  codex: { label: 'CODEX CLI', nodes: NODE_REGISTRY.filter((n) => n.category === 'codex' && !n.hidden) },
   comfyui: { label: 'ComfyUI', nodes: NODE_REGISTRY.filter((n) => n.category === 'comfyui' && !n.hidden) },
   special: { label: '特殊节点', nodes: NODE_REGISTRY.filter((n) => n.category === 'special' && !n.hidden) },
   utility: { label: '工具节点', nodes: NODE_REGISTRY.filter((n) => n.category === 'utility' && !n.hidden) },

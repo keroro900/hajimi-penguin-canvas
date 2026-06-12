@@ -29,6 +29,7 @@ const EXECUTABLE_NODE_TYPES = new Set<string>([
   'video', 'seedance', 'audio', 'llm', 'runninghub', 'runninghub-wallet',
     // v1.2.10.1: RH 工具节点
     'rh-tools', 'rh-toolbox', 'fal-toolbox', 'comfyui-store',
+  'grok-oauth-agent', 'codex-cli-agent',
   'resize', 'upscale', 'grid-crop', 'grid-editor', 'remove-bg', 'combine', 'image-compare', 'drawing-board',
   'panorama-3d',
   'frame-extractor', 'frame-pair',
@@ -37,7 +38,7 @@ const EXECUTABLE_NODE_TYPES = new Set<string>([
   'loop', 'pick-from-set',
   // v1.4.6: 工具箱文本节点也可点击 RUN 直接外挂 OutputNode
   'cinematic', 'video-motion',
-  'portrait-master', 'pose-master', 'aggregate-parser',
+  'portrait-master', 'pose-master', 'aggregate-parser', 'batch-processor',
   'topaz-image-upscale', 'topaz-video-upscale',
   'remove-ai-watermark',
 ]);

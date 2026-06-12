@@ -370,6 +370,30 @@ export const SORA2_FAL_DURATIONS = [4, 8, 12, 16, 20];
 /** Sora2 FAL 分辨率(主项目 srf_resolution) */
 export const SORA2_FAL_RESOLUTIONS = ['720p', 'auto'];
 
+export const GROK_VIDEO_1_5_NEW_MODELS = [
+  'grok-1.5-video-6s',
+  'grok-1.5-video-10s',
+  'grok-1.5-video-15s',
+] as const;
+
+export type GrokVideo15NewModel = typeof GROK_VIDEO_1_5_NEW_MODELS[number];
+
+export const GROK_VIDEO_1_5_NEW_SIZES = [
+  { value: '1280x720', label: '横屏 1280x720' },
+  { value: '720x1280', label: '竖屏 720x1280' },
+] as const;
+
+export function isGrokVideo15NewModel(model: string): model is GrokVideo15NewModel {
+  return (GROK_VIDEO_1_5_NEW_MODELS as readonly string[]).includes(String(model || '').trim());
+}
+
+export function grokVideo15NewSizeFromRatio(ratioOrSize: string): '1280x720' | '720x1280' {
+  const value = String(ratioOrSize || '').trim();
+  if (value === '720x1280') return '720x1280';
+  if (value === '9:16') return '720x1280';
+  return '1280x720';
+}
+
 export interface VideoModelDef {
   id: string;                // 节点默认 model 字段(也是上游真实 model)
   label: string;             // 主选项显示名
@@ -420,6 +444,9 @@ export const VIDEO_MODELS: VideoModelDef[] = [
     description: 'xAI Grok Video (最多 7 张参考图)',
     apiModelOptions: [
       { value: 'grok-video-3', label: 'grok-video-3（新版1.5）' },
+      { value: 'grok-1.5-video-6s', label: 'grok-1.5-video-6s（Zhenzhen New）' },
+      { value: 'grok-1.5-video-10s', label: 'grok-1.5-video-10s（Zhenzhen New）' },
+      { value: 'grok-1.5-video-15s', label: 'grok-1.5-video-15s（Zhenzhen New）' },
       { value: 'grok-imagine-video-1.5', label: 'Grok Video 1.5 (FAL)' },
       { value: 'grok-video-fal', label: 'grok-video-fal (FAL)' },
     ],

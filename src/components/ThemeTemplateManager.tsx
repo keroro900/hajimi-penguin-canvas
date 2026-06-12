@@ -96,6 +96,7 @@ const VISUAL_STYLE_OPTIONS = [
   { value: 'soccer-hero', label: '足球小将' },
   { value: 'dragon-ball', label: '七龙珠' },
   { value: 'saint-seiya', label: '圣斗士' },
+  { value: 'tetris', label: '俄罗斯方块' },
 ] as const;
 
 const VISUAL_INTENSITY_OPTIONS = [
@@ -118,6 +119,7 @@ const MUSIC_PRESET_OPTIONS: Array<{ value: ThemeMusicPreset; label: string }> = 
   { value: 'shenron-aura', label: '神龙青焰' },
   { value: 'pegasus-cosmos', label: '天马小宇宙' },
   { value: 'hades-eclipse', label: '冥界日蚀' },
+  { value: 'block-drop', label: '落块冲刺' },
 ];
 
 const MAX_THEME_AUDIO_SIZE = 20 * 1024 * 1024;
@@ -231,6 +233,17 @@ function visualDefaultsFor(style: ThemeVisuals['style'], legacyStyle: LegacyThem
       canvasPattern: 'sanctuary-zodiac',
       nodeFrame: 'cloth-box-card',
       headerMark: prev?.headerMark || 'SANCTUARY',
+    };
+  }
+  if (style === 'tetris') {
+    return {
+      ...fallbackVisuals(legacyStyle),
+      ...(prev || {}),
+      style,
+      iconPack: 'tetromino-well',
+      canvasPattern: 'tetris-stack',
+      nodeFrame: 'arcade-cabinet-card',
+      headerMark: prev?.headerMark || 'TETRIS STACK',
     };
   }
   if (style === 'tech') {
@@ -359,6 +372,16 @@ function fallbackMusic(legacyStyle: LegacyThemeStyle, visuals?: ThemeVisuals): T
       volume: 0.18,
       bpm: 148,
       copyrightNote: '圣域篇默认使用天马幻想；冥界篇开启后切换最后的圣战，可替换为已授权音频 URL。',
+    };
+  }
+  if (visualStyle === 'tetris') {
+    return {
+      title: 'Block Drop Sprint',
+      preset: 'block-drop',
+      source: 'synth',
+      volume: 0.15,
+      bpm: 148,
+      copyrightNote: '原创 falling-block 合成循环；可替换为已授权音频 URL。',
     };
   }
   if (legacyStyle === 'tech' || visualStyle === 'tech') {

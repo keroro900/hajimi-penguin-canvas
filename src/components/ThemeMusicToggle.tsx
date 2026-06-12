@@ -161,6 +161,16 @@ const PRESET_NOTES: Record<ThemeMusicPreset, Note[]> = {
     { freq: 415, at: 1.46, len: 0.22, type: 'sawtooth' },
     { freq: 622, at: 1.92, len: 0.28, type: 'sine' },
   ],
+  'block-drop': [
+    { freq: 330, at: 0, len: 0.07, type: 'square' },
+    { freq: 392, at: 0.12, len: 0.07, type: 'square' },
+    { freq: 494, at: 0.24, len: 0.07, type: 'square' },
+    { freq: 659, at: 0.36, len: 0.09, type: 'square' },
+    { freq: 523, at: 0.56, len: 0.07, type: 'triangle' },
+    { freq: 392, at: 0.68, len: 0.07, type: 'square' },
+    { freq: 247, at: 0.86, len: 0.12, type: 'sawtooth' },
+    { freq: 988, at: 1.06, len: 0.08, type: 'square' },
+  ],
 };
 
 const PRESET_LOOP_SECONDS: Record<ThemeMusicPreset, number> = {
@@ -177,6 +187,7 @@ const PRESET_LOOP_SECONDS: Record<ThemeMusicPreset, number> = {
   'shenron-aura': 2.72,
   'pegasus-cosmos': 2.18,
   'hades-eclipse': 2.78,
+  'block-drop': 1.32,
 };
 
 function clampVolume(value?: number) {

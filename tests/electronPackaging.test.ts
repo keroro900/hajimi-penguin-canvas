@@ -42,6 +42,9 @@ test('Electron packaging verifies encrypted local extension hook points', () => 
 
   assert.match(postBuild, /extensions['"], ['"]runtimeHooks\.t8c/);
   assert.match(postBuild, /routes['"], ['"]figma\.t8c/);
+  assert.match(postBuild, /routes['"], ['"]grokOAuth\.t8c/);
+  assert.match(postBuild, /routes['"], ['"]codexCli\.t8c/);
+  assert.match(postBuild, /utils['"], ['"]codexCliRunner\.t8c/);
   assert.match(postBuild, /utils['"], ['"]figmaBridge\.t8c/);
   assert.match(postBuild, /checkFigmaBridgeRuntime/);
   assert.match(postBuild, /tools['"], ['"]figma-bridge/);

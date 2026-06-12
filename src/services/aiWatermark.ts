@@ -7,6 +7,7 @@ export type AiWatermarkMode =
   | 'visible'
   | 'erase'
   | 'invisible'
+  | 'all'
   | 'metadata-check'
   | 'metadata-remove'
   | 'identify';
@@ -30,13 +31,16 @@ export interface AiWatermarkOptions {
   backend?: 'cv2' | 'lama';
   eraseMethod?: 'telea' | 'ns';
   dilate?: number;
-  pipeline?: 'default' | 'controlnet' | 'ctrlregen';
+  pipeline?: 'controlnet' | 'sdxl' | 'default' | 'ctrlregen';
   device?: 'auto' | 'cpu' | 'mps' | 'cuda' | 'xpu';
   strength?: number;
   steps?: number;
   seed?: number | '';
   humanize?: number;
   unsharp?: number;
+  upscaler?: 'lanczos' | 'esrgan';
+  model?: string;
+  guidanceScale?: number | '';
   maxResolution?: number;
   minResolution?: number;
   controlnetScale?: number;
@@ -74,6 +78,9 @@ export interface AiWatermarkStatus {
     auto?: boolean;
     controlnet?: boolean;
     adaptivePolish?: boolean;
+    esrgan?: boolean;
+    model?: boolean;
+    guidanceScale?: boolean;
   };
   setupHints: string[];
   errors?: string[];

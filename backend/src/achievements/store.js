@@ -50,6 +50,13 @@ const EVENT_TYPES = new Set([
   'saint_seiya.gold_completed',
   'saint_seiya.battle_won',
   'saint_seiya.cosmo_burst',
+  'tetris.game_started',
+  'tetris.line_clear',
+  'tetris.tetris_clear',
+  'tetris.level_reached',
+  'tetris.chapter_completed',
+  'tetris.clean_chapter_completed',
+  'tetris.game_over',
 ]);
 const CREATIVE_EVENT_TYPES = new Set([
   'hidden_mode.enabled',
@@ -66,6 +73,13 @@ const CREATIVE_EVENT_TYPES = new Set([
   'saint_seiya.gold_completed',
   'saint_seiya.battle_won',
   'saint_seiya.cosmo_burst',
+  'tetris.game_started',
+  'tetris.line_clear',
+  'tetris.tetris_clear',
+  'tetris.level_reached',
+  'tetris.chapter_completed',
+  'tetris.clean_chapter_completed',
+  'tetris.game_over',
 ]);
 
 function nowIso(ts = Date.now()) {
@@ -153,6 +167,19 @@ function emptyThemeStats() {
     saintSeiyaSilverWins: 0,
     saintSeiyaGoldWins: 0,
     saintSeiyaCosmoBursts: 0,
+    tetrisGamesStarted: 0,
+    tetrisLineClears: 0,
+    tetrisLinesCleared: 0,
+    tetrisTetrises: 0,
+    tetrisLevel10Reached: 0,
+    tetrisLevel50Reached: 0,
+    tetrisLevel99Reached: 0,
+    tetrisChaptersCompleted: 0,
+    tetrisChapter50Completed: 0,
+    tetrisFinaleCompleted: 0,
+    tetrisCleanChaptersCompleted: 0,
+    tetrisCleanLv30Completed: 0,
+    tetrisGameOvers: 0,
     nodeTypeCounts: {},
     nodeRunCounts: {},
     hiddenModes: {},
@@ -531,6 +558,12 @@ function bump(map, key, amount = 1) {
   map[key] = Math.max(0, Math.floor(Number(map[key]) || 0)) + amount;
 }
 
+function levelFromEventKind(kind) {
+  const match = String(kind || '').match(/\d+/);
+  const value = match ? Math.floor(Number(match[0]) || 0) : 0;
+  return Math.max(1, Math.min(99, value || 1));
+}
+
 function applyEventToStats(data, event) {
   const stats = ensureThemeStats(data, event.theme);
   if (event.type === 'theme.active_tick') {
@@ -613,6 +646,44 @@ function applyEventToStats(data, event) {
   }
   if (event.type === 'saint_seiya.cosmo_burst') {
     stats.saintSeiyaCosmoBursts += 1;
+    return;
+  }
+  if (event.type === 'tetris.game_started') {
+    stats.tetrisGamesStarted += 1;
+    return;
+  }
+  if (event.type === 'tetris.line_clear') {
+    const lines = Math.max(1, Math.min(4, Math.floor(Number.parseInt(event.kind, 10) || 1)));
+    stats.tetrisLineClears += 1;
+    stats.tetrisLinesCleared += lines;
+    return;
+  }
+  if (event.type === 'tetris.tetris_clear') {
+    stats.tetrisTetrises += 1;
+    return;
+  }
+  if (event.type === 'tetris.level_reached') {
+    const level = levelFromEventKind(event.kind);
+    if (level >= 10) stats.tetrisLevel10Reached += 1;
+    if (level >= 50) stats.tetrisLevel50Reached += 1;
+    if (level >= 99) stats.tetrisLevel99Reached += 1;
+    return;
+  }
+  if (event.type === 'tetris.chapter_completed') {
+    const level = levelFromEventKind(event.kind);
+    stats.tetrisChaptersCompleted += 1;
+    if (level === 50) stats.tetrisChapter50Completed += 1;
+    if (level >= 99) stats.tetrisFinaleCompleted += 1;
+    return;
+  }
+  if (event.type === 'tetris.clean_chapter_completed') {
+    const level = levelFromEventKind(event.kind);
+    stats.tetrisCleanChaptersCompleted += 1;
+    if (level === 30) stats.tetrisCleanLv30Completed += 1;
+    return;
+  }
+  if (event.type === 'tetris.game_over') {
+    stats.tetrisGameOvers += 1;
   }
 }
 

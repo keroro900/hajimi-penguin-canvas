@@ -647,6 +647,7 @@ export async function queryVideoFal(params: { responseUrl?: string; endpoint?: s
 //   - veo3.1   字段:  aspect_ratio + enhance_prompt + enable_upsample + seed + images(base64,≤3)
 //   - veo-omni 字段:  aspect_ratio + duration=10 + images(base64,取第1张),后端转 /v1/videos multipart
 //   - grok     字段:  ratio + duration(秒,数字) + resolution + seed + images(本地 URL/base64,≤7,后端转上游 URL)
+//   - grok 1.5 new: model(grok-1.5-video-*s) + size + images(取第1张),后端转 /v1/videos multipart
 //   - sora2    字段:  aspect_ratio + duration + private + seed + images(base64,≤1)
 //   - seedance 字段:  沿用 veo 字段(零破坏)
 // 后端通过 model 字段名自动选择协议,前端无需显式传 kind。
@@ -662,6 +663,7 @@ export interface VideoSubmitRequest {
   ratio?: string;
   duration?: number;
   resolution?: string;
+  size?: string;
   // 通用
   seed?: number;
   /** Sora2 Zhenzhen API: 是否私密生成(对齐 gpt-image-2-web sr_private) */

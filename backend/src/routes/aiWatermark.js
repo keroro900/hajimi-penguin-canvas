@@ -32,7 +32,7 @@ router.get('/status', async (_req, res) => {
         installed: false,
         version: '',
         resolver: '',
-        markKeys: ['gemini', 'doubao', 'jimeng'],
+        markKeys: ['gemini', 'doubao', 'jimeng', 'samsung'],
         optionalFeatures: {
           invisible: false,
           lama: false,
@@ -42,6 +42,9 @@ router.get('/status', async (_req, res) => {
           auto: false,
           controlnet: false,
           adaptivePolish: false,
+          esrgan: false,
+          model: false,
+          guidanceScale: false,
         },
         setupHints: [
           '推荐: pipx install remove-ai-watermarks',

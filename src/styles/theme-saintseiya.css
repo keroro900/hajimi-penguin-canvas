@@ -2054,7 +2054,47 @@ html[data-theme-visual="saint-seiya"][data-theme-mode="dark"] .t8-input,
 html[data-theme-visual="saint-seiya"][data-theme-mode="dark"] .t8-select,
 html[data-theme-visual="saint-seiya"][data-theme-mode="dark"] .t8-textarea {
   color: #fff7db !important;
+  -webkit-text-fill-color: #fff7db;
+  caret-color: #ffe68a;
   color-scheme: dark;
+}
+
+/* Hades night-mode node readability: keep dark text surfaces readable in Text, Output and Codex nodes. */
+html[data-theme-visual="saint-seiya"][data-theme-mode="dark"] .react-flow__node:not(.react-flow__node-groupBox) [contenteditable="true"],
+html[data-theme-visual="saint-seiya"][data-theme-mode="dark"] .react-flow__node-text [contenteditable="true"],
+html[data-theme-visual="saint-seiya"][data-theme-mode="dark"] .react-flow__node-output .whitespace-pre-wrap,
+html[data-theme-visual="saint-seiya"][data-theme-mode="dark"] .react-flow__node-output textarea,
+html[data-theme-visual="saint-seiya"][data-theme-mode="dark"] .codex-cli-agent-node input,
+html[data-theme-visual="saint-seiya"][data-theme-mode="dark"] .codex-cli-agent-node textarea,
+html[data-theme-visual="saint-seiya"][data-theme-mode="dark"] .codex-cli-agent-node select,
+html[data-theme-visual="saint-seiya"][data-theme-mode="dark"] .codex-simple-prompt-frame [contenteditable="true"],
+html[data-theme-visual="saint-seiya"][data-saint-mode="hades"][data-theme-mode="dark"] .react-flow__node:not(.react-flow__node-groupBox) [contenteditable="true"],
+html[data-theme-visual="saint-seiya"][data-saint-mode="hades"][data-theme-mode="dark"] .react-flow__node-text [contenteditable="true"],
+html[data-theme-visual="saint-seiya"][data-saint-mode="hades"][data-theme-mode="dark"] .react-flow__node-output .whitespace-pre-wrap,
+html[data-theme-visual="saint-seiya"][data-saint-mode="hades"][data-theme-mode="dark"] .react-flow__node-output textarea,
+html[data-theme-visual="saint-seiya"][data-saint-mode="hades"][data-theme-mode="dark"] .codex-cli-agent-node input,
+html[data-theme-visual="saint-seiya"][data-saint-mode="hades"][data-theme-mode="dark"] .codex-cli-agent-node textarea,
+html[data-theme-visual="saint-seiya"][data-saint-mode="hades"][data-theme-mode="dark"] .codex-cli-agent-node select,
+html[data-theme-visual="saint-seiya"][data-saint-mode="hades"][data-theme-mode="dark"] .codex-simple-prompt-frame [contenteditable="true"] {
+  color: #fff7db !important;
+  -webkit-text-fill-color: #fff7db;
+  caret-color: #ffe68a;
+  text-shadow: none !important;
+}
+
+html[data-theme-visual="saint-seiya"][data-theme-mode="dark"] .react-flow__node:not(.react-flow__node-groupBox) input::placeholder,
+html[data-theme-visual="saint-seiya"][data-theme-mode="dark"] .react-flow__node:not(.react-flow__node-groupBox) textarea::placeholder,
+html[data-theme-visual="saint-seiya"][data-saint-mode="hades"][data-theme-mode="dark"] .react-flow__node:not(.react-flow__node-groupBox) input::placeholder,
+html[data-theme-visual="saint-seiya"][data-saint-mode="hades"][data-theme-mode="dark"] .react-flow__node:not(.react-flow__node-groupBox) textarea::placeholder {
+  color: rgba(255, 247, 219, 0.58) !important;
+  -webkit-text-fill-color: rgba(255, 247, 219, 0.58);
+}
+
+html[data-theme-visual="saint-seiya"][data-theme-mode="dark"] .react-flow__node:not(.react-flow__node-groupBox) select option,
+html[data-theme-visual="saint-seiya"][data-saint-mode="hades"][data-theme-mode="dark"] .react-flow__node:not(.react-flow__node-groupBox) select option {
+  background: #07111f;
+  color: #fff7db;
+  -webkit-text-fill-color: #fff7db;
 }
 
 html[data-theme-visual="saint-seiya"] .t8-saint-sanctuary {

@@ -25,6 +25,7 @@ const MODE_OPTIONS: Array<{ value: AiWatermarkMode; label: string; hint: string 
   { value: 'visible', label: '可见水印', hint: 'Gemini / Doubao / Jimeng 等已知标记' },
   { value: 'erase', label: '框选擦除', hint: '手动区域 inpaint' },
   { value: 'invisible', label: '隐形水印', hint: '需要上游 GPU 可选依赖' },
+  { value: 'all', label: '完整清理', hint: '官方 all：可见 + 隐形 + 元数据' },
   { value: 'metadata-check', label: '元数据检查', hint: '仅输出报告' },
   { value: 'metadata-remove', label: '元数据清理', hint: '图片 / 视频 / 音频容器' },
   { value: 'identify', label: '来源鉴别', hint: '输出 JSON 报告' },
@@ -42,16 +43,19 @@ const DEFAULT_OPTIONS: AiWatermarkOptions = {
   backend: 'cv2',
   eraseMethod: 'telea',
   dilate: 3,
-  pipeline: 'default',
+  pipeline: 'controlnet',
   device: 'auto',
   steps: 50,
   humanize: 0,
   unsharp: 0,
+  upscaler: 'lanczos',
+  model: '',
+  guidanceScale: '',
   maxResolution: 0,
   minResolution: 1024,
   controlnetScale: 1,
   auto: false,
-  adaptivePolish: false,
+  adaptivePolish: true,
   restoreFaces: false,
   restoreFacesWeight: 0.5,
   protectText: false,
@@ -64,8 +68,8 @@ function normalizeMode(value: any): AiWatermarkMode {
   return MODE_OPTIONS.some((item) => item.value === value) ? value : 'smart';
 }
 
-function normalizePipeline(value: any): 'default' | 'controlnet' {
-  return value === 'controlnet' || value === 'ctrlregen' ? 'controlnet' : 'default';
+function normalizePipeline(value: any): 'controlnet' | 'sdxl' {
+  return value === 'default' || value === 'sdxl' ? 'sdxl' : 'controlnet';
 }
 
 function formatMediaSummary(items: MediaItem[]) {
@@ -214,8 +218,8 @@ function RemoveAiWatermarkNode({ id, data, selected }: { id: string; data: any; 
       .catch((error) => {
         if (!cancelled) setStatus({
           installed: false,
-          markKeys: ['gemini', 'doubao', 'jimeng'],
-          optionalFeatures: { invisible: false, lama: false, detect: false, trustmark: false, restore: false, auto: false, controlnet: false, adaptivePolish: false },
+          markKeys: ['gemini', 'doubao', 'jimeng', 'samsung'],
+          optionalFeatures: { invisible: false, lama: false, detect: false, trustmark: false, restore: false, auto: false, controlnet: false, adaptivePolish: false, esrgan: false, model: false, guidanceScale: false },
           setupHints: [error?.message || '状态检查失败'],
         });
       })
@@ -334,12 +338,11 @@ function RemoveAiWatermarkNode({ id, data, selected }: { id: string; data: any; 
   useRunTrigger(id, handleRun);
 
   const modeMeta = MODE_OPTIONS.find((item) => item.value === mode) || MODE_OPTIONS[0];
-  const marks = ['auto', ...((status?.markKeys || ['gemini', 'doubao', 'jimeng']).filter((item) => item !== 'auto'))];
+  const marks = ['auto', ...((status?.markKeys || ['gemini', 'doubao', 'jimeng', 'samsung']).filter((item) => item !== 'auto'))];
   const canUseInvisible = status?.optionalFeatures?.invisible;
   const canUseLama = status?.optionalFeatures?.lama;
-  const canUseAutoTune = status?.optionalFeatures?.auto !== false;
   const canUseControlnet = status?.optionalFeatures?.controlnet !== false;
-  const canUseRestore = status?.optionalFeatures?.restore === true;
+  const canUseEsrgan = status?.optionalFeatures?.esrgan !== false;
   const pipeline = normalizePipeline(options.pipeline);
   const error = localError || d.error || '';
 
@@ -439,6 +442,23 @@ function RemoveAiWatermarkNode({ id, data, selected }: { id: string; data: any; 
           </div>
         )}
 
+        {mode === 'all' && (
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <FieldLabel>修补方式</FieldLabel>
+              <select className="t8-select w-full px-2 py-1 text-xs" value={options.inpaintMethod || 'ns'} onChange={(e) => patchOptions({ inpaintMethod: e.target.value as any })}>
+                <option value="ns">ns</option>
+                <option value="telea">telea</option>
+                <option value="gaussian">gaussian</option>
+              </select>
+            </div>
+            <ToggleRow label="可见残影修补" checked={options.inpaint !== false} onChange={(value) => patchOptions({ inpaint: value })} />
+            <div className="col-span-2">
+              <SmallHint>完整清理会调用上游 all 命令，依次处理已知可见标记、隐形水印和 AI 元数据；GPU 依赖缺失时会明确失败。</SmallHint>
+            </div>
+          </div>
+        )}
+
         {mode === 'erase' && (
           <div className="space-y-2">
             {firstPreviewImage && (
@@ -495,7 +515,7 @@ function RemoveAiWatermarkNode({ id, data, selected }: { id: string; data: any; 
           </div>
         )}
 
-        {(mode === 'invisible' || (mode === 'smart' && options.runInvisible)) && (
+        {(mode === 'invisible' || mode === 'all' || (mode === 'smart' && options.runInvisible)) && (
           <div className="space-y-2">
             {!canUseInvisible && (
               <div className="flex items-start gap-1 rounded border px-2 py-1 text-[10px]" style={{ borderColor: 'var(--t8-border)', color: 'var(--t8-text-muted)' }}>
@@ -512,10 +532,10 @@ function RemoveAiWatermarkNode({ id, data, selected }: { id: string; data: any; 
               <div>
                 <FieldLabel>管线</FieldLabel>
                 <select className="t8-select w-full px-2 py-1 text-xs" value={pipeline} onChange={(e) => patchOptions({ pipeline: e.target.value as any })}>
-                  <option value="default">default</option>
-                  <option value="controlnet" disabled={!canUseControlnet}>controlnet{canUseControlnet ? '' : ' (需 0.8.9)'}</option>
+                  <option value="controlnet" disabled={!canUseControlnet}>controlnet{canUseControlnet ? ' 默认' : ' (需新版)'}</option>
+                  <option value="sdxl">sdxl</option>
                 </select>
-                <SmallHint>ControlNet 保留文字 / 人脸结构，替代旧保护开关。</SmallHint>
+                <SmallHint>0.11 默认 ControlNet 保留文字 / 人脸结构；纯图可选 sdxl。</SmallHint>
               </div>
               <div>
                 <FieldLabel>步数</FieldLabel>
@@ -524,7 +544,7 @@ function RemoveAiWatermarkNode({ id, data, selected }: { id: string; data: any; 
               <div>
                 <FieldLabel>强度</FieldLabel>
                 <NumberInput value={options.strength === undefined ? '' : Number(options.strength)} min={0} max={1} step={0.05} onChange={(value) => patchOptions({ strength: value === '' ? undefined : value })} />
-                <SmallHint>留空使用 0.8.9 的 OpenAI / Google / 未知来源自适应强度。</SmallHint>
+                <SmallHint>留空使用 OpenAI / Google / 未知来源自适应强度。</SmallHint>
               </div>
               <div>
                 <FieldLabel>长边上限</FieldLabel>
@@ -535,6 +555,14 @@ function RemoveAiWatermarkNode({ id, data, selected }: { id: string; data: any; 
                 <FieldLabel>长边下限</FieldLabel>
                 <NumberInput value={Number(options.minResolution ?? 1024)} min={0} max={8192} step={64} onChange={(value) => patchOptions({ minResolution: value === '' ? 1024 : value })} />
                 <SmallHint>小图默认升到 1024 再扩散，0 关闭。</SmallHint>
+              </div>
+              <div>
+                <FieldLabel>小图放大</FieldLabel>
+                <select className="t8-select w-full px-2 py-1 text-xs" value={options.upscaler || 'lanczos'} onChange={(e) => patchOptions({ upscaler: e.target.value as any })}>
+                  <option value="lanczos">lanczos</option>
+                  <option value="esrgan" disabled={!canUseEsrgan}>esrgan{canUseEsrgan ? '' : ' (未装)'}</option>
+                </select>
+                <SmallHint>ESRGAN 需要上游 esrgan extra；缺失时上游会回退。</SmallHint>
               </div>
               <div>
                 <FieldLabel>胶片颗粒</FieldLabel>
@@ -549,26 +577,21 @@ function RemoveAiWatermarkNode({ id, data, selected }: { id: string; data: any; 
                 <NumberInput value={Number(options.controlnetScale ?? 1)} min={0} max={3} step={0.1} onChange={(value) => patchOptions({ controlnetScale: value === '' ? 1 : value })} />
               </div>
               <div>
-                <FieldLabel>脸部权重</FieldLabel>
-                <NumberInput value={Number(options.restoreFacesWeight ?? 0.5)} min={0} max={1} step={0.05} onChange={(value) => patchOptions({ restoreFacesWeight: value === '' ? 0.5 : value })} />
+                <FieldLabel>CFG</FieldLabel>
+                <NumberInput value={options.guidanceScale === undefined || options.guidanceScale === '' ? '' : Number(options.guidanceScale)} min={0} max={30} step={0.5} onChange={(value) => patchOptions({ guidanceScale: value })} />
+                <SmallHint>留空使用上游默认 7.5。</SmallHint>
               </div>
-              <ToggleRow label="自动策略 (0.8.9)" checked={options.auto === true || options.autoTune === true} onChange={(value) => patchOptions({ auto: value })} />
-              <ToggleRow label="自适应细节抛光" checked={options.adaptivePolish === true} onChange={(value) => patchOptions({ adaptivePolish: value })} />
-              <ToggleRow
-                label={`GFPGAN 脸部修复${canUseRestore ? '' : '（可选组件未安装）'}`}
-                checked={options.restoreFaces === true && canUseRestore}
-                disabled={!canUseRestore}
-                title="restore 是上游 remove-ai-watermarks 的可选 GFPGAN 脸部修复能力；缺失时不影响普通去水印、元数据清理或基础隐形水印处理。"
-                onChange={(value) => patchOptions({ restoreFaces: value })}
-              />
-              {canUseAutoTune ? (
-                <SmallHint>自动策略会由上游按图像内容选择管线、脸部恢复和细节抛光；手动选 controlnet 会覆盖自动管线。</SmallHint>
-              ) : (
-                <SmallHint>当前 runtime 不是 0.8.9，新参数会自动降级为旧版可识别参数。</SmallHint>
-              )}
-              {!canUseRestore && (
-                <SmallHint>脸部修复是可选增强项，缺失时只是不能开启 GFPGAN 修脸；其它去水印功能仍可正常使用。</SmallHint>
-              )}
+              <div className="col-span-2">
+                <FieldLabel>模型 ID（可选）</FieldLabel>
+                <input
+                  className="t8-input nodrag nowheel w-full px-2 py-1 text-xs"
+                  value={options.model || ''}
+                  placeholder="默认 SDXL base"
+                  onChange={(event) => patchOptions({ model: event.target.value })}
+                />
+              </div>
+              <ToggleRow label="自适应细节抛光" checked={options.adaptivePolish !== false} onChange={(value) => patchOptions({ adaptivePolish: value })} />
+              <SmallHint>0.11 不再提供 GFPGAN face-restore；ControlNet 是默认的结构保留方式，`--auto` 已退役。</SmallHint>
             </div>
           </div>
         )}

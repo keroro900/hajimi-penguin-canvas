@@ -8,6 +8,7 @@ import path from 'node:path';
 const require = createRequire(import.meta.url);
 
 const {
+  FALLBACK_MARKS,
   assertModeSupportsKind,
   buildAiWatermarkPlan,
   commandCandidates,
@@ -19,16 +20,38 @@ const {
   versionAtLeast,
   visibleArgs,
 } = require('../backend/src/tools/aiWatermark/runner.js');
+const {
+  kindFromExt,
+  kindFromPath,
+  mimeFromPath,
+} = require('../backend/src/tools/aiWatermark/media.js');
 
 test('normalizeMode keeps supported modes and falls back to smart', () => {
   assert.equal(normalizeMode('erase'), 'erase');
+  assert.equal(normalizeMode('all'), 'all');
   assert.equal(normalizeMode('metadata'), 'metadata-remove');
   assert.equal(normalizeMode('unknown-mode'), 'smart');
 });
 
+test('fallback registry includes current upstream visible marks', () => {
+  assert.deepEqual(FALLBACK_MARKS, ['gemini', 'doubao', 'jimeng', 'samsung']);
+});
+
+test('media resolver classifies upstream metadata containers', () => {
+  assert.equal(kindFromExt('.heic'), 'image');
+  assert.equal(kindFromExt('.heif'), 'image');
+  assert.equal(kindFromExt('.jxl'), 'image');
+  assert.equal(kindFromPath('clip.mka'), 'audio');
+  assert.equal(kindFromPath('voice.oga'), 'audio');
+  assert.equal(kindFromPath('voice.opus'), 'audio');
+  assert.equal(mimeFromPath('photo.heic'), 'image/heic');
+  assert.equal(mimeFromPath('photo.jxl'), 'image/jxl');
+  assert.equal(mimeFromPath('voice.opus'), 'audio/opus');
+});
+
 test('visibleArgs uses registry-driven mark and safe defaults', () => {
   const args = visibleArgs('input.png', 'output.png', {
-    mark: 'doubao',
+    mark: 'samsung',
     inpaintMethod: 'telea',
     detect: true,
     inpaint: false,
@@ -36,7 +59,7 @@ test('visibleArgs uses registry-driven mark and safe defaults', () => {
   });
 
   assert.deepEqual(args.slice(0, 5), ['visible', 'input.png', '-o', 'output.png', '--mark']);
-  assert.ok(args.includes('doubao'));
+  assert.ok(args.includes('samsung'));
   assert.ok(args.includes('--no-inpaint'));
   assert.ok(args.includes('--detect'));
   assert.ok(args.includes('--keep-metadata'));
@@ -117,6 +140,9 @@ test('invisible pipeline names are version-aware for 0.8.9 controlnet migration'
   assert.equal(versionAtLeast('0.8.7', '0.8.9'), false);
   assert.equal(normalizeInvisiblePipeline('ctrlregen', '0.8.9'), 'controlnet');
   assert.equal(normalizeInvisiblePipeline('controlnet', '0.8.7'), 'ctrlregen');
+  assert.equal(normalizeInvisiblePipeline('', '0.11.0'), 'controlnet');
+  assert.equal(normalizeInvisiblePipeline('default', '0.11.0'), 'sdxl');
+  assert.equal(normalizeInvisiblePipeline('sdxl', '0.11.0'), 'sdxl');
 });
 
 test('invisible 0.8.9 uses controlnet, auto, restore, polish and resolution options', () => {
@@ -147,14 +173,27 @@ test('invisible 0.8.9 uses controlnet, auto, restore, polish and resolution opti
   assert.equal(args.includes('--protect-faces'), false);
 });
 
-test('invisible auto does not force the default pipeline so upstream can choose it', () => {
+test('invisible 0.11 uses current controlnet surface and omits retired face restore and auto flags', () => {
   const args = invisibleArgs('source.png', 'final.png', {
-    upstreamVersion: '0.8.9',
-    pipeline: 'default',
+    upstreamVersion: '0.11.0',
+    pipeline: 'controlnet',
     auto: true,
+    autoTune: true,
+    adaptivePolish: false,
+    restoreFaces: true,
+    restoreFacesWeight: 0.2,
+    upscaler: 'esrgan',
+    model: 'stabilityai/stable-diffusion-xl-base-1.0',
+    guidanceScale: 6.5,
   });
-  assert.ok(args.includes('--auto'));
-  assert.equal(args.includes('--pipeline'), false);
+  assert.equal(args[args.indexOf('--pipeline') + 1], 'controlnet');
+  assert.equal(args[args.indexOf('--upscaler') + 1], 'esrgan');
+  assert.equal(args[args.indexOf('--model') + 1], 'stabilityai/stable-diffusion-xl-base-1.0');
+  assert.equal(args[args.indexOf('--guidance-scale') + 1], 6.5);
+  assert.ok(args.includes('--no-adaptive-polish'));
+  assert.equal(args.includes('--auto'), false);
+  assert.equal(args.includes('--restore-faces'), false);
+  assert.equal(args.includes('--restore-faces-weight'), false);
 });
 
 test('legacy invisible protection flags are only sent to 0.8.7 runtimes', () => {
@@ -172,6 +211,30 @@ test('legacy invisible protection flags are only sent to 0.8.7 runtimes', () => 
   assert.ok(protectedArgs.includes('--protect-text'));
   assert.ok(protectedArgs.includes('--protect-faces'));
   assert.equal(protectedArgs[protectedArgs.indexOf('--pipeline') + 1], 'default');
+});
+
+test('buildAiWatermarkPlan supports upstream all mode as a loud full-pipeline command', () => {
+  const plan = buildAiWatermarkPlan({
+    mode: 'all',
+    sourcePath: 'source.png',
+    outputPath: 'final.png',
+    mediaKind: 'image',
+    options: {
+      upstreamVersion: '0.11.0',
+      pipeline: 'controlnet',
+      upscaler: 'esrgan',
+      adaptivePolish: false,
+    },
+  });
+
+  assert.equal(plan.mode, 'all');
+  assert.equal(plan.outputPath, 'final.png');
+  assert.deepEqual(plan.steps.map((step: any) => step.label), ['all']);
+  const args = plan.steps[0].args;
+  assert.deepEqual(args.slice(0, 4), ['all', 'source.png', '-o', 'final.png']);
+  assert.equal(args[args.indexOf('--pipeline') + 1], 'controlnet');
+  assert.equal(args[args.indexOf('--upscaler') + 1], 'esrgan');
+  assert.ok(args.includes('--no-adaptive-polish'));
 });
 
 test('non-image media is limited to metadata operations', () => {

@@ -111,6 +111,7 @@ import MaterialDragOverlay from './MaterialDragOverlay';
 import ThemeMusicToggle from './ThemeMusicToggle';
 import DragonBallRadar from './DragonBallRadar';
 import SaintSeiyaSanctuary from './SaintSeiyaSanctuary';
+import TetrisPanel from './TetrisPanel';
 import SendMaterialsModal from './SendMaterialsModal';
 import SmartImage from './SmartImage';
 import { useCanvasHistory } from '../hooks/useCanvasHistory';
@@ -154,6 +155,8 @@ const RHToolboxNode = lazyCanvasNode(() => import('./nodes/RHToolboxNode'), 'RHT
 const FalToolboxNode = lazyCanvasNode(() => import('./nodes/FalToolboxNode'), 'FalToolboxNode');
 const Model3DPreviewNode = lazyCanvasNode(() => import('./nodes/Model3DPreviewNode'), 'Model3DPreviewNode');
 const GrokOAuthAgentNode = lazyCanvasNode(() => import('./nodes/GrokOAuthAgentNode'), 'GrokOAuthAgentNode');
+const CodexCliAgentNode = lazyCanvasNode(() => import('./nodes/CodexCliAgentNode'), 'CodexCliAgentNode');
+const CodexImageConjureNode = lazyCanvasNode(() => import('./nodes/CodexImageConjureNode'), 'CodexImageConjureNode');
 const ComfyUIStoreNode = lazyCanvasNode(() => import('./nodes/ComfyUIStoreNode'), 'ComfyUIStoreNode');
 const ComfyUIAppMakerNode = lazyCanvasNode(() => import('./nodes/ComfyUIAppMakerNode'), 'ComfyUIAppMakerNode');
 const ResizeNode = lazyCanvasNode(() => import('./nodes/ResizeNode'), 'ResizeNode');
@@ -168,6 +171,7 @@ const PortraitMasterNode = lazyCanvasNode(() => import('./nodes/PortraitMasterNo
 const PoseMasterNode = lazyCanvasNode(() => import('./nodes/PoseMasterNode'), 'PoseMasterNode');
 const Panorama3DNode = lazyCanvasNode(() => import('./nodes/Panorama3DNode'), 'Panorama3DNode');
 const AggregateParserNode = lazyCanvasNode(() => import('./nodes/AggregateParserNode'), 'AggregateParserNode');
+const BatchProcessorNode = lazyCanvasNode(() => import('./nodes/BatchProcessorNode'), 'BatchProcessorNode');
 const TopazImageUpscaleNode = lazyCanvasNode(() => import('./nodes/TopazImageUpscaleNode'), 'TopazImageUpscaleNode');
 const TopazVideoUpscaleNode = lazyCanvasNode(() => import('./nodes/TopazVideoUpscaleNode'), 'TopazVideoUpscaleNode');
 const IdeaNode = lazyCanvasNode(() => import('./nodes/IdeaNode'), 'IdeaNode');
@@ -219,6 +223,8 @@ const SPECIFIC_NODES: Record<string, any> = {
   'model-3d-preview': Model3DPreviewNode,
   'model-3d-upload': UploadNode,
   'grok-oauth-agent': GrokOAuthAgentNode,
+  'codex-cli-agent': CodexCliAgentNode,
+  'codex-image-conjure': CodexImageConjureNode,
   ...(import.meta.env?.DEV ? { 'fal-toolbox-maker': FalToolboxMakerNode } : {}),
   'comfyui-store': ComfyUIStoreNode,
   'comfyui-app-maker': ComfyUIAppMakerNode,
@@ -258,6 +264,7 @@ const SPECIFIC_NODES: Record<string, any> = {
   'portrait-master': PortraitMasterNode,
   'pose-master': PoseMasterNode,
   'aggregate-parser': AggregateParserNode,
+  'batch-processor': BatchProcessorNode,
   'topaz-image-upscale': TopazImageUpscaleNode,
   'topaz-video-upscale': TopazVideoUpscaleNode,
   'panorama-3d': Panorama3DNode,
@@ -439,6 +446,27 @@ const INITIAL_DATA: Record<string, Record<string, any>> = {
     audioUrls: [],
     status: 'idle',
   },
+  'batch-processor': {
+    batchProcessorItems: [],
+    batchProcessorResults: [],
+    batchProcessorProgress: { total: 0, done: 0, ok: 0, fail: 0, running: 0, pending: 0, percent: 0, status: 'idle' },
+    batchProcessorNameMode: 'original',
+    batchProcessorRenamePattern: 'batch-{index}-{name}',
+    batchProcessorSequenceStart: 1,
+    batchProcessorIndexPadding: 3,
+    batchProcessorOutputFormat: 'keep',
+    batchProcessorTrimBlackBars: true,
+    batchProcessorTrimThreshold: 18,
+    batchProcessorRemoveBg: false,
+    batchProcessorExpandCanvas: false,
+    batchProcessorTargetRatio: 'keep',
+    batchProcessorPadBackground: '#00000000',
+    batchProcessorUpscale: false,
+    batchProcessorUpscaleScale: 2,
+    batchProcessorQuality: 90,
+    status: 'idle',
+    error: '',
+  },
   'topaz-image-upscale': {
     topazGigapixelPath: '',
     topazGigapixelModel: 'std',
@@ -587,6 +615,82 @@ const INITIAL_DATA: Record<string, Record<string, any>> = {
     directModelUrl: '',
     directModelUrls: [],
     outputText: '',
+    error: '',
+  },
+  'codex-cli-agent': {
+    codexMode: 'chat',
+    codexPreset: '提示词增强',
+    codexModel: '',
+    codexProfile: '',
+    codexSandbox: 'workspace-write',
+    codexApprovalPolicy: 'never',
+    codexReasoningEffort: '',
+    codexWebSearch: false,
+    codexIncludePlanTool: true,
+    codexExecutablePath: '',
+    codexExtraArgs: '',
+    codexSessionId: '',
+    codexSelectedSkillNames: [],
+    codexMessages: [],
+    codexArtifacts: [],
+    codexVersions: [],
+    materialOrder: [],
+    excludedMaterialIds: [],
+    codexQuickPrompt: '',
+    codexQuickPromptMentions: [],
+    codexPersistPrompt: false,
+    codexBriefSubject: '',
+    codexBriefStyle: '',
+    codexBriefCamera: '',
+    codexBriefLighting: '',
+    codexBriefComposition: '',
+    codexTargetPlatform: '通用',
+    codexAspectRatio: '自动',
+    codexStyleLock: '',
+    codexNegativePrompt: '',
+    codexAutoNegativePrompt: true,
+    codexBatchVariantCount: 1,
+    codexLastRunSummary: '',
+    outputText: '',
+    imageUrl: '',
+    imageUrls: [],
+    videoUrl: '',
+    videoUrls: [],
+    audioUrl: '',
+    audioUrls: [],
+    modelUrl: '',
+    modelUrls: [],
+    status: 'idle',
+    error: '',
+  },
+  'codex-image-conjure': {
+    codexConjurePrompt: '',
+    codexConjurePromptMentions: [],
+    codexConjureTemplateId: '',
+    codexConjureSnippetQuery: '',
+    codexConjureSelectedSkillNames: ['imagegen'],
+    codexConjureModel: 'gpt-5.5',
+    codexConjureAspectRatio: '9:16',
+    codexConjureSize: '2K',
+    codexConjureQuality: '高',
+    codexConjureCount: 1,
+    codexConjureBatchCount: 1,
+    codexConjureConcurrency: 1,
+    codexConjurePromptMode: '原始模式',
+    codexConjureFormat: 'png',
+    codexConjureBackground: '自动',
+    codexConjureNegativePrompt: '',
+    codexConjureAutoPublish: true,
+    codexConjurePersistPrompt: true,
+    codexConjurePersistRefs: true,
+    codexConjureGalleryQuery: '',
+    codexConjureGalleryRefs: [],
+    codexConjureTasks: [],
+    codexConjureLastRunSummary: '',
+    outputText: '',
+    imageUrl: '',
+    imageUrls: [],
+    status: 'idle',
     error: '',
   },
   'model-3d-preview': {
@@ -771,16 +875,19 @@ const INITIAL_DATA: Record<string, Record<string, any>> = {
       backend: 'cv2',
       eraseMethod: 'telea',
       dilate: 3,
-      pipeline: 'default',
+      pipeline: 'controlnet',
       device: 'auto',
       steps: 50,
       humanize: 0,
       unsharp: 0,
+      upscaler: 'lanczos',
+      model: '',
+      guidanceScale: '',
       maxResolution: 0,
       minResolution: 1024,
       controlnetScale: 1,
       auto: false,
-      adaptivePolish: false,
+      adaptivePolish: true,
       restoreFaces: false,
       restoreFacesWeight: 0.5,
       keepStandardMetadata: true,
@@ -797,7 +904,7 @@ const EXECUTABLE_NODE_TYPES = new Set<string>([
   'video', 'seedance', 'audio', 'llm', 'runninghub', 'runninghub-wallet',
   // v1.2.10.1: rh-tools 与 RunningHub 同质，同样可被批量运行调起
   'rh-tools', 'rh-toolbox', 'fal-toolbox', 'comfyui-store',
-  'grok-oauth-agent',
+  'grok-oauth-agent', 'codex-cli-agent', 'codex-image-conjure',
   'resize', 'upscale', 'grid-crop', 'grid-editor', 'remove-bg', 'combine', 'image-compare', 'drawing-board',
   'panorama-3d',
   'frame-extractor', 'frame-pair',
@@ -805,7 +912,7 @@ const EXECUTABLE_NODE_TYPES = new Set<string>([
   // v1.2.8 工具节点 (循环器 / 从合集获取)
   'loop', 'pick-from-set',
   // v1.4.8: 工具箱文本节点也可点击 RUN 直接外挂 OutputNode
-  'cinematic', 'video-motion', 'multi-angle-visual', 'portrait-master', 'pose-master', 'aggregate-parser',
+  'cinematic', 'video-motion', 'multi-angle-visual', 'portrait-master', 'pose-master', 'aggregate-parser', 'batch-processor',
   'topaz-image-upscale', 'topaz-video-upscale',
   'remove-ai-watermark',
 ]);
@@ -1687,6 +1794,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
   const isSlamdunk = visualStyle === 'slamdunk';
   const isSoccer = visualStyle === 'soccer-hero';
   const isDragonBall = visualStyle === 'dragon-ball';
+  const isTetris = visualStyle === 'tetris';
   const themeTokens = getTemplateMode(currentTemplate, theme).tokens;
   const { screenToFlowPosition, setCenter, getViewport, setViewport, fitView } = useReactFlow();
   const radialSlotsRaw = useRadialMenuStore((s) => s.slots);
@@ -1888,6 +1996,9 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
     const node = nodesRef.current.find((item) => item.id === lastDone.id);
     const nodeType = String(node?.type || 'unknown');
     trackAchievementEvent({ type: 'node.run_success', theme: visualStyle, nodeType });
+    window.dispatchEvent(new CustomEvent('t8:tetris-energy-bonus', {
+      detail: { amount: 12, nodeType },
+    }));
     if (nodeType === 'panorama-3d') {
       trackAchievementEvent({ type: 'panorama.generated', theme: visualStyle, nodeType });
     } else if (nodeType === 'aggregate-parser') {
@@ -4046,9 +4157,24 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
   }, [onInsertWorkflowRef, insertWorkflowFragment]);
 
   useEffect(() => {
-    const findSource = (target: EventTarget | null) => (
+    const findSourceFromElement = (target: EventTarget | null) => (
       target instanceof Element ? target.closest('[data-drag-source]') as HTMLElement | null : null
     );
+    const findDragOutSourceAtPoint = (target: EventTarget | null, point?: DragOutPoint | null) => {
+      const direct = findSourceFromElement(target);
+      if (direct) return direct;
+      const x = Number(point?.clientX ?? point?.x);
+      const y = Number(point?.clientY ?? point?.y);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+      const stack = document.elementsFromPoint(x, y);
+      for (const el of stack) {
+        if (!(el instanceof HTMLElement)) continue;
+        if (el.hasAttribute('data-drag-source')) return el;
+        const closest = el.closest('[data-drag-source]') as HTMLElement | null;
+        if (closest) return closest;
+      }
+      return null;
+    };
     type DragOutPoint = { clientX?: number; clientY?: number; x?: number; y?: number };
     type DragOutCandidate = {
       source: HTMLElement;
@@ -4185,7 +4311,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       return true;
     };
     const onPointerDown = (event: PointerEvent) => {
-      const source = findSource(event.target);
+      const source = findDragOutSourceAtPoint(event.target, event);
       const info = materialInfoFromSource(source);
       if (!source || !info) return;
       if (event.ctrlKey || event.metaKey) return;
@@ -4234,7 +4360,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       clearCandidate();
     };
     const onDragStart = (event: DragEvent) => {
-      const source = findSource(event.target);
+      const source = findDragOutSourceAtPoint(event.target, event);
       if (!source || !event.dataTransfer) return;
       const info = materialInfoFromSource(source);
       if (!info) return;
@@ -4269,7 +4395,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       }
     };
     const onContextMenu = (event: MouseEvent) => {
-      const source = findSource(event.target);
+      const source = findDragOutSourceAtPoint(event.target, event);
       if (!source) return;
       if (candidate?.sawChord || Date.now() < suppressContextMenuUntil) {
         stopPointer(event);
@@ -6093,7 +6219,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
 
   const isDark = theme === 'dark';
   const isPixel = style === 'pixel';
-  const isDecorativeEdgeVisual = isSlamdunk || isSoccer || isDragonBall;
+  const isDecorativeEdgeVisual = isSlamdunk || isSoccer || isDragonBall || isTetris;
   const heavyEdgeMotion = isDecorativeEdgeVisual && edges.length >= EDGE_MOTION_HEAVY_EDGE_COUNT;
   const edgeMotionReduced = isDecorativeEdgeVisual && (viewportMoving || nodeDragging);
   const edgeMotionMode = isDecorativeEdgeVisual ? (edgeMotionReduced ? 'reduced' : 'scoped') : undefined;
@@ -6187,6 +6313,11 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         onToggleSnap={() => setSnapEnabled((v) => !v)}
         onAlignSelection={handleAlignSelection}
       >
+        <TetrisPanel
+          visualStyle={visualStyle}
+          viewportMoving={viewportMoving}
+          nodeDragging={nodeDragging}
+        />
         <DragonBallRadar
           visualStyle={visualStyle}
           viewportMoving={viewportMoving}
@@ -6209,7 +6340,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       {fileDragOutFeedback && (
         <div
           data-canvas-floating-ui="file-drag-out-feedback"
-          className="pointer-events-none fixed z-[10050] flex max-w-[340px] items-start gap-3 rounded-[14px] border-2 px-3 py-3 text-white shadow-[0_18px_44px_rgba(0,0,0,0.35)] backdrop-blur-md"
+          className={`t8-file-drag-out-feedback is-${fileDragOutFeedback.tone}`}
           style={{
             left: Math.min(
               Math.max(fileDragOutFeedback.x + 18, 12),
@@ -6219,31 +6350,15 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
               Math.max(fileDragOutFeedback.y + 18, 12),
               Math.max(12, (typeof window !== 'undefined' ? window.innerHeight : 240) - 128),
             ),
-            background:
-              fileDragOutFeedback.tone === 'success'
-                ? 'rgba(6, 78, 59, 0.94)'
-                : fileDragOutFeedback.tone === 'warning'
-                  ? 'rgba(91, 64, 10, 0.95)'
-                  : fileDragOutFeedback.tone === 'error'
-                    ? 'rgba(127, 29, 29, 0.95)'
-                    : 'rgba(17, 24, 39, 0.94)',
-            borderColor:
-              fileDragOutFeedback.tone === 'success'
-                ? '#5eead4'
-                : fileDragOutFeedback.tone === 'warning'
-                  ? '#facc15'
-                  : fileDragOutFeedback.tone === 'error'
-                    ? '#fb7185'
-                    : '#93c5fd',
           }}
         >
-          <span className="mt-0.5 inline-flex h-9 w-11 shrink-0 overflow-hidden rounded-full border border-white/70 bg-white/15 text-[10px] font-black leading-none">
-            <span className="flex flex-1 items-center justify-center border-r border-white/55 bg-white text-slate-950">左</span>
-            <span className="flex flex-1 items-center justify-center bg-white text-slate-950">右</span>
+          <span className="t8-file-drag-out-feedback__keys" aria-hidden="true">
+            <span>左</span>
+            <span>右</span>
           </span>
-          <span className="min-w-0">
-            <span className="block text-sm font-black leading-tight">{fileDragOutFeedback.title}</span>
-            <span className="mt-1 block text-xs font-semibold leading-snug text-white/86">{fileDragOutFeedback.detail}</span>
+          <span className="t8-file-drag-out-feedback__copy">
+            <span className="t8-file-drag-out-feedback__title">{fileDragOutFeedback.title}</span>
+            <span className="t8-file-drag-out-feedback__detail">{fileDragOutFeedback.detail}</span>
           </span>
         </div>
       )}

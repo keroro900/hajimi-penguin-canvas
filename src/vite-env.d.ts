@@ -97,6 +97,7 @@ interface Window {
       updater?: T8UpdaterStatus;
     }>;
     openExternal: (url: string) => Promise<{ success: boolean; message?: string }>;
+    openPath: (targetPath: string) => Promise<{ success: boolean; message?: string; path?: string }>;
     dragFileOut?: (payload: { url?: string; path?: string; filename?: string; kind?: string; requestId?: string }) => void;
     onDragFileOutStatus?: (callback: (status: T8DragFileOutStatus) => void) => () => void;
     parseAuth?: {

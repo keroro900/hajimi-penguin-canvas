@@ -375,7 +375,13 @@ async function refToBuffer(ref) {
     const ext = (mime.split('/')[1] || 'png').replace('jpeg', 'jpg');
     return { buf, mime, ext };
   }
-  if (ref.startsWith('http://') || ref.startsWith('https://') || ref.startsWith('/files/')) {
+  if (
+    ref.startsWith('http://') ||
+    ref.startsWith('https://') ||
+    ref.startsWith('/files/') ||
+    ref.startsWith('/api/resources/file/') ||
+    ref.startsWith('/api/resources/set-file/')
+  ) {
     // /files/* 是本地静态,走 127.0.0.1:18766
     const url = ref.startsWith('/') ? `http://127.0.0.1:${config.PORT}${ref}` : ref;
     const r = await fetch(url);
@@ -1563,14 +1569,44 @@ function stripDataUrlPrefix(value) {
 
 const VEO_OMNI_PUBLIC_MODEL = 'veo-omni-10s';
 const VEO_OMNI_UPSTREAM_MODEL = 'omni_flash-10s';
+const GROK_VIDEO_1_5_NEW_MODELS = new Set([
+  'grok-1.5-video-6s',
+  'grok-1.5-video-10s',
+  'grok-1.5-video-15s',
+]);
 
 function isVeoOmniModel(model) {
   const m = String(model || '').trim().toLowerCase();
   return m === VEO_OMNI_PUBLIC_MODEL || m === VEO_OMNI_UPSTREAM_MODEL;
 }
 
+function isGrokVideo15NewModel(model) {
+  const m = String(model || '').trim().toLowerCase();
+  return GROK_VIDEO_1_5_NEW_MODELS.has(m);
+}
+
 function veoOmniSizeFromAspect(aspectRatio) {
   return String(aspectRatio || '').trim() === '9:16' ? '720x1280' : '1280x720';
+}
+
+function grokVideo15NewSizeFromRatio(ratioOrSize) {
+  const value = String(ratioOrSize || '').trim();
+  if (value === '720x1280') return '720x1280';
+  if (value === '9:16') return '720x1280';
+  return '1280x720';
+}
+
+async function appendGrokVideo15InputReference(form, ref) {
+  const refText = String(ref || '').trim();
+  if (!refText) return false;
+  if (/^https?:\/\//i.test(refText)) {
+    form.append('input_reference', refText);
+    return true;
+  }
+  const conv = await refToBuffer(refText);
+  if (!conv) return false;
+  form.append('input_reference', new Blob([conv.buf], { type: conv.mime || 'image/png' }), `input_reference.${conv.ext || 'png'}`);
+  return true;
 }
 
 function normalizeVideoTaskStatus(status) {
@@ -2279,7 +2315,7 @@ router.post('/video/submit', async (req, res) => {
     // Grok 参数
     ratio, duration, resolution,
     // 通用
-    seed, private: privateVideo, is_private, watermark, images, providerParams,
+    seed, private: privateVideo, is_private, watermark, images, providerParams, size,
   } = req.body || {};
   // v1.2.9.15: 一体化「专属优先 fallback 通用」校验
   if (!ensureKeyOrSelectedGroup(settings, res, model || '', '视频', providerParams)) return;
@@ -2288,6 +2324,7 @@ router.post('/video/submit', async (req, res) => {
   }
   const lowerModel = String(model).toLowerCase();
   const isVeoOmni = isVeoOmniModel(lowerModel);
+  const isGrokVideo15New = isGrokVideo15NewModel(lowerModel);
   const isGrok = lowerModel.includes('grok');
   const isSoraZhenzhen = lowerModel === 'sora-2-zhenzhen';
   const isVeo = lowerModel.includes('veo');
@@ -2342,6 +2379,42 @@ router.post('/video/submit', async (req, res) => {
       const taskId = data?.task_id || data?.id;
       if (!taskId) return res.status(500).json({ success: false, error: '未获取到 task_id: ' + text.slice(0, 200) });
       rememberTaskKey(taskId, apiKey, { model: VEO_OMNI_PUBLIC_MODEL, ...providerContext.taskMeta });
+      return res.json({ success: true, data: { taskId, raw: data } });
+    } else if (isGrokVideo15New) {
+      // ===== Grok Video 1.5 New 协议(参考 Comfly_grok_video_1_5): POST /v1/videos multipart =====
+      const refs = Array.isArray(images) ? images.slice(0, 1) : [];
+      if (!refs.length) {
+        return res.status(400).json({ success: false, error: 'Grok 1.5 New 需要 1 张参考图' });
+      }
+      const form = new FormData();
+      form.append('model', model);
+      form.append('prompt', prompt);
+      form.append('size', grokVideo15NewSizeFromRatio(size || aspect_ratio || ratio || '16:9'));
+      const hasReference = await appendGrokVideo15InputReference(form, refs[0]);
+      if (!hasReference) {
+        return res.status(400).json({ success: false, error: 'Grok 1.5 New 参考图读取失败' });
+      }
+
+      const upstream = `${config.ZHENZHEN_BASE_URL}/v1/videos`;
+      console.log('[upstream] Grok Video 1.5 New → /v1/videos model:', model, 'size:', grokVideo15NewSizeFromRatio(size || aspect_ratio || ratio || '16:9'), 'refs:', refs.length);
+      const r = await fetch(upstream, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${apiKey}` },
+        body: form,
+      });
+      const text = await r.text();
+      let data;
+      try { data = JSON.parse(text); } catch {
+        return res.status(500).json({ success: false, error: '上游响应非 JSON: ' + text.slice(0, 200) });
+      }
+      if (!r.ok) {
+        const errorText = getUpstreamErrorMessage(data, text, r.status);
+        await invalidateZhenzhenProviderKey(providerContext, apiKey, errorText);
+        return res.status(r.status).json({ success: false, error: errorText, raw: data });
+      }
+      const taskId = data?.task_id || data?.id;
+      if (!taskId) return res.status(500).json({ success: false, error: '未获取到 task_id: ' + text.slice(0, 200) });
+      rememberTaskKey(taskId, apiKey, { model, ...providerContext.taskMeta });
       return res.json({ success: true, data: { taskId, raw: data } });
     } else if (isSoraZhenzhen) {
       // ===== Sora2 Zhenzhen API 协议(参考 gpt-image-2-web runSora2) =====
@@ -2433,8 +2506,8 @@ router.get('/video/query', async (req, res) => {
     if (!ensureKey(settings, res, queryModel, '视频')) return;
   }
   if (!taskId) return res.status(400).json({ success: false, error: 'taskId 必填' });
-  const isVeoOmni = isVeoOmniModel(queryModel);
-  const upstream = isVeoOmni
+  const usesV1VideoQuery = isVeoOmniModel(queryModel) || isGrokVideo15NewModel(queryModel);
+  const upstream = usesV1VideoQuery
     ? `${config.ZHENZHEN_BASE_URL}/v1/videos/${encodeURIComponent(taskId)}`
     : `${config.ZHENZHEN_BASE_URL}/v2/videos/generations/${encodeURIComponent(taskId)}`;
   try {

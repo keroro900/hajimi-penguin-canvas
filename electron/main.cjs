@@ -15,7 +15,7 @@ const net = require('net');
 const { spawn } = require('child_process');
 const { fileURLToPath } = require('url');
 
-const APP_VERSION = '2.1.7';
+const APP_VERSION = '2.1.8';
 const UPDATE_DISABLED_MESSAGE = '开发模式不会检查 GitHub Release 更新';
 
 // 允许在 Linux/某些机型上规避 GPU 沙盒导致的启动延迟
@@ -471,6 +471,10 @@ function dragOutRoots() {
   ];
 }
 
+function localOpenRoots() {
+  return dragOutRoots();
+}
+
 function resolveMountedDragOutFile(pathname) {
   const cleanPath = decodeURIComponent(String(pathname || '')).replace(/\\/g, '/');
   const base = getUserDataDir();
@@ -495,6 +499,21 @@ function resolveMountedDragOutFile(pathname) {
     return resolved;
   }
   return null;
+}
+
+async function openLocalPath(targetPath) {
+  const raw = String(targetPath || '').trim();
+  if (!raw) return { success: false, message: 'empty path' };
+  const resolved = path.resolve(raw);
+  if (!localOpenRoots().some((root) => isPathInside(root, resolved))) {
+    return { success: false, message: 'path is outside allowed local folders', path: resolved };
+  }
+  if (!fs.existsSync(resolved)) {
+    return { success: false, message: 'path does not exist', path: resolved };
+  }
+  const message = await shell.openPath(resolved);
+  if (message) return { success: false, message, path: resolved };
+  return { success: true, path: resolved };
 }
 
 function isLocalHostForDragOut(parsed) {
@@ -927,6 +946,7 @@ ipcMain.handle('t8pc:get-info', () => ({
 }));
 
 ipcMain.handle('t8pc:open-external', async (_event, url) => openExternalUrl(url));
+ipcMain.handle('t8pc:open-path', async (_event, targetPath) => openLocalPath(targetPath));
 ipcMain.handle('t8pc:parse-auth:login', async (_event, profileId) => openParseAuthWindow(profileId));
 ipcMain.handle('t8pc:parse-auth:get-cookie', async (_event, profileId) => getParseAuthCookie(profileId));
 ipcMain.handle('t8pc:parse-auth:list-saved', async (_event, profileId) => listSavedParseAuth(profileId));

@@ -92,7 +92,7 @@ test('Grok OAuth frontend service and node use an Agent studio with manual publi
   assert.match(node, /useState<GrokArtifactTab>\('image'\)/);
   assert.match(node, /artifactTabs\.map/);
   assert.match(node, /activeArtifactTab/);
-  assert.match(node, /ArtifactGroup title=\{activeArtifactTab\.title\}/);
+  assert.match(node, /<ArtifactGroup[\s\S]*title=\{activeArtifactTab\.title\}/);
   assert.match(node, /createPortal/);
   assert.match(node, /agentMessages/);
   assert.match(node, /agentArtifacts/);
@@ -173,6 +173,18 @@ test('Grok OAuth frontend service and node use an Agent studio with manual publi
   assert.match(node, /startNewConversation/);
   assert.match(node, /已开启新对话，右侧产物库已保留。/);
   assert.match(node, /清空全部/);
+  assert.match(node, /grokDeletedArtifactKeys/);
+  assert.match(node, /artifactDeleteKeys/);
+  assert.match(node, /artifactMatchesDeletedKeys/);
+  assert.match(node, /filterDeletedArtifacts\(sanitizeArtifacts\(d\.agentArtifacts\), deletedArtifactKeys\)/);
+  assert.match(node, /if \(artifactMatchesDeletedKeys\(prepared, deletedArtifactKeysRef\.current\)\) return null/);
+  assert.match(node, /deleteArtifacts/);
+  assert.match(node, /artifactBatchMode/);
+  assert.match(node, /selectedArtifactIds/);
+  assert.match(node, /删选中/);
+  assert.match(node, /全选当前/);
+  assert.match(node, /已清空 Grok 产物库/);
+  assert.match(node, /onDeleteArtifacts/);
   assert.match(node, /clearTransientLocalMaterials/);
   assert.match(node, /grokLocalMaterials:\s*\[\]/);
   assert.match(node, /shouldClearTransientMaterials = !persistLocalMaterials/);
@@ -194,6 +206,12 @@ test('Grok OAuth frontend service and node use an Agent studio with manual publi
   assert.match(node, /nodeId=\{id\}/);
   assert.match(node, /sourceNodeId=\{nodeId\}/);
   assert.match(node, /useUpstreamMaterials/);
+  assert.match(node, /data-grok-studio-copyable/);
+  assert.match(node, /data-grok-message-copyable/);
+  assert.match(node, /copyMessage/);
+  assert.match(node, /stopImmediatePropagation/);
+  assert.match(node, /document\.addEventListener\('pointerdown', stopSelectableTextGesture, true\)/);
+  assert.match(node, /userSelect:\s*'text'/);
   assert.match(node, /useRunTrigger\(id, handleQuickRun, 'grok-oauth-agent'\)/);
   assert.match(node, /onRun=\{\(override\) => void handleRun\(override\)\}/);
   assert.match(canvas, /'grok-oauth-agent'/);
@@ -202,6 +220,19 @@ test('Grok OAuth frontend service and node use an Agent studio with manual publi
   assert.match(output, /pickKind === 'text'/);
   assert.match(node, /t8-grok-oauth-agent-node/);
   assert.match(node, /t8-grok-oauth-agent-handle/);
+});
+
+test('Grok OAuth Agent studio derives readable text colors for themed controls', () => {
+  const node = read('../src/components/nodes/GrokOAuthAgentNode.tsx');
+  const palette = readOptional('../src/utils/readableStudioPalette.ts');
+
+  assert.match(palette, /createReadableStudioPalette/);
+  assert.match(palette, /readableTextOn/);
+  assert.match(node, /createReadableStudioPalette/);
+  assert.match(node, /studioAccentText/);
+  assert.match(node, /studioHeaderText/);
+  assert.doesNotMatch(node, /color:\s*active \? \(isPixel \? 'var\(--px-surface\)' : '#031712'\) : text/);
+  assert.doesNotMatch(node, /color:\s*isPixel \? 'var\(--px-surface\)' : '#031712'/);
 });
 
 test('Grok OAuth Agent supports slash commands and continuous artifact references', () => {
@@ -216,9 +247,14 @@ test('Grok OAuth Agent supports slash commands and continuous artifact reference
   assert.match(node, /command:\s*'tts'/);
   assert.match(node, /command:\s*'stt'/);
   assert.match(node, /parseSlashCommand/);
+  assert.match(node, /function slashCommandFromMode/);
+  assert.match(node, /const activeSlashCommand = useMemo\(\(\) => parseSlashCommand\(localPrompt\)\?\.command \|\| slashCommandFromMode\(mode\)/);
   assert.match(node, /normalizePromptMentionTokens/);
   assert.match(node, /SlashCommandBar/);
+  assert.match(node, /activeCommand=\{activeSlashCommand\}/);
   assert.match(node, /onInsertSlashCommand/);
+  assert.match(node, /const active = item\.command === activeCommand/);
+  assert.doesNotMatch(node, /item\.command === 'image' \? accent : 'transparent'/);
   assert.match(node, /artifactToMaterial/);
   assert.match(node, /assignMissingArtifactRefIds/);
   assert.match(node, /ensureArtifactRefId/);
@@ -270,13 +306,48 @@ test('Grok OAuth video mode routes text and image video models safely', () => {
   assert.match(node, /const latestErrorRef = useRef\(''\)/);
 });
 
+test('Grok OAuth video polling does not hang after submit', () => {
+  const route = read('../backend/src/routes/grokOAuth.js');
+  const service = read('../src/services/grokOAuth.ts');
+  const privateHook = readOptional('../local-private/extensions/backend/grokOAuth.cjs');
+
+  assert.match(route, /Grok OAuth 视频任务已提交但没有返回 requestId/);
+  assert.match(route, /first\.message \? `\$\{first\.message\} 正在轮询结果\.\.\.`/);
+  assert.match(route, /isCompletedVideoStatus\(data\.status\)/);
+  assert.match(route, /hasVideoOutput\(data\)/);
+  assert.match(route, /completed_without_video_url/);
+  assert.doesNotMatch(route, /if \(!requestId\) \{[\s\S]*?return endAgentSse\(res, first, meta\);/);
+
+  assert.match(service, /Grok OAuth 视频任务已提交但没有返回 requestId/);
+  assert.match(service, /isCompletedVideoStatus\(result\.status\)/);
+  assert.match(service, /hasVideoOutput\(result\)/);
+  assert.match(service, /completed_without_video_url/);
+  assert.match(service, /const VIDEO_DONE_STATUSES = new Set/);
+  assert.match(service, /'complete'/);
+  assert.match(service, /'finished'/);
+  assert.match(service, /'success'/);
+
+  if (privateHook) {
+    assert.match(privateHook, /function videoStatusEndpointCandidates/);
+    assert.match(privateHook, /\/videos\/generations\/\$\{encodeURIComponent\(requestId\)\}/);
+    assert.match(privateHook, /\/videos\/\$\{encodeURIComponent\(requestId\)\}/);
+    assert.match(privateHook, /function fetchVideoStatusResult/);
+    assert.match(privateHook, /VIDEO_DONE_STATUSES/);
+    assert.match(privateHook, /'complete'/);
+    assert.match(privateHook, /'finished'/);
+    assert.match(privateHook, /'success'/);
+    assert.match(privateHook, /const done = Boolean\(videoUrl\) \|\| VIDEO_DONE_STATUSES\.has\(rawStatus\)/);
+    assert.match(privateHook, /completed video did not return a video URL/);
+  }
+});
+
 test('Grok OAuth Agent has stable studio status, previews, and publish guards', () => {
   const node = read('../src/components/nodes/GrokOAuthAgentNode.tsx');
   const privateHook = readOptional('../local-private/extensions/backend/grokOAuth.cjs');
 
   assert.match(node, /const noticeBusy = !error && \(isBusy \|\| !!uploadingKind\)/);
-  assert.match(node, /const noticeCardText = '#1a1408'/);
-  assert.match(node, /const noticeCardSubText = 'rgba\(26,20,8,0\.76\)'/);
+  assert.match(node, /const noticeCardText = readablePalette\.noticeText/);
+  assert.match(node, /const noticeCardSubText = readablePalette\.noticeSubText/);
   assert.match(node, /background: noticeCardBg/);
   assert.match(node, /color: noticeCardText/);
   assert.match(node, /noticeBusy \? \(/);

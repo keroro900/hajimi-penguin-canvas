@@ -46,6 +46,7 @@ import { logBus } from '../../stores/logs';
 import { taskCompletionSound } from '../../stores/taskCompletionSound';
 import { useThemeStore } from '../../stores/theme';
 import { uploadFile } from '../../services/generation';
+import { createReadableStudioPalette } from '../../utils/readableStudioPalette';
 import MaterialPreviewSection from './MaterialPreviewSection';
 import MentionPromptInput from './MentionPromptInput';
 import SmartImage from '../SmartImage';
@@ -131,6 +132,7 @@ const RATIOS = ['1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3'];
 const RESOLUTIONS = ['720p', '480p', '1k', '2k'];
 const MAX_AGENT_MESSAGES = 160;
 const MAX_AGENT_ARTIFACTS = 80;
+const MAX_DELETED_AGENT_ARTIFACT_KEYS = 600;
 const MAX_LOCAL_MATERIALS = 24;
 const MAX_GROK_CONTEXT_LIMIT = 80;
 const DEFAULT_GROK_CONTEXT_LIMIT = 30;
@@ -284,6 +286,14 @@ function parseSlashCommand(prompt: string): { command: string; mode: GrokOAuthMo
     body: textValue.slice(bodyStart),
     bodyStart,
   };
+}
+
+function slashCommandFromMode(mode: GrokOAuthMode) {
+  if (mode === 'image') return 'image';
+  if (mode === 'video') return 'video';
+  if (mode === 'tts') return 'tts';
+  if (mode === 'stt') return 'stt';
+  return '';
 }
 
 function shiftMentionsForSlashBody(mentions: MediaMention[], bodyStart: number): MediaMention[] {
@@ -653,6 +663,11 @@ function buildConversationMessages(history: GrokAgentMessage[], currentPrompt: s
   return buildConversationContext(history, currentPrompt, options).messages;
 }
 
+function stopCopyableConversationEvent(event: any) {
+  event.stopPropagation?.();
+  event.nativeEvent?.stopImmediatePropagation?.();
+}
+
 function sanitizeArtifacts(value: any): GrokAgentArtifact[] {
   if (!Array.isArray(value)) return [];
   const cleaned = value
@@ -682,6 +697,66 @@ function sanitizeArtifacts(value: any): GrokAgentArtifact[] {
     .filter((item) => item.text || item.url || (item.urls && item.urls.length))
     .slice(-MAX_AGENT_ARTIFACTS);
   return assignMissingArtifactRefIds(cleaned);
+}
+
+function normalizeArtifactIdentityValue(value: string) {
+  let next = String(value || '').trim();
+  if (!next) return '';
+  next = next.replace(/^<+|>+$/g, '').replace(/^['"]|['"]$/g, '').replace(/\\/g, '/');
+  next = next.replace(/^https?:\/\/[^/]+/i, '');
+  next = next.split(/[?#]/)[0] || next;
+  return next.toLowerCase();
+}
+
+function artifactStableTitle(artifact: GrokAgentArtifact) {
+  const title = String(artifact.title || '').trim();
+  const extLike = /\.(png|jpe?g|webp|gif|mp4|mov|webm|mp3|wav|m4a|txt|md)$/i.test(title);
+  const generic = !title || title === artifactKindLabel(artifact.kind);
+  return extLike && !generic ? title : '';
+}
+
+function artifactDeleteKeys(artifact: GrokAgentArtifact): string[] {
+  const urls = Array.isArray(artifact.urls) ? artifact.urls : [];
+  const candidates = [
+    artifact.id,
+    artifact.url,
+    ...urls,
+    artifactStableTitle(artifact),
+    downloadName(artifact.url || urls[0] || '', ''),
+  ];
+  return Array.from(new Set(
+    candidates
+      .map((item) => normalizeArtifactIdentityValue(String(item || '')))
+      .filter(Boolean),
+  ));
+}
+
+function sanitizeDeletedArtifactKeys(value: any): string[] {
+  if (!Array.isArray(value)) return [];
+  return Array.from(new Set(
+    value
+      .map((item) => normalizeArtifactIdentityValue(String(item || '')))
+      .filter(Boolean),
+  )).slice(-MAX_DELETED_AGENT_ARTIFACT_KEYS);
+}
+
+function mergeDeletedArtifactKeys(...groups: Array<Array<string | undefined>>) {
+  return Array.from(new Set(
+    groups.flat()
+      .map((item) => normalizeArtifactIdentityValue(String(item || '')))
+      .filter(Boolean),
+  )).slice(-MAX_DELETED_AGENT_ARTIFACT_KEYS);
+}
+
+function artifactMatchesDeletedKeys(artifact: GrokAgentArtifact, deletedKeys: string[]) {
+  if (deletedKeys.length === 0) return false;
+  const deleted = new Set(deletedKeys.map(normalizeArtifactIdentityValue).filter(Boolean));
+  return artifactDeleteKeys(artifact).some((key) => deleted.has(key));
+}
+
+function filterDeletedArtifacts(artifacts: GrokAgentArtifact[], deletedKeys: string[]) {
+  if (deletedKeys.length === 0) return artifacts;
+  return artifacts.filter((artifact) => !artifactMatchesDeletedKeys(artifact, deletedKeys));
 }
 
 function resultToArtifact(mode: GrokOAuthMode, result: GrokOAuthMediaResult | undefined, prompt: string, model?: string): GrokAgentArtifact | null {
@@ -907,21 +982,27 @@ const GrokOAuthAgentNode = ({ id, data, selected }: NodeProps) => {
   }), [d.grokContextLimit, d.grokMaxOutputTokens, d.grokTemperature, d.grokTopK, d.grokTopP]);
 
   const agentMessages = useMemo(() => sanitizeMessages(d.agentMessages), [d.agentMessages]);
-  const agentArtifacts = useMemo(() => sanitizeArtifacts(d.agentArtifacts), [d.agentArtifacts]);
+  const deletedArtifactKeys = useMemo(() => sanitizeDeletedArtifactKeys(d.grokDeletedArtifactKeys), [d.grokDeletedArtifactKeys]);
+  const agentArtifacts = useMemo(
+    () => filterDeletedArtifacts(sanitizeArtifacts(d.agentArtifacts), deletedArtifactKeys),
+    [d.agentArtifacts, deletedArtifactKeys],
+  );
   const localMaterials = useMemo(() => sanitizeLocalMaterials(d.grokLocalMaterials), [d.grokLocalMaterials]);
   const messagesRef = useRef<GrokAgentMessage[]>(agentMessages);
   const artifactsRef = useRef<GrokAgentArtifact[]>(agentArtifacts);
+  const deletedArtifactKeysRef = useRef<string[]>(deletedArtifactKeys);
   const localMaterialsRef = useRef<Material[]>(localMaterials);
   const publishingArtifactIdsRef = useRef<Set<string>>(new Set());
   useEffect(() => { messagesRef.current = agentMessages; }, [agentMessages]);
   useEffect(() => { artifactsRef.current = agentArtifacts; }, [agentArtifacts]);
+  useEffect(() => { deletedArtifactKeysRef.current = deletedArtifactKeys; }, [deletedArtifactKeys]);
   useEffect(() => { localMaterialsRef.current = localMaterials; }, [localMaterials]);
 
   useEffect(() => {
     if (d.grokAgentStudioMigrated || d.lastPublishedArtifactId) return;
     const legacy = buildLegacyArtifactsFromData(d);
     if (legacy.length === 0) return;
-    const merged = [...agentArtifacts, ...legacy].slice(-MAX_AGENT_ARTIFACTS);
+    const merged = filterDeletedArtifacts([...agentArtifacts, ...legacy], deletedArtifactKeysRef.current).slice(-MAX_AGENT_ARTIFACTS);
     artifactsRef.current = merged;
     update({
       grokAgentStudioMigrated: true,
@@ -979,10 +1060,14 @@ const GrokOAuthAgentNode = ({ id, data, selected }: NodeProps) => {
   const subText = isPixel ? 'var(--px-ink-soft)' : isLight ? '#64748b' : 'rgba(236,254,255,0.68)';
   const border = isPixel ? 'var(--px-ink)' : isLight ? 'rgba(16,185,129,0.28)' : 'rgba(103,232,249,0.24)';
   const danger = isPixel ? '#dc2626' : '#fca5a5';
-  const noticeCardBg = isPixel ? 'var(--px-yellow)' : isDark ? 'rgba(250,204,21,0.92)' : 'rgba(254,243,199,0.96)';
-  const noticeCardText = '#1a1408';
-  const noticeCardSubText = 'rgba(26,20,8,0.76)';
-  const noticeCardBorder = isPixel ? border : 'rgba(120,53,15,0.45)';
+  const readablePalette = createReadableStudioPalette({ isDark, isPixel, accent, bg, surface, surfaceStrong, text, subText, border, danger });
+  const studioAccentText = readablePalette.accentText;
+  const studioHeaderText = readablePalette.headerText;
+  const studioHeaderSubText = readablePalette.headerSubText;
+  const noticeCardBg = readablePalette.noticeBg;
+  const noticeCardText = readablePalette.noticeText;
+  const noticeCardSubText = readablePalette.noticeSubText;
+  const noticeCardBorder = readablePalette.noticeBorder;
 
   const rootStyle: CSSProperties = {
     width: 380,
@@ -1002,7 +1087,7 @@ const GrokOAuthAgentNode = ({ id, data, selected }: NodeProps) => {
   }, [update]);
 
   const setAgentArtifacts = useCallback((next: GrokAgentArtifact[], extra: Record<string, any> = {}) => {
-    const capped = next.slice(-MAX_AGENT_ARTIFACTS);
+    const capped = filterDeletedArtifacts(next, deletedArtifactKeysRef.current).slice(-MAX_AGENT_ARTIFACTS);
     artifactsRef.current = capped;
     update({ agentArtifacts: capped, ...extra });
   }, [update]);
@@ -1021,6 +1106,7 @@ const GrokOAuthAgentNode = ({ id, data, selected }: NodeProps) => {
       refId: artifact.refId || nextArtifactRefId(artifact.kind, artifactsRef.current),
       revision: artifact.revision || ((artifact.parentId || (artifact.sourceArtifactIds || []).length > 0) ? 2 : 1),
     };
+    if (artifactMatchesDeletedKeys(prepared, deletedArtifactKeysRef.current)) return null;
     const sig = artifactSignature(prepared);
     const exists = artifactsRef.current.find((item) => artifactSignature(item) === sig);
     if (exists) {
@@ -1041,6 +1127,27 @@ const GrokOAuthAgentNode = ({ id, data, selected }: NodeProps) => {
     });
     return prepared;
   }, [update, setAgentArtifacts]);
+
+  const deleteArtifacts = useCallback((targets: GrokAgentArtifact[], summary = '已删除 Grok 产物') => {
+    const normalizedTargets = targets
+      .map((artifact) => sanitizeArtifacts([artifact])[0])
+      .filter((artifact): artifact is GrokAgentArtifact => !!artifact);
+    if (normalizedTargets.length === 0) return;
+    const targetIds = new Set(normalizedTargets.map((artifact) => artifact.id));
+    const nextDeletedKeys = mergeDeletedArtifactKeys(deletedArtifactKeysRef.current, normalizedTargets.flatMap(artifactDeleteKeys));
+    deletedArtifactKeysRef.current = nextDeletedKeys;
+    const nextArtifacts = filterDeletedArtifacts(
+      artifactsRef.current.filter((artifact) => !targetIds.has(artifact.id)),
+      nextDeletedKeys,
+    ).slice(-MAX_AGENT_ARTIFACTS);
+    artifactsRef.current = nextArtifacts;
+    update({
+      agentArtifacts: nextArtifacts,
+      grokDeletedArtifactKeys: nextDeletedKeys,
+      lastArtifactId: nextArtifacts[nextArtifacts.length - 1]?.id || '',
+      lastRunSummary: summary,
+    });
+  }, [update]);
 
   const publishArtifact = useCallback((artifact: GrokAgentArtifact | null | undefined) => {
     if (!artifact) return;
@@ -1097,6 +1204,28 @@ const GrokOAuthAgentNode = ({ id, data, selected }: NodeProps) => {
   useEffect(() => {
     void refreshStatus();
   }, [refreshStatus]);
+
+  useEffect(() => {
+    if (!studioOpen || typeof document === 'undefined') return undefined;
+    const stopSelectableTextGesture = (event: Event) => {
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      if (!target?.closest?.('[data-grok-studio-copyable], [data-grok-message-copyable]')) return;
+      event.stopPropagation();
+      event.stopImmediatePropagation?.();
+    };
+    document.addEventListener('pointerdown', stopSelectableTextGesture, true);
+    document.addEventListener('mousedown', stopSelectableTextGesture, true);
+    document.addEventListener('dblclick', stopSelectableTextGesture, true);
+    document.addEventListener('contextmenu', stopSelectableTextGesture, true);
+    document.addEventListener('dragstart', stopSelectableTextGesture, true);
+    return () => {
+      document.removeEventListener('pointerdown', stopSelectableTextGesture, true);
+      document.removeEventListener('mousedown', stopSelectableTextGesture, true);
+      document.removeEventListener('dblclick', stopSelectableTextGesture, true);
+      document.removeEventListener('contextmenu', stopSelectableTextGesture, true);
+      document.removeEventListener('dragstart', stopSelectableTextGesture, true);
+    };
+  }, [studioOpen]);
 
   useEffect(() => {
     return () => {
@@ -1894,6 +2023,8 @@ const GrokOAuthAgentNode = ({ id, data, selected }: NodeProps) => {
     setStudioOpen(true);
   }, [localPrompt, promptMentions, update]);
 
+  const activeSlashCommand = useMemo(() => parseSlashCommand(localPrompt)?.command || slashCommandFromMode(mode), [localPrompt, mode]);
+
   useRunTrigger(id, handleQuickRun, 'grok-oauth-agent');
 
   const renderModeParams = (compact = false) => {
@@ -1959,7 +2090,7 @@ const GrokOAuthAgentNode = ({ id, data, selected }: NodeProps) => {
         const Icon = item.icon;
         const active = mode === item.id;
         return (
-          <button key={item.id} type="button" title={item.hint} onClick={() => update({ mode: item.id, error: '', status: 'idle' })} className="nodrag rounded px-1 py-1.5 text-[10px] font-bold flex flex-col items-center gap-1" style={{ background: active ? accent : surface, color: active ? (isPixel ? 'var(--px-surface)' : '#031712') : text, border: `1px solid ${active ? accent : border}` }}>
+          <button key={item.id} type="button" title={item.hint} onClick={() => update({ mode: item.id, error: '', status: 'idle' })} className="nodrag rounded px-1 py-1.5 text-[10px] font-bold flex flex-col items-center gap-1" style={{ background: active ? accent : surface, color: active ? studioAccentText : text, border: `1px solid ${active ? accent : border}` }}>
             <Icon size={13} />
             <span>{item.label}</span>
           </button>
@@ -1971,7 +2102,7 @@ const GrokOAuthAgentNode = ({ id, data, selected }: NodeProps) => {
   const loginPanel = (compact = false) => (
     <div className="space-y-2">
       <div className="grid grid-cols-2 gap-2">
-        <button type="button" onClick={handleLogin} className="nodrag rounded px-2 py-1.5 text-[11px] font-bold flex items-center justify-center gap-1" style={{ background: status?.loggedIn ? surface : accent, color: status?.loggedIn ? text : (isPixel ? 'var(--px-surface)' : '#031712'), border: `1px solid ${border}` }}>
+        <button type="button" onClick={handleLogin} className="nodrag rounded px-2 py-1.5 text-[11px] font-bold flex items-center justify-center gap-1" style={{ background: status?.loggedIn ? surface : accent, color: status?.loggedIn ? text : studioAccentText, border: `1px solid ${border}` }}>
           {loginPolling ? <Loader2 size={12} className="animate-spin" /> : <LogIn size={12} />} 登录 / 绑定
         </button>
         <button type="button" onClick={handleLogout} className="nodrag rounded px-2 py-1.5 text-[11px] font-bold flex items-center justify-center gap-1" style={{ background: surface, color: text, border: `1px solid ${border}` }}>
@@ -1995,7 +2126,7 @@ const GrokOAuthAgentNode = ({ id, data, selected }: NodeProps) => {
           </div>
           <div className={`grid ${compact ? 'grid-cols-1' : 'grid-cols-[1fr_auto]'} gap-2`}>
             <input className="nodrag nowheel min-w-0 rounded px-2 py-1 text-[11px] outline-none" style={{ background: bg, color: text, border: `1px solid ${border}` }} value={manualCode} onChange={(e) => setManualCode(e.target.value)} placeholder="粘贴 Grok 授权码" autoComplete="off" spellCheck={false} />
-            <button type="button" className="nodrag rounded px-2 py-1 font-bold" style={{ background: accent, color: isPixel ? 'var(--px-surface)' : '#031712', border: `1px solid ${accent}` }} onClick={() => void handleCompleteLogin()}>
+            <button type="button" className="nodrag rounded px-2 py-1 font-bold" style={{ background: accent, color: studioAccentText, border: `1px solid ${accent}` }} onClick={() => void handleCompleteLogin()}>
               完成授权
             </button>
           </div>
@@ -2045,7 +2176,7 @@ const GrokOAuthAgentNode = ({ id, data, selected }: NodeProps) => {
           <StatPill label="素材" value={totalMaterials} surface={surface} text={text} border={border} />
         </div>
 
-        <button type="button" onClick={() => setStudioOpen(true)} className="nodrag w-full rounded-xl py-2 text-xs font-bold flex items-center justify-center gap-2" style={{ background: accent, color: isPixel ? 'var(--px-surface)' : '#031712', border: `1px solid ${accent}`, boxShadow: isPixel ? '2px 2px 0 var(--px-ink)' : '0 10px 24px rgba(16,185,129,0.20)' }}>
+        <button type="button" onClick={() => setStudioOpen(true)} className="nodrag w-full rounded-xl py-2 text-xs font-bold flex items-center justify-center gap-2" style={{ background: accent, color: studioAccentText, border: `1px solid ${accent}`, boxShadow: isPixel ? '2px 2px 0 var(--px-ink)' : '0 10px 24px rgba(16,185,129,0.20)' }}>
           <PanelRightOpen size={15} /> 打开 Grok 创作台
         </button>
 
@@ -2122,6 +2253,9 @@ const GrokOAuthAgentNode = ({ id, data, selected }: NodeProps) => {
           subText={subText}
           border={border}
           accent={accent}
+          accentText={studioAccentText}
+          headerText={studioHeaderText}
+          headerSubText={studioHeaderSubText}
           danger={danger}
           isDark={isDark}
           isPixel={isPixel}
@@ -2151,6 +2285,7 @@ const GrokOAuthAgentNode = ({ id, data, selected }: NodeProps) => {
           chatSettings={chatSettings}
           uploadingKind={uploadingKind}
           modeChips={modeChips}
+          activeSlashCommand={activeSlashCommand}
           loginPanel={loginPanel(false)}
           renderModeParams={() => renderModeParams(false)}
           onClose={() => setStudioOpen(false)}
@@ -2172,6 +2307,7 @@ const GrokOAuthAgentNode = ({ id, data, selected }: NodeProps) => {
             ...(patch.maxOutputTokens !== undefined ? { grokMaxOutputTokens: clampInteger(patch.maxOutputTokens, DEFAULT_GROK_MAX_OUTPUT_TOKENS, 256, 8192) } : {}),
           })}
           onPublish={publishArtifact}
+          onDeleteArtifacts={deleteArtifacts}
           onArtifactReference={(artifact) => insertArtifactIntoPrompt(artifact)}
           onArtifactContinue={(artifact) => {
             if (artifact.kind === 'image') insertArtifactIntoPrompt(artifact, 'image');
@@ -2200,6 +2336,9 @@ interface StudioProps {
   subText: string;
   border: string;
   accent: string;
+  accentText: string;
+  headerText: string;
+  headerSubText: string;
   danger: string;
   isDark: boolean;
   isPixel: boolean;
@@ -2229,6 +2368,7 @@ interface StudioProps {
   chatSettings: GrokChatSettings;
   uploadingKind: GrokUploadKind | '';
   modeChips: ReactNode;
+  activeSlashCommand: string;
   loginPanel: ReactNode;
   renderModeParams: () => ReactNode;
   onClose: () => void;
@@ -2244,6 +2384,7 @@ interface StudioProps {
   onPersistLocalMaterialsChange: (value: boolean) => void;
   onChatSettingsChange: (patch: Partial<GrokChatSettings>) => void;
   onPublish: (artifact: GrokAgentArtifact) => void;
+  onDeleteArtifacts: (artifacts: GrokAgentArtifact[], summary?: string) => void;
   onArtifactReference: (artifact: GrokAgentArtifact) => void;
   onArtifactContinue: (artifact: GrokAgentArtifact) => void;
   onArtifactMakeVideo: (artifact: GrokAgentArtifact) => void;
@@ -2263,6 +2404,9 @@ function GrokAgentStudio({
   subText,
   border,
   accent,
+  accentText,
+  headerText,
+  headerSubText,
   danger,
   isDark,
   isPixel,
@@ -2292,6 +2436,7 @@ function GrokAgentStudio({
   chatSettings,
   uploadingKind,
   modeChips,
+  activeSlashCommand,
   loginPanel,
   renderModeParams,
   onClose,
@@ -2306,6 +2451,7 @@ function GrokAgentStudio({
   onPersistLocalMaterialsChange,
   onChatSettingsChange,
   onPublish,
+  onDeleteArtifacts,
   onArtifactReference,
   onArtifactContinue,
   onArtifactMakeVideo,
@@ -2317,10 +2463,15 @@ function GrokAgentStudio({
 }: StudioProps) {
   const timelineRef = useRef<HTMLDivElement | null>(null);
   const [artifactTab, setArtifactTab] = useState<GrokArtifactTab>('image');
+  const [artifactBatchMode, setArtifactBatchMode] = useState(false);
+  const [selectedArtifactIds, setSelectedArtifactIds] = useState<string[]>([]);
   useEffect(() => {
     const el = timelineRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [agentMessages, streamingReply]);
+  useEffect(() => {
+    setSelectedArtifactIds((current) => current.filter((artifactId) => agentArtifacts.some((artifact) => artifact.id === artifactId)));
+  }, [agentArtifacts]);
 
   const materialTotal = orderedTexts.length + orderedImages.length + orderedVideos.length + orderedAudios.length;
   const artifactGroups = useMemo<Record<GrokArtifactTab, GrokAgentArtifact[]>>(() => ({
@@ -2336,18 +2487,47 @@ function GrokAgentStudio({
     { id: 'text', label: '文本', title: '文本 / 转写', icon: <MessageCircle size={13} />, count: artifactGroups.text.length },
   ], [artifactGroups]);
   const activeArtifactTab = artifactTabs.find((item) => item.id === artifactTab) || artifactTabs[0];
-  const strongText = isPixel ? '#1a1408' : text;
-  const strongSubText = isPixel ? 'rgba(26,20,8,0.72)' : subText;
-  const noticeCardBg = isPixel ? 'var(--px-yellow)' : isDark ? 'rgba(250,204,21,0.92)' : 'rgba(254,243,199,0.96)';
-  const noticeCardText = '#1a1408';
-  const noticeCardSubText = 'rgba(26,20,8,0.76)';
-  const noticeCardBorder = isPixel ? border : 'rgba(120,53,15,0.45)';
+  const activeArtifacts = artifactGroups[activeArtifactTab.id];
+  const selectedActiveArtifacts = activeArtifacts.filter((artifact) => selectedArtifactIds.includes(artifact.id));
+  const allActiveArtifactsSelected = activeArtifacts.length > 0 && activeArtifacts.every((artifact) => selectedArtifactIds.includes(artifact.id));
+  const toggleArtifactSelection = useCallback((artifactId: string) => {
+    setSelectedArtifactIds((current) => (
+      current.includes(artifactId)
+        ? current.filter((item) => item !== artifactId)
+        : [...current, artifactId]
+    ));
+  }, []);
+  const toggleSelectActiveArtifacts = useCallback(() => {
+    setSelectedArtifactIds((current) => {
+      const ids = activeArtifacts.map((artifact) => artifact.id);
+      if (ids.length === 0) return current;
+      if (ids.every((artifactId) => current.includes(artifactId))) {
+        return current.filter((artifactId) => !ids.includes(artifactId));
+      }
+      return Array.from(new Set([...current, ...ids]));
+    });
+  }, [activeArtifacts]);
+  const deleteSelectedArtifacts = useCallback(() => {
+    const selectedArtifacts = agentArtifacts.filter((artifact) => selectedArtifactIds.includes(artifact.id));
+    onDeleteArtifacts(selectedArtifacts, `已删除 ${selectedArtifacts.length} 个 Grok 产物`);
+    setSelectedArtifactIds([]);
+  }, [agentArtifacts, onDeleteArtifacts, selectedArtifactIds]);
+  const clearAllArtifacts = useCallback(() => {
+    onDeleteArtifacts(agentArtifacts, '已清空 Grok 产物库');
+    setSelectedArtifactIds([]);
+    setArtifactBatchMode(false);
+  }, [agentArtifacts, onDeleteArtifacts]);
+  const readablePalette = createReadableStudioPalette({ isDark, isPixel, accent, bg, surface, surfaceStrong, text, subText, border, danger });
+  const noticeCardBg = readablePalette.noticeBg;
+  const noticeCardText = readablePalette.noticeText;
+  const noticeCardSubText = readablePalette.noticeSubText;
+  const noticeCardBorder = readablePalette.noticeBorder;
   const noticeBusy = !error && (isBusy || !!uploadingKind);
 
   return (
     <div className="fixed inset-0 z-[9999] nodrag nowheel" style={{ background: isDark ? 'rgba(0,0,0,0.72)' : 'rgba(15,23,42,0.34)' }} onMouseDown={(e) => e.stopPropagation()}>
       <div className="absolute inset-4 rounded-2xl overflow-hidden flex flex-col" style={{ background: bg, color: text, border: `1px solid ${border}`, boxShadow: '0 30px 80px rgba(0,0,0,0.38)' }}>
-        <div className="flex items-center gap-3 px-4 py-3" style={{ borderBottom: `1px solid ${border}`, background: surfaceStrong, color: strongText }}>
+        <div className="flex items-center gap-3 px-4 py-3" style={{ borderBottom: `1px solid ${border}`, background: surfaceStrong, color: headerText }}>
           <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: surface, color: accent, border: `1px solid ${border}` }}>
             <Bot size={20} />
           </div>
@@ -2356,7 +2536,7 @@ function GrokAgentStudio({
               Grok 创作台
               {isBusy && <Loader2 size={15} className="animate-spin" style={{ color: accent }} />}
             </div>
-            <div className="text-[11px] truncate" style={{ color: strongSubText }}>{statusMessage}</div>
+            <div className="text-[11px] truncate" style={{ color: headerSubText }}>{statusMessage}</div>
           </div>
           <button type="button" onClick={onRefresh} className="rounded-lg px-3 py-1.5 text-xs font-bold" style={{ background: surface, color: text, border: `1px solid ${border}` }}>
             <RefreshCw size={13} className="inline mr-1" /> 刷新
@@ -2438,7 +2618,23 @@ function GrokAgentStudio({
           </aside>
 
           <main className="min-h-0 flex flex-col">
-            <div ref={timelineRef} className="flex-1 min-h-0 overflow-y-auto p-5 space-y-4" style={{ background: isDark ? 'linear-gradient(180deg, rgba(103,232,249,0.05), transparent)' : 'linear-gradient(180deg, rgba(16,185,129,0.05), transparent)' }}>
+            <div
+              ref={timelineRef}
+              className="nodrag nopan nowheel flex-1 min-h-0 overflow-y-auto p-5 space-y-4"
+              data-grok-studio-copyable="true"
+              style={{
+                background: isDark ? 'linear-gradient(180deg, rgba(103,232,249,0.05), transparent)' : 'linear-gradient(180deg, rgba(16,185,129,0.05), transparent)',
+                userSelect: 'text',
+                WebkitUserSelect: 'text',
+              } as CSSProperties}
+              onMouseDownCapture={stopCopyableConversationEvent}
+              onPointerDownCapture={stopCopyableConversationEvent}
+              onDoubleClickCapture={stopCopyableConversationEvent}
+              onContextMenuCapture={stopCopyableConversationEvent}
+              onDragStartCapture={stopCopyableConversationEvent}
+              onMouseDown={(event) => event.stopPropagation()}
+              onPointerDown={(event) => event.stopPropagation()}
+            >
               {agentMessages.length === 0 && !streamingReply && (
                 <div className="h-full flex items-center justify-center text-center">
                   <div className="max-w-md space-y-3">
@@ -2489,6 +2685,7 @@ function GrokAgentStudio({
                 text={text}
                 subText={subText}
                 accent={accent}
+                accentText={accentText}
                 isPixel={isPixel}
                 uploadingKind={uploadingKind}
                 onPick={onPickLocalMaterial}
@@ -2499,7 +2696,9 @@ function GrokAgentStudio({
                 text={text}
                 subText={subText}
                 accent={accent}
+                accentText={accentText}
                 isPixel={isPixel}
+                activeCommand={activeSlashCommand}
                 onInsert={onInsertSlashCommand}
               />
               <MentionPromptInput
@@ -2522,7 +2721,7 @@ function GrokAgentStudio({
                     <Square size={15} /> 停止
                   </button>
                 ) : (
-                  <button type="button" onClick={() => onRun()} className="rounded-xl px-5 py-2 text-sm font-bold flex items-center gap-2" style={{ background: accent, color: isPixel ? 'var(--px-surface)' : '#031712', border: `1px solid ${accent}` }}>
+                  <button type="button" onClick={() => onRun()} className="rounded-xl px-5 py-2 text-sm font-bold flex items-center gap-2" style={{ background: accent, color: accentText, border: `1px solid ${accent}` }}>
                     <Send size={15} /> 运行 Grok OAuth
                   </button>
                 )}
@@ -2553,7 +2752,7 @@ function GrokAgentStudio({
                         className="min-w-0 rounded-lg px-2 py-2 text-[11px] font-bold transition-transform hover:-translate-y-0.5"
                         style={{
                           background: active ? accent : surfaceStrong,
-                          color: active ? (isPixel ? 'var(--px-surface)' : '#06111f') : text,
+                          color: active ? accentText : text,
                           border: `1px solid ${active ? accent : border}`,
                           boxShadow: active ? '0 6px 16px rgba(0,0,0,0.18)' : 'none',
                         }}
@@ -2566,7 +2765,62 @@ function GrokAgentStudio({
                     );
                   })}
                 </div>
-                <ArtifactGroup title={activeArtifactTab.title} items={artifactGroups[activeArtifactTab.id]} sourceNodeId={nodeId} onPublish={onPublish} onReference={onArtifactReference} onContinue={onArtifactContinue} onMakeVideo={onArtifactMakeVideo} surface={surfaceStrong} border={border} text={text} subText={subText} accent={accent} isPixel={isPixel} />
+                <div className="grid grid-cols-3 gap-1 nodrag">
+                  <button
+                    type="button"
+                    onClick={() => setArtifactBatchMode((value) => !value)}
+                    className="rounded-lg px-2 py-1.5 text-[11px] font-bold"
+                    style={{ background: artifactBatchMode ? accent : surfaceStrong, color: artifactBatchMode ? accentText : text, border: `1px solid ${artifactBatchMode ? accent : border}` }}
+                  >
+                    {artifactBatchMode ? '退出批量' : '批量'}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!artifactBatchMode || selectedArtifactIds.length === 0}
+                    onClick={deleteSelectedArtifacts}
+                    className="rounded-lg px-2 py-1.5 text-[11px] font-bold disabled:opacity-45"
+                    style={{ background: 'transparent', color: danger, border: `1px solid ${danger}` }}
+                  >
+                    删选中 {selectedArtifactIds.length}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={agentArtifacts.length === 0}
+                    onClick={clearAllArtifacts}
+                    className="rounded-lg px-2 py-1.5 text-[11px] font-bold disabled:opacity-45"
+                    style={{ background: 'transparent', color: danger, border: `1px solid ${danger}` }}
+                  >
+                    清空全部
+                  </button>
+                </div>
+                {artifactBatchMode && (
+                  <div className="flex items-center justify-between rounded-lg px-2 py-1.5 text-[11px]" style={{ background: surface, color: subText, border: `1px solid ${border}` }}>
+                    <span>{activeArtifactTab.title}已选 {selectedActiveArtifacts.length} / {activeArtifacts.length}</span>
+                    <button type="button" className="rounded-md px-2 py-1 text-[11px] font-bold" style={{ background: surfaceStrong, color: text, border: `1px solid ${border}` }} onClick={toggleSelectActiveArtifacts}>
+                      {allActiveArtifactsSelected ? '取消全选' : '全选当前'}
+                    </button>
+                  </div>
+                )}
+                <ArtifactGroup
+                  title={activeArtifactTab.title}
+                  items={activeArtifacts}
+                  sourceNodeId={nodeId}
+                  batchMode={artifactBatchMode}
+                  selectedArtifactIds={selectedArtifactIds}
+                  onToggleSelect={toggleArtifactSelection}
+                  onPublish={onPublish}
+                  onDelete={(artifact) => onDeleteArtifacts([artifact])}
+                  onReference={onArtifactReference}
+                  onContinue={onArtifactContinue}
+                  onMakeVideo={onArtifactMakeVideo}
+                  surface={surfaceStrong}
+                  border={border}
+                  text={text}
+                  subText={subText}
+                  accent={accent}
+                  accentText={accentText}
+                  isPixel={isPixel}
+                />
               </div>
             </Panel>
           </aside>
@@ -2604,6 +2858,7 @@ function LocalUploadBar({
   text,
   subText,
   accent,
+  accentText,
   isPixel,
   uploadingKind,
   onPick,
@@ -2613,11 +2868,11 @@ function LocalUploadBar({
   text: string;
   subText: string;
   accent: string;
+  accentText: string;
   isPixel: boolean;
   uploadingKind: GrokUploadKind | '';
   onPick: (kind?: GrokUploadKind) => void;
 }) {
-  const activeText = isPixel ? '#1a1408' : '#031712';
   const options: Array<{ kind: GrokUploadKind; label: string; icon: ReactNode; title: string }> = [
     { kind: 'auto', label: '上传素材', icon: <Plus size={13} />, title: '上传图片 / 视频 / 音频' },
     { kind: 'image', label: '图像', icon: <ImageIcon size={13} />, title: '上传图像素材' },
@@ -2641,7 +2896,7 @@ function LocalUploadBar({
             className="nodrag rounded-lg px-2 py-1 font-bold inline-flex items-center gap-1 disabled:opacity-60"
             style={{
               background: item.kind === 'auto' ? accent : surface,
-              color: item.kind === 'auto' ? activeText : text,
+              color: item.kind === 'auto' ? accentText : text,
               border: `1px solid ${item.kind === 'auto' ? accent : border}`,
             }}
           >
@@ -2661,7 +2916,9 @@ function SlashCommandBar({
   text,
   subText,
   accent,
+  accentText,
   isPixel,
+  activeCommand,
   onInsert,
 }: {
   surface: string;
@@ -2669,7 +2926,9 @@ function SlashCommandBar({
   text: string;
   subText: string;
   accent: string;
+  accentText: string;
   isPixel: boolean;
+  activeCommand: string;
   onInsert: (insert: string, mode: GrokOAuthMode) => void;
 }) {
   return (
@@ -2679,22 +2938,25 @@ function SlashCommandBar({
         <span style={{ color: subText }}>输入 / 或点击插入</span>
       </div>
       <div className="flex flex-wrap gap-1.5">
-        {SLASH_COMMANDS.map((item) => (
-          <button
-            key={item.command}
-            type="button"
-            className="nodrag rounded-lg px-2 py-1 text-[10px] font-bold"
-            title={item.hint}
-            onClick={() => onInsert(item.insert, item.mode)}
-            style={{
-              background: item.command === 'image' ? accent : 'transparent',
-              color: item.command === 'image' ? (isPixel ? '#1a1408' : '#031712') : text,
-              border: `1px solid ${item.command === 'image' ? accent : border}`,
-            }}
-          >
-            {item.label}
-          </button>
-        ))}
+        {SLASH_COMMANDS.map((item) => {
+          const active = item.command === activeCommand;
+          return (
+            <button
+              key={item.command}
+              type="button"
+              className="nodrag rounded-lg px-2 py-1 text-[10px] font-bold"
+              title={item.hint}
+              onClick={() => onInsert(item.insert, item.mode)}
+              style={{
+                background: active ? accent : 'transparent',
+                color: active ? accentText : text,
+                border: `1px solid ${active ? accent : border}`,
+              }}
+            >
+              {item.label}
+            </button>
+          );
+        })}
       </div>
     </div>
   );
@@ -2705,6 +2967,11 @@ function MessageBubble({ message, artifacts, surface, surfaceStrong, border, tex
   const linked = (message.artifactIds || []).map((id) => artifacts.find((item) => item.id === id)).filter(Boolean) as GrokAgentArtifact[];
   const bubbleText = isUser && isPixel ? '#1a1408' : text;
   const bubbleSubText = isUser && isPixel ? 'rgba(26,20,8,0.72)' : subText;
+  const copyMessage = () => {
+    const content = String(message.content || '').trim();
+    if (!content) return;
+    void navigator.clipboard?.writeText?.(content);
+  };
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
       <div className="max-w-[78%] rounded-2xl p-3 space-y-2" style={{ background: isUser ? surfaceStrong : surface, color: bubbleText, border: `1px solid ${isUser ? accent : border}` }}>
@@ -2712,8 +2979,30 @@ function MessageBubble({ message, artifacts, surface, surfaceStrong, border, tex
           <span className="font-bold" style={{ color: isUser ? bubbleText : accent }}>{isUser ? '你' : message.role === 'tool' ? 'Grok 工具' : 'Grok'}</span>
           {message.mode && <span>{modeTitle(message.mode)}</span>}
           {message.status === 'running' && <Loader2 size={10} className="animate-spin" />}
+          <button
+            type="button"
+            className="nodrag rounded-md border px-1 py-0.5 opacity-70 transition hover:opacity-100"
+            style={{ borderColor: border, background: surfaceStrong, color: bubbleText }}
+            onClick={copyMessage}
+            title="复制这条消息"
+          >
+            <Copy size={10} />
+          </button>
         </div>
-        <div className="whitespace-pre-wrap text-[13px] leading-relaxed">{message.content}</div>
+        <div
+          className="nodrag nopan select-text whitespace-pre-wrap text-[13px] leading-relaxed"
+          data-grok-message-copyable="true"
+          style={{ userSelect: 'text', WebkitUserSelect: 'text' } as CSSProperties}
+          onMouseDownCapture={stopCopyableConversationEvent}
+          onPointerDownCapture={stopCopyableConversationEvent}
+          onDoubleClickCapture={stopCopyableConversationEvent}
+          onContextMenuCapture={stopCopyableConversationEvent}
+          onDragStartCapture={stopCopyableConversationEvent}
+          onMouseDown={(event) => event.stopPropagation()}
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          {message.content}
+        </div>
         {message.role === 'tool' && typeof message.progress === 'number' && (
           <div className="h-1.5 overflow-hidden rounded-full" style={{ background: isPixel ? 'rgba(26,20,8,0.18)' : 'rgba(255,255,255,0.12)' }}>
             <div className="h-full rounded-full transition-all" style={{ width: `${Math.max(2, Math.min(100, message.progress))}%`, background: accent }} />
@@ -2735,7 +3024,11 @@ function ArtifactGroup({
   title,
   items,
   sourceNodeId,
+  batchMode,
+  selectedArtifactIds,
+  onToggleSelect,
   onPublish,
+  onDelete,
   onReference,
   onContinue,
   onMakeVideo,
@@ -2744,12 +3037,17 @@ function ArtifactGroup({
   text,
   subText,
   accent,
+  accentText,
   isPixel,
 }: {
   title: string;
   items: GrokAgentArtifact[];
   sourceNodeId: string;
+  batchMode: boolean;
+  selectedArtifactIds: string[];
+  onToggleSelect: (artifactId: string) => void;
   onPublish: (artifact: GrokAgentArtifact) => void;
+  onDelete: (artifact: GrokAgentArtifact) => void;
   onReference: (artifact: GrokAgentArtifact) => void;
   onContinue: (artifact: GrokAgentArtifact) => void;
   onMakeVideo: (artifact: GrokAgentArtifact) => void;
@@ -2758,6 +3056,7 @@ function ArtifactGroup({
   text: string;
   subText: string;
   accent: string;
+  accentText: string;
   isPixel: boolean;
 }) {
   if (items.length === 0) {
@@ -2772,7 +3071,26 @@ function ArtifactGroup({
     <div className="space-y-2">
       <div className="text-[11px] font-bold" style={{ color: text }}>{title}</div>
       {items.slice().reverse().map((artifact) => (
-        <ArtifactCard key={artifact.id} artifact={artifact} sourceNodeId={sourceNodeId} onPublish={onPublish} onReference={onReference} onContinue={onContinue} onMakeVideo={onMakeVideo} surface={surface} border={border} text={text} subText={subText} accent={accent} isPixel={isPixel} />
+        <ArtifactCard
+          key={artifact.id}
+          artifact={artifact}
+          sourceNodeId={sourceNodeId}
+          batchMode={batchMode}
+          selected={selectedArtifactIds.includes(artifact.id)}
+          onToggleSelect={onToggleSelect}
+          onPublish={onPublish}
+          onDelete={onDelete}
+          onReference={onReference}
+          onContinue={onContinue}
+          onMakeVideo={onMakeVideo}
+          surface={surface}
+          border={border}
+          text={text}
+          subText={subText}
+          accent={accent}
+          accentText={accentText}
+          isPixel={isPixel}
+        />
       ))}
     </div>
   );
@@ -2785,6 +3103,7 @@ function ArtifactImagePreview({
   text,
   surface,
   accent,
+  accentText,
 }: {
   src: string;
   title: string;
@@ -2792,13 +3111,14 @@ function ArtifactImagePreview({
   text: string;
   surface: string;
   accent: string;
+  accentText: string;
 }) {
   const [previewOpen, setPreviewOpen] = useState(false);
   const overlay = previewOpen && typeof document !== 'undefined'
     ? createPortal(
       <div className="fixed inset-0 z-[10080] pointer-events-none flex items-center justify-center p-10" style={{ background: 'rgba(0,0,0,0.58)' }}>
         <div className="relative rounded-2xl p-3" style={{ background: surface, border: `1px solid ${border}`, boxShadow: '0 28px 80px rgba(0,0,0,0.42)' }}>
-          <div className="absolute right-3 top-3 rounded-full px-2 py-1 text-[11px] font-bold" style={{ background: accent, color: '#111827' }}>100%</div>
+          <div className="absolute right-3 top-3 rounded-full px-2 py-1 text-[11px] font-bold" style={{ background: accent, color: accentText }}>100%</div>
           <img
             src={src}
             alt={title || 'Grok 产物 100% 预览'}
@@ -2834,7 +3154,11 @@ function ArtifactImagePreview({
 function ArtifactCard({
   artifact,
   sourceNodeId,
+  batchMode,
+  selected,
+  onToggleSelect,
   onPublish,
+  onDelete,
   onReference,
   onContinue,
   onMakeVideo,
@@ -2843,11 +3167,16 @@ function ArtifactCard({
   text,
   subText,
   accent,
+  accentText,
   isPixel,
 }: {
   artifact: GrokAgentArtifact;
   sourceNodeId: string;
+  batchMode: boolean;
+  selected: boolean;
+  onToggleSelect: (artifactId: string) => void;
   onPublish: (artifact: GrokAgentArtifact) => void;
+  onDelete: (artifact: GrokAgentArtifact) => void;
   onReference: (artifact: GrokAgentArtifact) => void;
   onContinue: (artifact: GrokAgentArtifact) => void;
   onMakeVideo: (artifact: GrokAgentArtifact) => void;
@@ -2856,6 +3185,7 @@ function ArtifactCard({
   text: string;
   subText: string;
   accent: string;
+  accentText: string;
   isPixel: boolean;
 }) {
   const urls = dedupeStringArray(artifact.urls || artifact.url);
@@ -2886,6 +3216,14 @@ function ArtifactCard({
   return (
     <div className="rounded-xl p-2 space-y-2" style={{ background: surface, border: `1px solid ${artifact.publishedAt ? accent : border}`, color: cardText }}>
       <div className="flex items-center gap-2">
+        {batchMode && (
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={() => onToggleSelect(artifact.id)}
+            aria-label="选择 Grok 产物"
+          />
+        )}
         <div className="font-bold text-[12px] flex-1 min-w-0 truncate">{artifact.refId ? `${artifact.refId} · ` : ''}{artifact.title || artifactKindLabel(artifact.kind)}</div>
         {artifact.publishedAt && <span className="text-[10px]" style={{ color: accent }}>已发布</span>}
       </div>
@@ -2895,7 +3233,7 @@ function ArtifactCard({
         </div>
       )}
       {artifact.text && <div className="text-[11px] whitespace-pre-wrap max-h-32 overflow-y-auto" style={{ color: cardSubText }}>{artifact.text}</div>}
-      {artifact.kind === 'image' && url && <ArtifactImagePreview src={url} title={artifact.title} surface={surface} border={border} text={cardText} accent={accent} />}
+      {artifact.kind === 'image' && url && <ArtifactImagePreview src={url} title={artifact.title} surface={surface} border={border} text={cardText} accent={accent} accentText={accentText} />}
       {artifact.kind === 'video' && url && <video src={url} controls className="w-full rounded-lg max-h-56" />}
       {artifact.kind === 'audio' && url && <audio src={url} controls className="w-full h-9" />}
       <div className="flex flex-wrap gap-1.5">
@@ -2912,7 +3250,7 @@ function ArtifactCard({
             做视频
           </button>
         )}
-        <button type="button" disabled={!!artifact.publishedAt} onClick={() => onPublish(artifact)} className="rounded px-2 py-1 text-[10px] font-bold disabled:opacity-60" style={{ background: accent, color: isPixel ? '#1a1408' : '#031712', border: `1px solid ${accent}` }}>
+        <button type="button" disabled={!!artifact.publishedAt} onClick={() => onPublish(artifact)} className="rounded px-2 py-1 text-[10px] font-bold disabled:opacity-60" style={{ background: accent, color: accentText, border: `1px solid ${accent}` }}>
           {artifact.publishedAt ? '已发布' : '发布'}
         </button>
         <button type="button" disabled={!canSendOrSave} onClick={() => openArtifactSendModal(artifact, sourceNodeId)} title="发送到其他画布" className="rounded px-2 py-1 text-[10px] font-bold disabled:opacity-60" style={{ background: 'transparent', color: cardText, border: `1px solid ${border}` }}>
@@ -2932,6 +3270,9 @@ function ArtifactCard({
             <Download size={11} className="inline mr-1" /> 下载
           </a>
         )}
+        <button type="button" onClick={() => onDelete(artifact)} className="rounded px-2 py-1 text-[10px] font-bold" style={{ background: 'transparent', color: '#ef4444', border: '1px solid #ef4444' }}>
+          删除
+        </button>
       </div>
     </div>
   );

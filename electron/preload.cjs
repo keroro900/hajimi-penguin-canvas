@@ -4,6 +4,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('t8pc', {
   getInfo: () => ipcRenderer.invoke('t8pc:get-info'),
   openExternal: (url) => ipcRenderer.invoke('t8pc:open-external', url),
+  openPath: (targetPath) => ipcRenderer.invoke('t8pc:open-path', targetPath),
   dragFileOut: (payload) => ipcRenderer.send('t8pc:drag-file-out', {
     url: typeof payload?.url === 'string' ? payload.url : '',
     path: typeof payload?.path === 'string' ? payload.path : '',

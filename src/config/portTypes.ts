@@ -90,6 +90,10 @@ export const NODE_PORTS: Record<string, NodePorts> = {
   // 独立 Grok OAuth Agent：不走高级来源/分类 Key；由私有 OAuth 模块统一处理聊天、图像、视频、TTS、STT。
   'grok-oauth-agent': { inputs: ['text', 'image', 'video', 'audio'], outputs: ['text', 'image', 'video', 'audio'] },
 
+  // ========== Codex CLI ==========
+  // 创作者 Codex Agent：通过本机 Codex CLI + Skill 调用生成文本、提示词、图像等产物。
+  'codex-cli-agent': { inputs: ['text', 'image', 'video', 'audio'], outputs: ['text', 'image', 'video', 'audio', 'model3d'] },
+
   // ========== ComfyUI ==========
   // ComfyUI超市：本地 workflow 应用运行器，可按 manifest 消费/输出四类素材。
   'comfyui-store': { inputs: ['text', 'image', 'video', 'audio'], outputs: ['text', 'image', 'video', 'audio'] },
@@ -143,6 +147,8 @@ export const NODE_PORTS: Record<string, NodePorts> = {
   'pose-master': { inputs: ['text', 'image', 'metadata'], outputs: ['image', 'text', 'metadata'] },
   // 聚合解析: 可直接接上游分享文案文本，输出解析摘要与媒体地址。
   'aggregate-parser': { inputs: ['text'], outputs: ['text', 'image', 'video', 'audio'] },
+  // 批量素材处理: 只在节点内处理/归档/反馈，不对外输出素材，避免批量完成后自动铺满画布。
+  'batch-processor': { inputs: ['image', 'video', 'audio', 'model3d'], outputs: [] },
   // Topaz 本地高清化: 仅调用用户本机已安装的 Topaz 软件，不内置第三方商业程序。
   'topaz-image-upscale': { inputs: ['image'], outputs: ['image'] },
   'topaz-video-upscale': { inputs: ['video'], outputs: ['video'] },
@@ -164,6 +170,8 @@ export const NODE_PORTS: Record<string, NodePorts> = {
   // groupBox 自身不接收外部输入 (无 target handle),
   // 但右侧 source handle 可以把「组内所有节点的聚合输出 (any)」一次性传给组外节点。
   groupBox: { inputs: [], outputs: ['any'] },
+  // Codex 专用生图工作台：只接文本/图像参考，只输出图像和最终文本。
+  'codex-image-conjure': { inputs: ['text', 'image'], outputs: ['image', 'text'] },
 };
 
 /**

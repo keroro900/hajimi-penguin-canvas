@@ -677,7 +677,14 @@ export type AchievementEventType =
   | 'saint_seiya.cloth_collected'
   | 'saint_seiya.gold_completed'
   | 'saint_seiya.battle_won'
-  | 'saint_seiya.cosmo_burst';
+  | 'saint_seiya.cosmo_burst'
+  | 'tetris.game_started'
+  | 'tetris.line_clear'
+  | 'tetris.tetris_clear'
+  | 'tetris.level_reached'
+  | 'tetris.chapter_completed'
+  | 'tetris.clean_chapter_completed'
+  | 'tetris.game_over';
 
 export interface AchievementEventPayload {
   type: AchievementEventType;

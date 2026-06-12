@@ -7,6 +7,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
+const { spawn } = require('child_process');
 const sharp = require('sharp');
 const config = require('../config');
 const { tryDecodeDuckPayload } = require('../utils/duckPayload');
@@ -148,6 +149,69 @@ function resolveLocalFileUrl(url) {
   const resolved = path.resolve(base, rel);
   if (resolved !== base && !resolved.startsWith(base + path.sep)) return null;
   return resolved;
+}
+
+function sanitizeOutputPart(value, fallback = 'batch') {
+  const clean = String(value || '')
+    .trim()
+    .replace(/[\\/:*?"<>|]+/g, '_')
+    .replace(/\s+/g, '_')
+    .replace(/^\.+/, '')
+    .replace(/[._-]+$/, '')
+    .slice(0, 120);
+  return clean || fallback;
+}
+
+function ensureUniqueFile(targetDir, filename, overwrite) {
+  const parsed = path.parse(String(filename || 'batch-item.bin'));
+  const base = sanitizeOutputPart(parsed.name, 'batch-item');
+  const ext = sanitizeOutputPart(parsed.ext.replace(/^\./, ''), 'bin');
+  let candidate = `${base}.${ext}`;
+  if (overwrite || !fs.existsSync(path.join(targetDir, candidate))) return candidate;
+  for (let i = 2; i < 10000; i += 1) {
+    candidate = `${base}_${i}.${ext}`;
+    if (!fs.existsSync(path.join(targetDir, candidate))) return candidate;
+  }
+  return `${base}_${Date.now()}.${ext}`;
+}
+
+function resolveOutputSubdir(subdir) {
+  const safeSubdir = sanitizeOutputPart(subdir || 'batch', 'batch');
+  const outputRoot = path.resolve(config.OUTPUT_DIR);
+  const targetDir = path.resolve(outputRoot, safeSubdir);
+  if (targetDir !== outputRoot && !targetDir.startsWith(outputRoot + path.sep)) {
+    return null;
+  }
+  return { safeSubdir, targetDir };
+}
+
+function spawnOpenFolder(targetDir) {
+  return new Promise((resolve, reject) => {
+    const platform = process.platform;
+    const command = platform === 'win32' ? 'explorer.exe' : platform === 'darwin' ? 'open' : 'xdg-open';
+    let child;
+    let settled = false;
+    const done = (error) => {
+      if (settled) return;
+      settled = true;
+      if (error) reject(error);
+      else resolve();
+    };
+    try {
+      child = spawn(command, [targetDir], {
+        detached: true,
+        stdio: 'ignore',
+        shell: false,
+        windowsHide: false,
+      });
+    } catch (error) {
+      done(error);
+      return;
+    }
+    child.once('error', done);
+    setTimeout(() => done(), 120);
+    child.unref();
+  });
 }
 
 function clampThumbnailSize(value) {
@@ -313,6 +377,69 @@ router.post('/duck-decode', express.json({ limit: '256kb' }), async (req, res) =
     });
   } catch (e) {
     res.status(500).json({ success: false, error: e?.message || String(e) });
+  }
+});
+
+// POST /api/files/copy-to-output — 把本地 input/output 文件复制到 output 子目录并按指定文件名命名
+router.post('/copy-to-output', express.json({ limit: '2mb' }), async (req, res) => {
+  try {
+    const { url, filename, subdir, overwrite } = req.body || {};
+    if (!url || typeof url !== 'string') {
+      return res.status(400).json({ success: false, error: '缺少 url' });
+    }
+    const src = resolveLocalFileUrl(url);
+    if (!src || !fs.existsSync(src)) {
+      return res.status(404).json({ success: false, error: '只支持已落地的本地 input/output 文件' });
+    }
+
+    const safeSubdir = sanitizeOutputPart(subdir || 'batch', 'batch');
+    const targetDir = path.join(config.OUTPUT_DIR, safeSubdir);
+    if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
+
+    const safeName = ensureUniqueFile(targetDir, filename || path.basename(src), Boolean(overwrite));
+    const target = path.join(targetDir, safeName);
+    if (path.resolve(src) !== path.resolve(target) || Boolean(overwrite)) {
+      fs.copyFileSync(src, target);
+    }
+    const stat = fs.statSync(target);
+    return res.json({
+      success: true,
+      data: {
+        filename: safeName,
+        url: `/files/output/${safeSubdir}/${encodeURIComponent(safeName)}`,
+        path: target,
+        size: stat.size,
+        exist: false,
+      },
+    });
+  } catch (e) {
+    return res.status(500).json({ success: false, error: e?.message || String(e) });
+  }
+});
+
+// POST /api/files/open-output-folder — 打开 output 子目录，方便批处理完成后直接查看结果
+router.post('/open-output-folder', express.json({ limit: '64kb' }), async (req, res) => {
+  try {
+    const resolved = resolveOutputSubdir(req.body?.subdir || 'batch');
+    if (!resolved) {
+      return res.status(400).json({ success: false, error: '输出目录不合法' });
+    }
+    const { safeSubdir, targetDir } = resolved;
+    if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
+
+    const dryRun = Boolean(req.body?.dryRun) || process.env.T8PC_OPEN_FOLDER_DRY_RUN === '1';
+    if (!dryRun) await spawnOpenFolder(targetDir);
+    return res.json({
+      success: true,
+      data: {
+        subdir: safeSubdir,
+        path: targetDir,
+        url: `/files/output/${encodeURIComponent(safeSubdir)}`,
+        opened: !dryRun,
+      },
+    });
+  } catch (e) {
+    return res.status(500).json({ success: false, error: e?.message || String(e) });
   }
 });
 

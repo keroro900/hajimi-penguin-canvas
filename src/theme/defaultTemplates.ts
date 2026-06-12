@@ -16,6 +16,7 @@ export const dragonBallThemeMusicUrl = new URL('../assets/theme-music/dragonball
 export const dragonBallShenronHiddenMusicUrl = new URL('../assets/theme-music/dragonball-shenron-cha-la-head-cha-la.mp3', import.meta.url).href;
 export const saintSeiyaThemeMusicUrl = new URL('../assets/theme-music/saint-seiya-pegasus-fantasy.mp3', import.meta.url).href;
 export const saintSeiyaHadesThemeMusicUrl = new URL('../assets/theme-music/saint-seiya-hades-last-holy-war.mp3', import.meta.url).href;
+export const tetrisThemeMusicUrl = new URL('../assets/theme-music/tetris-korobeiniki.mp3', import.meta.url).href;
 
 export const DEFAULT_THEME_TEMPLATE_ID = 'pixel-candy';
 export const TECH_TEMPLATE_ID = 'tech-default';
@@ -29,6 +30,7 @@ export const SLAMDUNK_TEMPLATE_ID = 'slamdunk-style';
 export const SOCCER_TEMPLATE_ID = 'soccer-hero-style';
 export const DRAGON_BALL_TEMPLATE_ID = 'dragon-ball-style';
 export const SAINT_SEIYA_TEMPLATE_ID = 'saint-seiya-style';
+export const TETRIS_TEMPLATE_ID = 'tetris-style';
 
 const techDark: ThemeTokens = {
   appBg: '#09090b',
@@ -836,6 +838,80 @@ const saintSeiyaDark: ThemeTokens = {
   portAudio: '#c4a7ff',
 };
 
+const tetrisLight: ThemeTokens = {
+  appBg: '#f5f2ea',
+  canvasBg: '#f7f3ea',
+  panelBg: '#fffaf0',
+  panelBgElevated: '#ffffff',
+  panelBgMuted: '#e9e2d5',
+  nodeBg: 'rgba(255, 250, 240, 0.98)',
+  nodeHeaderBg: '#16c6d9',
+  textMain: '#172033',
+  textMuted: '#465063',
+  textDim: '#70798a',
+  border: '#172033',
+  borderStrong: '#0e93a6',
+  accent: '#16c6d9',
+  accentHover: '#7ee7f0',
+  accentText: '#07131f',
+  secondary: '#9f5cff',
+  warning: '#ffd43b',
+  danger: '#ff4d5f',
+  success: '#36c871',
+  shadowPanel: '0 18px 44px rgba(23,32,51,0.14), 4px 4px 0 #172033',
+  shadowButton: '3px 3px 0 #172033',
+  shadowStrong: '0 28px 70px rgba(23,32,51,0.2), 6px 6px 0 #172033',
+  radiusPanel: '8px',
+  radiusButton: '6px',
+  radiusNode: '8px',
+  gridDot: '#c8d0da',
+  edge: '#536176',
+  edgeSelected: '#ff8a24',
+  selectionBg: 'rgba(22,198,217,0.18)',
+  selectionBorder: '#16c6d9',
+  portText: '#16c6d9',
+  portImage: '#ffd43b',
+  portVideo: '#ff4d5f',
+  portAudio: '#9f5cff',
+  fontFamily: "'M PLUS Rounded 1c', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif",
+  displayFont: "'DotGothic16', 'M PLUS Rounded 1c', 'Microsoft YaHei', monospace",
+};
+
+const tetrisDark: ThemeTokens = {
+  ...tetrisLight,
+  appBg: '#06111f',
+  canvasBg: '#071827',
+  panelBg: '#0b1f33',
+  panelBgElevated: '#102b44',
+  panelBgMuted: '#0f263a',
+  nodeBg: 'rgba(10, 29, 48, 0.96)',
+  nodeHeaderBg: '#102f52',
+  textMain: '#ecfbff',
+  textMuted: '#b8d9e2',
+  textDim: '#7ea7b6',
+  border: 'rgba(126,231,240,0.34)',
+  borderStrong: '#16c6d9',
+  accent: '#26e6ff',
+  accentHover: '#89f7ff',
+  accentText: '#03111b',
+  secondary: '#b36cff',
+  warning: '#ffe066',
+  danger: '#ff5b78',
+  success: '#59e68e',
+  shadowPanel: '0 22px 58px rgba(0,0,0,0.5), 0 0 0 2px rgba(38,230,255,0.16)',
+  shadowButton: '0 0 18px rgba(38,230,255,0.24)',
+  shadowStrong: '0 28px 78px rgba(0,0,0,0.66), 0 0 34px rgba(179,108,255,0.22)',
+  gridDot: '#17354e',
+  edge: '#7fb4c5',
+  edgeSelected: '#ffe066',
+  selectionBg: 'rgba(38,230,255,0.16)',
+  selectionBorder: '#26e6ff',
+  portText: '#26e6ff',
+  portImage: '#ffe066',
+  portVideo: '#ff5b78',
+  portAudio: '#c9a6ff',
+};
+
 export const BUILT_IN_THEME_TEMPLATES: ThemeTemplate[] = [
   {
     schema: 't8-theme-template',
@@ -1156,6 +1232,34 @@ export const BUILT_IN_THEME_TEMPLATES: ThemeTemplate[] = [
       copyrightNote: '圣域篇默认使用天马幻想；冥界篇开启后切换最后的圣战，可在主题模板中上传替换为已授权音乐。',
     },
     modes: { dark: { tokens: saintSeiyaDark }, light: { tokens: saintSeiyaLight } },
+  },
+  {
+    schema: 't8-theme-template',
+    version: THEME_TEMPLATE_VERSION,
+    id: TETRIS_TEMPLATE_ID,
+    name: '俄罗斯方块主题',
+    description: 'Tetris Canvas：奶白彩块与深蓝街机双模式、方块拼接节点、小游戏井和霓虹连线。',
+    author: 'T8',
+    builtIn: true,
+    legacyStyle: 'pixel',
+    visuals: {
+      style: 'tetris',
+      intensity: 'strong',
+      iconPack: 'tetromino-well',
+      canvasPattern: 'tetris-stack',
+      nodeFrame: 'arcade-cabinet-card',
+      headerMark: 'TETRIS STACK',
+    },
+    music: {
+      title: 'Korobeiniki',
+      preset: 'block-drop',
+      source: 'url',
+      url: tetrisThemeMusicUrl,
+      volume: 0.16,
+      bpm: 148,
+      copyrightNote: '俄罗斯方块主题默认音乐文件；可在主题模板中上传替换为已授权音乐。',
+    },
+    modes: { dark: { tokens: tetrisDark }, light: { tokens: tetrisLight } },
   },
 ];
 

@@ -498,6 +498,14 @@ export default function SaintSeiyaSanctuary({ visualStyle, viewportMoving, nodeD
     const result = finalizeBattleReward();
     if (!result.battle) return;
     const cloth = result.clothId ? SAINT_SEIYA_CLOTH_BY_ID[result.clothId] : null;
+    if (hadesModeActive) {
+      trackAchievementEvent({
+        type: 'hidden_mode.used',
+        theme: 'saint-seiya',
+        kind: 'saint-seiya-hades',
+        mode: 'used',
+      });
+    }
     if (result.victory && cloth) {
       trackAchievementEvent({
         type: 'saint_seiya.cloth_collected',
@@ -517,14 +525,6 @@ export default function SaintSeiyaSanctuary({ visualStyle, viewportMoving, nodeD
         theme: 'saint-seiya',
         kind: result.rank || 'unknown',
       });
-      if (hadesModeActive) {
-        trackAchievementEvent({
-          type: 'hidden_mode.used',
-          theme: 'saint-seiya',
-          kind: 'saint-seiya-hades',
-          mode: 'used',
-        });
-      }
     }
     if (result.usedCosmoBurst) {
       trackAchievementEvent({

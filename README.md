@@ -10,13 +10,13 @@ https://www.runninghub.cn/?inviteCode=rh-v1121
 My favorite girl Go YounJung
 # 🐧 贞贞的无限画布（企鹅共创版） · T8-penguin-canvas
 
-> AI 节点画布工作流工具 · Web + Electron 桌面端｜v2.1.7
+> AI 节点画布工作流工具 · Web + Electron 桌面端｜v2.1.8
 >
 > GitHub：<https://github.com/T8mars/T8-penguin-canvas>
 
 一个面向 AI 创作的 **节点式画布**：拖拽节点、连线编排、生成图像 / 视频 / 音频、调用 LLM、串接 RunningHub 工作流，叠加批量执行、智能对齐、打组、主题模板与终端日志。Web 浏览器和桌面端均可使用。
 
-![status](https://img.shields.io/badge/version-v2.1.7-brightgreen) ![node](https://img.shields.io/badge/node-%E2%89%A518-blue) ![react](https://img.shields.io/badge/react-19-61dafb) ![electron](https://img.shields.io/badge/electron-33-47848f) ![license](https://img.shields.io/badge/license-MIT-yellow)
+![status](https://img.shields.io/badge/version-v2.1.8-brightgreen) ![node](https://img.shields.io/badge/node-%E2%89%A518-blue) ![react](https://img.shields.io/badge/react-19-61dafb) ![electron](https://img.shields.io/badge/electron-33-47848f) ![license](https://img.shields.io/badge/license-MIT-yellow)
 
 ---
 
@@ -39,7 +39,7 @@ My favorite girl Go YounJung
 - 🧺 **画布级批量导入 + 素材合集打散**：上传节点支持一次选择多张图 / 多个视频 / 多段音频；也可直接把剪贴板或文件拖到画布，同类型多素材自动形成合集，上传和输出合集都可一键打散为多个独立素材节点
 - 👁️ **上传 / 输出图像原图悬停预览**（v1.8.7）：上传素材与输出素材的图像卡片在 hover 时显示小眼睛按钮，鼠标停在按钮上可按 100% 原尺寸预览，超出视口时自动等比收进可见区域，输出素材入口位于图像对比按钮下方
 - 🧾 **提示词模板库媒体套件**（v2.1.2）：图像 / 视频 / 音频 / 文本素材可从节点右键直接保存到提示词模板库，连同原 Prompt、标题、标签和配套媒体一起沉淀；右键保存时可选择或新建模板分类，模板库支持分类新增 / 删除 / 重命名，预览采用懒加载并支持图像 100% 查看
-- 🧰 **v2.1.7 Electron 自动更新版**：收口 ComfyUI Workflow 字段识别、排除规则 JSON 备份、百度网盘 / 夸克网盘 WebDAV 上传、ComfyUI 超市端口可见性、Grok Video 1.5 默认显示和圣斗士主题细节修复
+- 🧪 **v2.1.8 源码版**：收口俄罗斯方块主题与默认音乐、批量素材处理、Codex CLI Agent / Codex 生图工作台、Grok Agent 视频链路、AI 水印去除升级和多主题可读性修复；本次只推 GitHub 源码，不打包 Electron，不发布 Release
 - 🧭 **Figma / 云上传 / 画布教程可用化**（v2.1.4）：Figma Bridge 随后端自动启动，发送弹窗提示插件导入位置，Figma 插件改为二进制导入本机图片；腾讯云 COS / 阿里云 OSS 配置检查使用真实 signed location 连通测试；顶部新增“画布教程”入口并移除 RunningHub 弹窗里的 RH ApiKey 快捷项
 - 🧲 **放置栏 + 外拖文件夹**（v2.1.2）：发送、粘贴和自动输出的素材节点会进入左下角放置栏映射，折叠显示最近 5 个、展开显示最近 20 个；拖动放置栏卡片会移动原节点到落点而不是复制；生成好的图像 / 视频 / 音频素材也可直接拖到浏览器外的文件夹
 - 🧩 **LLM / 文本 / 画布交互修复**（v2.1.2）：LLM 多轮流式结果可单条删除且不会在下次生成时复活；文本节点支持上游图像 / 视频 / 音频 `@` 提及预览，文本分割输入框接入提示词模板与放大编辑；复杂大画布框选用屏幕拖拽矩形复核，降低漂移误选
@@ -55,6 +55,7 @@ My favorite girl Go YounJung
 - 📁 **跨平台本地路径默认值**：Windows 继续默认 `D:\zhenzhen`，macOS / Linux 默认 `~/zhenzhen`；旧版非 Windows 配置若仍是硬编码默认值会自动迁移，自定义路径不会被覆盖
 - 🏷️ **生成提示词 @ 素材提及 + 大编辑器**：图像 / 视频 / SD2.0 / 音频 / LLM / RunningHub / RH 钱包应用 / RH 超市文本参数可输入 `@` 选择当前上游素材，输入框内显示统一对齐的小预览 chip，提交时稳定解析为 `@image1` / `@video1` / `@audio1`；聚焦提示词框按 `Alt+Enter` 或点击放大按钮可打开全局大编辑器，`Ctrl+Enter` 完成、`Esc` 取消。
 - 🏅 **主题成就与有效时长**：按主题记录有效使用时长、特色节点事件、资源保存与工作流保存，解锁勋章和影片馆占位奖励；奖励影片素材未提供前会显示“待解锁 / 影片素材待提供”，不写入提示词、短链、Cookie 或资源 URL 等敏感内容。
+- 🧱 **俄罗斯方块主题 + 小游戏**：新增第 12 套强识别 Tetris Canvas 主题，浅色为奶白彩块，深色为街机霓虹；右上角快捷栏默认展开 10×20 俄罗斯方块小游戏，支持 7-bag、公平出块、幽灵落点、暂存、硬降、99 级递增、最高分保存，鼠标离开 / 窗口失焦 / 画布拖动时自动暂停，键盘只在游戏区域 hover 或 focus 时接管。
 - 🧰 **ComfyUI / RH 工具箱 / 云上传增强**：ComfyUI 内置基础文生图样例和导入检查清单，后端把缺模型、缺节点、未启动、workflow 校验失败等错误转成可执行提示；默认只允许本机 ComfyUI，可信远端可通过单实例高危开关或 `T8_COMFYUI_ALLOW_REMOTE=1` 开启；RH 工具箱生成图像 / 视频 / 文本 / 音频快捷接入位；COS / OSS 上传失败会返回签名、权限、Bucket / Region、网络等结构化排查建议。
 - 📝 **文本节点自由缩放**：文本节点四角拖拽可独立调整宽高，输出端口固定贴合右侧中点，并在尺寸变化后刷新 ReactFlow internals，避免连线和端口脱离
 - 🔗 **RH 文本 NodeID 绑定**（v1.9.0）：文本节点可填写 RH 节点序号，RunningHub / RH 钱包应用 / RH 超市会按应用参数里的 RH nodeId 自动匹配上游文本；节点内也能手动选择绑定文本，冲突和错误序号会保留清晰状态提示
@@ -88,13 +89,13 @@ My favorite girl Go YounJung
 - 🖌️ **图层画板节点**（v1.9.0 增强）：工具分类开放画板节点，支持 16:9 / 9:16 等画布比例、空白图层、图层组折叠、可见 / 锁定状态、载入上游或本地图片、手绘 / 文字 / 图形 / 箭头、缩放旋转、套索 / 钢笔非破坏式抠图、放大编辑窗口、导入导出画板 JSON 与运行输出 PNG；放大窗口复用完整图层面板并按设备像素比重绘，避免图片被低清预览二次放大
 - 🔑 **分类独立 API Key 可选 · 默认折叠**（v1.2.6）：gpt-image / nano-banana / mj / veo / grok / seedance / suno 七个分类 Key 未填自动 fallback 贞贞通用 Key，新手默认折叠不被干扰
 - 🧭 **扩展 API 平台高级入口**（v1.9.5 强化）：API 设置页默认折叠的「扩展 API 平台【高级/可选】」可配置 OpenAI 兼容、ModelScope、火山引擎、ComfyUI、即梦 CLI；ModelScope 图像生成新增 LoRA 管理与节点内多选，默认带 Infinite-Canvas 同步的 LoRA 列表，LLM 继续走稳定 `/v1/chat/completions`，火山 / ModelScope 会自动合并默认模型列表，即梦 CLI 支持只返回 submit_id 后继续查询下载图像 / 视频；ComfyUI 字段映射会清理非 fixed 的旧 value，保证 Prompt、上游图片、宽高等运行时输入真正生效
-- 🧽 **去AI水印辅助节点**（已适配上游 0.8.9）：桥接 `wiltodelta/remove-ai-watermarks`，支持 Gemini / 豆包 / 即梦等可见水印识别去除、框选擦除（cv2 / LaMA）、来源自适应隐形水印、ControlNet 结构保留、可选 GFPGAN 脸部修复、AI 元数据检查 / 清理和来源鉴别
+- 🧽 **去AI水印辅助节点**（已适配上游 0.11.0）：桥接 `wiltodelta/remove-ai-watermarks`，支持 Gemini / 豆包 / 即梦 / Samsung 可见水印识别去除、框选擦除（cv2 / LaMA）、来源自适应隐形水印、默认 ControlNet 结构保留、ESRGAN 小图预放大、模型 / CFG 调参、官方 all 完整清理、AI 元数据检查 / 清理（含 HEIC / HEIF / JXL / Opus 等容器）和来源鉴别
 - 🧲 **智能对齐辅助线 + snap-to-grid**：拖动时检测同列 / 同行 / 居中对齐并弱吸附
 - 📦 **GroupBox 打组**：框选 ≥2 节点一键套色框容器，可拖拽联动、整体执行、12 色调色板
 - 🖱️ **右键画布快速添加节点**：菜单列出 7 个高频节点（upload / text / image / video / seedance / audio / llm）
 - 🎯 **框选自动菜单**：≥2 节点框选后自动弹出操作面板（组执行 / 复制 / 快复制 / 删除 / 打组）
 - ⏪ **Undo / Redo / 复制粘贴 / 导入导出 / 工作流模板** 完整画布交互
-- 🌗 **主题模板系统**：科技风 / 像素糖果风 / OP 风格 / RH 风格 / 火影忍者风格 / EVA 风格 / 幽游白书风格 / 灌篮高手风格 / 足球小将风格 / 七龙珠风格十套内置模板，支持浅色 / 深色、导入导出、编辑保存、自定义路径与默认静音主题音乐；灌篮高手风格提供木地板球场、计分牌节点、传球弧线和战术板 MiniMap，足球小将风格提供绿茵球场与传球连线，七龙珠风格提供胶囊设备面板、神龙雷达画布与气功波连线，幽游白书肖像大师隐藏模式会自动切换专用隐藏音乐
+- 🌗 **主题模板系统**：科技风 / 像素糖果风 / OP 风格 / RH 风格 / 火影忍者风格 / EVA 风格 / 幽游白书风格 / 灌篮高手风格 / 足球小将风格 / 七龙珠风格 / 圣斗士风格 / 俄罗斯方块主题十二套内置模板，支持浅色 / 深色、导入导出、编辑保存、自定义路径与默认静音主题音乐；俄罗斯方块主题提供方块拼接画布、方块化 MiniMap、scoped 方块连线和可玩的右上角小游戏，圣斗士风格提供十二宫 / 冥界篇双主题，七龙珠风格提供胶囊设备面板、神龙雷达画布与气功波连线，幽游白书肖像大师隐藏模式会自动切换专用隐藏音乐
 - 🧭 **主题悬浮控件统一**：小图标按钮使用固定语义类，避免 OP / 像素等强风格按钮膨胀；火影小地图、控制条和音乐按钮对齐到与 RH 一致的底部悬浮体验
 - 🎭 **公开主题设计规范**：见 [`docs/theme-design-guide.md`](docs/theme-design-guide.md)，用户可按规范制作、导入和分享更好看的主题画布
 - 🖥️ **终端日志面板**：底部抽屉式实时日志，对齐主项目 logBus 协议
@@ -179,7 +180,7 @@ T8_COMFYUI_ALLOW_REMOTE: "1"
 | 层 | 技术 |
 |---|---|
 | 前端框架 | React 19 · TypeScript 5 · Vite 6 |
-| 样式 | Tailwind CSS 3 · CSS Modules · 主题模板（科技风 / 像素糖果风 / OP 风格 / RH 风格 / 火影忍者风格 / EVA 风格 / 幽游白书风格 / 灌篮高手风格 / 足球小将风格 / 七龙珠风格） |
+| 样式 | Tailwind CSS 3 · CSS Modules · 主题模板（科技风 / 像素糖果风 / OP 风格 / RH 风格 / 火影忍者风格 / EVA 风格 / 幽游白书风格 / 灌篮高手风格 / 足球小将风格 / 七龙珠风格 / 圣斗士风格 / 俄罗斯方块主题） |
 | 画布引擎 | @xyflow/react 12 · zustand 5 · lucide-react |
 | 后端 | Node.js · Express · sharp（图像处理） · multer（上传） |
 | 桌面端 | Electron 33 |
@@ -345,6 +346,6 @@ MIT License © T8mars
 - 主作者：[T8mars](https://github.com/T8mars)
 - 灵感来源：PenguinPravite · Infinite Canvas · zhenzhen-web
 - 致谢上游服务：贞贞工坊（T8star）· RunningHub · OpenAI 兼容生态
-- 去AI水印辅助节点桥接 [wiltodelta/remove-ai-watermarks](https://github.com/wiltodelta/remove-ai-watermarks)（MIT License），算法能力由上游 Python 包 / CLI 提供
+- 去AI水印辅助节点桥接 [wiltodelta/remove-ai-watermarks](https://github.com/wiltodelta/remove-ai-watermarks)（Apache-2.0 License），算法能力由上游 Python 包 / CLI 提供
 
 如果这个项目对你有帮助，欢迎给一个 ⭐ Star！

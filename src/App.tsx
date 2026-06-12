@@ -155,6 +155,11 @@ const CANVAS_TUTORIALS = [
     bilibili: 'https://www.bilibili.com/video/BV1N9Eg6QEHs/',
     youtube: 'https://www.youtube.com/watch?v=zIW7PbEWQAs',
   },
+  {
+    title: '教程第十一弹（新增圣斗士星矢双主题，加强本地comfyui节点和参数解析，修复不支持LIST的问题，新增画布内图片素材按鼠标左右键拖动到文件夹，新增Fal超市功能，新增grok agent节点，含创作台和简易版，新增3D素材上传和预览功能）',
+    bilibili: 'https://www.bilibili.com/video/BV1gGEz6VEDA/',
+    youtube: 'https://www.youtube.com/watch?v=oRT59Qf65KY',
+  },
 ];
 
 function InfiniteCanvasBootLoading() {

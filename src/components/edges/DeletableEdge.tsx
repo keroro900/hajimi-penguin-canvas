@@ -4,6 +4,7 @@ import {
   BaseEdge,
   EdgeLabelRenderer,
   getBezierPath,
+  getSmoothStepPath,
   useStore,
   useReactFlow,
   type EdgeProps,
@@ -96,14 +97,18 @@ export default function DeletableEdge(props: EdgeProps) {
     themeActiveClass,
   ].filter(Boolean).join(' ') || undefined;
 
-  const [edgePath, labelX, labelY] = getBezierPath({
+  const edgePathOptions = {
     sourceX,
     sourceY,
     sourcePosition,
     targetX,
     targetY,
     targetPosition,
-  });
+  };
+  const [edgePath, labelX, labelY] =
+    visualStyle === 'tetris'
+      ? getSmoothStepPath({ ...edgePathOptions, borderRadius: 0, offset: 34 })
+      : getBezierPath(edgePathOptions);
 
   // 用延迟关闭避免鼠标从 path 切到按钮的瞬间闪烁
   const hideTimer = useRef<number | null>(null);

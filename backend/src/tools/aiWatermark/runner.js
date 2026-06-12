@@ -21,8 +21,10 @@ const INVISIBLE_TIMEOUT_MS = 2 * 60 * 60_000;
 const RESOLUTION_CACHE_TTL_MS = 5 * 60_000;
 const NEGATIVE_RESOLUTION_CACHE_TTL_MS = 10_000;
 const CAPABILITY_CACHE_TTL_MS = 60_000;
-const FALLBACK_MARKS = ['gemini', 'doubao', 'jimeng'];
+const FALLBACK_MARKS = ['gemini', 'doubao', 'jimeng', 'samsung'];
 const PYTHON_MODULE = 'remove_ai_watermarks.cli';
+const CONTROLNET_MIGRATION_VERSION = '0.8.9';
+const MODERN_INVISIBLE_VERSION = '0.10.0';
 
 let commandResolutionCache = null;
 let capabilityCache = null;
@@ -121,14 +123,26 @@ function versionAtLeast(version, minimum) {
 
 function supportsInvisible089(options = {}) {
   const version = String(options.upstreamVersion || options.runtimeVersion || '').trim();
-  return !version || versionAtLeast(version, '0.8.9');
+  return !version || versionAtLeast(version, CONTROLNET_MIGRATION_VERSION);
+}
+
+function supportsModernInvisible(options = {}) {
+  const version = String(options.upstreamVersion || options.runtimeVersion || '').trim();
+  return !version || versionAtLeast(version, MODERN_INVISIBLE_VERSION);
 }
 
 function normalizeInvisiblePipeline(value, upstreamVersion = '') {
-  const raw = String(value || 'default').trim();
-  const modern = !String(upstreamVersion || '').trim() || versionAtLeast(upstreamVersion, '0.8.9');
-  if (raw === 'controlnet') return modern ? 'controlnet' : 'ctrlregen';
-  if (raw === 'ctrlregen') return modern ? 'controlnet' : 'ctrlregen';
+  const version = String(upstreamVersion || '').trim();
+  const raw = String(value || '').trim();
+  const modernDefaultControlnet = !version || versionAtLeast(version, MODERN_INVISIBLE_VERSION);
+  if (modernDefaultControlnet) {
+    if (raw === 'default' || raw === 'sdxl') return 'sdxl';
+    if (raw === 'controlnet' || raw === 'ctrlregen' || !raw) return 'controlnet';
+    return 'controlnet';
+  }
+  const migratedControlnet = !version || versionAtLeast(version, CONTROLNET_MIGRATION_VERSION);
+  if (raw === 'controlnet') return migratedControlnet ? 'controlnet' : 'ctrlregen';
+  if (raw === 'ctrlregen') return migratedControlnet ? 'controlnet' : 'ctrlregen';
   return 'default';
 }
 
@@ -566,16 +580,7 @@ except Exception as exc:
   };
 }
 
-async function resolveAiWatermarkCommand(options = {}) {
-  if (options.prepareEmbeddedRuntime) {
-    const info = getRuntimeArchiveInfo('remove-ai-watermarks');
-    if (info.archiveExists && !info.ready) {
-      console.log('[ai-watermark] preparing embedded remove-ai-watermarks runtime archive...');
-      ensureRuntimeArchiveExtracted('remove-ai-watermarks');
-    }
-  }
-  const candidates = commandCandidates();
-  const fingerprint = commandCandidatesFingerprint(candidates);
+async function probeCommandCandidateList(candidates, fingerprint) {
   const cached = getCachedResolution(fingerprint);
   if (cached) return cached;
 
@@ -597,6 +602,38 @@ async function resolveAiWatermarkCommand(options = {}) {
       return resolved;
     }
     errors.push(`${candidate.label}: ${result.stderr || result.stdout || 'not available'}`.slice(0, 240));
+  }
+  return { installed: false, errors };
+}
+
+async function resolveAiWatermarkCommand(options = {}) {
+  let candidates = commandCandidates();
+  let fingerprint = commandCandidatesFingerprint(candidates);
+  let cached = getCachedResolution(fingerprint);
+  if (cached) return cached;
+
+  let probed = await probeCommandCandidateList(candidates, fingerprint);
+  if (probed.installed) return probed;
+
+  const errors = [...(probed.errors || [])];
+  if (options.prepareEmbeddedRuntime) {
+    const info = getRuntimeArchiveInfo('remove-ai-watermarks');
+    if (info.archiveExists && !info.ready) {
+      try {
+        console.log('[ai-watermark] preparing embedded remove-ai-watermarks runtime archive...');
+        ensureRuntimeArchiveExtracted('remove-ai-watermarks');
+      } catch (error) {
+        errors.unshift(`embedded runtime archive: ${error?.message || String(error)}`.slice(0, 240));
+        console.warn('[ai-watermark] embedded runtime archive prepare failed, trying available runtimes:', error?.message || String(error));
+      }
+      candidates = commandCandidates();
+      fingerprint = commandCandidatesFingerprint(candidates);
+      cached = getCachedResolution(fingerprint);
+      if (cached) return cached;
+      probed = await probeCommandCandidateList(candidates, fingerprint);
+      if (probed.installed) return probed;
+      errors.push(...(probed.errors || []));
+    }
   }
   const resolved = {
     installed: false,
@@ -644,7 +681,7 @@ function runPythonProbe(probe, code) {
 async function detectDynamicCapabilities(resolved) {
   const code = `
 import importlib.util, json
-data = {"markKeys": [], "optionalFeatures": {"invisible": False, "lama": False, "detect": False, "trustmark": False, "restore": False, "auto": False, "controlnet": False, "adaptivePolish": False}, "version": ""}
+data = {"markKeys": [], "optionalFeatures": {"invisible": False, "lama": False, "detect": False, "trustmark": False, "restore": False, "auto": False, "controlnet": False, "adaptivePolish": False, "esrgan": False, "model": False, "guidanceScale": False}, "version": ""}
 try:
     import remove_ai_watermarks
     data["version"] = getattr(remove_ai_watermarks, "__version__", "")
@@ -669,6 +706,12 @@ data["optionalFeatures"]["detect"] = importlib.util.find_spec("imwatermark") is 
 data["optionalFeatures"]["trustmark"] = importlib.util.find_spec("trustmark") is not None
 data["optionalFeatures"]["auto"] = importlib.util.find_spec("remove_ai_watermarks.auto_config") is not None
 data["optionalFeatures"]["adaptivePolish"] = importlib.util.find_spec("remove_ai_watermarks.humanizer") is not None
+try:
+    from remove_ai_watermarks import upscaler
+    is_available = getattr(upscaler, "is_available", None)
+    data["optionalFeatures"]["esrgan"] = bool(is_available()) if callable(is_available) else False
+except Exception:
+    data["optionalFeatures"]["esrgan"] = False
 try:
     from remove_ai_watermarks import face_restore
     data["optionalFeatures"]["restore"] = bool(face_restore.is_available())
@@ -741,6 +784,9 @@ async function detectCapabilities() {
           auto: !!capabilities.auto,
           controlnet: !!capabilities.controlnet,
           adaptivePolish: !!capabilities.adaptivePolish,
+          esrgan: !!capabilities.esrgan,
+          model: !!capabilities.model,
+          guidanceScale: !!capabilities.guidanceScale,
         },
         setupHints: setupHints(),
         errors: archive.ready ? [] : ['内置运行时归档将在首次执行时解压到用户数据目录。'],
@@ -760,6 +806,9 @@ async function detectCapabilities() {
         auto: false,
         controlnet: false,
         adaptivePolish: false,
+        esrgan: false,
+        model: false,
+        guidanceScale: false,
       },
       setupHints: setupHints(),
       errors: resolved.errors || [],
@@ -770,10 +819,12 @@ async function detectCapabilities() {
   if (cached) return cached;
 
   const dynamic = await detectDynamicCapabilities(resolved);
-  const modernInvisible = versionAtLeast(dynamic?.version || resolved.version || '', '0.8.9');
+  const version = String(dynamic?.version || resolved.version || '').trim();
+  const migratedControlnet = !version || versionAtLeast(version, CONTROLNET_MIGRATION_VERSION);
+  const modernInvisible = !version || versionAtLeast(version, MODERN_INVISIBLE_VERSION);
   const data = {
     installed: true,
-    version: dynamic?.version || resolved.version || '',
+    version,
     resolver: resolved.resolver,
     markKeys: Array.isArray(dynamic?.markKeys) && dynamic.markKeys.length > 0
       ? dynamic.markKeys
@@ -783,10 +834,13 @@ async function detectCapabilities() {
       lama: !!dynamic?.optionalFeatures?.lama,
       detect: !!dynamic?.optionalFeatures?.detect,
       trustmark: !!dynamic?.optionalFeatures?.trustmark,
-      restore: !!dynamic?.optionalFeatures?.restore,
-      auto: !!dynamic?.optionalFeatures?.auto || modernInvisible,
-      controlnet: !!dynamic?.optionalFeatures?.controlnet || modernInvisible,
-      adaptivePolish: !!dynamic?.optionalFeatures?.adaptivePolish || modernInvisible,
+      restore: !modernInvisible && !!dynamic?.optionalFeatures?.restore,
+      auto: !modernInvisible && (!!dynamic?.optionalFeatures?.auto || migratedControlnet),
+      controlnet: !!dynamic?.optionalFeatures?.controlnet || migratedControlnet,
+      adaptivePolish: !!dynamic?.optionalFeatures?.adaptivePolish || migratedControlnet,
+      esrgan: !!dynamic?.optionalFeatures?.esrgan,
+      model: modernInvisible || !!dynamic?.optionalFeatures?.model,
+      guidanceScale: modernInvisible || !!dynamic?.optionalFeatures?.guidanceScale,
     },
     setupHints: setupHints(),
     errors: [],
@@ -803,7 +857,7 @@ function setupHints() {
     '已有 runtime 根目录时设置 T8_REMOVE_AI_WATERMARKS_RUNTIME',
     '已有本地源码时设置 T8_REMOVE_AI_WATERMARKS_SRC 指向 clone 根目录',
     '已有可执行文件时设置 T8_REMOVE_AI_WATERMARKS_BIN 指向 remove-ai-watermarks(.cmd)',
-    '隐形水印和 LaMA 擦除需要上游可选依赖, 默认不会随 T8 打包',
+    '完整隐形水印建议安装 remove-ai-watermarks[gpu,detect,trustmark,lama]；ESRGAN 小图放大另需 esrgan extra',
   ];
 }
 
@@ -818,7 +872,7 @@ function normalizeMode(mode) {
   const raw = String(mode || 'smart').trim();
   if (raw === 'metadata') return 'metadata-remove';
   if (raw === 'metadata-check' || raw === 'metadata-remove') return raw;
-  if (['smart', 'visible', 'erase', 'invisible', 'identify'].includes(raw)) return raw;
+  if (['smart', 'visible', 'erase', 'invisible', 'identify', 'all'].includes(raw)) return raw;
   return 'smart';
 }
 
@@ -845,19 +899,7 @@ function eraseArgs(sourcePath, outputPath, options = {}) {
   return args;
 }
 
-function invisibleArgs(sourcePath, outputPath, options = {}) {
-  const modernInvisible = supportsInvisible089(options);
-  const pipeline = normalizeInvisiblePipeline(options.pipeline, options.upstreamVersion || options.runtimeVersion || '');
-  const autoTune = options.auto === true || options.autoTune === true;
-  const device = choice(options.device, ['auto', 'cpu', 'mps', 'cuda', 'xpu'], 'auto');
-  const steps = integer(options.steps, 50, 4, 200);
-  const humanize = finiteNumber(options.humanize, 0, 0, 20);
-  const rawMaxResolution = integer(options.maxResolution, 0, 0, 8192);
-  const maxResolution = rawMaxResolution > 0 ? Math.max(256, rawMaxResolution) : 0;
-  const args = ['invisible', sourcePath, '-o', outputPath, '--steps', steps, '--device', device, '--humanize', humanize, '--max-resolution', maxResolution];
-  if (!autoTune || pipeline !== 'default') {
-    args.push('--pipeline', pipeline);
-  }
+function appendInvisibleOptionalArgs(args, options, pipeline, steps, modernInvisible, modern089) {
   if (options.strength !== undefined && options.strength !== null && options.strength !== '') {
     args.push('--strength', Math.max(1 / steps, finiteNumber(options.strength, 0.3, 0, 1)));
   }
@@ -865,7 +907,25 @@ function invisibleArgs(sourcePath, outputPath, options = {}) {
     args.push('--seed', integer(options.seed, 0, -2147483648, 2147483647));
   }
   if (options.hfToken) args.push('--hf-token', String(options.hfToken));
+
   if (modernInvisible) {
+    if (options.minResolution !== undefined && options.minResolution !== null && options.minResolution !== '') {
+      args.push('--min-resolution', integer(options.minResolution, 1024, 0, 8192));
+    }
+    const controlnetScale = finiteNumber(options.controlnetScale, 1, 0, 3);
+    if (controlnetScale !== 1 || pipeline === 'controlnet') args.push('--controlnet-scale', controlnetScale);
+    const unsharp = finiteNumber(options.unsharp, 0, 0, 3);
+    if (unsharp > 0) args.push('--unsharp', unsharp);
+    const upscaler = choice(options.upscaler, ['lanczos', 'esrgan'], 'lanczos');
+    args.push('--upscaler', upscaler);
+    const model = String(options.model || '').trim();
+    if (model) args.push('--model', model);
+    if (options.guidanceScale !== undefined && options.guidanceScale !== null && options.guidanceScale !== '') {
+      args.push('--guidance-scale', finiteNumber(options.guidanceScale, 7.5, 0, 30));
+    }
+    if (options.adaptivePolish === false) args.push('--no-adaptive-polish');
+  } else if (modern089) {
+    const autoTune = options.auto === true || options.autoTune === true;
     if (options.minResolution !== undefined && options.minResolution !== null && options.minResolution !== '') {
       args.push('--min-resolution', integer(options.minResolution, 1024, 0, 8192));
     }
@@ -886,6 +946,56 @@ function invisibleArgs(sourcePath, outputPath, options = {}) {
     if (options.protectText === true) args.push('--protect-text');
     if (options.protectFaces === true) args.push('--protect-faces');
   }
+}
+
+function invisibleArgs(sourcePath, outputPath, options = {}) {
+  const modernInvisible = supportsModernInvisible(options);
+  const modern089 = supportsInvisible089(options);
+  const pipeline = normalizeInvisiblePipeline(options.pipeline, options.upstreamVersion || options.runtimeVersion || '');
+  const autoTune = options.auto === true || options.autoTune === true;
+  const device = choice(options.device, ['auto', 'cpu', 'mps', 'cuda', 'xpu'], 'auto');
+  const steps = integer(options.steps, 50, 4, 200);
+  const humanize = finiteNumber(options.humanize, 0, 0, 20);
+  const rawMaxResolution = integer(options.maxResolution, 0, 0, 8192);
+  const maxResolution = rawMaxResolution > 0 ? Math.max(256, rawMaxResolution) : 0;
+  const args = ['invisible', sourcePath, '-o', outputPath, '--steps', steps, '--device', device, '--humanize', humanize, '--max-resolution', maxResolution];
+  if (modernInvisible || !autoTune || pipeline !== 'default') {
+    args.push('--pipeline', pipeline);
+  }
+  appendInvisibleOptionalArgs(args, options, pipeline, steps, modernInvisible, modern089);
+  return args;
+}
+
+function allArgs(sourcePath, outputPath, options = {}) {
+  const modernInvisible = supportsModernInvisible(options);
+  const modern089 = supportsInvisible089(options);
+  const pipeline = normalizeInvisiblePipeline(options.pipeline, options.upstreamVersion || options.runtimeVersion || '');
+  const device = choice(options.device, ['auto', 'cpu', 'mps', 'cuda', 'xpu'], 'auto');
+  const steps = integer(options.steps, 50, 4, 200);
+  const humanize = finiteNumber(options.humanize, 0, 0, 20);
+  const rawMaxResolution = integer(options.maxResolution, 0, 0, 8192);
+  const maxResolution = rawMaxResolution > 0 ? Math.max(256, rawMaxResolution) : 0;
+  const inpaintMethod = choice(options.inpaintMethod, ['ns', 'telea', 'gaussian'], 'ns');
+  const args = [
+    'all',
+    sourcePath,
+    '-o',
+    outputPath,
+    '--steps',
+    steps,
+    '--pipeline',
+    pipeline,
+    '--device',
+    device,
+    '--humanize',
+    humanize,
+    '--max-resolution',
+    maxResolution,
+    '--inpaint-method',
+    inpaintMethod,
+  ];
+  args.push(bool(options.inpaint, true) ? '--inpaint' : '--no-inpaint');
+  appendInvisibleOptionalArgs(args, options, pipeline, steps, modernInvisible, modern089);
   return args;
 }
 
@@ -949,6 +1059,9 @@ function buildAiWatermarkPlan({ mode, sourcePath, outputPath, mediaKind = 'image
   if (normalizedMode === 'invisible') {
     return { mode: normalizedMode, outputPath: output, reportOnly: false, steps: [{ label: 'invisible', args: invisibleArgs(sourcePath, output, options), outputPath: output, inputPath: sourcePath }] };
   }
+  if (normalizedMode === 'all') {
+    return { mode: normalizedMode, outputPath: output, reportOnly: false, steps: [{ label: 'all', args: allArgs(sourcePath, output, options), outputPath: output, inputPath: sourcePath }] };
+  }
   if (normalizedMode === 'metadata-check') {
     return { mode: normalizedMode, outputPath: '', reportOnly: true, steps: [{ label: 'metadata-check', args: metadataArgs(sourcePath, '', 'metadata-check', options), inputPath: sourcePath }] };
   }
@@ -963,7 +1076,7 @@ function buildAiWatermarkPlan({ mode, sourcePath, outputPath, mediaKind = 'image
 }
 
 function stepTimeout(step) {
-  return step.label === 'invisible' ? INVISIBLE_TIMEOUT_MS : PROCESS_TIMEOUT_MS;
+  return step.label === 'invisible' || step.label === 'all' ? INVISIBLE_TIMEOUT_MS : PROCESS_TIMEOUT_MS;
 }
 
 function ensureStepInput(step) {
@@ -1086,6 +1199,7 @@ module.exports = {
   resolveAiWatermarkCommand,
   runAiWatermarkProcess,
   setupHints,
+  allArgs,
   invisibleArgs,
   versionAtLeast,
   visibleArgs,

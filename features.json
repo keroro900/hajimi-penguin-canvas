@@ -1,7 +1,55 @@
 {
   "$schema": "本文件为 T8-penguin-canvas 节点清单防丢失锁,任何节点删减都需要在 roadmap.md 中说明并更新本文件。",
-  "version": "2.1.7",
-  "lastUpdated": "2026-06-11-electron-release-v217",
+  "version": "2.1.8",
+  "lastUpdated": "2026-06-13-source-release",
+  "sourceReleaseV218": {
+    "version": "2.1.8",
+    "status": "source-only",
+    "date": "2026-06-13",
+    "description": "v2.1.8 GitHub 源码版：收口俄罗斯方块主题、批量素材处理、Codex CLI Agent / Codex 生图工作台、Grok Agent 视频修复、AI 消除水印升级和多主题可读性修复；本次不打包 Electron，不发布 GitHub Release 自动更新资产。",
+    "highlights": [
+      "俄罗斯方块主题补齐 Korobeiniki 默认音乐、方块化画布/节点/连线/小地图和 10x20 小游戏体验，关卡、障碍、技能、存档和视觉反馈持续增强。",
+      "工具箱新增批量素材处理节点，覆盖多文件/文件夹导入、批量改名、去黑边、抠图、扩图、高清放大、格式转换和打开输出文件夹。",
+      "Codex CLI Agent 支持简约模式和创作台：LLM/IMG 双模式、Skill 调用、项目 Skill、模板工坊、产物库、参考素材可视化、流式对话、文本复制、产物发布和深色主题可读性修复。",
+      "Codex 生图工作台节点面向 imagegen 流程，提供队列、公共图库、模板/片段工具、参数快捷 Chip、批量历史和画布输出衔接。",
+      "Grok Agent 修复视频任务轮询、模式高亮、产物库删除/清空/批量删除和深色主题可读性；视频节点补齐 grok-1.5-video-6s/10s/15s 的 Zhenzhen New size 参数。",
+      "AI 消除水印跟进 remove-ai-watermarks 新版能力，补齐前端节点、后端路由和本地 runtime 文档；同时修复素材拖动、预览、侧边栏主题可读性和输出产物链路。"
+    ],
+    "releaseFiles": [
+      "package.json",
+      "package-lock.json",
+      "vite.config.ts",
+      "vite.config.js",
+      "electron/main.cjs",
+      "backend/src/config.js",
+      "features.json",
+      "README.md",
+      "release-notes/v2.1.8.md"
+    ],
+    "sourceOnly": {
+      "githubPush": true,
+      "electronPackaging": false,
+      "githubRelease": false,
+      "latestYml": false,
+      "note": "按用户要求只推 GitHub 源码，不运行 npm run dist:release，不打包 Electron，不创建或更新 GitHub Release。"
+    },
+    "releaseBoundary": [
+      "公开源码继续禁止 skill.md、roadmap.md、local-private/**、hermes-agent/**、Electron 缓存目录和任何私有计费/支付/充值/分组令牌实现进入 GitHub。",
+      "RH 工具箱制作器与 FAL 应用制作工具仍为本地开发工具，不进入公开源码和公开打包产物。",
+      "真实 Grok OAuth 私有调用、New API 分组令牌等私有能力继续通过本机 ignored local-private 扩展 / 加密链路处理。"
+    ],
+    "verification": [
+      "node --test tests\\tetrisEngine.test.ts tests\\themeRegistry.test.ts tests\\batchProcessor.test.ts tests\\codexCliAgent.test.ts tests\\codexImageConjure.test.ts tests\\grokOAuthAgent.test.ts tests\\grokVideo15.test.ts tests\\aiWatermarkRunner.test.ts tests\\achievements.test.ts tests\\updateMdRegressions.test.ts tests\\electronPackaging.test.ts",
+      "node -c backend\\src\\routes\\codexCli.js",
+      "node -c backend\\src\\utils\\codexCliRunner.js",
+      "node -c backend\\src\\routes\\grokOAuth.js",
+      "node -c backend\\src\\routes\\aiWatermark.js",
+      "npm run type-check",
+      "npm run build",
+      "npm run public:check",
+      "git diff --check"
+    ]
+  },
   "electronReleaseV217": {
     "version": "2.1.7",
     "status": "electron-release",
@@ -48,6 +96,182 @@
       "npm run public:check",
       "npm run dist:release",
       "npm run release:verify"
+    ]
+  },
+  "tetrisCanvasTheme": {
+    "status": "implemented",
+    "date": "2026-06-11",
+    "description": "新增俄罗斯方块主题：十二套内置主题中的强识别 Tetris Canvas，包含浅色奶白彩块、深色街机霓虹、方块化节点/工具栏/小地图/连线，以及右上角可玩的 10x20 俄罗斯方块小游戏。",
+    "highlights": [
+      "新增 visualStyle=tetris、iconPack=tetromino-well、canvasPattern=tetris-stack、nodeFrame=arcade-cabinet-card 和 block-drop 合成主题音乐 preset。",
+      "TetrisPanel 挂在 CanvasToolbar 子扩展位，默认展开、可折叠，展开面板相对按钮定位 right:0，不使用 fixed 大遮罩，避免挡住 RUN 和核心工具栏。",
+      "小游戏使用纯逻辑 tetrisEngine：10x20 棋盘、7-bag、公平出块、墙踢旋转、幽灵落点、暂存、硬降、消行计分、99 级速度递增和本地最高分/局面恢复。",
+      "键盘只在 Tetris 面板 hover 或 focus 且目标不是 input/textarea/select/contenteditable 时截获方向键、空格、Shift/C、P、R；鼠标离开、窗口失焦、画布移动或节点拖动时自动暂停。",
+      "成就系统新增 tetris 主题轨道和 tetris.game_started / line_clear / tetris_clear / level_reached / game_over 摘要事件，只保存计数与等级，不保存棋盘、Prompt 或资源 URL。"
+    ],
+    "files": [
+      "src/utils/tetrisEngine.ts",
+      "src/components/TetrisPanel.tsx",
+      "src/components/TetrisThemeButton.tsx",
+      "src/styles/theme-tetris.css",
+      "src/theme/types.ts",
+      "src/theme/defaultTemplates.ts",
+      "src/components/ThemeTemplateManager.tsx",
+      "src/components/ThemeMusicToggle.tsx",
+      "src/components/Canvas.tsx",
+      "shared/achievementManifest.json",
+      "backend/src/achievements/store.js",
+      "tests/tetrisEngine.test.ts",
+      "tests/themeRegistry.test.ts",
+      "tests/achievements.test.ts"
+    ],
+    "verification": [
+      "node --test tests\\tetrisEngine.test.ts tests\\themeRegistry.test.ts",
+      "node --test tests\\achievements.test.ts",
+      "node -c backend\\src\\achievements\\store.js",
+      "npm run type-check",
+      "npm run build"
+    ]
+  },
+  "batchProcessorNode": {
+    "status": "implemented",
+    "date": "2026-06-11",
+    "nodeType": "batch-processor",
+    "category": "toolbox",
+    "description": "工具箱新增“批量素材处理”节点：支持多文件、整个文件夹和上游素材批量进入节点内队列，批量执行命名归档、去除上下黑边、批量抠图、批量扩图、高清放大和格式转换；完成后只在节点内显示进度、完成反馈和失败报告，不自动生成 OutputNode，避免画布被大量素材铺满。",
+    "ports": {
+      "inputs": [
+        "image",
+        "video",
+        "audio",
+        "model3d"
+      ],
+      "outputs": []
+    },
+    "capabilities": [
+      "导入方式覆盖多文件选择、文件夹 webkitdirectory、拖拽和连接上游 image/video/audio/model3d 素材。",
+      "命名支持使用原名字，也支持改名字模板：{name}、{index}、{n}、{kind}、{folder}，并可设置起始序号、补零位数和图片输出格式。",
+      "图像批处理首版覆盖去除上下黑边、现有 remove-bg 抠图通道、扩画布到常用比例、Sharp 本地高清放大和 PNG/JPG/WEBP 转换。",
+      "视频、音频和 3D 素材首版执行批量命名归档，后续可继续扩展转码、抽帧、音量规格化、模型格式转换等批处理。",
+      "完成后可在节点左下角直接打开 output/batch 文件夹查看本次批处理结果。",
+      "节点内维护 batchProcessorItems、batchProcessorProgress 和 batchProcessorResults；不写 imageUrls/videoUrls/audioUrls/outputText，不触发画布自动外挂素材节点。"
+    ],
+    "sourceFiles": [
+      "src/components/nodes/BatchProcessorNode.tsx",
+      "src/utils/batchProcessor.ts",
+      "src/services/imageOps.ts",
+      "src/config/nodeRegistry.ts",
+      "src/config/portTypes.ts",
+      "src/components/Canvas.tsx",
+      "src/components/NodeActionBar.tsx",
+      "src/utils/nodePlacement.ts",
+      "backend/src/routes/imageOps.js",
+      "backend/src/routes/files.js",
+      "tests/batchProcessor.test.ts"
+    ],
+    "verification": [
+      "node --test tests\\batchProcessor.test.ts",
+      "node -c backend\\src\\routes\\imageOps.js",
+      "node -c backend\\src\\routes\\files.js",
+      "npm run type-check",
+      "npm run build"
+    ]
+  },
+  "codexCliCreatorAgent": {
+    "status": "implemented",
+    "date": "2026-06-12",
+    "nodeType": "codex-cli-agent",
+    "category": "codex",
+    "description": "新增 Codex CLI 创作者 Agent 节点：把本机 Codex CLI 接入画布，面向创作者提供流式对话、提示词增强、图像/视频/音频/3D 产物规划、Skill 调用、项目 Skill 创建、版本树和产物入库。",
+    "ports": {
+      "inputs": [
+        "text",
+        "image",
+        "video",
+        "audio"
+      ],
+      "outputs": [
+        "text",
+        "image",
+        "video",
+        "audio",
+        "model3d"
+      ]
+    },
+    "capabilities": [
+      "简约生成模式保留一个 Prompt 输入、创作预设、Skill 选择和一键运行，适合快速生成提示词、脚本或素材方案。",
+      "Codex 创作台模式提供流式消息、运行事件、产物库、版本树、质量检查和项目 Skill 抽屉，适合连续创作与多轮修改。",
+      "后端 /api/codex-cli 封装 Codex CLI status、skills、skills/project 和 agent/stream 路由，使用 SSE 返回 turn.started、message.delta、tool.progress、artifact.completed 等事件。",
+      "运行前读取 codex features list，只有当前 CLI 明确支持的 feature 才发送 --enable，避免 plan_tool / web_search 等未知开关导致任务失败。",
+      "状态刷新成功会清理旧的 404/登录/旧 feature 错误；节点标题区提供明确拖动面，输入和按钮继续保留 nodrag。",
+      "Electron 后置检查锁住 routes/codexCli.t8c 与 utils/codexCliRunner.t8c，避免桌面包漏路由后出现 /api/codex-cli 404。",
+      "Skill 扫描覆盖 CODEX_HOME 全局 Skills、用户 .agents/skills、项目 .agents/skills 和节点工作区项目 Skills；节点内可创建当前项目专用 Skill。",
+      "产物解析覆盖文本、图片、视频、音频和 3D 模型 URL；发布后写回节点标准输出字段，也可保存到资源库。"
+    ],
+    "sourceFiles": [
+      "src/components/nodes/CodexCliAgentNode.tsx",
+      "src/services/codexCli.ts",
+      "backend/src/routes/codexCli.js",
+      "backend/src/utils/codexCliRunner.js",
+      "src/config/nodeRegistry.ts",
+      "src/config/portTypes.ts",
+      "src/components/Canvas.tsx",
+      "src/components/Sidebar.tsx",
+      "src/components/NodeActionBar.tsx",
+      "src/utils/nodePlacement.ts",
+      "electron/_post_build.cjs",
+      "tests/codexCliAgent.test.ts"
+    ],
+    "verification": [
+      "node --test tests\\codexCliAgent.test.ts",
+      "node --test tests\\electronPackaging.test.ts",
+      "node -c backend\\src\\utils\\codexCliRunner.js",
+      "node -c backend\\src\\routes\\codexCli.js",
+      "node -c electron\\_post_build.cjs",
+      "npm run type-check",
+      "npm run build",
+      "npm run public:check"
+    ]
+  },
+  "codexImageConjureNode": {
+    "status": "implemented",
+    "date": "2026-06-12",
+    "nodeType": "codex-image-conjure",
+    "category": "codex",
+    "description": "新增 Codex 生图工作台节点：参考 ilab-gpt-conjure 的生图工作台信息架构，保留项目内 Codex CLI / imagegen 生成链路，并独立维护提示词模板、片段、公共图库和本地任务队列。",
+    "ports": {
+      "inputs": [
+        "text",
+        "image"
+      ],
+      "outputs": [
+        "image",
+        "text"
+      ]
+    },
+    "capabilities": [
+      "节点只面向 Codex CLI 生图，不暴露 OpenAI 兼容 API Provider，默认强制启用 imageGeneration 并注入 imagegen Skill。",
+      "提示词模板和片段使用独立 t8-codex-image-conjure-prompts schema，可导入 ilab webui-prompt-template-pack，也可导出备份。",
+      "公共图库读取资源库图像，可把图库图片和上游图片作为参考图传入 Codex CLI。",
+      "支持任务队列、历史记录、批数、数量、并发、停止运行、自动发布、提示词持久化和素材持久化。",
+      "模板工坊和片段工坊支持新建、保存/重命名、删除、导入和导出，创作者可以维护自己的生图语料。",
+      "完成反馈提供发布、发送画布、入库、继续改、变体和下载动作；简约节点不在完成区渲染大预览图，生成结果直接发布到标准 image/text 输出，后续由输出素材节点展示。"
+    ],
+    "sourceFiles": [
+      "src/components/nodes/CodexImageConjureNode.tsx",
+      "src/services/codexImageConjure.ts",
+      "src/utils/codexImageConjure.ts",
+      "src/config/nodeRegistry.ts",
+      "src/config/portTypes.ts",
+      "src/components/Canvas.tsx",
+      "src/components/Sidebar.tsx",
+      "src/utils/nodePlacement.ts",
+      "tests/codexImageConjure.test.ts"
+    ],
+    "verification": [
+      "node --test tests\\codexImageConjure.test.ts",
+      "npm run type-check",
+      "npm run build"
     ]
   },
   "comfyuiExcludeRulesBackup": {
@@ -493,7 +717,7 @@
   "canvasTutorialTopbarPanel": {
     "status": "implemented",
     "date": "2026-06-08",
-    "description": "顶部栏在“最新应用”左侧新增“画布教程”入口，按第一弹到第十弹整理 T8 画布教程 Bilibili / Youtube 链接；“最新应用 · RunningHub”弹窗移除“获取 RH ApiKey”快捷入口，只保留 RunningHub 国内/海外站和邀请码提示。",
+    "description": "顶部栏在“最新应用”左侧新增“画布教程”入口，按第一弹到第十一弹整理 T8 画布教程 Bilibili / Youtube 链接；“最新应用 · RunningHub”弹窗移除“获取 RH ApiKey”快捷入口，只保留 RunningHub 国内/海外站和邀请码提示。",
     "paths": [
       "src/App.tsx",
       "tests/updateMdRegressions.test.ts",
@@ -550,6 +774,11 @@
         "title": "教程第十弹（3D全景功能增强，Figma联动，支持阿里云Oss及腾讯云Cos，新增放置栏，修正新香蕉的模型映射，上传素材的上限从10M到20M，新增veo-omni模型，新增提示词模板系统及增强功能，comfyui支持remote模式，新增newapi分组令牌高级模式，LLM/VISIOIN节点支持流式删除，分类独立APIKEY支持删除功能，新增画布教程模块，支持上游文本联动生成节点@模式，即梦CLI模型补全，素材支持直接拖到浏览器外文件夹）",
         "bilibili": "https://www.bilibili.com/video/BV1N9Eg6QEHs/",
         "youtube": "https://www.youtube.com/watch?v=zIW7PbEWQAs"
+      },
+      {
+        "title": "教程第十一弹（新增圣斗士星矢双主题，加强本地comfyui节点和参数解析，修复不支持LIST的问题，新增画布内图片素材按鼠标左右键拖动到文件夹，新增Fal超市功能，新增grok agent节点，含创作台和简易版，新增3D素材上传和预览功能）",
+        "bilibili": "https://www.bilibili.com/video/BV1gGEz6VEDA/",
+        "youtube": "https://www.youtube.com/watch?v=oRT59Qf65KY"
       }
     ],
     "verification": [
@@ -1321,11 +1550,11 @@
       "T8_RUNTIME_CACHE_DIR": "可选，覆盖运行时归档解压缓存目录；默认打包模式为 %APPDATA%/t8-penguin-canvas/runtime-cache",
       "T8_ENABLE_LOCAL_PRIVATE": "可选，0=强制关闭本机 local-private/extensions 私有扩展；默认只要本机 ignored 私有扩展存在，开发环境和本机打包 release 都会自动带入。GitHub/clean clone 因为没有 local-private 目录，所以不会带充值实现。"
     },
-    "version": "2.1.7",
-    "semverVersion": "2.1.7",
+    "version": "2.1.8",
+    "semverVersion": "2.1.8",
     "versionNumberPolicy": "T8 版本号仍采用 x.y.z 三段，但每一段只允许 0-9；任一段到 9 后下一次发布必须向左进位，禁止任一段出现两位数字。例：1.9.9 的下一版必须是 2.0.0。",
-    "versionNote": "v1.3.0 起统一采用三段阶段号 x.y.z；当前发布版本为 v2.1.7：收口 ComfyUI Workflow 识别、排除规则备份、百度/夸克 WebDAV 上传、ComfyUI 超市端口裁切、Grok Video 默认模型显示和圣斗士主题细节修复。本次按规范打包 Electron 并发布 GitHub Release 自动更新资产；GitHub 公开源码仍排除本地私有计费/支付/充值/分组令牌实现。",
-    "installer": "v2.1.7 生成 T8-PenguinCanvas-Setup-2.1.7.exe、T8-PenguinCanvas-Setup-2.1.7.exe.blockmap 与 latest.yml；发布必须走 clean public worktree + npm run dist:release + npm run release:verify。",
+    "versionNote": "v1.3.0 起统一采用三段阶段号 x.y.z；当前发布版本为 v2.1.8：收口俄罗斯方块主题、批量素材处理、Codex CLI Agent / Codex 生图工作台、Grok Agent 视频修复、AI 消除水印升级和多主题可读性修复。本次只推 GitHub 源码，不打包 Electron，不发布 GitHub Release 自动更新资产；GitHub 公开源码仍排除本地私有计费/支付/充值/分组令牌实现。",
+    "installer": "v2.1.8 为源码版更新，不生成 T8-PenguinCanvas-Setup-2.1.8.exe、blockmap 或 latest.yml；若后续需要桌面自动更新，必须另起版本并走 clean public worktree + npm run dist:release + npm run release:verify。",
     "updaterInstallMode": "自动更新下载完成后不得静默安装：main.cjs 必须设置 autoInstallOnAppQuit=false，显式安装调用 quitAndInstall(false,true)；electron/build-resources/installer.nsh 通过 SetSilent normal 让新版 NSIS 安装器即使收到旧客户端传入的 /S 也尽量切回前台安装向导。",
     "installerShortcutPolicy": "安装完成后必须创建桌面和开始菜单快捷方式：package.json build.nsis.createDesktopShortcut 必须为 \"always\"，createStartMenuShortcut 必须为 true；electron/build-resources/installer.nsh 必须保留 customInstall 兜底 CreateShortCut \"$newStartMenuLink\" 与 \"$DESKTOP\\${SHORTCUT_NAME}.lnk\"，防止更新安装/keepShortcuts 路径遗漏入口。",
     "updaterEntryPolicy": "顶栏桌面更新入口不得只因 window.t8pc.updater 缺失就静默消失；Electron UA 或 t8pc.getInfo/openExternal 可用时必须显示诊断入口，提示重新安装完整桌面包，Web/纯浏览器环境才隐藏。状态为 not-available 时按钮仍保留“更新”字样，避免用户误以为自动更新入口被删除。",
@@ -1447,7 +1676,7 @@
   "achievementSystem": {
     "version": "2.0.4",
     "status": "first-stage-implemented",
-    "description": "十一套系统主题独立成就、有效创作时长、隐藏模式勋章与奖励影片系统。未提供素材的影片仍使用“待解锁 / 影片素材待提供”占位；已接入的圣斗士隐藏奖励以本地加密媒体解锁播放。",
+    "description": "十二套系统主题独立成就、有效创作时长、隐藏模式勋章与奖励影片系统。未提供素材的影片仍使用“待解锁 / 影片素材待提供”占位；已接入的圣斗士隐藏奖励以本地加密媒体解锁播放，俄罗斯方块主题记录小游戏摘要成就。",
     "manifest": {
       "sharedJson": "shared/achievementManifest.json",
       "frontendWrapper": "src/data/achievementManifest.ts",
@@ -1462,7 +1691,8 @@
         "slamdunk",
         "soccer-hero",
         "dragon-ball",
-        "saint-seiya"
+        "saint-seiya",
+        "tetris"
       ],
       "perThemeRules": "每个主题 5 条时长线(10m/1h/3h/10h/30h) + 3 条首批特色成就；定义由 manifest 展开，前后端共用同一 JSON，避免规则漂移。"
     },
@@ -1489,7 +1719,12 @@
       "hidden_mode.enabled",
       "hidden_mode.used",
       "resource.saved",
-      "workflow.saved"
+      "workflow.saved",
+      "tetris.game_started",
+      "tetris.line_clear",
+      "tetris.tetris_clear",
+      "tetris.level_reached",
+      "tetris.game_over"
     ],
     "hiddenModes": {
       "rh-duck": "NodeActionBar 长按 RUN 开启；UploadNode 鸭鸭解码成功产出时记录 used。",
@@ -1528,7 +1763,7 @@
     }
   },
   "themes": {
-    "description": "主题模板体系：内置科技风 / 像素糖果风 / OP 风格 / RH 风格 / 火影忍者风格 / EVA风格 / 幽游白书风格 / 灌篮高手风格 / 足球小将风格 / 七龙珠风格 / 圣斗士风格十一套模板 × 浅色/深色模式，由 zustand theme store 持久化，data-theme-style + data-theme-mode + data-theme-visual 注入 html 根；新增节点应使用 ThemeToken CSS 变量与通用 t8-* 样式，避免逐节点硬编码主题。",
+    "description": "主题模板体系：内置科技风 / 像素糖果风 / OP 风格 / RH 风格 / 火影忍者风格 / EVA风格 / 幽游白书风格 / 灌篮高手风格 / 足球小将风格 / 七龙珠风格 / 圣斗士风格 / 俄罗斯方块主题十二套模板 × 浅色/深色模式，由 zustand theme store 持久化，data-theme-style + data-theme-mode + data-theme-visual 注入 html 根；新增节点应使用 ThemeToken CSS 变量与通用 t8-* 样式，避免逐节点硬编码主题。",
     "templateSystem": {
       "schema": "t8-theme-template",
       "version": 2,
@@ -1561,7 +1796,7 @@
         "画布背景水印必须放在 .t8-canvas-shell::before/::after 背景层，z-index:0 且 pointer-events:none；ReactFlow 节点、边、浮层和 GroupBox 内容必须盖住水印，不能让装饰穿透到素材预览或画板内容上方",
         "强风格官方主题可为 light/dark 分别提供水印资产；若深色水印包含黑底终端、警告面板或厚重贴片，浅色模式必须改用透明底线稿 / 印章 / HUD 版本，避免浅色画布出现突兀深色块",
         "框选/节点右键菜单、空白右键快速添加菜单、拖线候选菜单和选中节点右上角 RUN/关闭浮动条都属于全局主题控件，必须使用 t8-context-menu / t8-node-action-bar 语义类和 visuals.style 作为视觉判断来源，禁止仅按 legacyStyle=像素/科技分支导致 OP、火影、EVA 等主题残留白底或绿色按钮",
-        "全局菜单新增动作时必须检查 light/dark 与十一套官方主题的可读性；小图标和菜单图标仍需固定尺寸，避免 OP/像素风胶囊按钮把资源库、图像对比、批量下载等入口撑大",
+        "全局菜单新增动作时必须检查 light/dark 与十二套官方主题的可读性；小图标和菜单图标仍需固定尺寸，避免 OP/像素风胶囊按钮把资源库、图像对比、批量下载等入口撑大",
         "主题动效必须接入画布 busy/reduced 状态：当 html[data-t8-edge-motion='reduced']、.t8-viewport-moving、.t8-node-dragging 或 prefers-reduced-motion 生效时，必须关闭无限边动画、filter、drop-shadow、粒子、运动球与 SVG animateMotion",
         "新增强风格主题必须做大画布性能验收：至少 100 个节点、36 条连线、拖动画布、拖动节点、MiniMap 与 Controls 可见场景；不得让装饰层、背景水印、连线动效或媒体预加载造成明显卡顿",
         "主题背景、水印和地图纹理必须优先静态化、轻量化和低成本绘制；禁止对全画布或所有边/节点持续应用高成本 backdrop-filter、blur、drop-shadow、mix-blend-mode 动画",
@@ -1754,6 +1989,19 @@
           "headerMark": "SANCTUARY"
         },
         "music": "普通模式使用 saint-seiya-pegasus-fantasy.mp3；集齐 12 黄金圣衣后解锁冥界篇并切换 saint-seiya-hades-last-holy-war.mp3；pegasus-cosmos / hades-eclipse 仅作为合成兜底 preset；默认静音，用户可在主题模板中上传或填写授权音频 URL 替换"
+      },
+      "tetris": {
+        "label": "俄罗斯方块主题",
+        "description": "Tetris Canvas 强视觉模板：浅色奶白彩块、深色街机霓虹、方块拼接节点、积木网格画布、方块化 MiniMap、scoped 方块连线，以及右上角默认展开且可折叠的 10x20 可玩俄罗斯方块小游戏。",
+        "default": false,
+        "visuals": {
+          "style": "tetris",
+          "iconPack": "tetromino-well",
+          "canvasPattern": "tetris-stack",
+          "nodeFrame": "arcade-cabinet-card",
+          "headerMark": "TETRIS STACK"
+        },
+        "music": "Block Drop Sprint 合成循环；block-drop 作为原创 WebAudio preset，默认静音，用户可在主题模板中上传或填写授权音频 URL 替换"
       }
     },
     "defaultStyle": "pixel",
@@ -1771,12 +2019,12 @@
   "repository": "https://github.com/T8mars/T8-penguin-canvas",
   "aiWatermarkRuntime": {
     "upstream": "https://github.com/wiltodelta/remove-ai-watermarks",
-    "upstreamVersion": "0.8.9",
-    "upstreamCommit": "4a6cd71",
-    "upstreamLicense": "MIT",
+    "upstreamVersion": "0.11.0",
+    "upstreamCommit": "c8bc4b7",
+    "upstreamLicense": "Apache-2.0",
     "nodeType": "remove-ai-watermark",
     "category": "auxiliary",
-    "fullInstall": "remove-ai-watermarks[gpu,detect,trustmark,lama,restore]",
+    "fullInstall": "remove-ai-watermarks[gpu,detect,trustmark,lama,esrgan]",
     "runtimeResolutionOrder": [
       "T8_REMOVE_AI_WATERMARKS_RUNTIME sidecar root",
       "打包后首次运行解压缓存 %APPDATA%/t8-penguin-canvas/runtime-cache/remove-ai-watermarks",
@@ -1808,9 +2056,13 @@
       "不要复制上游算法源码到 T8；通过 CLI/Python 包能力探测消费上游。",
       "上游新增 mark 时优先依赖 watermark_registry.mark_keys() 动态暴露，前端只补充显示文案或兜底。",
       "上游新增 mode/options 时扩展 runner 参数映射、节点 UI 和 tests/aiWatermarkRunner.test.ts，不破坏旧画布数据字段。",
-      "0.8.9 起 invisible 的文字/人脸保真改为 --pipeline controlnet + --restore-faces；T8 UI 不再暴露旧 protectText/protectFaces 主路径，但 runner 对 0.8.7 runtime 继续版本感知兼容旧 --protect-text / --protect-faces。",
-      "0.8.9 起 T8 透出 --auto、--adaptive-polish、--min-resolution、--controlnet-scale、--unsharp 与 GFPGAN restore-faces；auto 模式下不强行发送默认 --pipeline，让上游按内容自动选择。",
+      "0.11.0 当前可见 mark 兜底为 auto/gemini/doubao/jimeng/samsung；Samsung Galaxy AI 标记由上游 registry 动态暴露时优先使用动态结果。",
+      "0.10+ invisible 默认管线为 --pipeline controlnet；旧 default 在新版上游中等价/迁移为 --pipeline sdxl，T8 新节点默认 controlnet，旧画布 ctrlregen 继续迁移为 controlnet。",
+      "0.11.0 T8 透出 --model、--guidance-scale、--upscaler lanczos/esrgan、--min-resolution、--controlnet-scale、--unsharp、--adaptive-polish/--no-adaptive-polish；--auto 已退役，不再作为主 UI 控件发送。",
+      "上游 0.11.0 不再提供 face-restore extra；T8 不再展示 GFPGAN 脸部修复主控件。runner 仅对旧 0.8.9 runtime 继续版本感知兼容 --restore-faces，对 0.8.7 runtime 兼容 --protect-text / --protect-faces。",
+      "新增 all 模式调用上游 full pipeline：可见标记 + 隐形水印 + 元数据；缺 GPU extra 时按上游设计明确失败，避免用户误以为 SynthID 已处理。",
       "未填写 strength 时由上游按 C2PA/SynthID 来源自适应 OpenAI/Google/未知强度，T8 UI 默认留空，不再诱导用户固定 0.30。",
+      "媒体解析补齐 0.11 metadata 容器：HEIC / HEIF / JXL 归类为 image，MKA / OGA / Opus 归类为 audio，metadata-check / metadata-remove 可沿用同一素材解析入口。",
       "每次同步上游后必须重新跑 status/capability、代表性 process smoke、node --test tests/*.test.ts、npm run build 和 Electron 打包后置检查。"
     ]
   },
@@ -1875,7 +2127,7 @@
   "achievementSystemRoadmap": {
     "status": "planned",
     "reference": "roadmap.md::主题成就 / 勋章 / 加密影片解锁系统路线（规划中，2026-06-04）",
-    "scope": "十一套系统主题分别累计有效使用时长、隐藏模式探索、节点运行、资源库沉淀，并解锁主题勋章与影片馆内容。",
+    "scope": "十二套系统主题分别累计有效使用时长、隐藏模式探索、节点运行、资源库沉淀或主题小游戏摘要事件，并解锁主题勋章与影片馆内容。",
     "themeTracks": [
       "tech",
       "pixel",
@@ -1935,14 +2187,14 @@
       "本地创作回顾：用户打开成就页时生成周报，展示主题时长、产出数量、常用节点和已获勋章。"
     ],
     "acceptance": [
-      "十一套主题分别累计时长，后台/无焦点/无交互不刷时长。",
+      "十二套主题分别累计时长，后台/无焦点/无交互不刷时长。",
       "每个主题至少 5 个时长成就、3 个特色成就、1 个主题大师勋章。",
       "未解锁影片无法播放；解锁后可播放、拖动进度条、继续播放和清缓存。",
       "加密影片原始素材不得进入 git、build 明文目录或 Electron resources。",
       "自动更新到带新影片的版本后，旧成就数据仍能解锁并播放新资源。"
     ]
   },
-  "totalNodes": 50,
+  "totalNodes": 51,
   "phases": {
     "phase0": {
       "label": "基础设施",
@@ -3420,12 +3672,12 @@
       "items": [
         "remove-ai-watermark 节点固定桥接 wiltodelta/remove-ai-watermarks，上游算法不复制到 T8；T8 负责画布节点、媒体解析、CLI/Python 调用、输出转存和错误文案。",
         "后端 runner 优先探测 T8_REMOVE_AI_WATERMARKS_RUNTIME、Electron resources/tools/remove-ai-watermarks sidecar、T8_REMOVE_AI_WATERMARKS_BIN、T8_REMOVE_AI_WATERMARKS_SRC、开发期 _external clone，再 fallback PATH CLI。",
-        "状态接口动态返回 upstream version、markKeys 与 optionalFeatures(invisible/lama/detect/trustmark/restore/auto/controlnet/adaptivePolish)，前端 mark 列表必须以动态结果为准并以 auto/gemini/doubao/jimeng 兜底。",
-        "完整能力依赖 remove-ai-watermarks[gpu,detect,trustmark,lama,restore]、CUDA Torch、OpenCV 兼容版本和 LaMA/invisible/GFPGAN 可选模型；缺依赖时后端必须优雅显示未安装或能力不可用，不允许炸后端。",
+        "状态接口动态返回 upstream version、markKeys 与 optionalFeatures(invisible/lama/detect/trustmark/controlnet/adaptivePolish/esrgan/model/guidanceScale)，前端 mark 列表必须以动态结果为准并以 auto/gemini/doubao/jimeng/samsung 兜底。",
+        "完整能力依赖 remove-ai-watermarks[gpu,detect,trustmark,lama]、CUDA Torch、OpenCV 兼容版本和 LaMA/invisible 可选模型；ESRGAN 预放大另需 esrgan extra；缺依赖时后端必须优雅显示未安装或能力不可用，不允许炸后端。",
         "隐形水印参数在 T8 层钳制安全边界：steps 至少 4，非 0 maxResolution 至少 256，strength 至少保证一个 diffusion timestep，避免上游 diffusers 空 latent 崩溃。",
-        "已同步上游 0.8.9：visible/identify 动态覆盖 Gemini、豆包、即梦可见标记；invisible 默认走上游来源自适应强度，并支持 auto、controlnet、min-resolution、adaptive-polish、unsharp 与 GFPGAN restore-faces；旧 0.8.7 runtime 仍版本感知兼容 protect flags。",
+        "已同步上游 0.11.0：visible/identify 动态覆盖 Gemini、豆包、即梦、Samsung 可见标记；invisible 默认走 ControlNet + 来源自适应强度，并支持 model、guidance-scale、upscaler、min-resolution、adaptive-polish、unsharp；旧 0.8.9 runtime 仍版本感知兼容 auto/restore-faces，旧 0.8.7 runtime 兼容 protect flags。",
         "Electron 用户包若要开箱可用，必须准备 tools/remove-ai-watermarks-runtime sidecar runtime，electron-builder 会复制到 resources/tools/remove-ai-watermarks；正式发版可设置 T8_REQUIRE_AI_WATERMARK_RUNTIME=1 强制缺失即失败。",
-        "上游仓库更新后只同步 registry、命令参数、mark/mode/options 与能力探测适配；新增能力必须补 tests/aiWatermarkRunner.test.ts 并更新 README/features/skill 的 MIT attribution 与打包说明。"
+        "上游仓库更新后只同步 registry、命令参数、mark/mode/options 与能力探测适配；新增能力必须补 tests/aiWatermarkRunner.test.ts 并更新 README/features/skill 的 Apache-2.0 attribution 与打包说明。"
       ]
     },
     "phase119": {
@@ -3908,6 +4160,19 @@
         "API Key 设置页模型提示同步展示 seedream-4.7 与完整 Seedance 2.0 变体；新增 advanced provider 与 jimeng CLI 回归测试。",
         "公开版本同步到 2.1.3：package.json、package-lock.json、vite.config.ts/js、electron/main.cjs、backend/src/config.js APP_VERSION、features.json、README.md 与 release-notes/v2.1.3.md 同步；本次只推 GitHub 源码，不打包 Electron，不发布 GitHub Release 自动更新资产。"
       ]
+    },
+    "phase158": {
+      "label": "俄罗斯方块主题、Codex 创作节点与批处理源码版 (v2.1.8)",
+      "status": "implemented",
+      "items": [
+        "俄罗斯方块主题补齐 Korobeiniki 默认音乐、方块化画布 / 节点 / 连线 / 小地图和 10x20 小游戏体验，关卡、障碍、技能、存档和视觉反馈持续增强。",
+        "工具箱新增批量素材处理节点，覆盖多文件 / 文件夹导入、批量改名、去黑边、抠图、扩图、高清放大、格式转换和打开输出文件夹。",
+        "Codex CLI Agent 支持简约模式和创作台：LLM / IMG 双模式、Skill 调用、项目 Skill、模板工坊、产物库、参考素材可视化、流式对话、文本复制、产物发布和深色主题可读性修复。",
+        "Codex 生图工作台节点面向 imagegen 流程，提供队列、公共图库、模板 / 片段工具、参数快捷 Chip、批量历史和画布输出衔接。",
+        "Grok Agent 修复视频任务轮询、模式高亮、产物库删除 / 清空 / 批量删除和深色主题可读性；视频节点补齐 grok-1.5-video-6s / 10s / 15s 的 Zhenzhen New size 参数。",
+        "AI 消除水印跟进 remove-ai-watermarks 新版能力，补齐前端节点、后端路由和本地 runtime 文档；同时修复素材拖动、预览、侧边栏主题可读性和输出产物链路。",
+        "公开版本同步到 2.1.8：package.json、package-lock.json、vite.config.ts/js、electron/main.cjs、backend/src/config.js APP_VERSION、features.json、README.md 与 release-notes/v2.1.8.md 同步；本次只推 GitHub 源码，不打包 Electron，不发布 GitHub Release 自动更新资产。"
+      ]
     }
   },
   "categories": {
@@ -4154,7 +4419,7 @@
         {
           "type": "remove-ai-watermark",
           "label": "去AI水印",
-          "description": "接入 wiltodelta/remove-ai-watermarks 0.8.9，可处理 Gemini / 豆包 / 即梦等已知可见 AI 水印、框选擦除(cv2/LaMA)、来源自适应隐形水印、ControlNet 结构保留、GFPGAN 脸部恢复、AI 元数据清理与来源鉴别；支持本地 Python 包或 Electron sidecar runtime，视频/音频首阶段支持元数据检查和清理"
+          "description": "接入 wiltodelta/remove-ai-watermarks 0.11.0，可处理 Gemini / 豆包 / 即梦 / Samsung 等已知可见 AI 水印、框选擦除(cv2/LaMA)、来源自适应隐形水印、默认 ControlNet 结构保留、ESRGAN 小图预放大、模型/CFG 调参、AI 元数据清理、来源鉴别与官方 all 完整清理；支持本地 Python 包或 Electron sidecar runtime，视频/音频以及 HEIC/HEIF/JXL/Opus 等容器支持元数据检查和清理"
         },
         {
           "type": "video-output",
@@ -4165,7 +4430,7 @@
     },
     "toolbox": {
       "label": "工具箱",
-      "count": 8,
+      "count": 9,
       "nodes": [
         {
           "type": "cinematic",
@@ -4196,6 +4461,11 @@
           "type": "aggregate-parser",
           "label": "聚合解析",
           "description": "基于 ParseHub 的轻量自媒体聚合解析节点：输入短链、作品链接、分享码或分享文案，合规确认后默认保存到 output/parsehub；可选使用代理/Cookie，远端地址解析作为高级模式保留"
+        },
+        {
+          "type": "batch-processor",
+          "label": "批量素材处理",
+          "description": "批量导入文件或文件夹，也可连接上游素材；在节点内执行原名/改名、去除上下黑边、批量抠图、扩图、高清放大和格式转换，完成后只显示节点内进度和结果，不自动生成输出素材节点"
         },
         {
           "type": "topaz-image-upscale",
@@ -4773,8 +5043,8 @@
         "POST /api/eagle/import — 将上传素材、输出素材、素材集或文本发送到本机 Eagle，支持 /files/input、/files/output、资源库文件、素材集文件和 http(s) URL"
       ],
       "aiWatermark": [
-        "GET /api/ai-watermark/status — 检测 remove-ai-watermarks CLI/Python 包或 Electron sidecar runtime、版本、已知 visible mark 与 optionalFeatures(invisible/lama/detect/trustmark)",
-        "POST /api/ai-watermark/process — 去AI水印辅助节点处理入口，支持 smart/visible/erase(cv2/LaMA)/invisible/metadata-check/metadata-remove/identify，输出统一转存 /files/output 或返回文本报告"
+        "GET /api/ai-watermark/status — 检测 remove-ai-watermarks CLI/Python 包或 Electron sidecar runtime、版本、已知 visible mark 与 optionalFeatures(invisible/lama/detect/trustmark/controlnet/adaptivePolish/esrgan/model/guidanceScale)",
+        "POST /api/ai-watermark/process — 去AI水印辅助节点处理入口，支持 smart/visible/erase(cv2/LaMA)/invisible/all/metadata-check/metadata-remove/identify，输出统一转存 /files/output 或返回文本报告"
       ],
       "cloudUploads": [
         "GET /api/cloud-uploads/status — 返回云端上传目标的脱敏配置与摘要，用于 API 设置页和素材右键菜单",
@@ -4840,6 +5110,7 @@
     "portrait-master",
     "pose-master",
     "aggregate-parser",
+    "batch-processor",
     "topaz-image-upscale",
     "topaz-video-upscale",
     "remove-ai-watermark"
