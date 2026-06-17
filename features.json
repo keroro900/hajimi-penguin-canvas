@@ -17,6 +17,7 @@
       "3D 全景分镜提示板实时预览改为白字、小字号并与最终输出一致；场景输入框支持回车换行，预设提示词支持插入、保存、导入和导出。",
       "画板节点自由尺寸输入不再被旧下限打断，新增保持原图像素尺寸入口，适合小图、长图和原尺寸编辑。",
       "宫格剪裁继续加固 2x2 单图拆分，只输出一组 4 张素材，不再重复生成多个相同输出节点。",
+      "Electron 安装包继续保留 tools/ffmpeg sidecar，同时排除重复的 @ffmpeg-installer 运行时，避免 NSIS 安装包超过 Windows 编译器内存映射上限。",
       "公开版本同步到 2.2.8：package.json、package-lock.json、vite.config.ts/js、electron/main.cjs、backend/src/config.js APP_VERSION、features.json、README.md 与 release-notes/v2.2.8.md 同步；本次生成 Electron 安装包、blockmap 与 latest.yml，并发布 GitHub Release 自动更新资产。"
     ],
     "releaseFiles": [
@@ -44,6 +45,7 @@
       "tests/directorStoryboard.test.ts",
       "tests/drawingBoardInteractions.test.ts",
       "tests/drawingBoardSizing.test.ts",
+      "tests/electronPackaging.test.ts",
       "tests/imageReferencePersistence.test.ts",
       "tests/outputMaterialPersistence.test.ts",
       "tests/panorama3d.test.ts",
