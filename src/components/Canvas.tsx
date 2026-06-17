@@ -57,7 +57,11 @@ import {
   shouldPreserveAutoOutputMaterialNode,
   writeOutputMaterialPersistenceSetting,
 } from '../utils/outputMaterialPersistence';
-import { buildDirectorStoryboardOutputNodeData } from '../utils/directorStoryboard';
+import {
+  buildDirectorStoryboardOutputNodeData,
+  findDirectorStoryboardOutputItemForNodeData,
+  getDirectorStoryboardOutputItemBindingKey,
+} from '../utils/directorStoryboard';
 import { markCanvasNodesDeleted } from '../utils/deletedNodeRegistry';
 import {
   bucketSendableMaterials,
@@ -436,9 +440,13 @@ const INITIAL_DATA: Record<string, Record<string, any>> = {
     watermark: false,
     webSearch: false,
     seed: -1,
+    directorBridgePanelEnabled: false,
     bridgeEnabled: false,
     bridgeDurationSec: 4,
     bridgePrompt: '',
+    directorBridgePromptPresets: [],
+    directorBridgeSelectedPresetId: '',
+    directorBridgePresetName: '',
     shots: [
       { id: 'shot-1', title: 'S1', durationSec: 5, prompt: '', frameMode: 'auto', localRefImages: [], localRefVideos: [], localRefAudios: [] },
       { id: 'shot-2', title: 'S2', durationSec: 5, prompt: '', frameMode: 'auto', localRefImages: [], localRefVideos: [], localRefAudios: [] },
@@ -1670,6 +1678,7 @@ const MODEL_USAGE_HELP_SECTIONS: readonly ModelUsageHelpSection[] = [
   {
     title: '图像模型注意事项（2K，4K只有FAL长期稳定，其他都不保证稳定）',
     items: [
+      'gpt-image-2模型，新增azure特价分组，固定0.3积分，支持2K,4K，目前稳定（2K,4K没法保证永久稳定，最稳定是FAL模型方法），支持质量参数传入！（2026.06.17）',
       'gpt-image-2-all模型（default分组）只能出1K图，速度最快，最稳定，审核最松',
       'gpt-image-2模型（default分组）可以出1K，2K，4K图，2K，4K不一定稳定，如果提示系统错误，降低分辨率重试，超过1K，需要选择分辨率， auto不支持1K以上',
       'gpt-image-2-fal模型，兜底模型，支持2K，4K，价格较贵',
@@ -6137,14 +6146,33 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         downstreamOutputs.push({ id: t.id, pickKind: td.pickKind, pickIndex: td.pickIndex, data: td, incomingFromMe, auto, removable });
       }
 
-      const itemKey = (it: { kind: string; kindIndex: number }) => `${it.kind}:${it.kindIndex}`;
+      const itemKey = (it: { kind: string; kindIndex: number }) => {
+        if (t === 'director-storyboard' && it.kind === 'video') {
+          const directorItem = directorOutputItems[it.kindIndex];
+          if (directorItem) return `director:${getDirectorStoryboardOutputItemBindingKey(directorItem)}`;
+        }
+        return `${it.kind}:${it.kindIndex}`;
+      };
+      const outputNodeItemKey = (data: any) => {
+        if (t === 'director-storyboard') {
+          const matched = findDirectorStoryboardOutputItemForNodeData(
+            directorOutputItems,
+            data,
+            typeof data?.pickIndex === 'number' ? data.pickIndex : undefined,
+          );
+          if (matched) return `director:${getDirectorStoryboardOutputItemBindingKey(matched)}`;
+        }
+        const pickKind = typeof data?.pickKind === 'string' ? data.pickKind : '';
+        const pickIndex = typeof data?.pickIndex === 'number' && Number.isInteger(data.pickIndex) ? data.pickIndex : -1;
+        return pickKind && pickIndex >= 0 ? `${pickKind}:${pickIndex}` : '';
+      };
       const validItemKeys = new Set(items.map(itemKey));
       const activeDownstreamOutputs = downstreamOutputs.filter((o) => {
+        const existingKey = outputNodeItemKey(o.data);
         if (
           o.removable &&
-          o.pickKind &&
-          typeof o.pickIndex === 'number' &&
-          !validItemKeys.has(`${o.pickKind}:${o.pickIndex}`)
+          existingKey &&
+          !validItemKeys.has(existingKey)
         ) {
           if (t !== 'director-storyboard' && shouldPreserveAutoOutputMaterialNode(nodeById.get(o.id), outputMaterialPersistenceEnabled)) {
             return true;
@@ -6167,22 +6195,22 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       //   2) 未带 pickKind 的 → 依次升级为 items 中还未被占用的项
       const occupied = new Set<string>(); // key=`${kind}:${kindIndex}`
       for (const o of activeDownstreamOutputs) {
-        if (o.pickKind && typeof o.pickIndex === 'number') {
-          occupied.add(`${o.pickKind}:${o.pickIndex}`);
-        }
+        const existingKey = outputNodeItemKey(o.data);
+        if (existingKey) occupied.add(existingKey);
       }
       const upgradePatches: Array<[string, Record<string, any>]> = [];
       if (t === 'director-storyboard') {
         for (const o of activeDownstreamOutputs) {
-          if (!o.pickKind || typeof o.pickIndex !== 'number') continue;
-          const item = items.find((it) => it.kind === o.pickKind && it.kindIndex === o.pickIndex);
+          const existingKey = outputNodeItemKey(o.data);
+          if (!existingKey) continue;
+          const item = items.find((it) => itemKey(it) === existingKey);
           if (!item) continue;
           const patch = outputDataForItem(item);
           if (outputPatchChanged(o.data, patch)) upgradePatches.push([o.id, patch]);
         }
       }
       for (const o of activeDownstreamOutputs) {
-        if (o.pickKind) continue;
+        if (o.pickKind || outputNodeItemKey(o.data)) continue;
         // 指定下一个未占用项
         const next = items.find((it) => !occupied.has(itemKey(it)));
         if (!next) break;
@@ -6634,6 +6662,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       if ('isPrimary' in event && event.isPrimary === false) return false;
       const target = event.target instanceof HTMLElement ? event.target : null;
       if (!target) return false;
+      if (target.closest('[data-director-timeline-resize-handle]')) return false;
       const button = target.closest('button, [role="button"]') as HTMLElement | null;
       if (!button) return false;
       if (button.closest('[data-node-action-bar]')) return false;

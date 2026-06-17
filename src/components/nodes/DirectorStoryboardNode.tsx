@@ -4,16 +4,19 @@ import {
   AlertCircle,
   Clapperboard,
   Copy,
+  Download,
   Image as ImageIcon,
   Library,
   Loader2,
   Music,
   Plus,
   RotateCcw,
+  Save,
   Search,
   Sparkles,
   Square,
   Trash2,
+  Upload,
   Video as VideoIcon,
   Wand2,
   X,
@@ -38,18 +41,24 @@ import SmartImage from '../SmartImage';
 import LoopingVideo from '../LoopingVideo';
 import { LocalNodeAddonSlot } from 'virtual:t8-local-extensions';
 import {
+  DIRECTOR_BRIDGE_PROMPT_PRESETS,
   buildDirectorStoryboardBridgeRunPlan,
+  createDirectorBridgePromptPresetExport,
   buildDirectorStoryboardOutputItems,
   buildDirectorStoryboardOutputSummary,
   buildDirectorStoryboardReferenceOrder,
   buildDirectorStoryboardRunPlan,
+  buildDirectorStoryboardShotInputPatch,
   calculateDirectorTimelineDragDuration,
   DIRECTOR_STORYBOARD_MAX_DURATION_SEC,
   DIRECTOR_STORYBOARD_MIN_DURATION_SEC,
+  parseDirectorBridgePromptPresetImport,
   reorderDirectorStoryboardReference,
   runDirectorStoryboardJobs,
+  sanitizeDirectorBridgePromptPresets,
   sanitizeDirectorStoryboardBridges,
   sanitizeDirectorStoryboardShots,
+  type DirectorBridgePromptPreset,
   type DirectorStoryboardBridge,
   type DirectorStoryboardJob,
   type DirectorStoryboardJobResult,
@@ -122,6 +131,29 @@ function dedupe(values: string[]): string[] {
     out.push(clean);
   }
   return out;
+}
+
+function describeShotReusableInputs(shot: DirectorStoryboardShot): string {
+  const hasText = Boolean(String(shot.prompt || '').trim());
+  const images = Array.isArray(shot.localRefImages) ? shot.localRefImages.length : 0;
+  const videos = Array.isArray(shot.localRefVideos) ? shot.localRefVideos.length : 0;
+  const audios = Array.isArray(shot.localRefAudios) ? shot.localRefAudios.length : 0;
+  return `${hasText ? '有文本' : '无文本'} / ${images}图 / ${videos}视频 / ${audios}音频`;
+}
+
+function downloadJson(filename: string, payload: unknown) {
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  try {
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  } finally {
+    window.setTimeout(() => URL.revokeObjectURL(url), 1200);
+  }
 }
 
 function seekVideoTo(vid: HTMLVideoElement, t: number) {
@@ -275,8 +307,27 @@ const DirectorStoryboardNode = ({ id, data, selected }: NodeProps) => {
   );
   const [activeShotId, setActiveShotId] = useState(() => shots[0]?.id || 'shot-1');
   const [activeBridgeId, setActiveBridgeId] = useState(() => bridges[0]?.id || '');
+  const [inputReuseSourceShotId, setInputReuseSourceShotId] = useState('');
   const activeShot = shots.find((shot) => shot.id === activeShotId) || shots[0];
+  const inputReuseCandidates = useMemo(
+    () => (activeShot ? shots.filter((shot) => shot.id !== activeShot.id) : []),
+    [activeShot, shots],
+  );
+  const inputReuseSourceShot = inputReuseCandidates.find((shot) => shot.id === inputReuseSourceShotId)
+    || inputReuseCandidates[0]
+    || null;
   const activeBridge = bridges.find((bridge) => bridge.id === activeBridgeId) || null;
+  const bridgePromptPresets = useMemo(
+    () => sanitizeDirectorBridgePromptPresets(d.directorBridgePromptPresets),
+    [d.directorBridgePromptPresets],
+  );
+  const bridgeSelectedPresetId = typeof d.directorBridgeSelectedPresetId === 'string' ? d.directorBridgeSelectedPresetId : '';
+  const bridgePresetName = typeof d.directorBridgePresetName === 'string' ? d.directorBridgePresetName : '';
+  const allBridgePromptPresets = useMemo(
+    () => [...DIRECTOR_BRIDGE_PROMPT_PRESETS, ...bridgePromptPresets],
+    [bridgePromptPresets],
+  );
+  const selectedBridgePromptPreset = allBridgePromptPresets.find((preset) => preset.id === bridgeSelectedPresetId) || null;
   const results: ResultsMap = d.shotResults && typeof d.shotResults === 'object' ? d.shotResults : {};
   const status: 'idle' | 'submitting' | 'polling' | 'success' | 'error' | 'cancelled' = d.status || 'idle';
   const isBridgeBusy = (bridge?: DirectorStoryboardBridge | null) => (
@@ -292,6 +343,7 @@ const DirectorStoryboardNode = ({ id, data, selected }: NodeProps) => {
   const watermark = d.watermark === true;
   const webSearch = d.webSearch === true;
   const seed = typeof d.seed === 'number' ? d.seed : -1;
+  const bridgePanelEnabled = d.directorBridgePanelEnabled === true;
   const providerParams = useMemo(
     () => ((d?.providerParams && typeof d.providerParams === 'object') ? d.providerParams : {}),
     [d?.providerParams],
@@ -315,6 +367,7 @@ const DirectorStoryboardNode = ({ id, data, selected }: NodeProps) => {
   const uploadVideoRef = useRef<HTMLInputElement | null>(null);
   const uploadAudioRef = useRef<HTMLInputElement | null>(null);
   const bridgeUploadRef = useRef<HTMLInputElement | null>(null);
+  const bridgePresetImportRef = useRef<HTMLInputElement | null>(null);
   const bridgeUploadTargetRef = useRef<{ bridgeId: string; target: BridgeUploadTarget } | null>(null);
   const startDrag = useDragMaterialStore((state) => state.start);
   const [resourcePickerKind, setResourcePickerKind] = useState<ReferenceKind | null>(null);
@@ -323,6 +376,7 @@ const DirectorStoryboardNode = ({ id, data, selected }: NodeProps) => {
   const [resourceLoading, setResourceLoading] = useState(false);
   const [resourceMessage, setResourceMessage] = useState('');
   const [refDrag, setRefDrag] = useState<{ index: number } | null>(null);
+  const [bridgePresetNotice, setBridgePresetNotice] = useState('');
 
   useEffect(() => {
     resultsRef.current = results;
@@ -341,6 +395,16 @@ const DirectorStoryboardNode = ({ id, data, selected }: NodeProps) => {
       setActiveShotId(shots[0]?.id || 'shot-1');
     }
   }, [activeShotId, shots]);
+
+  useEffect(() => {
+    if (inputReuseCandidates.length === 0) {
+      if (inputReuseSourceShotId) setInputReuseSourceShotId('');
+      return;
+    }
+    if (!inputReuseCandidates.some((shot) => shot.id === inputReuseSourceShotId)) {
+      setInputReuseSourceShotId(inputReuseCandidates[0].id);
+    }
+  }, [inputReuseCandidates, inputReuseSourceShotId]);
 
   useEffect(() => {
     if (bridges.length === 0) {
@@ -462,6 +526,12 @@ const DirectorStoryboardNode = ({ id, data, selected }: NodeProps) => {
 
   const patchShot = (shotId: string, patch: Partial<DirectorStoryboardShot>) => {
     writeShots(shots.map((shot) => (shot.id === shotId ? { ...shot, ...patch } : shot)));
+  };
+
+  const applyInputReuseToActiveShot = () => {
+    if (!activeShot || !inputReuseSourceShot) return;
+    patchShot(activeShot.id, buildDirectorStoryboardShotInputPatch(inputReuseSourceShot));
+    logBus.info(`已将 ${inputReuseSourceShot.title} 的输入应用到 ${activeShot.title}`, src);
   };
 
   const addShot = () => {
@@ -704,6 +774,99 @@ const DirectorStoryboardNode = ({ id, data, selected }: NodeProps) => {
       const message = error?.message || '桥接素材处理失败';
       patchBridge(bridge.id, { status: 'error', error: message });
       logBus.error(`桥接素材处理失败: ${message}`, src);
+    }
+  };
+
+  const selectBridgePromptPreset = (presetId: string) => {
+    const preset = allBridgePromptPresets.find((item) => item.id === presetId);
+    update({
+      directorBridgeSelectedPresetId: preset?.id || '',
+      directorBridgePresetName: preset?.name || bridgePresetName,
+    });
+    setBridgePresetNotice('');
+  };
+
+  const applyBridgePromptPreset = () => {
+    if (!activeBridge || !selectedBridgePromptPreset) return;
+    patchBridge(activeBridge.id, { prompt: selectedBridgePromptPreset.text });
+    update({ directorBridgePresetName: selectedBridgePromptPreset.name });
+    setBridgePresetNotice(`已套用：${selectedBridgePromptPreset.name}`);
+  };
+
+  const saveBridgePromptPreset = () => {
+    const text = String(activeBridge?.prompt || selectedBridgePromptPreset?.text || '').trim();
+    if (!text) {
+      setBridgePresetNotice('先填写桥接提示词');
+      return;
+    }
+    const now = new Date().toISOString();
+    const existing = bridgePromptPresets.find((item) => item.id === bridgeSelectedPresetId);
+    const fallbackName = selectedBridgePromptPreset?.name || text.replace(/\s+/g, ' ').slice(0, 18) || `桥接预设 ${bridgePromptPresets.length + 1}`;
+    const name = bridgePresetName.trim() || existing?.name || fallbackName;
+    const next: DirectorBridgePromptPreset[] = existing
+      ? bridgePromptPresets.map((item) => item.id === existing.id ? { ...item, name, text, updatedAt: now } : item)
+      : [
+          ...bridgePromptPresets,
+          {
+            id: `director-bridge-preset-${Date.now().toString(36)}`,
+            name,
+            text,
+            category: '自定义',
+            createdAt: now,
+            updatedAt: now,
+          },
+        ];
+    const sanitized = sanitizeDirectorBridgePromptPresets(next);
+    const saved = existing
+      ? sanitized.find((item) => item.id === existing.id)
+      : sanitized[sanitized.length - 1];
+    update({
+      directorBridgePromptPresets: sanitized,
+      directorBridgeSelectedPresetId: saved?.id || '',
+      directorBridgePresetName: saved?.name || name,
+    });
+    setBridgePresetNotice(existing ? '已更新自定义预设' : '已保存自定义预设');
+  };
+
+  const exportBridgePromptPresets = () => {
+    const fallbackText = String(activeBridge?.prompt || selectedBridgePromptPreset?.text || '').trim();
+    const exportPresets = bridgePromptPresets.length
+      ? bridgePromptPresets
+      : sanitizeDirectorBridgePromptPresets([
+          {
+            id: 'current-bridge-prompt',
+            name: bridgePresetName.trim() || selectedBridgePromptPreset?.name || '当前桥接提示词',
+            text: fallbackText,
+            category: '自定义',
+          },
+        ]);
+    if (!exportPresets.length) {
+      setBridgePresetNotice('没有可导出的自定义预设');
+      return;
+    }
+    downloadJson(
+      `director-bridge-prompts-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}.json`,
+      createDirectorBridgePromptPresetExport(exportPresets),
+    );
+    setBridgePresetNotice(`已导出 ${exportPresets.length} 条预设`);
+  };
+
+  const importBridgePromptPresets = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    try {
+      const imported = parseDirectorBridgePromptPresetImport(await file.text());
+      const next = sanitizeDirectorBridgePromptPresets([...bridgePromptPresets, ...imported]);
+      const firstImported = next[bridgePromptPresets.length] || next[next.length - 1];
+      update({
+        directorBridgePromptPresets: next,
+        directorBridgeSelectedPresetId: firstImported?.id || '',
+        directorBridgePresetName: firstImported?.name || bridgePresetName,
+      });
+      setBridgePresetNotice(`已导入 ${imported.length} 条预设`);
+    } catch (error: any) {
+      setBridgePresetNotice(error?.message || '导入预设失败');
     }
   };
 
@@ -1340,7 +1503,24 @@ const DirectorStoryboardNode = ({ id, data, selected }: NodeProps) => {
   );
 
   const renderBridgeEditor = () => {
-    if (!activeBridge) return null;
+    if (!activeBridge) {
+      return (
+        <div
+          className="rounded-md border p-2"
+          style={{ borderColor: 'var(--t8-border, rgba(255,255,255,.12))', background: 'var(--t8-bg-panel, rgba(15,23,42,.52))' }}
+        >
+          <div className="flex items-center justify-between gap-2">
+            <label className="nodrag flex min-w-0 items-center gap-2 text-[11px] font-semibold">
+              <input type="checkbox" checked={false} disabled />
+              <span className="truncate">启用首尾帧桥接</span>
+            </label>
+            <span className="shrink-0 rounded border px-1.5 py-0.5 text-[10px]" style={{ borderColor: 'var(--t8-border-strong, rgba(255,255,255,.18))', color: 'var(--t8-text-muted, rgba(248,250,252,.72))' }}>
+              需要至少 2 个分镜
+            </span>
+          </div>
+        </div>
+      );
+    }
     const fromShot = shots.find((shot) => shot.id === activeBridge.fromShotId);
     const toShot = shots.find((shot) => shot.id === activeBridge.toShotId);
     const fromVideo = getShotVideoUrl(activeBridge.fromShotId) || activeBridge.previousVideoUrl || '';
@@ -1356,15 +1536,34 @@ const DirectorStoryboardNode = ({ id, data, selected }: NodeProps) => {
       >
         <div className="mb-2 flex items-center justify-between gap-2">
           <div className="min-w-0">
-            <div className="truncate text-[11px] font-semibold">首尾帧桥接 · {fromShot?.title || '上一镜'} → {toShot?.title || '下一镜'}</div>
+            <label className="nodrag flex min-w-0 items-center gap-2 text-[11px] font-semibold">
+              <input
+                type="checkbox"
+                checked={bridgePanelEnabled}
+                onChange={(event) => update({
+                  directorBridgePanelEnabled: event.target.checked,
+                  bridgeEnabled: event.target.checked,
+                })}
+              />
+              <span className="truncate">启用首尾帧桥接 · {fromShot?.title || '上一镜'} → {toShot?.title || '下一镜'}</span>
+            </label>
             <div className="truncate text-[10px]" style={mutedStyle}>
-              先生成两个镜头视频，或手动上传前/后段视频抽帧，也可直接上传首帧和尾帧。
+              默认关闭；勾选后展开当前相邻分镜的桥接设置。
             </div>
           </div>
           <span className="shrink-0 rounded border px-1.5 py-0.5 text-[10px]" style={{ borderColor: 'var(--t8-border-strong, rgba(255,255,255,.18))', color: 'var(--t8-accent, #d946ef)' }}>
-            {activeBridge.status === 'success' ? '已完成' : activeBridge.status === 'extracting' ? '抽帧中' : activeBridge.status === 'error' ? '需处理' : activeBridge.firstFrameUrl && activeBridge.lastFrameUrl ? '可生成' : '待首尾帧'}
+            {!bridgePanelEnabled ? '已关闭' : activeBridge.status === 'success' ? '已完成' : activeBridge.status === 'extracting' ? '抽帧中' : activeBridge.status === 'error' ? '需处理' : activeBridge.firstFrameUrl && activeBridge.lastFrameUrl ? '可生成' : '待首尾帧'}
           </span>
         </div>
+
+        {!bridgePanelEnabled && (
+          <div className="rounded border border-dashed px-2 py-2 text-[10px] leading-relaxed" style={{ borderColor: 'var(--t8-border, rgba(255,255,255,.12))', color: 'var(--t8-text-muted, rgba(248,250,252,.72))' }}>
+            桥接功能默认收起，不会占用分镜编辑空间；需要制作 S1→S2 这类首尾帧过渡时，勾选上方开关即可展开。
+          </div>
+        )}
+
+        {bridgePanelEnabled && (
+          <>
 
         {missingGeneratedVideos && (
           <div className="mb-2 rounded border border-amber-400/35 bg-amber-500/10 px-2 py-1 text-[10px] text-amber-100">
@@ -1395,6 +1594,101 @@ const DirectorStoryboardNode = ({ id, data, selected }: NodeProps) => {
             className="nodrag rounded border px-2 py-1 text-xs outline-none"
             style={inputStyle}
           />
+        </div>
+
+        <div className="mb-2 rounded border p-1.5" style={{ borderColor: 'var(--t8-border, rgba(255,255,255,.12))' }}>
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1 text-[10px] font-semibold" style={{ color: 'var(--t8-accent, #d946ef)' }}>
+              <Wand2 size={11} /> 桥接预设 · LIST
+            </div>
+            <div className="shrink-0 text-[10px]" style={mutedStyle}>内置 50 · 自定义 {bridgePromptPresets.length}</div>
+          </div>
+          <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-1.5">
+            <select
+              aria-label="director-bridge-prompt-preset-select"
+              value={selectedBridgePromptPreset?.id || ''}
+              onChange={(event) => selectBridgePromptPreset(event.target.value)}
+              className="nodrag min-w-0 rounded border px-1.5 py-1 text-[10px] outline-none"
+              style={inputStyle}
+              title="选择常用桥接提示词"
+            >
+              <option value="">选择预设提示词</option>
+              <optgroup label="内置 50 条">
+                {DIRECTOR_BRIDGE_PROMPT_PRESETS.map((preset) => (
+                  <option key={preset.id} value={preset.id}>{`${preset.category || '通用'} · ${preset.name}`}</option>
+                ))}
+              </optgroup>
+              {bridgePromptPresets.length > 0 && (
+                <optgroup label={`自定义 ${bridgePromptPresets.length} 条`}>
+                  {bridgePromptPresets.map((preset) => (
+                    <option key={preset.id} value={preset.id}>{preset.name}</option>
+                  ))}
+                </optgroup>
+              )}
+            </select>
+            <button
+              type="button"
+              onClick={applyBridgePromptPreset}
+              disabled={!selectedBridgePromptPreset}
+              className="nodrag flex items-center justify-center gap-1 whitespace-nowrap rounded border px-2 py-1 text-[10px] font-semibold disabled:opacity-50"
+              style={{ borderColor: 'var(--t8-accent, #d946ef)', color: 'var(--t8-accent, #d946ef)' }}
+              title="把选中的预设写入桥接提示词"
+            >
+              <Wand2 size={10} /> 套用
+            </button>
+          </div>
+          <div className="mt-1 truncate text-[10px]" style={mutedStyle}>
+            {selectedBridgePromptPreset ? `预览：${selectedBridgePromptPreset.text}` : '选择一条预设后点套用；保存会记录当前桥接提示词。'}
+          </div>
+          <div className="mt-1.5 grid grid-cols-[minmax(0,1fr)_auto_auto_auto] gap-1.5">
+            <input
+              value={bridgePresetName}
+              onChange={(event) => update({ directorBridgePresetName: event.target.value })}
+              placeholder="自定义名称"
+              className="nodrag min-w-0 rounded border px-1.5 py-1 text-[10px] outline-none"
+              style={inputStyle}
+              title="保存当前桥接提示词时使用"
+            />
+            <button
+              type="button"
+              onClick={saveBridgePromptPreset}
+              className="nodrag flex items-center justify-center gap-1 whitespace-nowrap rounded border px-1.5 py-1 text-[10px]"
+              style={{ borderColor: 'var(--t8-border-strong, rgba(255,255,255,.18))' }}
+              title="保存当前桥接提示词为自定义预设"
+            >
+              <Save size={10} /> 保存
+            </button>
+            <button
+              type="button"
+              onClick={exportBridgePromptPresets}
+              className="nodrag flex items-center justify-center gap-1 whitespace-nowrap rounded border px-1.5 py-1 text-[10px]"
+              style={{ borderColor: 'var(--t8-border-strong, rgba(255,255,255,.18))' }}
+              title="导出自定义桥接提示词 JSON"
+            >
+              <Download size={10} /> 导出
+            </button>
+            <button
+              type="button"
+              onClick={() => bridgePresetImportRef.current?.click()}
+              className="nodrag flex items-center justify-center gap-1 whitespace-nowrap rounded border px-1.5 py-1 text-[10px]"
+              style={{ borderColor: 'var(--t8-border-strong, rgba(255,255,255,.18))' }}
+              title="导入桥接提示词 JSON"
+            >
+              <Upload size={10} /> 导入
+            </button>
+          </div>
+          <input
+            ref={bridgePresetImportRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={importBridgePromptPresets}
+          />
+          {bridgePresetNotice && (
+            <div className="mt-1.5 rounded border px-2 py-1 text-[10px]" style={{ borderColor: 'var(--t8-border, rgba(255,255,255,.12))', color: 'var(--t8-text-muted, rgba(248,250,252,.72))' }}>
+              {bridgePresetNotice}
+            </div>
+          )}
         </div>
 
         <div className="grid grid-cols-3 gap-1.5">
@@ -1461,6 +1755,8 @@ const DirectorStoryboardNode = ({ id, data, selected }: NodeProps) => {
             生成所有桥接 {readyBridgeCount || ''}
           </button>
         </div>
+          </>
+        )}
       </div>
     );
   };
@@ -1705,6 +2001,7 @@ const DirectorStoryboardNode = ({ id, data, selected }: NodeProps) => {
                     {result?.status === 'error' && <div className="absolute bottom-1 left-1 h-1.5 w-1.5 rounded-full bg-rose-400" />}
                     <button
                       type="button"
+                      data-director-timeline-resize-handle
                       className="nodrag nopan absolute -right-1 top-0 z-20 h-full w-4 cursor-ew-resize rounded-sm border-l border-white/20 bg-white/5 opacity-80 transition hover:bg-white/20"
                       onClick={(event) => event.stopPropagation()}
                       onPointerDownCapture={(event) => beginDurationResize(event, shot)}
@@ -1724,6 +2021,7 @@ const DirectorStoryboardNode = ({ id, data, selected }: NodeProps) => {
                     <button
                       key={bridge.id}
                       type="button"
+                      data-director-timeline-resize-handle
                       onClick={() => setActiveBridgeId(bridge.id)}
                       onPointerDownCapture={(event) => beginBridgeSeparatorInteraction(event, shot, bridge.id)}
                       onMouseDownCapture={(event) => beginBridgeSeparatorInteraction(event, shot, bridge.id)}
@@ -1781,6 +2079,51 @@ const DirectorStoryboardNode = ({ id, data, selected }: NodeProps) => {
                 {FRAME_MODE_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
               </select>
             </div>
+
+            {inputReuseCandidates.length > 0 && (
+              <div className="mb-2 rounded border p-1.5" style={{ borderColor: 'var(--t8-border, rgba(255,255,255,.12))' }}>
+                <div className="mb-1 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1 text-[10px] font-semibold" style={{ color: 'var(--t8-accent, #d946ef)' }}>
+                    <Copy size={11} /> 复用输入
+                  </div>
+                  <div className="min-w-0 truncate text-right text-[10px]" style={mutedStyle}>
+                    {inputReuseSourceShot ? describeShotReusableInputs(inputReuseSourceShot) : '无可复用输入'}
+                  </div>
+                </div>
+                <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-1.5">
+                  <select
+                    value={inputReuseSourceShot?.id || ''}
+                    onChange={(event) => setInputReuseSourceShotId(event.target.value)}
+                    className="nodrag min-w-0 rounded border px-1.5 py-1 text-[10px] outline-none"
+                    style={inputStyle}
+                    title="选择要复用输入的来源分镜"
+                  >
+                    {inputReuseCandidates.map((shot, index) => (
+                      <option key={shot.id} value={shot.id}>
+                        {`${shot.title || `S${index + 1}`} - ${describeShotReusableInputs(shot)}`}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={applyInputReuseToActiveShot}
+                    disabled={!inputReuseSourceShot}
+                    className="nodrag flex items-center justify-center gap-1 whitespace-nowrap rounded border px-2 py-1 text-[10px] font-semibold disabled:opacity-50"
+                    style={{ borderColor: 'var(--t8-accent, #d946ef)', color: 'var(--t8-accent, #d946ef)' }}
+                    title="应用到当前分镜"
+                  >
+                    <Copy size={10} /> 应用到当前分镜
+                  </button>
+                </div>
+                <div className="mt-1 flex flex-wrap gap-1 text-[10px]" style={mutedStyle}>
+                  {['提示词', '图像', '视频', '音频', '帧模式'].map((label) => (
+                    <span key={label} className="rounded border px-1 py-0.5" style={{ borderColor: 'var(--t8-border, rgba(255,255,255,.12))' }}>
+                      {label}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div className="mb-2 rounded border p-1.5" style={{ borderColor: 'var(--t8-border, rgba(255,255,255,.12))' }}>
               <div className="mb-1 text-[10px] font-semibold" style={mutedStyle}>镜头覆盖</div>

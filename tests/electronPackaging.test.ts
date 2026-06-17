@@ -44,6 +44,7 @@ test('Electron release keeps one packaged ffmpeg runtime and excludes installer 
   const ffmpegResource = packageJson.build.extraResources.find((item: any) => item.to === 'tools/ffmpeg');
   const llmMedia = read('../backend/src/providers/llmMedia.js');
 
+  assert.equal(packageJson.build.compression, 'normal');
   assert.ok(files.includes('!node_modules/@ffmpeg-installer/**/*'));
   assert.ok(resources.includes('tools/ffmpeg-runtime->tools/ffmpeg'));
   assert.deepEqual(ffmpegResource.filter, ['ffmpeg.exe', 'ffmpeg', 'README.md']);

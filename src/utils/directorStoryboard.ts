@@ -73,6 +73,11 @@ export interface DirectorStoryboardInputShot {
   error?: string | null;
 }
 
+export type DirectorStoryboardShotInputPatch = Pick<
+  DirectorStoryboardShot,
+  'prompt' | 'negativePrompt' | 'promptMentions' | 'frameMode' | 'localRefImages' | 'localRefVideos' | 'localRefAudios' | 'localRefOrder'
+>;
+
 export interface DirectorStoryboardBridge {
   id: string;
   fromShotId: string;
@@ -174,10 +179,80 @@ export interface RunDirectorStoryboardJobsOptions {
   onJobComplete?: (result: DirectorStoryboardJobResult) => void;
 }
 
+export const DIRECTOR_BRIDGE_PROMPT_PRESET_SCHEMA = 't8-director-bridge-prompt-presets';
+
+export interface DirectorBridgePromptPreset {
+  id: string;
+  name: string;
+  text: string;
+  category?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface DirectorBridgePromptPresetExport {
+  schema: typeof DIRECTOR_BRIDGE_PROMPT_PRESET_SCHEMA;
+  version: 1;
+  exportedAt: string;
+  presets: DirectorBridgePromptPreset[];
+}
+
 export const DIRECTOR_STORYBOARD_DEFAULT_DURATION_SEC = 5;
 export const DIRECTOR_STORYBOARD_MIN_DURATION_SEC = 4;
 export const DIRECTOR_STORYBOARD_MAX_DURATION_SEC = 15;
 export const DIRECTOR_STORYBOARD_DEFAULT_BRIDGE_DURATION_SEC = 4;
+export const DIRECTOR_BRIDGE_PROMPT_PRESETS: DirectorBridgePromptPreset[] = [
+  { id: 'bridge-smooth-continuity', category: '基础连续', name: '平滑连续', text: '镜头平滑衔接前后画面，主体动作自然延续，光线、色彩和构图从前一帧自然过渡到后一帧。' },
+  { id: 'bridge-stable-camera', category: '基础连续', name: '稳定镜头', text: '稳定摄影机保持主体身份和场景风格一致，画面细节缓慢变化，形成干净自然的首尾帧桥接。' },
+  { id: 'bridge-subtle-motion', category: '基础连续', name: '轻微动态', text: '主体只做轻微自然动作，背景细节柔和流动，整体节奏克制，让前后画面无缝连接。' },
+  { id: 'bridge-natural-action', category: '基础连续', name: '动作延续', text: '延续前一帧中的动作方向和姿态，逐步过渡到后一帧状态，人物比例、服装和表情保持稳定。' },
+  { id: 'bridge-soft-morph', category: '基础连续', name: '柔和演变', text: '场景元素柔和演变为后一帧内容，主体轮廓稳定，转场像一次自然的镜头内变化。' },
+  { id: 'bridge-hold-identity', category: '基础连续', name: '身份锁定', text: '保持主体身份、脸部结构、服装和主要道具稳定，只让动作、环境和镜头位置逐渐过渡。' },
+  { id: 'bridge-gentle-breathing', category: '基础连续', name: '呼吸感', text: '画面带轻微呼吸感和微小景深变化，主体动作自然，前后帧之间的空间关系保持清晰。' },
+  { id: 'bridge-clean-match-cut', category: '基础连续', name: '匹配剪辑', text: '利用相似构图和主体位置做匹配转场，画面中心稳定，动作节拍自然落到后一帧。' },
+  { id: 'bridge-slow-dolly-in', category: '镜头运动', name: '慢推近', text: '摄影机缓慢向前推进，主体保持稳定清晰，背景透视轻微变化，最终自然靠近后一帧构图。' },
+  { id: 'bridge-slow-dolly-out', category: '镜头运动', name: '慢拉远', text: '摄影机平稳向后拉开，逐渐展示更多环境信息，主体姿态自然过渡到后一帧。' },
+  { id: 'bridge-pan-left', category: '镜头运动', name: '左摇镜', text: '摄影机平滑向左摇动，跟随画面重心转移，前一帧内容自然让位给后一帧内容。' },
+  { id: 'bridge-pan-right', category: '镜头运动', name: '右摇镜', text: '摄影机平滑向右摇动，主体和背景保持连贯，画面重心自然落到后一帧。' },
+  { id: 'bridge-tilt-up', category: '镜头运动', name: '上仰揭示', text: '摄影机缓慢上仰，逐步揭示更高处或更远处的画面信息，最终与后一帧构图对齐。' },
+  { id: 'bridge-tilt-down', category: '镜头运动', name: '下俯揭示', text: '摄影机缓慢下俯，视线从前一帧的高处细节自然落到后一帧的主体或场景重点。' },
+  { id: 'bridge-tracking-side', category: '镜头运动', name: '侧向跟拍', text: '摄影机侧向平稳跟随主体移动，运动方向明确，背景产生自然视差并过渡到后一帧。' },
+  { id: 'bridge-orbit-small', category: '镜头运动', name: '轻环绕', text: '摄影机围绕主体做小幅度环绕运动，主体身份稳定，视角逐渐转向后一帧的角度。' },
+  { id: 'bridge-handheld-soft', category: '镜头运动', name: '柔和手持', text: '轻微手持感但运动稳定，画面有真实呼吸和微小抖动，前后帧保持自然连续。' },
+  { id: 'bridge-crane-rise', category: '镜头运动', name: '升格抬升', text: '摄影机缓慢上升并略微后移，场景层次被打开，最终自然抵达后一帧的空间关系。' },
+  { id: 'bridge-push-through', category: '镜头运动', name: '穿越前景', text: '摄影机穿过前景遮挡物，前景形成柔和擦过效果，遮挡后自然显露后一帧画面。' },
+  { id: 'bridge-focus-rack', category: '镜头运动', name: '焦点转移', text: '焦点从前一帧重点平滑转移到后一帧重点，景深变化自然，主体和背景不突兀变形。' },
+  { id: 'bridge-motion-blur-wipe', category: '转场方式', name: '动势擦拭', text: '利用主体或镜头运动形成柔和动势模糊，画面顺着运动方向擦拭到后一帧。' },
+  { id: 'bridge-light-leak', category: '转场方式', name: '光晕过渡', text: '自然光晕短暂扫过画面，亮部柔和扩散后收回，前一帧平滑显现为后一帧。' },
+  { id: 'bridge-shadow-wipe', category: '转场方式', name: '阴影掠过', text: '一片自然阴影或遮挡缓慢掠过画面，遮挡消退后画面已经过渡到后一帧。' },
+  { id: 'bridge-reflection-shift', category: '转场方式', name: '反射切换', text: '通过玻璃、水面或镜面反射完成过渡，反射内容逐渐变成后一帧，主体保持稳定。' },
+  { id: 'bridge-depth-fade', category: '转场方式', name: '景深融化', text: '画面短暂进入柔和浅景深，背景和前景轻轻融化重组，清晰时抵达后一帧。' },
+  { id: 'bridge-foreground-wipe', category: '转场方式', name: '前景遮挡', text: '让人物、物体或环境前景自然经过镜头，遮挡作为过渡，结束时露出后一帧构图。' },
+  { id: 'bridge-speed-ramp-soft', category: '转场方式', name: '柔和变速', text: '动作节奏轻微加速后再放慢，动势自然承接前后帧，画面保持稳定和电影感。' },
+  { id: 'bridge-match-motion', category: '转场方式', name: '动作匹配', text: '用前一帧主体动作的方向匹配后一帧的动作方向，形成连贯的动作桥接。' },
+  { id: 'bridge-wind-flow', category: '氛围运动', name: '风动转场', text: '风吹动衣物、头发、树叶或轻薄物体，环境动势连接前后帧，气氛自然统一。' },
+  { id: 'bridge-rain-atmosphere', category: '氛围运动', name: '雨雾衔接', text: '细雨、雾气或空气颗粒在画面中流动，作为柔和层次连接前一帧和后一帧。' },
+  { id: 'bridge-dust-particles', category: '氛围运动', name: '尘粒过渡', text: '空气中的尘粒、花瓣或细小颗粒轻轻飘动，画面在粒子层次中自然过渡。' },
+  { id: 'bridge-smoke-drift', category: '氛围运动', name: '烟雾漂移', text: '柔和烟雾或蒸汽缓慢漂移，短暂覆盖画面局部，散开后自然连接到后一帧。' },
+  { id: 'bridge-water-ripple', category: '氛围运动', name: '水波过渡', text: '水波或透明涟漪轻轻扩散，画面像被水面折射一样平滑过渡到后一帧。' },
+  { id: 'bridge-golden-hour', category: '氛围运动', name: '暖光延续', text: '暖色光线缓慢变化，主体边缘光和环境亮度自然衔接，保持统一的电影色调。' },
+  { id: 'bridge-night-neon', category: '氛围运动', name: '霓虹流光', text: '霓虹或城市光线轻轻流动，色彩从前一帧逐步过渡到后一帧，整体保持稳定。' },
+  { id: 'bridge-soft-clouds', category: '氛围运动', name: '云影流动', text: '云影、天光或环境阴影缓慢移动，带出自然时间流逝感并过渡到后一帧。' },
+  { id: 'bridge-character-turn', category: '人物动作', name: '人物转身', text: '主体缓慢转身或转头，动作连贯自然，视线和身体方向逐渐落到后一帧状态。' },
+  { id: 'bridge-character-step', category: '人物动作', name: '自然迈步', text: '人物自然迈出一步或调整站姿，镜头稳定跟随，动作结束时匹配后一帧构图。' },
+  { id: 'bridge-character-gesture', category: '人物动作', name: '手势承接', text: '人物用一个清晰但克制的手势承接前后画面，手部动作自然，脸部和身体比例保持稳定。' },
+  { id: 'bridge-eye-line', category: '人物动作', name: '视线转移', text: '主体视线从前一帧方向平滑转向后一帧重点，表情自然微变，画面情绪连贯。' },
+  { id: 'bridge-costume-motion', category: '人物动作', name: '衣摆衔接', text: '衣摆、发丝或配饰随动作自然摆动，运动方向引导观众视线过渡到后一帧。' },
+  { id: 'bridge-group-blocking', category: '人物动作', name: '多人走位', text: '多个人物保持相对位置稳定，只做小幅走位或姿态调整，画面自然抵达后一帧。' },
+  { id: 'bridge-product-rotate', category: '物体产品', name: '产品旋转', text: '物体或产品做缓慢干净的旋转展示，光泽和边缘高光稳定，最后匹配后一帧角度。' },
+  { id: 'bridge-object-transform', category: '物体产品', name: '物体演变', text: '主要物体在保持轮廓逻辑的基础上逐渐演变，材质和光线自然过渡到后一帧。' },
+  { id: 'bridge-tabletop-slide', category: '物体产品', name: '桌面滑移', text: '物体在桌面或平面上轻轻滑动，摄影机稳定跟随，运动终点自然对齐后一帧。' },
+  { id: 'bridge-packshot-clean', category: '物体产品', name: '干净产品转场', text: '干净商业摄影风格，主体产品位置稳定，背景和光线逐渐变化，形成高质感首尾帧桥接。' },
+  { id: 'bridge-scene-day-night', category: '场景变化', name: '昼夜变化', text: '同一场景的光线从白天、黄昏或夜晚之间平滑变化，空间结构保持一致并抵达后一帧。' },
+  { id: 'bridge-location-shift', category: '场景变化', name: '地点渐变', text: '背景环境逐步从前一帧地点演变为后一帧地点，主体稳定清晰，转场自然可信。' },
+  { id: 'bridge-time-lapse-soft', category: '场景变化', name: '轻延时', text: '用轻微延时感表现环境变化，云、光线或人群缓慢流动，最后稳定在后一帧。' },
+  { id: 'bridge-cinematic-finale', category: '电影质感', name: '电影收束', text: '镜头运动克制而有电影感，色彩和光线统一，动作自然完成，最后精准停在后一帧构图。' },
+];
 
 export interface DirectorTimelineDragDurationInput {
   startDurationSec: number;
@@ -366,6 +441,82 @@ export function dedupeStrings(values: string[]): string[] {
   return result;
 }
 
+function cleanBridgePresetString(value: unknown, max = 600): string {
+  return typeof value === 'string'
+    ? value.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim().slice(0, max)
+    : '';
+}
+
+function cleanBridgePresetId(value: unknown, fallback: string): string {
+  const raw = cleanBridgePresetString(value, 80) || fallback;
+  return raw.replace(/[^\w-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80) || fallback;
+}
+
+function uniqueBridgePresetId(baseId: string, seen: Set<string>): string {
+  let id = baseId;
+  let index = 2;
+  while (seen.has(id)) {
+    id = `${baseId}-${index}`;
+    index += 1;
+  }
+  seen.add(id);
+  return id;
+}
+
+export function sanitizeDirectorBridgePromptPresets(value: unknown): DirectorBridgePromptPreset[] {
+  const raw: unknown[] = Array.isArray(value)
+    ? value
+    : value && typeof value === 'object' && Array.isArray((value as any).presets)
+      ? (value as any).presets
+      : [];
+  const seen = new Set<string>();
+  const presets: DirectorBridgePromptPreset[] = [];
+  raw.slice(0, 120).forEach((item, index) => {
+    if (!item || typeof item !== 'object') return;
+    const text = cleanBridgePresetString((item as any).text, 600);
+    if (!text) return;
+    const fallbackId = `director-bridge-preset-${index + 1}`;
+    const id = uniqueBridgePresetId(cleanBridgePresetId((item as any).id, fallbackId), seen);
+    const name =
+      cleanBridgePresetString((item as any).name, 48) ||
+      text.replace(/\s+/g, ' ').slice(0, 18) ||
+      `桥接预设 ${presets.length + 1}`;
+    const category = cleanBridgePresetString((item as any).category, 24);
+    const createdAt = cleanBridgePresetString((item as any).createdAt, 40);
+    const updatedAt = cleanBridgePresetString((item as any).updatedAt, 40);
+    presets.push({
+      id,
+      name,
+      text,
+      ...(category ? { category } : {}),
+      ...(createdAt ? { createdAt } : {}),
+      ...(updatedAt ? { updatedAt } : {}),
+    });
+  });
+  return presets;
+}
+
+export function createDirectorBridgePromptPresetExport(presets: unknown): DirectorBridgePromptPresetExport {
+  return {
+    schema: DIRECTOR_BRIDGE_PROMPT_PRESET_SCHEMA,
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    presets: sanitizeDirectorBridgePromptPresets(presets),
+  };
+}
+
+export function parseDirectorBridgePromptPresetImport(payload: string): DirectorBridgePromptPreset[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(payload);
+  } catch {
+    throw new Error('不是有效的桥接提示词预设文件');
+  }
+  const presets = sanitizeDirectorBridgePromptPresets(parsed);
+  if (!presets.length) throw new Error('没有识别到可导入的桥接提示词预设');
+  return presets;
+}
+
 export function sanitizeDirectorStoryboardShots(input: DirectorStoryboardInputShot[]): DirectorStoryboardShot[] {
   const raw = Array.isArray(input) ? input : [];
   const source = raw.length > 0 ? raw : [{ title: 'S1', durationSec: DIRECTOR_STORYBOARD_DEFAULT_DURATION_SEC }];
@@ -411,6 +562,21 @@ export function buildDirectorStoryboardReferenceOrder(shot: Pick<DirectorStorybo
     ],
     { images, videos, audios },
   );
+}
+
+export function buildDirectorStoryboardShotInputPatch(source: DirectorStoryboardShot): DirectorStoryboardShotInputPatch {
+  return {
+    prompt: normalizeString(source.prompt),
+    negativePrompt: normalizeString(source.negativePrompt),
+    promptMentions: Array.isArray(source.promptMentions)
+      ? source.promptMentions.map((mention) => ({ ...mention }))
+      : [],
+    frameMode: sanitizeFrameMode(source.frameMode),
+    localRefImages: sanitizeStringArray(source.localRefImages),
+    localRefVideos: sanitizeStringArray(source.localRefVideos),
+    localRefAudios: sanitizeStringArray(source.localRefAudios),
+    localRefOrder: buildDirectorStoryboardReferenceOrder(source).map((item) => ({ ...item })),
+  };
 }
 
 export function reorderDirectorStoryboardReference(
@@ -787,6 +953,46 @@ export function buildDirectorStoryboardOutputSummary(items: DirectorStoryboardOu
     lines.push(`${index + 1}. ${item.title} · ${item.durationSec}s · ${item.prompt} -> ${item.videoUrl}`);
   });
   return lines.join('\n');
+}
+
+export function getDirectorStoryboardOutputItemBindingKey(item: DirectorStoryboardOutputItem): string {
+  return normalizeString(item.jobId) || `${item.kind}:${normalizeString(item.shotId)}:${normalizeString(item.videoUrl)}`;
+}
+
+export function findDirectorStoryboardOutputItemForNodeData(
+  items: DirectorStoryboardOutputItem[],
+  nodeData: Record<string, any> | null | undefined,
+  fallbackIndex?: number,
+): DirectorStoryboardOutputItem | undefined {
+  const data = nodeData && typeof nodeData === 'object' ? nodeData : {};
+  const snapshot = data.directorStoryboardOutputSnapshot && typeof data.directorStoryboardOutputSnapshot === 'object'
+    ? data.directorStoryboardOutputSnapshot
+    : {};
+  const jobId = normalizeString(snapshot.jobId);
+  if (jobId) {
+    const byJobId = items.find((item) => item.jobId === jobId);
+    if (byJobId) return byJobId;
+  }
+
+  const snapshotKind = normalizeString(snapshot.kind);
+  const snapshotShotId = normalizeString(snapshot.shotId);
+  if (snapshotKind && snapshotShotId) {
+    const bySnapshot = items.find((item) => item.kind === snapshotKind && item.shotId === snapshotShotId);
+    if (bySnapshot) return bySnapshot;
+  }
+
+  const directVideoUrl = normalizeString(data.directVideoUrl) || normalizeString(data.videoUrl);
+  if (directVideoUrl) {
+    const byVideoUrl = items.filter((item) => item.videoUrl === directVideoUrl);
+    if (byVideoUrl.length === 1) return byVideoUrl[0];
+  }
+
+  const numericFallbackIndex = typeof fallbackIndex === 'number' && Number.isInteger(fallbackIndex)
+    ? fallbackIndex
+    : typeof data.pickIndex === 'number' && Number.isInteger(data.pickIndex)
+      ? data.pickIndex
+      : -1;
+  return numericFallbackIndex >= 0 ? items[numericFallbackIndex] : undefined;
 }
 
 export function buildDirectorStoryboardOutputNodeData(item: DirectorStoryboardOutputItem): Record<string, any> {

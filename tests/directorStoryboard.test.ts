@@ -2,15 +2,22 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
+  DIRECTOR_BRIDGE_PROMPT_PRESETS,
+  buildDirectorStoryboardBridgeRunPlan,
   buildDirectorStoryboardOutputItems,
   buildDirectorStoryboardOutputNodeData,
   buildDirectorStoryboardOutputSummary,
   buildDirectorStoryboardRunPlan,
   buildDirectorShotSeedancePayload,
   calculateDirectorTimelineDragDuration,
+  createDirectorBridgePromptPresetExport,
+  findDirectorStoryboardOutputItemForNodeData,
+  buildDirectorStoryboardShotInputPatch,
   buildDirectorStoryboardReferenceOrder,
+  parseDirectorBridgePromptPresetImport,
   reorderDirectorStoryboardReference,
   runDirectorStoryboardJobs,
+  sanitizeDirectorBridgePromptPresets,
   sanitizeDirectorStoryboardShots,
   type DirectorStoryboardJob,
 } from '../src/utils/directorStoryboard.ts';
@@ -30,6 +37,9 @@ test('director storyboard node is registered as a visible Seedance orchestration
   assert.match(canvas, /const DirectorStoryboardNode = lazyCanvasNode\(\(\) => import\('\.\/nodes\/DirectorStoryboardNode'\), 'DirectorStoryboardNode'\)/);
   assert.match(canvas, /'director-storyboard': DirectorStoryboardNode/);
   assert.match(canvas, /'director-storyboard':\s*\{/);
+  assert.match(canvas, /directorBridgePanelEnabled:\s*false/);
+  assert.match(canvas, /bridgeEnabled:\s*false/);
+  assert.match(canvas, /directorBridgePromptPresets:\s*\[\]/);
   assert.match(features, /director-storyboard/);
 });
 
@@ -118,6 +128,79 @@ test('director storyboard references can be reordered as one mixed material pool
   assert.deepEqual(moved.localRefAudios, ['/files/input/audio-a.mp3']);
 });
 
+test('director storyboard can copy reusable input fields from another shot without result state', () => {
+  const [source] = sanitizeDirectorStoryboardShots([
+    {
+      id: 's2',
+      title: 'S2',
+      durationSec: 9,
+      prompt: 'copy this prompt',
+      negativePrompt: 'avoid blur',
+      frameMode: 'firstlast',
+      promptMentions: [
+        { kind: 'image', token: '@image1', materialKey: 'image:/files/input/ref.png', start: 5, end: 12 },
+      ] as any,
+      localRefImages: ['/files/input/ref-a.png', '/files/input/ref-b.png'],
+      localRefVideos: ['/files/input/ref-v.mp4'],
+      localRefAudios: ['/files/input/ref-a.mp3'],
+      localRefOrder: [
+        { kind: 'video', url: '/files/input/ref-v.mp4' },
+        { kind: 'image', url: '/files/input/ref-b.png' },
+        { kind: 'audio', url: '/files/input/ref-a.mp3' },
+        { kind: 'image', url: '/files/input/ref-a.png' },
+      ],
+      status: 'success',
+      taskId: 'task-s2',
+      videoUrl: '/files/output/s2.mp4',
+      error: 'old error',
+    },
+  ]);
+
+  const patch = buildDirectorStoryboardShotInputPatch(source);
+
+  assert.deepEqual(patch, {
+    prompt: 'copy this prompt',
+    negativePrompt: 'avoid blur',
+    promptMentions: [
+      { kind: 'image', token: '@image1', materialKey: 'image:/files/input/ref.png', start: 5, end: 12 },
+    ],
+    frameMode: 'firstlast',
+    localRefImages: ['/files/input/ref-a.png', '/files/input/ref-b.png'],
+    localRefVideos: ['/files/input/ref-v.mp4'],
+    localRefAudios: ['/files/input/ref-a.mp3'],
+    localRefOrder: [
+      { kind: 'video', url: '/files/input/ref-v.mp4' },
+      { kind: 'image', url: '/files/input/ref-b.png' },
+      { kind: 'audio', url: '/files/input/ref-a.mp3' },
+      { kind: 'image', url: '/files/input/ref-a.png' },
+    ],
+  });
+  assert.equal('title' in patch, false);
+  assert.equal('durationSec' in patch, false);
+  assert.equal('status' in patch, false);
+  assert.equal('taskId' in patch, false);
+  assert.equal('videoUrl' in patch, false);
+});
+
+test('director storyboard bridge prompt presets include curated defaults and portable custom exports', () => {
+  assert.equal(DIRECTOR_BRIDGE_PROMPT_PRESETS.length, 50);
+  assert.equal(new Set(DIRECTOR_BRIDGE_PROMPT_PRESETS.map((preset) => preset.id)).size, 50);
+  assert.ok(DIRECTOR_BRIDGE_PROMPT_PRESETS.every((preset) => preset.name && preset.text.length >= 16));
+
+  const custom = sanitizeDirectorBridgePromptPresets([
+    { id: 'smooth', name: '平滑转场', text: '镜头平滑衔接前后画面，主体动作自然延续。' },
+    { id: 'smooth', name: '重复ID', text: '保持主体身份一致，光线和构图自然过渡。' },
+    { id: '', name: '', text: '' },
+  ]);
+
+  assert.deepEqual(custom.map((preset) => preset.id), ['smooth', 'smooth-2']);
+  const exported = createDirectorBridgePromptPresetExport(custom);
+  assert.equal(exported.schema, 't8-director-bridge-prompt-presets');
+  assert.equal(exported.version, 1);
+  assert.deepEqual(parseDirectorBridgePromptPresetImport(JSON.stringify(exported)), custom);
+  assert.throws(() => parseDirectorBridgePromptPresetImport('{bad json'), /不是有效/);
+});
+
 test('director storyboard duration drag uses a 4-15 second range', () => {
   assert.equal(
     calculateDirectorTimelineDragDuration({
@@ -175,9 +258,12 @@ test('director storyboard exposes the same zhenzhen group binding addon used by 
 
 test('director storyboard node keeps ports visible and makes timeline resizing draggable', () => {
   const node = read('../src/components/nodes/DirectorStoryboardNode.tsx');
+  const canvas = read('../src/components/Canvas.tsx');
 
   assert.match(node, /className=\{`relative w-\[460px\] overflow-visible/);
   assert.match(node, /className="director-storyboard-port[^"]*!h-4[^"]*!w-4/);
+  assert.match(node, /data-director-timeline-resize-handle/);
+  assert.match(canvas, /closest\('\[data-director-timeline-resize-handle\]'\)/);
   assert.match(node, /onPointerDownCapture=\{\(event\) => beginDurationResize\(event, shot\)\}/);
   assert.match(node, /onPointerDown=\{\(event\) => beginDurationResize\(event, shot\)\}/);
   assert.match(node, /onPointerMoveCapture=\{moveDurationResize\}/);
@@ -200,11 +286,26 @@ test('director storyboard bridge UI is edited per shot pair instead of a global 
   assert.match(node, /sanitizeDirectorStoryboardBridges/);
   assert.match(node, /buildDirectorStoryboardBridgeRunPlan/);
   assert.match(node, /runBridge/);
+  assert.match(node, /const bridgePanelEnabled = d\.directorBridgePanelEnabled === true/);
+  assert.match(node, /启用首尾帧桥接/);
+  assert.match(node, /checked=\{bridgePanelEnabled\}/);
+  assert.match(node, /directorBridgePanelEnabled: event\.target\.checked/);
+  assert.match(node, /bridgeEnabled: event\.target\.checked/);
+  assert.match(node, /bridgePanelEnabled &&/);
+  assert.match(node, /桥接功能默认收起/);
   assert.match(node, /请先生成前后两个镜头视频/);
   assert.match(node, /上传前段视频/);
   assert.match(node, /上传后段视频/);
   assert.match(node, /上传首帧/);
   assert.match(node, /上传尾帧/);
+  assert.match(node, /桥接预设 · LIST/);
+  assert.match(node, /director-bridge-prompt-preset-select/);
+  assert.match(node, /DIRECTOR_BRIDGE_PROMPT_PRESETS/);
+  assert.match(node, /directorBridgePromptPresets/);
+  assert.match(node, /applyBridgePromptPreset/);
+  assert.match(node, /saveBridgePromptPreset/);
+  assert.match(node, /exportBridgePromptPresets/);
+  assert.match(node, /importBridgePromptPresets/);
   assert.doesNotMatch(node, /首尾帧桥接片段\s*默认关闭/);
   assert.doesNotMatch(node, /bridgeEnabled:\s*onlyShotId/);
 });
@@ -216,6 +317,11 @@ test('director storyboard active shot can override global model ratio and resolu
   assert.match(node, /activeShot\.modelOverride \|\| ''/);
   assert.match(node, /activeShot\.ratioOverride \|\| ''/);
   assert.match(node, /activeShot\.resolutionOverride \|\| ''/);
+  assert.match(node, /复用输入/);
+  assert.match(node, /inputReuseSourceShotId/);
+  assert.match(node, /applyInputReuseToActiveShot/);
+  assert.match(node, /buildDirectorStoryboardShotInputPatch/);
+  assert.match(node, /应用到当前分镜/);
 });
 
 test('buildDirectorShotSeedancePayload compiles media mentions and first/last frame references', () => {
@@ -470,6 +576,40 @@ test('director storyboard output items keep each video paired with its own shot 
   assert.equal(snapshot.outputText, '');
 });
 
+test('director storyboard output node binding stays on the same shot when bridge items are inserted', () => {
+  const shotJobs: DirectorStoryboardJob[] = [
+    { id: 'shot-s1', shotId: 's1', order: 0, kind: 'shot', title: 'S1', payload: { model: 'm', prompt: 'first prompt', duration: 5 } },
+    { id: 'shot-s2', shotId: 's2', order: 1, kind: 'shot', title: 'S2', payload: { model: 'm', prompt: 'second prompt', duration: 5 } },
+    { id: 'shot-s3', shotId: 's3', order: 2, kind: 'shot', title: 'S3', payload: { model: 'm', prompt: 'third prompt', duration: 5 } },
+  ];
+  const shotResults = {
+    'shot-s1': { status: 'success', videoUrl: 'shot-s1.mp4' },
+    'shot-s2': { status: 'success', videoUrl: 'shot-s2.mp4' },
+    'shot-s3': { status: 'success', videoUrl: 'shot-s3.mp4' },
+  };
+  const initialItems = buildDirectorStoryboardOutputItems(shotJobs, shotResults);
+  const existingS2OutputData = {
+    pickKind: 'video',
+    pickIndex: 1,
+    ...buildDirectorStoryboardOutputNodeData(initialItems[1]),
+  };
+  const bridgeJobs: DirectorStoryboardJob[] = [
+    { id: 'bridge-s1-s2', shotId: 's1:s2', order: 0.5, kind: 'bridge', title: 'S1 → S2', payload: { model: 'm', prompt: 'bridge one', duration: 4 } },
+    { id: 'bridge-s2-s3', shotId: 's2:s3', order: 1.5, kind: 'bridge', title: 'S2 → S3', payload: { model: 'm', prompt: 'bridge two', duration: 4 } },
+  ];
+  const expandedItems = buildDirectorStoryboardOutputItems([...shotJobs, ...bridgeJobs], {
+    ...shotResults,
+    'bridge-s1-s2': { status: 'success', videoUrl: 'bridge-s1-s2.mp4' },
+    'bridge-s2-s3': { status: 'success', videoUrl: 'bridge-s2-s3.mp4' },
+  });
+
+  assert.equal(expandedItems[1].jobId, 'bridge-s1-s2');
+  const matched = findDirectorStoryboardOutputItemForNodeData(expandedItems, existingS2OutputData, 1);
+
+  assert.equal(matched?.jobId, 'shot-s2');
+  assert.equal(matched?.videoUrl, 'shot-s2.mp4');
+});
+
 test('director storyboard auto output uses ordered videoUrls and skips standalone cumulative text nodes', () => {
   const canvas = read('../src/components/Canvas.tsx');
   const output = read('../src/components/nodes/OutputNode.tsx');
@@ -480,6 +620,7 @@ test('director storyboard auto output uses ordered videoUrls and skips standalon
   assert.match(canvas, /else if \(Array\.isArray\(d\.videoUrls\)\) d\.videoUrls\.forEach\(pushVid\)/);
   assert.match(canvas, /buildDirectorStoryboardOutputNodeData/);
   assert.match(canvas, /const directorOutputItems/);
+  assert.match(canvas, /findDirectorStoryboardOutputItemForNodeData/);
   assert.match(canvas, /directorOutputItems\[item\.kindIndex\]/);
   assert.match(canvas, /outputDataForItem\(item\)/);
   assert.match(canvas, /const directorOutputRefreshNonce/);
