@@ -62,6 +62,7 @@ export type ImageEditProduceMeta =
     }
   | { type: 'mask'; strokeCount: number }
   | { type: 'brush'; strokeCount: number }
+  | { type: 'annotation-edit'; instruction: string; strokeCount: number; annotationTextCount: number; annotationShapeCount: number }
   | { type: 'compose'; layerCount: number; canvasW: number; canvasH: number };
 
 interface Props {
@@ -405,6 +406,7 @@ const ImageEditModal = ({ srcUrl, onClose, onProduce }: Props) => {
   const [brushColor, setBrushColor] = useState('#ff2d55');
   const [brushSize, setBrushSize] = useState(14);
   const [brushFillMode, setBrushFillMode] = useState<BrushFillMode>('stroke');
+  const [annotationInstruction, setAnnotationInstruction] = useState('');
   const [labelCounter, setLabelCounter] = useState(1);
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
 
@@ -1752,6 +1754,44 @@ const ImageEditModal = ({ srcUrl, onClose, onProduce }: Props) => {
     }
   }
 
+  async function applyAnnotationEdit() {
+    if (!naturalSize || brushStrokes.length === 0) return;
+    const annotationTextCount = brushStrokes.filter((stroke) => stroke.kind === 'brush-label').length;
+    const annotationShapeCount = brushStrokes.filter((stroke) => stroke.kind !== 'brush-free').length;
+    const instruction = annotationInstruction.trim();
+    if (!instruction && annotationTextCount === 0) {
+      setErrMsg('请补充改图说明，或用标号文字写清楚要怎么改。');
+      return;
+    }
+    setBusy(true);
+    setErrMsg(null);
+    try {
+      const img = await loadImage(workingSrcUrl);
+      const cv = document.createElement('canvas');
+      cv.width = naturalSize.w;
+      cv.height = naturalSize.h;
+      const ctx = cv.getContext('2d');
+      if (!ctx) throw new Error('canvas 不可用');
+      ctx.drawImage(img, 0, 0, cv.width, cv.height);
+      for (const s of brushStrokes) drawStrokeOnCtx(ctx, s, cv.width, cv.height);
+      const dataUrl = cv.toDataURL('image/png');
+      const originUrl = await fetchAndUpload(workingSrcUrl, 'annotation-source');
+      const annotatedUrl = await uploadDataUrl(dataUrl, 'annotation-markup');
+      onProduce([originUrl, annotatedUrl], {
+        type: 'annotation-edit',
+        instruction,
+        strokeCount: brushStrokes.length,
+        annotationTextCount,
+        annotationShapeCount,
+      });
+      onClose();
+    } catch (e: any) {
+      setErrMsg(e?.message || '标注改图失败');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   // 将任意 url 原图转存为本地 dataUrl 后上传，保障同源 + 外链不被黑名单
   async function fetchAndUpload(srcUrl: string, prefix: string): Promise<string> {
     const img = await loadImage(srcUrl);
@@ -3079,22 +3119,54 @@ const ImageEditModal = ({ srcUrl, onClose, onProduce }: Props) => {
               )}
             </button>
           ) : mode === 'brush' ? (
-            <button
-              style={btnPrimary}
-              onClick={applyBrush}
-              disabled={busy || !naturalSize || brushStrokes.length === 0}
-              title={brushStrokes.length === 0 ? '请先作画' : ''}
-            >
-              {busy ? (
-                <>
-                  <Loader2 size={14} className="animate-spin" /> 处理中…
-                </>
-              ) : (
-                <>
-                  <Check size={14} /> 应用画板
-                </>
-              )}
-            </button>
+            <>
+              <input
+                className="nodrag"
+                style={{
+                  ...inputStyle,
+                  minWidth: 260,
+                  maxWidth: 420,
+                  flex: '1 1 260px',
+                  width: 'auto',
+                  }}
+                value={annotationInstruction}
+                onChange={(event) => setAnnotationInstruction(event.target.value)}
+                placeholder="改图说明：例如把箭头处换成木牌，移除框线和标注"
+                title="标注改图说明"
+              />
+              <button
+                style={btnBase}
+                onClick={applyBrush}
+                disabled={busy || !naturalSize || brushStrokes.length === 0}
+                title={brushStrokes.length === 0 ? '请先作画' : ''}
+              >
+                {busy ? (
+                  <>
+                    <Loader2 size={14} className="animate-spin" /> 处理中…
+                  </>
+                ) : (
+                  <>
+                    <Check size={14} /> 应用画板
+                  </>
+                )}
+              </button>
+              <button
+                style={btnPrimary}
+                onClick={applyAnnotationEdit}
+                disabled={busy || !naturalSize || brushStrokes.length === 0}
+                title={brushStrokes.length === 0 ? '请先用箭头、框线或文字标注要修改的位置' : '发送干净原图和标注图进行 AI 改图'}
+              >
+                {busy ? (
+                  <>
+                    <Loader2 size={14} className="animate-spin" /> 处理中…
+                  </>
+                ) : (
+                  <>
+                    <Paintbrush size={14} /> 标注改图
+                  </>
+                )}
+              </button>
+            </>
           ) : mode === 'compose' ? (
             <button
               style={btnPrimary}

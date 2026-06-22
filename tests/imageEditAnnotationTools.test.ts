@@ -41,3 +41,13 @@ test('image edit brush shapes use local shift-drag aspect lock', () => {
   assert.match(source, /const brushRect = brushRectFromDrag\(ctx\.startPt, pt, e\.shiftKey, naturalSize\)/);
   assert.match(source, /rect: brushRect/);
 });
+
+test('image edit brush mode can send clean source plus annotated image for AI annotation editing', () => {
+  assert.match(source, /\| \{ type: 'annotation-edit'; instruction: string; strokeCount: number; annotationTextCount: number; annotationShapeCount: number \}/);
+  assert.match(source, /const \[annotationInstruction, setAnnotationInstruction\] = useState\(''\)/);
+  assert.match(source, /async function applyAnnotationEdit\(\)/);
+  assert.match(source, /const originUrl = await fetchAndUpload\(workingSrcUrl, 'annotation-source'\)/);
+  assert.match(source, /const annotatedUrl = await uploadDataUrl\(dataUrl, 'annotation-markup'\)/);
+  assert.match(source, /onProduce\(\[originUrl, annotatedUrl\], \{[\s\S]*type: 'annotation-edit'/);
+  assert.match(source, /标注改图/);
+});

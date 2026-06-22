@@ -1,7 +1,71 @@
 {
   "$schema": "本文件为 T8-penguin-canvas 节点清单防丢失锁,任何节点删减都需要在 roadmap.md 中说明并更新本文件。",
-  "version": "2.3.3",
-  "lastUpdated": "2026-06-23-v233-electron-release-r509",
+  "version": "2.3.4",
+  "lastUpdated": "2026-06-23-v234-electron-release-r510",
+  "electronReleaseV234": {
+    "version": "2.3.4",
+    "status": "electron-release",
+    "date": "2026-06-23",
+    "description": "v2.3.4 Electron 自动更新版：补齐 Cowart 启发画布创作工作流的标注改图执行链路，并增强当前画布资源包 manifest 的资源库、缩略图和生成历史摘要。",
+    "highlights": [
+      "图像编辑画板新增“标注改图”：用户可用箭头、框线、圆形、菱形、标号和文字标出修改意图，一键发送干净原图 + 标注合成图。",
+      "输出素材节点和上传素材节点接入标注改图执行链路，复用现有图像生成代理，默认在当前节点右侧创建干净结果。",
+      "如果用户同时选中生成目标框，标注改图结果会优先填入目标框，延续先摆位置再生成的轻量 Cowart 工作流。",
+      "标注改图结果保留来源节点、干净原图、标注图、说明文字、标注数量、模型信息和结果 URL 等结构化元数据，便于追踪和二次编辑。",
+      "当前画布资源包导出增强：manifest 额外包含资源库分类 / 素材索引、缩略图引用和生成历史摘要，导入时可识别并刷新资源库状态。",
+      "网页图片反推 Chrome 插件源码继续纳入公开发布边界，确保右键反推、生成图片和发送回画布链路不漏。"
+    ],
+    "releaseFiles": [
+      "package.json",
+      "package-lock.json",
+      "vite.config.ts",
+      "vite.config.js",
+      "electron/main.cjs",
+      "backend/src/config.js",
+      "features.json",
+      "README.md",
+      "release-notes/v2.3.4.md",
+      "extension/manifest.json",
+      "extension/scripts/background.js",
+      "extension/scripts/content.js",
+      "extension/styles/content.css",
+      "src/utils/canvasCreativeWorkflow.ts",
+      "src/components/Canvas.tsx",
+      "src/components/nodes/ImageEditModal.tsx",
+      "src/components/nodes/OutputNode.tsx",
+      "src/components/nodes/UploadNode.tsx",
+      "tests/canvasCreativeWorkflow.test.ts",
+      "tests/imageEditAnnotationTools.test.ts",
+      "tests/webImageReverseToCanvas.test.ts"
+    ],
+    "packaging": {
+      "script": "T8_RELEASE_APPROVAL=release-2.3.4 npm run dist:release（仅在用户明确要求发布时使用）",
+      "installer": "dist_electron/T8-PenguinCanvas-Setup-2.3.4.exe",
+      "blockmap": "dist_electron/T8-PenguinCanvas-Setup-2.3.4.exe.blockmap",
+      "latestYml": "dist_electron/latest.yml",
+      "updater": "GitHub Release v2.3.4 作为 latest.yml 自动更新源；安装继续使用前台 NSIS 向导，不静默安装。",
+      "releaseUrl": "https://github.com/T8mars/T8-penguin-canvas/releases/tag/v2.3.4"
+    },
+    "releaseBoundary": [
+      "公开源码继续禁止 skill.md、roadmap.md、local-private/**、hermes-agent/**、comfyui-anima-t8/**、Electron 缓存目录、artifacts/** 和任何私有计费/支付/充值/分组令牌实现进入 GitHub。",
+      "网页图片反推 Chrome 插件源码必须保持在公开提交内：extension/manifest.json、extension/scripts/background.js、extension/scripts/content.js、extension/styles/content.css；浏览器已安装状态、真实 API Key 和本地调试数据不进入仓库。",
+      "RH 工具箱制作器、FAL 应用制作工具和维护者本机调试素材仍为本地开发工具，不进入公开源码。",
+      "Release 资产只上传 NSIS 安装包、blockmap 与 latest.yml。",
+      "npm run dist:release 与 npm run release:github 默认拒绝执行发布；必须设置 T8_RELEASE_APPROVAL=release-2.3.4，且只能在用户明确要求发布后设置。",
+      "2026-06-23 R510 正式发布：本轮来自用户明确发布授权，允许设置 T8_RELEASE_APPROVAL=release-2.3.4 运行 Electron 打包与 GitHub Release 上传链路。"
+    ],
+    "verification": [
+      "node --test tests\\canvasCreativeWorkflow.test.ts tests\\webImageReverseToCanvas.test.ts tests\\placementShelf.test.ts tests\\themeRegistry.test.ts tests\\imageEditAnnotationTools.test.ts tests\\rhCutoutSurface.test.ts tests\\drawingBoardInteractions.test.ts tests\\drawingBoardCutout.test.ts tests\\rhToolbox.test.ts",
+      "node -c backend\\src\\routes\\externalProviders.js",
+      "node -e \"JSON.parse(require('fs').readFileSync('features.json','utf8'))\"",
+      "npm run type-check",
+      "npm run public:check",
+      "npm run rh-toolbox:check",
+      "npm run build",
+      "T8_RELEASE_APPROVAL=release-2.3.4 npm run dist:release",
+      "npm run release:verify -- v2.3.4"
+    ]
+  },
   "electronReleaseV233": {
     "version": "2.3.3",
     "status": "electron-release",
@@ -140,10 +204,10 @@
     ]
   },
   "cowartInspiredCanvasWorkflow": {
-    "version": "2.3.3",
+    "version": "2.3.4",
     "status": "electron-release",
     "date": "2026-06-23",
-    "description": "Cowart 启发的轻量画布创作工作流已随 v2.3.3 Electron 自动更新版发布：新增生成目标框、选区 AI 上下文、标注改图请求契约与当前画布资源包 manifest，让 AI 结果更容易按用户指定位置回到画布。",
+    "description": "Cowart 启发的轻量画布创作工作流已随 v2.3.4 Electron 自动更新版补齐：生成目标框、选区 AI 上下文、网页反推回填目标框、标注改图执行链路和当前画布资源包增强 manifest 已形成可用闭环。",
     "sourceFiles": [
       "src/utils/canvasCreativeWorkflow.ts",
       "src/components/nodes/GenerationTargetNode.tsx",
@@ -153,22 +217,27 @@
       "src/config/portTypes.ts",
       "src/utils/nodePlacement.ts",
       "src/styles/index.css",
-      "tests/canvasCreativeWorkflow.test.ts"
+      "tests/canvasCreativeWorkflow.test.ts",
+      "src/components/nodes/ImageEditModal.tsx",
+      "src/components/nodes/OutputNode.tsx",
+      "src/components/nodes/UploadNode.tsx",
+      "tests/imageEditAnnotationTools.test.ts"
     ],
     "capabilities": [
       "右上快捷栏和画布右键菜单可创建“生成目标框”，用户先摆好位置、尺寸和提示词，再选择替换到框内或保留版本到右侧输出节点。",
       "生成目标框可接收上游文本和图像参考，运行时复用现有 /api/proxy/image 生图链路，结果只保存 URL、版本记录和来源节点 ID。",
       "网页图片反推回传时如果当前选中生成目标框，图片结果优先填入目标框，提示词模式会写入目标框 prompt，不再额外铺开节点。",
       "选中多个文本/图像/输出节点后，右键可在选区右侧创建已带提示词和参考图的图像生成节点，保持选区包围盒和默认落点逻辑。",
-      "标注改图契约会同时保留干净原图和标注合成图，提示词要求应用标注意图并移除箭头、框线、标号和编辑痕迹；纯形状无文字时要求补充说明。",
-      "当前画布资源包导出默认生成轻量 JSON manifest，包含 canvas、资源清单、缺失报告和可复制文件列表，不写入 base64、大文件内容、API Key 或私有配置。"
+      "图像编辑画板可直接“标注改图”，输出干净原图和标注合成图；输出素材节点与上传素材节点会调用图像生成链路生成干净改图结果。",
+      "标注改图结果默认落在来源节点右侧；如果用户选中生成目标框，则结果优先写入目标框，并保留 annotationEdit 结构化元数据。",
+      "当前画布资源包导出默认生成轻量 JSON manifest，包含 canvas、资源清单、缺失报告、资源库快照、缩略图引用和生成历史摘要，不写入 base64、大文件内容、API Key 或私有配置。"
     ],
     "verification": [
-      "node --test tests\\canvasCreativeWorkflow.test.ts",
+      "node --test tests\\canvasCreativeWorkflow.test.ts tests\\imageEditAnnotationTools.test.ts tests\\webImageReverseToCanvas.test.ts",
       "npm run type-check",
       "npm run build",
-      "T8_RELEASE_APPROVAL=release-2.3.3 npm run dist:release",
-      "npm run release:verify -- v2.3.3"
+      "T8_RELEASE_APPROVAL=release-2.3.4 npm run dist:release",
+      "npm run release:verify -- v2.3.4"
     ]
   },
   "electronReleaseV231": {
@@ -3120,11 +3189,11 @@
       "T8_RUNTIME_CACHE_DIR": "可选，覆盖运行时归档解压缓存目录；默认打包模式为 %APPDATA%/t8-penguin-canvas/runtime-cache",
       "T8_ENABLE_LOCAL_PRIVATE": "可选，0=强制关闭本机 local-private/extensions 私有扩展；默认只要本机 ignored 私有扩展存在，开发环境和本机打包 release 都会自动带入。GitHub/clean clone 因为没有 local-private 目录，所以不会带充值实现。"
     },
-    "version": "2.3.3",
-    "semverVersion": "2.3.3",
+    "version": "2.3.4",
+    "semverVersion": "2.3.4",
     "versionNumberPolicy": "T8 版本号仍采用 x.y.z 三段，但每一段只允许 0-9；任一段到 9 后下一次发布必须向左进位，禁止任一段出现两位数字。例：1.9.9 的下一版必须是 2.0.0。",
-    "versionNote": "v1.3.0 起统一采用三段阶段号 x.y.z；当前发布版本为 v2.3.3，发布生成目标框、选区生成图像、网页反推回填目标框和当前画布资源包 manifest；公开源码仍排除本地私有计费/支付/充值/分组令牌实现。",
-    "installer": "v2.3.3 作为 Electron 自动更新发布版本：npm run dist:release 与 npm run release:github 继续带 T8_RELEASE_APPROVAL=release-2.3.3 防误触闸，只有用户明确要求发布后才能设置该变量并发布自动更新资产。",
+    "versionNote": "v1.3.0 起统一采用三段阶段号 x.y.z；当前发布版本为 v2.3.4，发布标注改图执行链路、资源包 manifest 增强和网页反推插件公开提交确认；公开源码仍排除本地私有计费/支付/充值/分组令牌实现。",
+    "installer": "v2.3.4 作为 Electron 自动更新发布版本：npm run dist:release 与 npm run release:github 继续带 T8_RELEASE_APPROVAL=release-2.3.4 防误触闸，只有用户明确要求发布后才能设置该变量并发布自动更新资产。",
     "updaterInstallMode": "自动更新下载完成后不得静默安装：main.cjs 必须设置 autoInstallOnAppQuit=false，显式安装调用 quitAndInstall(false,true)；electron/build-resources/installer.nsh 通过 SetSilent normal 让新版 NSIS 安装器即使收到旧客户端传入的 /S 也尽量切回前台安装向导。",
     "installerShortcutPolicy": "安装完成后必须创建桌面和开始菜单快捷方式：package.json build.nsis.createDesktopShortcut 必须为 \"always\"，createStartMenuShortcut 必须为 true；electron/build-resources/installer.nsh 必须保留 customInstall 兜底 CreateShortCut \"$newStartMenuLink\" 与 \"$DESKTOP\\${SHORTCUT_NAME}.lnk\"，防止更新安装/keepShortcuts 路径遗漏入口。",
     "updaterEntryPolicy": "顶栏桌面更新入口不得只因 window.t8pc.updater 缺失就静默消失；Electron UA 或 t8pc.getInfo/openExternal 可用时必须显示诊断入口，提示重新安装完整桌面包，Web/纯浏览器环境才隐藏。状态为 not-available 时按钮仍保留“更新”字样，避免用户误以为自动更新入口被删除。",

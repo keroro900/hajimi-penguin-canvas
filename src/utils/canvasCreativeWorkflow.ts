@@ -94,6 +94,43 @@ export interface AnnotationEditRequest {
   };
 }
 
+export interface AnnotationEditResultPlacementInput {
+  sourceNode: Node;
+  resultUrls: string[];
+  request: AnnotationEditRequest;
+  targetNode?: Node | null;
+  targetMode?: CreativeTargetResultOptions['mode'];
+  now?: number | string;
+}
+
+export interface AnnotationEditResultPlacement {
+  targetPatch: Record<string, any> | null;
+  outputNode: Node | null;
+}
+
+type CanvasPackageHistoryKind = MediaKind | 'text';
+
+export interface CanvasPackageResourceLibrarySnapshot {
+  categories: Record<string, any>[];
+  items: Record<string, any>[];
+}
+
+export interface CanvasPackageThumbnailRef {
+  id: string;
+  url: string;
+  sourceUrl?: string;
+  sourceNodeId?: string;
+  kind?: string;
+  available?: boolean;
+}
+
+export interface CanvasPackageHistorySummary {
+  total: number;
+  byKind: Record<CanvasPackageHistoryKind, number>;
+  items: Record<string, any>[];
+  truncated: boolean;
+}
+
 export interface CanvasResourcePackageManifest {
   schema: 't8-canvas-resource-package';
   version: 1;
@@ -105,11 +142,17 @@ export interface CanvasResourcePackageManifest {
   resources: CanvasPackageResource[];
   missingFiles: CanvasPackageResource[];
   filesToCopy: CanvasPackageResource[];
+  resourceLibrary: CanvasPackageResourceLibrarySnapshot;
+  thumbnailRefs: CanvasPackageThumbnailRef[];
+  generationHistorySummary: CanvasPackageHistorySummary;
   summary: {
     nodeCount: number;
     edgeCount: number;
     resourceCount: number;
     missingCount: number;
+    resourceLibraryItemCount: number;
+    thumbnailCount: number;
+    generationHistoryCount: number;
   };
 }
 
@@ -121,6 +164,17 @@ export interface CanvasPackageResource {
   sourceNodeId: string;
   available: boolean;
   resourceId?: string;
+}
+
+export interface CanvasResourcePackageImportPlan {
+  canvas: any;
+  resources: CanvasPackageResource[];
+  missingFiles: CanvasPackageResource[];
+  filesToCopy: CanvasPackageResource[];
+  resourceLibrary: CanvasPackageResourceLibrarySnapshot;
+  thumbnailRefs: CanvasPackageThumbnailRef[];
+  generationHistorySummary: CanvasPackageHistorySummary;
+  summary: CanvasResourcePackageManifest['summary'];
 }
 
 function cleanText(value: unknown, maxLen = 2000): string {
@@ -369,6 +423,95 @@ export function buildAnnotationEditRequest(input: AnnotationEditRequestInput): A
   };
 }
 
+function annotationEditMetadata(
+  sourceNode: Node,
+  request: AnnotationEditRequest,
+  resultUrls: string[],
+  createdAt: number | string,
+  targetSlotId?: string,
+) {
+  const sourceNodeId = request.metadata.sourceNodeId || sourceNode.id;
+  return {
+    ...clonePlain(request.metadata),
+    sourceNodeId,
+    targetSlotId,
+    resultUrls,
+    completedAt: createdAt,
+    prompt: request.prompt,
+  };
+}
+
+export function buildAnnotationEditResultPlacement(
+  input: AnnotationEditResultPlacementInput,
+): AnnotationEditResultPlacement {
+  const cleanUrls = input.resultUrls.map((url) => cleanText(url, 4096)).filter(Boolean);
+  if (cleanUrls.length === 0) {
+    throw new Error('标注改图没有可写入的结果 URL');
+  }
+  const sourceNode = input.sourceNode;
+  const sourceNodeId = input.request.metadata.sourceNodeId || sourceNode.id;
+  const createdAt = normalizeNow(input.now);
+
+  if (input.targetNode) {
+    const targetResult = buildCreativeTargetResult(input.targetNode, cleanUrls, {
+      mode: input.targetMode || 'replace',
+      sourceNodeIds: [sourceNodeId],
+      now: createdAt,
+      prompt: input.request.prompt,
+    });
+    const metadata = annotationEditMetadata(
+      sourceNode,
+      input.request,
+      cleanUrls,
+      createdAt,
+      input.targetNode.id,
+    );
+    return {
+      targetPatch: {
+        ...targetResult.targetPatch,
+        creativeWorkflowKind: 'annotation-edit',
+        annotationEdit: metadata,
+      },
+      outputNode: targetResult.outputNode
+        ? {
+            ...targetResult.outputNode,
+            data: {
+              ...(targetResult.outputNode.data || {}),
+              creativeWorkflowKind: 'annotation-edit',
+              annotationEdit: metadata,
+            },
+          }
+        : null,
+    };
+  }
+
+  const rect = rectOf(sourceNode);
+  const metadata = annotationEditMetadata(sourceNode, input.request, cleanUrls, createdAt);
+  const outputNode: Node = {
+    id: `output-annotation-edit-${sourceNodeId}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    type: 'output',
+    position: { x: rect.x + rect.w + 80, y: rect.y },
+    selected: true,
+    data: {
+      ...createOutputDataFromItems(
+        'image',
+        cleanUrls.map((url) => ({ kind: 'image', url })),
+      ),
+      prompt: input.request.prompt,
+      outputText: input.request.metadata.instruction || input.request.prompt,
+      directOutputText: input.request.metadata.instruction || input.request.prompt,
+      creativeWorkflowKind: 'annotation-edit',
+      creativeSourceNodeIds: [sourceNodeId],
+      annotationEdit: metadata,
+      completedAt: createdAt,
+    },
+  };
+  return {
+    targetPatch: null,
+    outputNode,
+  };
+}
+
 function clonePlain<T>(value: T): T {
   if (value === undefined || value === null) return value;
   try {
@@ -446,6 +589,92 @@ function collectPackageResources(canvas: any, existingFiles?: Set<string>): Canv
   return resources;
 }
 
+function sanitizeObjectList(value: unknown, limit = 500): Record<string, any>[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .slice(0, limit)
+    .map((item) => sanitizeCanvasValue(item))
+    .filter((item) => item && typeof item === 'object' && !Array.isArray(item));
+}
+
+function normalizeResourceLibrarySnapshot(value: unknown): CanvasPackageResourceLibrarySnapshot {
+  const raw = value && typeof value === 'object' ? value as any : {};
+  return {
+    categories: sanitizeObjectList(raw.categories, 200),
+    items: sanitizeObjectList(raw.items, 1000),
+  };
+}
+
+function normalizeThumbnailRefs(value: unknown, existingFiles?: Set<string>): CanvasPackageThumbnailRef[] {
+  if (!Array.isArray(value)) return [];
+  const refs: CanvasPackageThumbnailRef[] = [];
+  for (const raw of value.slice(0, 1000)) {
+    const item = sanitizeCanvasValue(raw);
+    if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+    const url = cleanText((item as any).url || (item as any).thumbUrl || (item as any).thumbnailUrl, 4096);
+    if (!url || isDataUrl(url)) continue;
+    refs.push({
+      id: cleanText((item as any).id, 120) || `thumb-${refs.length + 1}`,
+      url,
+      sourceUrl: cleanText((item as any).sourceUrl || (item as any).fileUrl, 4096) || undefined,
+      sourceNodeId: cleanText((item as any).sourceNodeId, 120) || undefined,
+      kind: cleanText((item as any).kind, 40) || undefined,
+      available: existingFiles instanceof Set ? existingFiles.has(url) : (item as any).available !== false,
+    });
+  }
+  return refs;
+}
+
+const HISTORY_KINDS: CanvasPackageHistoryKind[] = ['image', 'video', 'audio', 'text', 'model3d'];
+
+function emptyHistoryCounts(): Record<CanvasPackageHistoryKind, number> {
+  return {
+    image: 0,
+    video: 0,
+    audio: 0,
+    text: 0,
+    model3d: 0,
+  };
+}
+
+function normalizeHistoryKind(value: unknown): CanvasPackageHistoryKind {
+  const kind = String(value || '').trim() as CanvasPackageHistoryKind;
+  return HISTORY_KINDS.includes(kind) ? kind : 'text';
+}
+
+function normalizeGenerationHistorySummary(value: unknown, limit = 160): CanvasPackageHistorySummary {
+  const rawItems = Array.isArray(value) ? value : [];
+  const byKind = emptyHistoryCounts();
+  const items = rawItems.slice(0, limit).map((raw, index) => {
+    const item = sanitizeCanvasValue(raw);
+    const kind = normalizeHistoryKind((item as any)?.kind);
+    byKind[kind] += 1;
+    const url = cleanText((item as any)?.url, 4096);
+    return {
+      id: cleanText((item as any)?.id, 120) || `history-${index + 1}`,
+      kind,
+      nodeId: cleanText((item as any)?.nodeId, 120),
+      nodeType: cleanText((item as any)?.nodeType, 80),
+      title: cleanText((item as any)?.title, 200) || `${kind} ${index + 1}`,
+      subtitle: cleanText((item as any)?.subtitle, 240),
+      createdAt: Number((item as any)?.createdAt) || index,
+      ...(url && !isDataUrl(url) ? { url } : {}),
+      fileName: cleanText((item as any)?.fileName, 200),
+      textPreview: cleanText((item as any)?.textPreview, 500),
+    };
+  });
+  for (const raw of rawItems.slice(limit)) {
+    const kind = normalizeHistoryKind((raw as any)?.kind);
+    byKind[kind] += 1;
+  }
+  return {
+    total: rawItems.length,
+    byKind,
+    items,
+    truncated: rawItems.length > limit,
+  };
+}
+
 export function createCanvasResourcePackageManifest(options: {
   canvasId: string;
   title?: string;
@@ -453,11 +682,17 @@ export function createCanvasResourcePackageManifest(options: {
   existingFiles?: Set<string>;
   portable?: boolean;
   now?: string;
+  resourceLibrary?: unknown;
+  thumbnails?: unknown[];
+  generationHistory?: unknown[];
 }): CanvasResourcePackageManifest {
   const canvas = sanitizeCanvas(options.canvas);
   const resources = collectPackageResources(canvas, options.existingFiles);
   const missingFiles = resources.filter((item) => !item.available);
   const filesToCopy = options.portable ? resources.filter((item) => item.available) : [];
+  const resourceLibrary = normalizeResourceLibrarySnapshot(options.resourceLibrary);
+  const thumbnailRefs = normalizeThumbnailRefs(options.thumbnails, options.existingFiles);
+  const generationHistorySummary = normalizeGenerationHistorySummary(options.generationHistory);
   return {
     schema: 't8-canvas-resource-package',
     version: 1,
@@ -469,11 +704,56 @@ export function createCanvasResourcePackageManifest(options: {
     resources,
     missingFiles,
     filesToCopy,
+    resourceLibrary,
+    thumbnailRefs,
+    generationHistorySummary,
     summary: {
       nodeCount: Array.isArray(canvas.nodes) ? canvas.nodes.length : 0,
       edgeCount: Array.isArray(canvas.edges) ? canvas.edges.length : 0,
       resourceCount: resources.length,
       missingCount: missingFiles.length,
+      resourceLibraryItemCount: resourceLibrary.items.length,
+      thumbnailCount: thumbnailRefs.length,
+      generationHistoryCount: generationHistorySummary.total,
+    },
+  };
+}
+
+export function prepareCanvasResourcePackageImport(input: any): CanvasResourcePackageImportPlan {
+  const manifest = input?.schema === 't8-canvas-resource-package' ? input : null;
+  const canvas = sanitizeCanvas(manifest?.canvas || input?.canvasData || input?.canvas || input || {});
+  const resources = sanitizeObjectList(manifest?.resources, 2000) as CanvasPackageResource[];
+  const missingFiles = sanitizeObjectList(manifest?.missingFiles, 2000) as CanvasPackageResource[];
+  const filesToCopy = sanitizeObjectList(manifest?.filesToCopy, 2000) as CanvasPackageResource[];
+  const resourceLibrary = normalizeResourceLibrarySnapshot(manifest?.resourceLibrary);
+  const thumbnailRefs = normalizeThumbnailRefs(manifest?.thumbnailRefs || manifest?.thumbnails);
+  const generationHistorySummary = manifest?.generationHistorySummary && typeof manifest.generationHistorySummary === 'object'
+    ? {
+        total: Number(manifest.generationHistorySummary.total) || 0,
+        byKind: {
+          ...emptyHistoryCounts(),
+          ...(sanitizeCanvasValue(manifest.generationHistorySummary.byKind || {}) as Record<string, number>),
+        } as Record<CanvasPackageHistoryKind, number>,
+        items: sanitizeObjectList(manifest.generationHistorySummary.items, 160),
+        truncated: !!manifest.generationHistorySummary.truncated,
+      }
+    : normalizeGenerationHistorySummary([]);
+  return {
+    canvas,
+    resources,
+    missingFiles,
+    filesToCopy,
+    resourceLibrary,
+    thumbnailRefs,
+    generationHistorySummary,
+    summary: {
+      nodeCount: Array.isArray(canvas.nodes) ? canvas.nodes.length : 0,
+      edgeCount: Array.isArray(canvas.edges) ? canvas.edges.length : 0,
+      resourceCount: resources.length,
+      missingCount: missingFiles.length,
+      resourceLibraryItemCount: resourceLibrary.items.length,
+      thumbnailCount: thumbnailRefs.length,
+      generationHistoryCount: generationHistorySummary.total,
     },
   };
 }

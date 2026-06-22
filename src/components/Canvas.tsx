@@ -125,6 +125,7 @@ import {
   buildCreativeTargetResult,
   collectCanvasSelectionSummary,
   createCanvasResourcePackageManifest,
+  prepareCanvasResourcePackageImport,
 } from '../utils/canvasCreativeWorkflow';
 import * as api from '../services/api';
 import { logBus } from '../stores/logs';
@@ -226,6 +227,39 @@ const MAX_EDGE_CUT_FEEDBACKS = 4;
 const EDGE_CUT_FEEDBACK_MS = 1100;
 const MAX_EDGE_CONNECT_FEEDBACKS = 3;
 const EDGE_CONNECT_FEEDBACK_MS = 950;
+const RESOURCE_PACKAGE_LIBRARY_KINDS: api.ResourceKind[] = ['image', 'video', 'audio', 'panorama', 'set', 'pose', 'workflow'];
+
+async function loadResourcePackageLibrarySnapshot() {
+  const categories: api.ResourceCategory[] = [];
+  const items: api.ResourceItem[] = [];
+  for (const kind of RESOURCE_PACKAGE_LIBRARY_KINDS) {
+    try {
+      const [categoryResult, itemResult] = await Promise.all([
+        api.getResourceCategories(kind),
+        api.getResourceItems({ kind }),
+      ]);
+      if (categoryResult.success) categories.push(...(categoryResult.data || []));
+      if (itemResult.success) items.push(...(itemResult.data || []));
+    } catch (error) {
+      console.warn('资源包资源库快照读取失败', kind, error);
+    }
+  }
+  return { categories, items };
+}
+
+function buildResourcePackageThumbnailRefs(items: Array<{ id?: string; kind?: string; url?: string; nodeId?: string; title?: string }>) {
+  return items
+    .filter((item) => item.url && item.kind !== 'text')
+    .slice(0, 360)
+    .map((item, index) => ({
+      id: item.id || `history-thumb-${index + 1}`,
+      url: item.url || '',
+      sourceUrl: item.url || '',
+      sourceNodeId: item.nodeId || '',
+      kind: item.kind || '',
+      title: item.title || '',
+    }));
+}
 
 type EdgeCutFeedbackKind = 'rope' | 'water' | 'path' | 'generic';
 type EdgeConnectFeedbackKind = EdgeCutFeedbackKind;
@@ -5666,8 +5700,9 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
     URL.revokeObjectURL(url);
   }, [nodes, edges, activeId, getViewport, creativeDesk, farmCanvas]);
 
-  const handleExportResourcePackage = useCallback(() => {
+  const handleExportResourcePackage = useCallback(async () => {
     const title = canvases.find((canvas) => canvas.id === activeId)?.name || `画布 ${activeId || ''}`.trim() || '当前画布';
+    const resourceLibrarySnapshot = await loadResourcePackageLibrarySnapshot();
     const manifest = createCanvasResourcePackageManifest({
       canvasId: activeId || 'export',
       title,
@@ -5680,6 +5715,9 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         nextNodeSerialId: nextNodeSerialIdRef.current,
       },
       portable: false,
+      resourceLibrary: resourceLibrarySnapshot,
+      thumbnails: buildResourcePackageThumbnailRefs(generationHistoryItems),
+      generationHistory: generationHistoryItems,
     });
     const blob = new Blob([JSON.stringify(manifest, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -5693,11 +5731,11 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
     const missing = manifest.missingFiles.length;
     logBus.success(
       missing > 0
-        ? `资源包清单已导出：${manifest.resources.length} 个资源，${missing} 个疑似缺失`
-        : `资源包清单已导出：${manifest.resources.length} 个资源`,
+        ? `资源包清单已导出：${manifest.resources.length} 个资源，${missing} 个疑似缺失，历史 ${manifest.generationHistorySummary.total} 条`
+        : `资源包清单已导出：${manifest.resources.length} 个资源，历史 ${manifest.generationHistorySummary.total} 条`,
       '资源包',
     );
-  }, [activeId, canvases, nodes, edges, getViewport, creativeDesk, farmCanvas]);
+  }, [activeId, canvases, nodes, edges, getViewport, creativeDesk, farmCanvas, generationHistoryItems]);
 
   const handleImportClick = useCallback(() => {
     fileInputRef.current?.click();
@@ -5712,12 +5750,15 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         try {
           const txt = String(reader.result || '');
           const json = JSON.parse(txt);
-          const source =
-            json?.schema === 't8-canvas-resource-package' && json?.canvas && typeof json.canvas === 'object'
-              ? json.canvas
-              : json?.canvasData && typeof json.canvasData === 'object'
-                ? json.canvasData
-                : json;
+          const resourcePackagePlan =
+            json?.schema === 't8-canvas-resource-package'
+              ? prepareCanvasResourcePackageImport(json)
+              : null;
+          const source = resourcePackagePlan
+            ? resourcePackagePlan.canvas
+            : json?.canvasData && typeof json.canvasData === 'object'
+              ? json.canvasData
+              : json;
           const importedNodes = Array.isArray(source.nodes) ? source.nodes : [];
           const importedEdges = Array.isArray(source.edges) ? source.edges : [];
           if (!confirm(`导入将替换当前画布(${importedNodes.length} 个节点 / ${importedEdges.length} 条连线),是否继续?`)) {
@@ -5729,6 +5770,13 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
           setEdges(importedEdges);
           setCreativeDesk(migrateCreativeDeskToViewportCoordinates(source.creativeDesk, source.viewport));
           setFarmCanvas(sanitizeFarmCanvasState(source.farmCanvas));
+          if (resourcePackagePlan) {
+            window.dispatchEvent(new CustomEvent('penguin:resources-changed'));
+            logBus.success(
+              `资源包已导入：${resourcePackagePlan.resources.length} 个资源引用，资源库 ${resourcePackagePlan.resourceLibrary.items.length} 项，缩略图 ${resourcePackagePlan.thumbnailRefs.length} 项，历史 ${resourcePackagePlan.generationHistorySummary.total} 条`,
+              '资源包',
+            );
+          }
         } catch (err) {
           alert('导入失败:JSON 解析错误');
           console.error(err);
