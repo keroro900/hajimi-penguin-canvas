@@ -45,6 +45,12 @@ import {
   type Rect as PlacementRect,
 } from '../utils/nodePlacement';
 import {
+  expandClipboardNodesForGroups,
+  offsetClipboardNodes,
+  positionClipboardNodesAtAnchor,
+  remapPastedGroupMemberIds,
+} from '../utils/canvasClipboard';
+import {
   createOutputDataFromItems,
   createUploadDataFromItems,
   createUploadReplacementData,
@@ -113,9 +119,11 @@ import {
   type MaterialSetKind,
 } from '../utils/materialSet';
 import { chooseDefaultSendMode, resolveEffectiveSendMode } from '../utils/sendMode';
+import { buildGenerationHistoryDataKey, collectGenerationHistory } from '../utils/generationHistory';
 import * as api from '../services/api';
 import { logBus } from '../stores/logs';
 import CanvasToolbar from './CanvasToolbar';
+import GenerationHistoryPanel from './GenerationHistoryPanel';
 import TerminalPanel from './TerminalPanel';
 import NodeActionBar from './NodeActionBar';
 import RadialNodeMenu from './RadialNodeMenu';
@@ -135,7 +143,7 @@ import type { CanvasTemplate } from '../config/canvasTemplates';
 import PlaceholderNode from './nodes/PlaceholderNode';
 import DeletableEdge from './edges/DeletableEdge';
 import { NODE_REGISTRY } from '../config/nodeRegistry';
-import type { CreativeDeskState, FarmCanvasState, FarmDecorObjectType, FarmEventLogItem, FarmTool, NodeType, NodeMeta } from '../types/canvas';
+import type { CreativeDeskState, FarmAnimalProductId, FarmCanvasState, FarmCropId, FarmDecorObjectType, FarmEventLogItem, FarmTool, NodeType, NodeMeta } from '../types/canvas';
 import {
   appendCreativeDeskItem,
   createCreativeDeskImageItem,
@@ -143,6 +151,7 @@ import {
   migrateCreativeDeskToViewportCoordinates,
 } from '../utils/creativeDesk';
 import {
+  FARM_ANIMAL_PRODUCT_DEFINITIONS,
   FARM_BUILDING_DEFINITIONS,
   FARM_CROP_DEFINITIONS,
   FARM_DEFAULT_DECOR_ID,
@@ -165,6 +174,7 @@ import {
   farmToolSupportsContinuousAction,
   isFarmDecorUnlocked,
   sanitizeFarmCanvasState,
+  snapFarmPoint,
   type FarmMiniMapMarker,
   type FarmMiniMapRouteHintTarget,
   type FarmToolAction,
@@ -182,11 +192,21 @@ import {
   type PortType,
 } from '../config/portTypes';
 
+const CANVAS_MIN_ZOOM = 0.02;
+const CANVAS_OVERVIEW_FIT_OPTIONS = {
+  padding: 0.12,
+  minZoom: CANVAS_MIN_ZOOM,
+  maxZoom: 1.15,
+};
 const CANVAS_PAN_MOUSE_BUTTONS = [0, 1] as const;
 const RADIAL_MENU_MOUSE_BUTTON = 2;
 const RADIAL_MENU_CONTEXT_SUPPRESS_MS = 700;
 const MAX_FARM_FLOATING_FEEDBACKS = 8;
 const FARM_FLOATING_FEEDBACK_MS = 1350;
+const FARM_FOLLOWUP_NOTICE_MS = 5600;
+const FARM_FEEDBACK_SCREEN_TOP_GUARD = 176;
+const FARM_DEV_TEST_MATERIAL_AMOUNT = 9999;
+const FARM_DEV_TEST_WATER_AMOUNT = 999;
 const FARM_JUMP_HIGHLIGHT_MS = 900;
 const FARM_MINIMAP_ROUTE_HINT_MS = 1600;
 const FARM_SOUND_ENABLED_STORAGE_KEY = 't8-farm-story-sfx-enabled';
@@ -295,6 +315,7 @@ interface FarmContinuousFeedbackBatch {
   x: number;
   y: number;
   tone: FarmCanvasFloatingFeedback['tone'];
+  placement?: FarmCanvasFloatingFeedback['placement'];
   placementEcho?: string;
   beautyGain?: number;
   beautyRewardTitle?: string;
@@ -305,6 +326,11 @@ interface FarmContinuousFeedbackBatch {
 interface FarmToolSelectionFeedback {
   message: string;
   tone: FarmCanvasFloatingFeedback['tone'];
+}
+
+interface FarmFollowupNotice extends FarmStoryPanelCanvasHint {
+  id: string;
+  createdAt: number;
 }
 
 type FarmToolbarConsoleTone = 'water' | 'order' | 'visit' | 'mature' | 'guard' | 'focus' | 'stable';
@@ -449,6 +475,88 @@ function farmFeedbackToneForTool(
   if (tool === 'harvest') return 'reward';
   if (tool === 'build' || tool === 'decor') return 'build';
   return 'success';
+}
+
+type FarmActionFeedbackAnchor = { x: number; y: number; placement: FarmCanvasFloatingFeedback['placement'] };
+
+function farmActionSnappedPoint(action: FarmToolAction, gridSize: number) {
+  return snapFarmPoint({ x: action.x, y: action.y }, gridSize);
+}
+
+function farmActionFeedbackFootprintForAction(
+  action: FarmToolAction,
+  gridSize: number,
+) {
+  const point = farmActionSnappedPoint(action, gridSize);
+  if (action.tool === 'build') {
+    const building = FARM_BUILDING_DEFINITIONS[action.buildingId || 'hut'];
+    return {
+      x: point.x,
+      y: point.y,
+      width: Math.max(1, building?.widthCells || 1) * gridSize,
+      height: Math.max(1, building?.heightCells || 1) * gridSize,
+    };
+  }
+  return {
+    x: point.x,
+    y: point.y,
+    width: gridSize,
+    height: gridSize,
+  };
+}
+
+function farmActionFeedbackObjectForAction(
+  objects: FarmCanvasState['objects'],
+  action: FarmToolAction,
+  gridSize: number,
+) {
+  const point = farmActionSnappedPoint(action, gridSize);
+  const actionKind = action.tool === 'build'
+    ? 'building'
+    : action.tool === 'decor'
+      ? 'decor'
+      : undefined;
+  return objects.find((object) => {
+    if (actionKind && object.kind !== actionKind) return false;
+    const width = Math.max(1, object.widthCells || 1) * gridSize;
+    const height = Math.max(1, object.heightCells || 1) * gridSize;
+    return point.x >= object.x
+      && point.x < object.x + width
+      && point.y >= object.y
+      && point.y < object.y + height;
+  });
+}
+
+function farmActionFeedbackAnchor(
+  previous: FarmCanvasState,
+  next: FarmCanvasState,
+  action: FarmToolAction,
+  options: { screenTopGuard?: number } = {},
+): FarmActionFeedbackAnchor {
+  const gridSize = next.gridSize || previous.gridSize || 64;
+  const fallbackFootprint = farmActionFeedbackFootprintForAction(action, gridSize);
+  const screenTopGuard = options.screenTopGuard ?? FARM_FEEDBACK_SCREEN_TOP_GUARD;
+  const shouldPlaceBelowForScreen = typeof action.screenY === 'number' && action.screenY < screenTopGuard;
+  const fallbackPlacement: FarmCanvasFloatingFeedback['placement'] = shouldPlaceBelowForScreen || fallbackFootprint.y <= gridSize ? 'below' : 'above';
+  const target = farmActionFeedbackObjectForAction(next.objects, action, gridSize)
+    || farmActionFeedbackObjectForAction(previous.objects, action, gridSize);
+
+  if (!target) {
+    return {
+      x: fallbackFootprint.x + fallbackFootprint.width / 2,
+      y: fallbackPlacement === 'above' ? fallbackFootprint.y : fallbackFootprint.y + fallbackFootprint.height,
+      placement: fallbackPlacement,
+    };
+  }
+
+  const width = Math.max(1, target.widthCells || 1) * gridSize;
+  const height = Math.max(1, target.heightCells || 1) * gridSize;
+  const placement: FarmCanvasFloatingFeedback['placement'] = shouldPlaceBelowForScreen || target.y <= gridSize ? 'below' : 'above';
+  return {
+    x: target.x + width / 2,
+    y: placement === 'above' ? target.y : target.y + height,
+    placement,
+  };
 }
 
 function formatFarmSelectionResourceShortage(
@@ -1687,7 +1795,98 @@ interface SendNodeSpec {
   data: Record<string, any>;
 }
 
+const WEB_IMAGE_EXTENSION_MESSAGE_CONTRACT = {
+  type: 't8:web-image-result',
+  source: 't8-web-image-extension',
+} as const;
+
+type WebImageExtensionSendMode = 'prompt' | 'image' | 'both';
+
+interface WebImageExtensionPayload {
+  messageId?: string;
+  mode?: WebImageExtensionSendMode | string;
+  prompt?: string;
+  images?: Array<string | { url?: string; imageUrl?: string; name?: string; mime?: string; size?: number }>;
+  imageUrls?: string[];
+  sourceImageUrl?: string;
+  pageUrl?: string;
+  pageTitle?: string;
+  source?: string;
+}
+
 type BasicMediaKind = Exclude<MediaKind, 'model3d'>;
+
+function normalizeWebImageSendMode(value: unknown): WebImageExtensionSendMode {
+  const mode = String(value || '').trim();
+  return mode === 'prompt' || mode === 'image' || mode === 'both' ? mode : 'both';
+}
+
+function cleanWebImageText(value: unknown, maxLen = 8000): string {
+  return String(value || '').replace(/\s+/g, ' ').trim().slice(0, maxLen);
+}
+
+function webImagePayloadImages(payload: WebImageExtensionPayload): MediaItem[] {
+  const raw = Array.isArray(payload.images) ? payload.images : payload.imageUrls;
+  const seen = new Set<string>();
+  const out: MediaItem[] = [];
+  for (const item of Array.isArray(raw) ? raw : []) {
+    const url = typeof item === 'string' ? item : item?.url || item?.imageUrl || '';
+    const cleanUrl = String(url || '').trim();
+    if (!cleanUrl || seen.has(cleanUrl)) continue;
+    seen.add(cleanUrl);
+    out.push({
+      kind: 'image',
+      url: cleanUrl,
+      name: typeof item === 'string' ? fileNameFromUrl(cleanUrl) : (item.name || fileNameFromUrl(cleanUrl)),
+      mime: typeof item === 'string' ? '' : item.mime || '',
+      size: typeof item === 'string' ? 0 : item.size || 0,
+    });
+  }
+  return out.slice(0, 12);
+}
+
+function buildWebImageSendNodeSpecs(payload: WebImageExtensionPayload): SendNodeSpec[] {
+  const mode = normalizeWebImageSendMode(payload.mode);
+  const prompt = cleanWebImageText(payload.prompt);
+  const sourceImageUrl = cleanWebImageText(payload.sourceImageUrl, 2048);
+  const pageUrl = cleanWebImageText(payload.pageUrl, 2048);
+  const pageTitle = cleanWebImageText(payload.pageTitle, 200);
+  const specs: SendNodeSpec[] = [];
+  if ((mode === 'prompt' || mode === 'both') && prompt) {
+    specs.push({
+      type: 'text',
+      data: {
+        prompt,
+        text: prompt,
+        label: '网页反推提示词',
+        source: 'web-image-reverse',
+        webImageReversePrompt: prompt,
+        webImageReverseSourceImageUrl: sourceImageUrl,
+        webImageReversePageUrl: pageUrl,
+        webImageReversePageTitle: pageTitle,
+      },
+    });
+  }
+  const imageItems = webImagePayloadImages(payload);
+  if ((mode === 'image' || mode === 'both') && imageItems.length > 0) {
+    specs.push({
+      type: 'output',
+      data: {
+        ...createOutputDataFromItems('image', imageItems),
+        prompt,
+        outputText: prompt,
+        directOutputText: prompt,
+        sendSource: 'web-image-reverse',
+        source: 'web-image-reverse',
+        webImageReversePrompt: prompt,
+        webImageReverseSourceImageUrl: sourceImageUrl,
+        webImageReversePageUrl: pageUrl,
+        webImageReversePageTitle: pageTitle,
+      },
+    });
+  }
+  return specs;
+}
 
 function mediaItemsFromSendables(items: SendableMaterial[], kind: BasicMediaKind): MediaItem[] {
   return items
@@ -2088,6 +2287,8 @@ const MEDIA_EXTENSIONS: Record<MediaKind, string[]> = {
 const FILE_DRAG_OUT_MOVE_TOLERANCE = 4;
 const INTERNAL_NODE_PASTE_DELAY_MS = 120;
 const EXTERNAL_MEDIA_PASTE_DEDUPE_MS = 900;
+const QUICK_DUPLICATE_OFFSET = { x: 40, y: 40 } as const;
+type ClipboardPastePlacementMode = 'pointer' | 'offset';
 
 function inferCanvasMediaKind(file: File): MediaKind | null {
   const mime = file.type || '';
@@ -2642,6 +2843,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
   const isDragonBall = visualStyle === 'dragon-ball';
   const isTetris = visualStyle === 'tetris';
   const isFarmStory = visualStyle === 'farm-story';
+  const farmDevToolsEnabled = isFarmStory && import.meta.env.DEV;
   const themeTokens = getTemplateMode(currentTemplate, theme).tokens;
   const { screenToFlowPosition, setCenter, getViewport, setViewport, fitView } = useReactFlow();
   const radialSlotsRaw = useRadialMenuStore((s) => s.slots);
@@ -2657,6 +2859,8 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
   );
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
+  const generationHistoryDataKey = useMemo(() => buildGenerationHistoryDataKey(nodes), [nodes]);
+  const generationHistoryItems = useMemo(() => collectGenerationHistory(nodes), [generationHistoryDataKey]);
   const [creativeDesk, setCreativeDesk] = useState<CreativeDeskState>(() => createDefaultCreativeDeskState());
   const [farmCanvas, setFarmCanvas] = useState<FarmCanvasState>(() => createFarmState());
   const [farmCanvasEditing, setFarmCanvasEditing] = useState(false);
@@ -2671,6 +2875,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
   const [farmStoryPriorityFocusRequestId, setFarmStoryPriorityFocusRequestId] = useState(0);
   const [farmCanvasFeedback, setFarmCanvasFeedback] = useState('点击工具后，在画布空白处开始经营。');
   const [farmFloatingFeedbacks, setFarmFloatingFeedbacks] = useState<FarmCanvasFloatingFeedback[]>([]);
+  const [farmFollowupNotice, setFarmFollowupNotice] = useState<FarmFollowupNotice | null>(null);
   const [farmJumpHighlightObjectId, setFarmJumpHighlightObjectId] = useState<string | null>(null);
   const [farmMiniMapRouteHint, setFarmMiniMapRouteHint] = useState<FarmMiniMapRouteHint | null>(null);
   const [farmResourceDecorItems, setFarmResourceDecorItems] = useState<api.ResourceItem[]>([]);
@@ -2690,7 +2895,9 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
   const farmMiniMapRouteHintTimerRef = useRef<number | null>(null);
   const farmResourceDecorLoadedRef = useRef(false);
   const farmFloatingFeedbackTimersRef = useRef<Map<string, number>>(new Map());
+  const farmFollowupNoticeTimerRef = useRef<number | null>(null);
   const farmContinuousFeedbackBatchRef = useRef<FarmContinuousFeedbackBatch | null>(null);
+  const webImageImportMessageIdsRef = useRef<Set<string>>(new Set());
   const edgeCutFeedbackTimersRef = useRef<Map<string, number>>(new Map());
   const edgeConnectFeedbackTimersRef = useRef<Map<string, number>>(new Map());
   const farmAchievementEventIdsRef = useRef<Set<string>>(new Set());
@@ -2737,6 +2944,10 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
   useEffect(() => () => {
     farmFloatingFeedbackTimersRef.current.forEach((timerId) => window.clearTimeout(timerId));
     farmFloatingFeedbackTimersRef.current.clear();
+    if (farmFollowupNoticeTimerRef.current !== null) {
+      window.clearTimeout(farmFollowupNoticeTimerRef.current);
+      farmFollowupNoticeTimerRef.current = null;
+    }
     if (farmContinuousFeedbackBatchRef.current?.timerId) {
       window.clearTimeout(farmContinuousFeedbackBatchRef.current.timerId);
     }
@@ -2889,6 +3100,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
     pushFarmFloatingFeedback({
       x: batch.x,
       y: batch.y,
+      placement: batch.placement || 'above',
       message: `${batch.label} x${batch.count}${placementSuffix}${beautySuffix}${beautyRewardSuffix}`,
       tone: batch.beautyGain || batch.beautyRewardCount ? 'reward' : batch.tone,
     });
@@ -2910,6 +3122,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
     const nextBatch: FarmContinuousFeedbackBatch = {
       ...entry,
       count,
+      placement: entry.placement || (current && current.tool === entry.tool ? current.placement : undefined),
       placementEcho: entry.placementEcho || (current && current.tool === entry.tool ? current.placementEcho : undefined),
       beautyGain: beautyGain || undefined,
       beautyRewardTitle: current && current.tool === entry.tool
@@ -3016,18 +3229,25 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
   }, [screenToFlowPosition]);
 
   const handleFarmFollowupCanvasHint = useCallback((hint: FarmStoryPanelCanvasHint) => {
-    const center = getFarmViewportCenter();
     setFarmCanvasFeedback(hint.message);
+    const noticeId = `farm-followup-${Date.now().toString(36)}`;
+    setFarmFollowupNotice({
+      ...hint,
+      id: noticeId,
+      createdAt: Date.now(),
+    });
+    if (farmFollowupNoticeTimerRef.current !== null) {
+      window.clearTimeout(farmFollowupNoticeTimerRef.current);
+    }
+    farmFollowupNoticeTimerRef.current = window.setTimeout(() => {
+      setFarmFollowupNotice((current) => (current?.id === noticeId ? null : current));
+      farmFollowupNoticeTimerRef.current = null;
+    }, FARM_FOLLOWUP_NOTICE_MS);
     if (hint.routeTarget) {
+      const center = getFarmViewportCenter();
       flashFarmMiniMapRouteHint(hint.routeTarget, hint.routeLabel || hint.message, center);
     }
-    pushFarmFloatingFeedback({
-      x: center.x,
-      y: center.y,
-      message: hint.message,
-      tone: hint.tone,
-    });
-  }, [flashFarmMiniMapRouteHint, getFarmViewportCenter, pushFarmFloatingFeedback]);
+  }, [flashFarmMiniMapRouteHint, getFarmViewportCenter]);
 
   // 选中节点 / 剪贴板
   const [selectedCount, setSelectedCount] = useState(0);
@@ -3378,6 +3598,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
   const [outputMaterialPersistenceEnabled, setOutputMaterialPersistenceEnabled] = useState(() =>
     readOutputMaterialPersistenceSetting(),
   );
+  const [generationHistoryOpen, setGenerationHistoryOpen] = useState(false);
   const toggleOutputMaterialPersistence = useCallback(() => {
     setOutputMaterialPersistenceEnabled((current) => {
       const next = !current;
@@ -3794,16 +4015,43 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
 
   const showFarmToolSelectionFeedback = useCallback((feedback: FarmToolSelectionFeedback) => {
     flushFarmContinuousFeedback();
-    const center = getFarmViewportCenter();
     setFarmCanvasFeedback(feedback.message);
-    pushFarmFloatingFeedback({
-      x: center.x,
-      y: center.y,
-      message: feedback.message,
-      tone: feedback.tone,
-    });
     playFarmSound('select');
-  }, [flushFarmContinuousFeedback, getFarmViewportCenter, playFarmSound, pushFarmFloatingFeedback]);
+  }, [flushFarmContinuousFeedback, playFarmSound]);
+
+  const handleFarmGrantDevMaterials = useCallback(() => {
+    if (!import.meta.env.DEV) return;
+
+    const cropIds = Object.keys(FARM_CROP_DEFINITIONS) as FarmCropId[];
+    const animalProductIds = Object.keys(FARM_ANIMAL_PRODUCT_DEFINITIONS) as FarmAnimalProductId[];
+    const decorIds = Object.keys(FARM_DECOR_DEFINITIONS);
+    const seeds = Object.fromEntries(cropIds.map((cropId) => [cropId, FARM_DEV_TEST_MATERIAL_AMOUNT])) as Partial<Record<FarmCropId, number>>;
+    const crops = Object.fromEntries(cropIds.map((cropId) => [cropId, FARM_DEV_TEST_MATERIAL_AMOUNT])) as Partial<Record<FarmCropId, number>>;
+    const animalProducts = Object.fromEntries(animalProductIds.map((productId) => [productId, FARM_DEV_TEST_MATERIAL_AMOUNT])) as Partial<Record<FarmAnimalProductId, number>>;
+
+    setFarmCanvas((prev) => sanitizeFarmCanvasState({
+      ...prev,
+      resources: {
+        ...prev.resources,
+        gold: FARM_DEV_TEST_MATERIAL_AMOUNT,
+        wood: FARM_DEV_TEST_MATERIAL_AMOUNT,
+        stone: FARM_DEV_TEST_MATERIAL_AMOUNT,
+        water: FARM_DEV_TEST_WATER_AMOUNT,
+        experience: FARM_DEV_TEST_MATERIAL_AMOUNT,
+        seeds,
+      },
+      inventory: {
+        ...prev.inventory,
+        crops,
+        animalProducts,
+        decorIds,
+      },
+      discoveredCropIds: cropIds,
+      unlockedDecorIds: decorIds,
+    }));
+    setFarmCanvasFeedback('开发环境测试材料已补齐：金币/木材/石头/种子/作物/动物产物 9999，水量 999，装饰全解锁。');
+    playFarmSound('order');
+  }, [playFarmSound]);
 
   const handleFarmSelectTool = useCallback((tool: FarmTool) => {
     const nextFarmCanvas = sanitizeFarmCanvasState({
@@ -3895,8 +4143,6 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       const result = applyFarmTool(prev, action);
       setFarmCanvasFeedback(result.feedback);
       const gridSize = result.state.gridSize || 64;
-      const snappedX = Math.round(action.x / gridSize) * gridSize + gridSize / 2;
-      const snappedY = Math.round(action.y / gridSize) * gridSize + gridSize / 2;
       const tone = farmFeedbackToneForTool(action.tool, Boolean(result.error));
       const beautyGain = result.changed && !result.error
         ? farmBeautyGainForAction(prev, result.state, action.tool)
@@ -3907,6 +4153,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       const beautyRewardUnlock = result.changed && !result.error
         ? farmBeautyRewardUnlockForAction(prev, result.state, action.tool)
         : null;
+      const feedbackAnchor = farmActionFeedbackAnchor(prev, result.state, action);
       const continuousLabel = result.changed && !result.error && farmToolSupportsContinuousAction(action.tool)
         ? farmContinuousFeedbackLabel(action.tool)
         : '';
@@ -3914,9 +4161,10 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         queueFarmContinuousFeedback({
           tool: action.tool,
           label: continuousLabel,
-          x: snappedX,
-          y: snappedY,
+          x: feedbackAnchor.x,
+          y: feedbackAnchor.y,
           tone,
+          placement: feedbackAnchor.placement,
           placementEcho,
           beautyGain,
           beautyRewardTitle: beautyRewardUnlock?.title,
@@ -3925,8 +4173,9 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       } else {
         flushFarmContinuousFeedback();
         pushFarmFloatingFeedback({
-          x: snappedX,
-          y: snappedY,
+          x: feedbackAnchor.x,
+          y: feedbackAnchor.y,
+          placement: feedbackAnchor.placement,
           message: placementEcho || result.feedback,
           tone,
         });
@@ -3939,16 +4188,22 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         if (placedObjectId) flashFarmObject(placedObjectId);
         if (beautyGain > 0 && !continuousLabel) {
           pushFarmFloatingFeedback({
-            x: snappedX,
-            y: snappedY - gridSize * 0.45,
+            x: feedbackAnchor.x,
+            y: feedbackAnchor.placement === 'below'
+              ? feedbackAnchor.y + gridSize * 0.2
+              : feedbackAnchor.y - gridSize * 0.35,
+            placement: feedbackAnchor.placement,
             message: `漂亮度 +${beautyGain}`,
             tone: 'reward',
           });
         }
         if (beautyRewardUnlock && !continuousLabel) {
           pushFarmFloatingFeedback({
-            x: snappedX,
-            y: snappedY - gridSize * 0.85,
+            x: feedbackAnchor.x,
+            y: feedbackAnchor.placement === 'below'
+              ? feedbackAnchor.y + gridSize * 0.55
+              : feedbackAnchor.y - gridSize * 0.7,
+            placement: feedbackAnchor.placement,
             message: beautyRewardUnlock.count > 1
               ? `美化奖励 +${beautyRewardUnlock.count}`
               : `解锁美化奖励：${beautyRewardUnlock.title}`,
@@ -4160,6 +4415,62 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
     },
     [screenToFlowPosition, nodes, getViewport, setCenter, assignActiveNodeSerials, visualStyle]
   );
+
+  useEffect(() => {
+    const handleWebImageMessage = (event: MessageEvent) => {
+      if (event.source !== window) return;
+      const data = event.data || {};
+      if (
+        data.type !== WEB_IMAGE_EXTENSION_MESSAGE_CONTRACT.type ||
+        data.source !== WEB_IMAGE_EXTENSION_MESSAGE_CONTRACT.source
+      ) return;
+      const payload = (data.payload || {}) as WebImageExtensionPayload;
+      const messageId = cleanWebImageText(payload.messageId || data.messageId, 160);
+      if (messageId) {
+        if (webImageImportMessageIdsRef.current.has(messageId)) return;
+        webImageImportMessageIdsRef.current.add(messageId);
+        if (webImageImportMessageIdsRef.current.size > 80) {
+          webImageImportMessageIdsRef.current = new Set([...webImageImportMessageIdsRef.current].slice(-40));
+        }
+      }
+      const specs = buildWebImageSendNodeSpecs(payload);
+      if (specs.length === 0) {
+        logBus.warn('网页图片反推没有可发送的提示词或生成图片', '网页反推');
+        return;
+      }
+
+      const flowEl = document.querySelector('.react-flow') as HTMLElement | null;
+      const rect = flowEl?.getBoundingClientRect();
+      const base = screenToFlowPosition(
+        rect
+          ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+          : { x: window.innerWidth / 2, y: window.innerHeight / 2 },
+      );
+      const stamp = `${cleanWebImageText(payload.pageUrl, 120)}|${cleanWebImageText(payload.sourceImageUrl, 120)}|${Date.now()}`;
+      const newNodes = materialNodesFromSpecs(specs, nodesRef.current, base, {
+        signature: `web-image-reverse:${stamp}`,
+        mode: 'output',
+        sourceCanvasId: activeId,
+        sourceNodeIds: [],
+      });
+      const assignedNewNodes = assignActiveNodeSerials(newNodes, nodesRef.current);
+      const focusCenter = centerOfMaterialNodes(assignedNewNodes);
+      if (activeId && focusCenter) {
+        const { zoom } = getViewport();
+        pendingSendFocusRef.current = {
+          canvasId: activeId,
+          center: focusCenter,
+          zoom: Math.min(Math.max(zoom || 0.9, 0.72), 1.05),
+        };
+      }
+      setNodes([...nodesRef.current.map((node) => ({ ...node, selected: false })), ...assignedNewNodes]);
+      registerPlacementShelfNodes(assignedNewNodes, '发送');
+      logBus.success(`已从网页图片反推发送 ${assignedNewNodes.length} 个节点到当前画布`, '网页反推');
+    };
+
+    window.addEventListener('message', handleWebImageMessage);
+    return () => window.removeEventListener('message', handleWebImageMessage);
+  }, [activeId, assignActiveNodeSerials, getViewport, registerPlacementShelfNodes, screenToFlowPosition]);
 
   useEffect(() => {
     const stopRadialPointerEvent = (event: PointerEvent | MouseEvent) => {
@@ -5048,6 +5359,25 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
     lastCanvasPointerRef.current = { x: e.clientX, y: e.clientY };
   }, []);
 
+  const resolveClipboardPasteAnchor = useCallback(() => {
+    const flowEl = document.querySelector('.react-flow') as HTMLElement | null;
+    const rect = flowEl?.getBoundingClientRect();
+    const pointer = lastCanvasPointerRef.current;
+    const pointerInsideCanvas =
+      !!pointer &&
+      !!rect &&
+      pointer.x >= rect.left &&
+      pointer.x <= rect.right &&
+      pointer.y >= rect.top &&
+      pointer.y <= rect.bottom;
+    const screenPoint = pointerInsideCanvas
+      ? pointer
+      : rect
+        ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+        : { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+    return screenToFlowPosition(screenPoint);
+  }, [screenToFlowPosition]);
+
   const onCanvasFileDragOver = useCallback((e: ReactDragEvent) => {
     if (!hasFileTransfer(e.dataTransfer)) return;
     e.preventDefault();
@@ -5068,8 +5398,9 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
 
   // ===== 复制 / 粘贴 / 删除 =====
   const handleCopy = useCallback(() => {
-    const sel = nodes.filter((n) => n.selected);
-    if (sel.length === 0) return;
+    const selectedNodes = nodes.filter((n) => n.selected);
+    if (selectedNodes.length === 0) return;
+    const sel = expandClipboardNodesForGroups(selectedNodes, nodes) as Node[];
     const ids = new Set(sel.map((n) => n.id));
     // 内部边: source/target 都在选中集合 —— 普通粘贴/快速复制会使用
     const selEdges = edges.filter((e) => ids.has(e.source) && ids.has(e.target));
@@ -5089,7 +5420,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
 
   // 普通粘贴: 仅复制选中节点 + 其内部边(与原逻辑一致)
   // withLinks=true: Ctrl+Shift+V 额外复制原节点的外部入边/出边 —— 将新节点与原画布上还存在的邻居连接
-  const handlePaste = useCallback((withLinks = false) => {
+  const handlePaste = useCallback((withLinks = false, placementMode: ClipboardPastePlacementMode = 'pointer') => {
     const cb = clipboardRef.current as (typeof clipboardRef.current & {
       incomingEdges?: Edge[];
       outgoingEdges?: Edge[];
@@ -5115,14 +5446,15 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         ...n,
         id: newId,
         selected: true,
-        position: {
-          x: (n.position?.x ?? 0) + 40,
-          y: (n.position?.y ?? 0) + 40,
-        },
         data: sanitize(n.data),
       } as Node;
     });
-    const assignedNewNodes = assignActiveNodeSerials(newNodes, nodes);
+    const remappedGroupNodes = remapPastedGroupMemberIds(newNodes, idMap) as Node[];
+    const positionedNodes =
+      placementMode === 'offset'
+        ? offsetClipboardNodes(remappedGroupNodes, QUICK_DUPLICATE_OFFSET)
+        : positionClipboardNodesAtAnchor(remappedGroupNodes, resolveClipboardPasteAnchor());
+    const assignedNewNodes = assignActiveNodeSerials(positionedNodes, nodes);
     // 内部边: source/target 都映射到新节点
     const newInternalEdges = cb.edges
       .map((e, idx) => {
@@ -5172,12 +5504,12 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
     // 取消其他节点的选中,新粘贴节点设为选中
     setNodes((prev) => [...prev.map((n) => ({ ...n, selected: false })), ...assignedNewNodes]);
     setEdges((prev) => [...prev, ...newInternalEdges, ...extraEdges]);
-  }, [nodes, assignActiveNodeSerials]);
+  }, [nodes, assignActiveNodeSerials, resolveClipboardPasteAnchor]);
 
   const handleDuplicate = useCallback(() => {
     handleCopy();
     // 在 copy 完成后下一帧执行 paste(由于上面的 setClipboardCount 是异步)
-    setTimeout(() => handlePaste(false), 0);
+    setTimeout(() => handlePaste(false, 'offset'), 0);
   }, [handleCopy, handlePaste]);
 
   const handleDeleteSelected = useCallback(() => {
@@ -8007,6 +8339,21 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
     pulseNearestNode(target.id);
   }, [activeId, getViewport, loaded, loadedCanvasId, setCenter]);
 
+  const focusGenerationHistoryNode = useCallback((nodeId: string) => {
+    if (!loaded || loadedCanvasId !== activeId) return;
+    const target = nodesRef.current.find((node) => node.id === nodeId);
+    if (!target) {
+      logBus.warn('历史记录的来源节点已经不存在', '历史记录');
+      return;
+    }
+    setNodes((prev) => prev.map((node) => ({ ...node, selected: node.id === nodeId })));
+    const rect = rectOf(target);
+    const currentZoom = getViewport().zoom || 1;
+    const zoom = Math.min(Math.max(currentZoom, 0.55), 1.15);
+    setCenter(rect.x + rect.w / 2, rect.y + rect.h / 2, { zoom, duration: 450 });
+    pulseNearestNode(target.id);
+  }, [activeId, getViewport, loaded, loadedCanvasId, setCenter]);
+
   // ===== 全局快捷键 =====
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -8106,7 +8453,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         }
         e.preventDefault();
         if (!isNearestShortcut) {
-          fitView({ padding: 0.18, duration: 420, minZoom: 0.05, maxZoom: 1.15 });
+          fitView({ ...CANVAS_OVERVIEW_FIT_OPTIONS, duration: 420 });
         } else {
           focusNearestNodeToViewport();
         }
@@ -8181,6 +8528,17 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
     () => (isFarmStory ? buildFarmToolbarConsoleHint(farmCanvas, farmStoryPanelOpen) : undefined),
     [farmCanvas, farmStoryPanelOpen, isFarmStory],
   );
+  const farmTopNotice = useMemo<FarmFollowupNotice | null>(() => {
+    if (!isFarmStory) return null;
+    if (farmFollowupNotice) return farmFollowupNotice;
+    return {
+      id: 'farm-feedback-current',
+      createdAt: 0,
+      message: farmCanvasFeedback || '点击工具后，在画布空白处开始经营。',
+      tone: 'success',
+      routeTitle: '当前提示',
+    };
+  }, [farmCanvasFeedback, farmFollowupNotice, isFarmStory]);
   const farmMiniMapMarkers = useMemo(
     () => (isFarmStory ? buildFarmMiniMapMarkers(farmCanvas, { maxMarkers: FARM_MINIMAP_MARKER_LIMIT }) : []),
     [farmCanvas, isFarmStory],
@@ -8391,6 +8749,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
           </button>
           <ThemeMusicToggle template={currentTemplate} />
           <Controls
+            fitViewOptions={CANVAS_OVERVIEW_FIT_OPTIONS}
             style={{
               background: isFarmStory
                 ? themeTokens.panelBg
@@ -8503,6 +8862,9 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         onToggleSnap={() => setSnapEnabled((v) => !v)}
         outputMaterialPersistenceEnabled={outputMaterialPersistenceEnabled}
         onToggleOutputMaterialPersistence={toggleOutputMaterialPersistence}
+        historyCount={generationHistoryItems.length}
+        historyOpen={generationHistoryOpen}
+        onToggleHistory={() => setGenerationHistoryOpen((value) => !value)}
         onAlignSelection={handleAlignSelection}
       >
         {isFarmStory && (
@@ -8553,6 +8915,12 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
           nodeDragging={nodeDragging}
         />
       </CanvasToolbar>
+      <GenerationHistoryPanel
+        open={generationHistoryOpen}
+        items={generationHistoryItems}
+        onClose={() => setGenerationHistoryOpen(false)}
+        onFocusNode={focusGenerationHistoryNode}
+      />
       <FarmStoryPanel
         visualStyle={visualStyle}
         themeMode={theme}
@@ -8566,8 +8934,10 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         editing={farmCanvasEditing}
         feedback={farmCanvasFeedback}
         soundEnabled={farmSoundEnabled}
+        devToolsEnabled={farmDevToolsEnabled}
         onToggleEditing={handleFarmToggleEditing}
         onToggleSound={handleFarmToggleSound}
+        onGrantDevMaterials={handleFarmGrantDevMaterials}
         onSelectTool={handleFarmSelectTool}
         onSelectBuilding={handleFarmSelectBuilding}
         onSelectDecor={handleFarmSelectDecor}
@@ -8581,6 +8951,31 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         onCompleteNpcVisit={handleFarmCompleteNpcVisit}
         onFollowupCanvasHint={handleFarmFollowupCanvasHint}
       />
+      {isFarmStory && farmTopNotice && (
+        <div
+          className={`t8-farm-followup-notice is-${farmTopNotice.tone}`}
+          data-canvas-floating-ui="farm-followup-notice"
+          data-farm-followup-notice="top-quick-board"
+          data-farm-followup-notice-state={farmFollowupNotice ? 'active' : 'idle'}
+          data-farm-followup-notice-tone={farmTopNotice.tone}
+          data-farm-followup-notice-route-target={farmTopNotice.routeTarget || undefined}
+          data-farm-followup-notice-route-label={farmTopNotice.routeLabel || undefined}
+          data-farm-followup-notice-created-at={farmTopNotice.createdAt}
+          role="status"
+          aria-live="polite"
+        >
+          <span className="t8-farm-followup-notice__rail" aria-hidden="true" />
+          <span className="t8-farm-followup-notice__icon" aria-hidden="true">
+            <LucideIcons.ClipboardList size={15} />
+          </span>
+          <span className="t8-farm-followup-notice__copy">
+            <span>牧场公告</span>
+            <b>{farmTopNotice.routeTitle || farmTopNotice.routeLabel || '下一步提示'}</b>
+            <small>{farmTopNotice.message}</small>
+          </span>
+          <em>{farmTopNotice.routeLabel ? `路线 ${farmTopNotice.routeLabel}` : farmFollowupNotice ? '已更新' : '常驻'}</em>
+        </div>
+      )}
       <TerminalPanel />
       {connectionPanModeActive && (
         <div className="t8-connection-pan-hud" data-canvas-floating-ui="connection-pan-hud">
@@ -8698,7 +9093,9 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         snapToGrid={snapEnabled}
         snapGrid={SNAP_GRID}
         elevateNodesOnSelect={false}
+        minZoom={CANVAS_MIN_ZOOM}
         fitView
+        fitViewOptions={CANVAS_OVERVIEW_FIT_OPTIONS}
         proOptions={memoProOptions}
         defaultEdgeOptions={memoDefaultEdgeOptions}
       >

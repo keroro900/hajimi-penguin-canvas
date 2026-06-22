@@ -17,6 +17,8 @@ import {
   Square as SquareIcon,
   Circle as CircleIcon,
   ListOrdered,
+  ArrowRight,
+  Diamond as DiamondIcon,
   Layers as LayersIcon,
   Lock as LockIcon,
   Unlock as UnlockIcon,
@@ -69,8 +71,20 @@ interface Props {
 
 type EditMode = 'crop' | 'mask' | 'brush' | 'grid' | 'compose';
 type GridSubMode = 'preset' | 'custom';
-type BrushTool = 'free' | 'rect' | 'ellipse' | 'label';
+type BrushTool = 'free' | 'line' | 'arrow' | 'rect' | 'round-rect' | 'ellipse' | 'diamond' | 'label';
+type BrushFillMode = 'stroke' | 'fill';
 type CropAspectPreset = 'free' | '16:9' | '9:16' | '4:3' | '3:4' | '1:1' | 'custom';
+
+const IMAGE_EDIT_BRUSH_TOOLS: Array<{ id: BrushTool; label: string; title: string; icon: 'brush' | 'line' | 'arrow' | 'rect' | 'roundRect' | 'ellipse' | 'diamond' | 'label' }> = [
+  { id: 'free', label: '画笔', title: '自由笔刷', icon: 'brush' },
+  { id: 'line', label: '直线', title: '直线标注', icon: 'line' },
+  { id: 'arrow', label: '箭头', title: '箭头标注', icon: 'arrow' },
+  { id: 'rect', label: '矩形', title: '矩形', icon: 'rect' },
+  { id: 'round-rect', label: '圆角矩形', title: '圆角矩形', icon: 'roundRect' },
+  { id: 'ellipse', label: '圆形', title: '圆形 / 椭圆', icon: 'ellipse' },
+  { id: 'diamond', label: '菱形', title: '菱形标注', icon: 'diamond' },
+  { id: 'label', label: '标号', title: '数字标签', icon: 'label' },
+];
 
 const CROP_ASPECT_PRESETS: Array<{ id: CropAspectPreset; label: string }> = [
   { id: 'free', label: '自由' },
@@ -127,13 +141,18 @@ interface FRect {
   w: number;
   h: number;
 }
+type BrushShapeStrokeKind = 'brush-rect' | 'brush-round-rect' | 'brush-ellipse' | 'brush-diamond';
 /** 矢量化一笔画/一个图形 (fraction 坐标, 跨渲染不失真) */
 type DrawStroke =
   | { kind: 'mask-stroke'; size: number; points: Pt[] }
   | { kind: 'mask-erase'; size: number; points: Pt[] }
   | { kind: 'brush-free'; color: string; size: number; points: Pt[] }
-  | { kind: 'brush-rect'; color: string; size: number; rect: FRect }
-  | { kind: 'brush-ellipse'; color: string; size: number; rect: FRect }
+  | { kind: 'brush-line'; color: string; size: number; start: Pt; end: Pt }
+  | { kind: 'brush-arrow'; color: string; size: number; start: Pt; end: Pt }
+  | { kind: 'brush-rect'; color: string; size: number; rect: FRect; fillMode: BrushFillMode }
+  | { kind: 'brush-round-rect'; color: string; size: number; rect: FRect; fillMode: BrushFillMode }
+  | { kind: 'brush-ellipse'; color: string; size: number; rect: FRect; fillMode: BrushFillMode }
+  | { kind: 'brush-diamond'; color: string; size: number; rect: FRect; fillMode: BrushFillMode }
   | { kind: 'brush-label'; color: string; size: number; pos: Pt; text: string };
 
 interface Line {
@@ -150,6 +169,135 @@ interface CropBox {
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 const EDIT_STAGE_PADDING = 32;
 const EDIT_STAGE_MIN_PREVIEW = 180;
+
+function clampLabelCounter(value: number) {
+  return clamp(Math.round(Number.isFinite(value) ? value : 1), 1, 9999);
+}
+
+function brushShapeKindForTool(tool: BrushTool): BrushShapeStrokeKind | null {
+  if (tool === 'rect') return 'brush-rect';
+  if (tool === 'round-rect') return 'brush-round-rect';
+  if (tool === 'ellipse') return 'brush-ellipse';
+  if (tool === 'diamond') return 'brush-diamond';
+  return null;
+}
+
+function brushRectFromDrag(start: Pt, end: Pt, lockAspect: boolean): FRect {
+  let next = end;
+  if (lockAspect) {
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const signX = dx < 0 ? -1 : 1;
+    const signY = dy < 0 ? -1 : 1;
+    const maxX = signX > 0 ? 1 - start.x : start.x;
+    const maxY = signY > 0 ? 1 - start.y : start.y;
+    const side = Math.min(Math.max(Math.abs(dx), Math.abs(dy)), maxX, maxY);
+    next = {
+      x: start.x + signX * side,
+      y: start.y + signY * side,
+    };
+  }
+  return {
+    x: Math.min(start.x, next.x),
+    y: Math.min(start.y, next.y),
+    w: Math.abs(next.x - start.x),
+    h: Math.abs(next.y - start.y),
+  };
+}
+
+function drawRoundedRectPath(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  radius: number,
+) {
+  const r = Math.min(Math.abs(w) / 2, Math.abs(h) / 2, Math.max(0, radius));
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+function drawDiamondPath(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number) {
+  ctx.beginPath();
+  ctx.moveTo(x + w / 2, y);
+  ctx.lineTo(x + w, y + h / 2);
+  ctx.lineTo(x + w / 2, y + h);
+  ctx.lineTo(x, y + h / 2);
+  ctx.closePath();
+}
+
+function lineArrowHeadLength(size: number) {
+  return Math.max(10, size * 2.4);
+}
+
+function arrowLineEndBeforeHead(
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+  size: number,
+) {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const length = Math.hypot(dx, dy);
+  if (length <= 0) return end;
+  const inset = Math.min(length, lineArrowHeadLength(size) * 0.82);
+  return {
+    x: end.x - (dx / length) * inset,
+    y: end.y - (dy / length) * inset,
+  };
+}
+
+function drawLineArrowHead(
+  ctx: CanvasRenderingContext2D,
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+  size: number,
+) {
+  const angle = Math.atan2(end.y - start.y, end.x - start.x);
+  const head = lineArrowHeadLength(size);
+  ctx.beginPath();
+  ctx.moveTo(end.x, end.y);
+  ctx.lineTo(end.x - head * Math.cos(angle - Math.PI / 6), end.y - head * Math.sin(angle - Math.PI / 6));
+  ctx.lineTo(end.x - head * Math.cos(angle + Math.PI / 6), end.y - head * Math.sin(angle + Math.PI / 6));
+  ctx.closePath();
+  ctx.fill();
+}
+
+function renderBrushShapePath(
+  ctx: CanvasRenderingContext2D,
+  s: Extract<DrawStroke, { rect: FRect }>,
+  W: number,
+  H: number,
+) {
+  const x = s.rect.x * W;
+  const y = s.rect.y * H;
+  const w = s.rect.w * W;
+  const h = s.rect.h * H;
+  if (s.kind === 'brush-ellipse') {
+    ctx.beginPath();
+    ctx.ellipse(x + w / 2, y + h / 2, Math.abs(w / 2), Math.abs(h / 2), 0, 0, Math.PI * 2);
+    return;
+  }
+  if (s.kind === 'brush-round-rect') {
+    drawRoundedRectPath(ctx, x, y, w, h, Math.min(Math.abs(w), Math.abs(h)) * 0.18);
+    return;
+  }
+  if (s.kind === 'brush-diamond') {
+    drawDiamondPath(ctx, x, y, w, h);
+    return;
+  }
+  ctx.beginPath();
+  ctx.rect(x, y, w, h);
+}
 
 // 计算切割矩形 (natural 像素), 兼容 等分 / 自定义 两个模式
 function computeRects(
@@ -239,6 +387,7 @@ const ImageEditModal = ({ srcUrl, onClose, onProduce }: Props) => {
   const [brushTool, setBrushTool] = useState<BrushTool>('free');
   const [brushColor, setBrushColor] = useState('#ff2d55');
   const [brushSize, setBrushSize] = useState(14);
+  const [brushFillMode, setBrushFillMode] = useState<BrushFillMode>('stroke');
   const [labelCounter, setLabelCounter] = useState(1);
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
 
@@ -1246,25 +1395,40 @@ const ImageEditModal = ({ srcUrl, onClose, onProduce }: Props) => {
       ctx.restore();
       return;
     }
-    if (s.kind === 'brush-rect') {
+    if (s.kind === 'brush-line' || s.kind === 'brush-arrow') {
       ctx.save();
+      const start = { x: s.start.x * W, y: s.start.y * H };
+      const end = { x: s.end.x * W, y: s.end.y * H };
+      const lineEnd = s.kind === 'brush-arrow' ? arrowLineEndBeforeHead(start, end, s.size) : end;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
       ctx.lineWidth = s.size;
       ctx.strokeStyle = s.color;
-      ctx.strokeRect(s.rect.x * W, s.rect.y * H, s.rect.w * W, s.rect.h * H);
+      ctx.fillStyle = s.color;
+      ctx.beginPath();
+      ctx.moveTo(start.x, start.y);
+      ctx.lineTo(lineEnd.x, lineEnd.y);
+      ctx.stroke();
+      if (s.kind === 'brush-arrow') drawLineArrowHead(ctx, start, end, s.size);
       ctx.restore();
       return;
     }
-    if (s.kind === 'brush-ellipse') {
+    if (
+      s.kind === 'brush-rect' ||
+      s.kind === 'brush-round-rect' ||
+      s.kind === 'brush-ellipse' ||
+      s.kind === 'brush-diamond'
+    ) {
       ctx.save();
       ctx.lineWidth = s.size;
-      ctx.strokeStyle = s.color;
-      ctx.beginPath();
-      const cx = (s.rect.x + s.rect.w / 2) * W;
-      const cy = (s.rect.y + s.rect.h / 2) * H;
-      const rx = Math.abs(s.rect.w / 2) * W;
-      const ry = Math.abs(s.rect.h / 2) * H;
-      ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
-      ctx.stroke();
+      renderBrushShapePath(ctx, s, W, H);
+      if (s.fillMode === 'fill') {
+        ctx.fillStyle = s.color;
+        ctx.fill();
+      } else {
+        ctx.strokeStyle = s.color;
+        ctx.stroke();
+      }
       ctx.restore();
       return;
     }
@@ -1340,35 +1504,40 @@ const ImageEditModal = ({ srcUrl, onClose, onProduce }: Props) => {
         const stroke: DrawStroke = { kind: 'brush-free', color: brushColor, size: brushSize, points: [pt] };
         setBrushStrokes((arr) => [...arr, stroke]);
         drawDragRef.current = { pointerId: e.pointerId, startPt: pt, pending: stroke };
-      } else if (brushTool === 'rect') {
+      } else if (brushTool === 'line' || brushTool === 'arrow') {
         const stroke: DrawStroke = {
-          kind: 'brush-rect',
+          kind: brushTool === 'arrow' ? 'brush-arrow' : 'brush-line',
           color: brushColor,
           size: brushSize,
-          rect: { x: pt.x, y: pt.y, w: 0, h: 0 },
+          start: pt,
+          end: pt,
         };
         setBrushStrokes((arr) => [...arr, stroke]);
         drawDragRef.current = { pointerId: e.pointerId, startPt: pt, pending: stroke };
-      } else if (brushTool === 'ellipse') {
-        const stroke: DrawStroke = {
-          kind: 'brush-ellipse',
-          color: brushColor,
-          size: brushSize,
-          rect: { x: pt.x, y: pt.y, w: 0, h: 0 },
-        };
-        setBrushStrokes((arr) => [...arr, stroke]);
-        drawDragRef.current = { pointerId: e.pointerId, startPt: pt, pending: stroke };
-      } else if (brushTool === 'label') {
-        const stroke: DrawStroke = {
-          kind: 'brush-label',
-          color: brushColor,
-          size: brushSize,
-          pos: pt,
-          text: String(labelCounter),
-        };
-        setBrushStrokes((arr) => [...arr, stroke]);
-        setLabelCounter((n) => n + 1);
-        drawDragRef.current = null;
+      } else {
+        const shapeKind = brushShapeKindForTool(brushTool);
+        if (shapeKind) {
+          const stroke: DrawStroke = {
+            kind: shapeKind,
+            color: brushColor,
+            size: brushSize,
+            fillMode: brushFillMode,
+            rect: { x: pt.x, y: pt.y, w: 0, h: 0 },
+          };
+          setBrushStrokes((arr) => [...arr, stroke]);
+          drawDragRef.current = { pointerId: e.pointerId, startPt: pt, pending: stroke };
+        } else if (brushTool === 'label') {
+          const stroke: DrawStroke = {
+            kind: 'brush-label',
+            color: brushColor,
+            size: brushSize,
+            pos: pt,
+            text: String(labelCounter),
+          };
+          setBrushStrokes((arr) => [...arr, stroke]);
+          setLabelCounter((n) => clampLabelCounter(n + 1));
+          drawDragRef.current = null;
+        }
       }
     }
     (e.target as Element).setPointerCapture?.(e.pointerId);
@@ -1403,23 +1572,32 @@ const ImageEditModal = ({ srcUrl, onClose, onProduce }: Props) => {
           next[next.length - 1] = { ...last, points: [...last.points, pt] };
           return next;
         });
-      } else if (brushTool === 'rect' || brushTool === 'ellipse') {
+      } else if (brushTool === 'line' || brushTool === 'arrow') {
+        setBrushStrokes((arr) => {
+          const last = arr[arr.length - 1];
+          if (!last || (last.kind !== 'brush-line' && last.kind !== 'brush-arrow')) return arr;
+          const next = [...arr];
+          next[next.length - 1] = { ...last, end: pt };
+          return next;
+        });
+      } else if (brushShapeKindForTool(brushTool)) {
         setBrushStrokes((arr) => {
           const last = arr[arr.length - 1];
           if (
             !last ||
-            (last.kind !== 'brush-rect' && last.kind !== 'brush-ellipse')
+            (
+              last.kind !== 'brush-rect' &&
+              last.kind !== 'brush-round-rect' &&
+              last.kind !== 'brush-ellipse' &&
+              last.kind !== 'brush-diamond'
+            )
           )
             return arr;
           const next = [...arr];
+          const brushRect = brushRectFromDrag(ctx.startPt, pt, e.shiftKey);
           next[next.length - 1] = {
             ...last,
-            rect: {
-              x: Math.min(ctx.startPt.x, pt.x),
-              y: Math.min(ctx.startPt.y, pt.y),
-              w: Math.abs(pt.x - ctx.startPt.x),
-              h: Math.abs(pt.y - ctx.startPt.y),
-            },
+            rect: brushRect,
           };
           return next;
         });
@@ -1583,6 +1761,16 @@ const ImageEditModal = ({ srcUrl, onClose, onProduce }: Props) => {
     borderRadius: isPixel ? 0 : 6,
     fontSize: 12,
     textAlign: 'center',
+  };
+
+  const renderBrushToolIcon = (icon: (typeof IMAGE_EDIT_BRUSH_TOOLS)[number]['icon']) => {
+    if (icon === 'brush') return <Paintbrush size={13} />;
+    if (icon === 'line') return <Minus size={13} />;
+    if (icon === 'arrow') return <ArrowRight size={13} />;
+    if (icon === 'ellipse') return <CircleIcon size={13} />;
+    if (icon === 'diamond') return <DiamondIcon size={13} />;
+    if (icon === 'label') return <ListOrdered size={13} />;
+    return <SquareIcon size={13} />;
   };
 
   const ui = (
@@ -1880,34 +2068,17 @@ const ImageEditModal = ({ srcUrl, onClose, onProduce }: Props) => {
           )}
           {mode === 'brush' && (
             <>
-              <button
-                style={tabBtn(brushTool === 'free')}
-                onClick={() => setBrushTool('free')}
-                title="自由笔刷"
-              >
-                <Paintbrush size={13} />
-              </button>
-              <button
-                style={tabBtn(brushTool === 'rect')}
-                onClick={() => setBrushTool('rect')}
-                title="矩形"
-              >
-                <SquareIcon size={13} />
-              </button>
-              <button
-                style={tabBtn(brushTool === 'ellipse')}
-                onClick={() => setBrushTool('ellipse')}
-                title="椭圆"
-              >
-                <CircleIcon size={13} />
-              </button>
-              <button
-                style={tabBtn(brushTool === 'label')}
-                onClick={() => setBrushTool('label')}
-                title="数字标签 (点一下 +1)"
-              >
-                <ListOrdered size={13} />
-              </button>
+              {IMAGE_EDIT_BRUSH_TOOLS.map((tool) => (
+                <button
+                  key={tool.id}
+                  style={{ ...tabBtn(brushTool === tool.id), padding: '0 8px' }}
+                  onClick={() => setBrushTool(tool.id)}
+                  title={tool.id === 'label' ? `${tool.title}：当前 ${labelCounter}，点击后自动 +1` : tool.title}
+                >
+                  {renderBrushToolIcon(tool.icon)}
+                  <span>{tool.label}</span>
+                </button>
+              ))}
               <span style={{ color: subText, marginLeft: 4 }}>颜色</span>
               <input
                 type="color"
@@ -1923,6 +2094,43 @@ const ImageEditModal = ({ srcUrl, onClose, onProduce }: Props) => {
                   cursor: 'pointer',
                 }}
               />
+              <span style={{ color: subText }}>图形</span>
+              <div role="group" aria-label="图形填充模式" style={{ display: 'inline-flex', gap: 4 }}>
+                <button
+                  type="button"
+                  style={tabBtn(brushFillMode === 'stroke')}
+                  onClick={() => setBrushFillMode('stroke')}
+                  title="形状只画描边"
+                >
+                  描边
+                </button>
+                <button
+                  type="button"
+                  style={tabBtn(brushFillMode === 'fill')}
+                  onClick={() => setBrushFillMode('fill')}
+                  title="矩形、圆形、圆角矩形、菱形使用实心填充"
+                >
+                  实心
+                </button>
+              </div>
+              {brushTool === 'label' && (
+                <>
+                  <span style={{ color: subText }}>编号</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={9999}
+                    value={labelCounter}
+                    onChange={(e) => setLabelCounter(clampLabelCounter(Number(e.target.value)))}
+                    style={{ ...inputStyle, width: 66 }}
+                    aria-label="当前标号数字"
+                    title="下一次点击图片时使用的标号"
+                  />
+                  <button type="button" style={btnBase} onClick={() => setLabelCounter(1)} title="把下一次标号重置为 1">
+                    重置1
+                  </button>
+                </>
+              )}
               <span style={{ color: subText }}>笔刷</span>
               <input
                 type="range"

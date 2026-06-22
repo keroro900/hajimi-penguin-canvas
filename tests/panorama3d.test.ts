@@ -8,6 +8,8 @@ import {
   PANORAMA_KEYFRAME_SEQUENCE_DEFAULT,
   PANORAMA_OCCLUSION_MASK_LIMIT,
   PANORAMA_FIXED_PROMPT,
+  PANORAMA_RATIO_OPTIONS,
+  PANORAMA_RATIO_PRESETS,
   PANORAMA_SHOT_CAMERA_DEFAULT,
   PANORAMA_ACTION_PLAN_SCHEMA,
   PANORAMA_AVATAR_POSES,
@@ -523,9 +525,29 @@ test('panorama seam score classification gives actionable labels', () => {
 });
 
 test('resolvePanoramaRatio returns presets and sanitized custom ratios', () => {
-  assert.deepEqual(resolvePanoramaRatio('wide', 1, 1), { w: 16, h: 9 });
+  assert.deepEqual(
+    PANORAMA_RATIO_OPTIONS.map((item) => item.label),
+    ['21:9', '2:1', '自定义'],
+  );
+  assert.deepEqual(
+    Object.values(PANORAMA_RATIO_PRESETS),
+    [{ w: 21, h: 9 }, { w: 2, h: 1 }],
+  );
+  assert.deepEqual(resolvePanoramaRatio('ultrawide', undefined, undefined), { w: 21, h: 9 });
+  assert.deepEqual(resolvePanoramaRatio('twoToOne', undefined, undefined), { w: 2, h: 1 });
+  assert.deepEqual(resolvePanoramaRatio('wide', 1, 1), { w: 21, h: 9 });
+  assert.deepEqual(resolvePanoramaRatio('square', undefined, undefined), { w: 21, h: 9 });
   assert.deepEqual(resolvePanoramaRatio('custom', 21, 9), { w: 21, h: 9 });
   assert.deepEqual(resolvePanoramaRatio('custom', -10, 'bad'), { w: 1, h: 9 });
+});
+
+test('panorama 3d node normalizes legacy ratio ids before rendering buttons', () => {
+  const source = readFileSync(new URL('../src/components/nodes/Panorama3DNode.tsx', import.meta.url), 'utf8');
+
+  assert.match(source, /normalizePanoramaRatioId\(d\.panoramaRatio\)/);
+  assert.doesNotMatch(source, /d\.panoramaRatio\s*\|\|\s*'wide'/);
+  assert.match(source, /className="grid grid-cols-3 gap-1\.5"/);
+  assert.doesNotMatch(source, /className="grid grid-cols-10 gap-1\.5"/);
 });
 
 test('panoramaRenderSize keeps the selected viewport aspect', () => {

@@ -80,6 +80,7 @@ import {
   isLikelyPanoramaImage,
   markPanoramaDefaultCameraView,
   measurePanoramaStoryboardPromptPanel,
+  normalizePanoramaRatioId,
   normalizePanoramaStoryboardPrompt,
   normalizePanoramaYaw,
   insertPanoramaStoryboardPresetPrompt,
@@ -1152,7 +1153,7 @@ const Panorama3DNode = (p: NodeProps) => {
   const generatedHistory: PanoramaGenerationHistoryItem[] = Array.isArray(d.panoramaGeneratedHistory)
     ? d.panoramaGeneratedHistory.filter((item: any) => item && typeof item.url === 'string')
     : [];
-  const ratioId: PanoramaRatioId = (d.panoramaRatio || 'wide') as PanoramaRatioId;
+  const ratioId: PanoramaRatioId = normalizePanoramaRatioId(d.panoramaRatio);
   const customW = clampPanoramaNumber(d.panoramaCustomW, 1, 999, 16);
   const customH = clampPanoramaNumber(d.panoramaCustomH, 1, 999, 9);
   const yaw = clampPanoramaNumber(d.panoramaYaw, -99999, 99999, 0);
@@ -3710,7 +3711,7 @@ const Panorama3DNode = (p: NodeProps) => {
   const generatedSubtitle = isGenerating
     ? `生成中 · 21:9 · ${sizeLevel}`
     : hasSource
-    ? `${PANORAMA_RATIO_OPTIONS.find((x) => x.id === ratioId)?.label || '16:9'} · ${isGeneratedPreview ? `${sizeLevel} · GPT Image 2` : `FOV ${Math.round(fov)}°`}`
+    ? `${PANORAMA_RATIO_OPTIONS.find((x) => x.id === ratioId)?.label || '21:9'} · ${isGeneratedPreview ? `${sizeLevel} · GPT Image 2` : `FOV ${Math.round(fov)}°`}`
     : '文生 / 图生 720VR';
   const hasConnectedReference = Boolean(connectedSource?.url);
   const hasLocalReference = Boolean(localReferenceUrl);
@@ -4556,7 +4557,7 @@ const Panorama3DNode = (p: NodeProps) => {
             </div>
           )}
 
-          <div className="grid grid-cols-10 gap-1.5">
+          <div className="grid grid-cols-3 gap-1.5">
             {PANORAMA_RATIO_OPTIONS.map((item) => (
               <button
                 key={item.id}

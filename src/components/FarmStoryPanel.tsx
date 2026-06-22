@@ -72,8 +72,10 @@ interface FarmStoryPanelProps {
   editing?: boolean;
   feedback?: string;
   soundEnabled?: boolean;
+  devToolsEnabled?: boolean;
   onToggleEditing?: (editing: boolean) => void;
   onToggleSound?: (enabled: boolean) => void;
+  onGrantDevMaterials?: () => void;
   onSelectTool?: (tool: FarmTool) => void;
   onSelectBuilding?: (buildingId: string) => void;
   onSelectDecor?: (decorId: string) => void;
@@ -475,12 +477,8 @@ function readFarmPanelSectionExpanded(): FarmPanelSectionExpandedState {
     if (!raw) return {};
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object') return {};
-    return Object.entries(parsed).reduce<FarmPanelSectionExpandedState>((acc, [key, value]) => {
-      if (FARM_PANEL_SECTION_ID_SET.has(key) && value === true) {
-        acc[key as FarmPanelSectionId] = true;
-      }
-      return acc;
-    }, {});
+    const activeEntry = Object.entries(parsed).find(([key, value]) => FARM_PANEL_SECTION_ID_SET.has(key) && value === true);
+    return activeEntry ? { [activeEntry[0] as FarmPanelSectionId]: true } : {};
   } catch {
     return {};
   }
@@ -1868,8 +1866,10 @@ function FarmStoryPanelRuntime({
   editing = false,
   feedback,
   soundEnabled = true,
+  devToolsEnabled = false,
   onToggleEditing,
   onToggleSound,
+  onGrantDevMaterials,
   onSelectTool,
   onSelectBuilding,
   onSelectDecor,
@@ -2050,6 +2050,7 @@ function FarmStoryPanelRuntime({
   const farmPriorityComboTimerRef = useRef<number | null>(null);
   const farmPriorityFlowTimerRef = useRef<number | null>(null);
   const farmPanelSectionPresetTimerRef = useRef<number | null>(null);
+  const farmPanelRef = useRef<HTMLElement | null>(null);
   const dailySummary = farmCanvas?.lastDailySummary;
   const showDailySummary = visualStyle === 'farm-story' && Boolean(dailySummary && dismissedSummaryId !== dailySummary.id);
 
@@ -2090,13 +2091,14 @@ function FarmStoryPanelRuntime({
 
   const setFarmPanelSectionOpen = useCallback((id: FarmPanelSectionId, expanded = true) => {
     setFarmPanelSectionExpanded((current) => {
-      if (current[id] === expanded) return current;
-      return { ...current, [id]: expanded };
+      if (!expanded) return current[id] === true ? {} : current;
+      if (current[id] === true && Object.keys(current).length === 1) return current;
+      return { [id]: true };
     });
   }, []);
 
   const toggleFarmPanelSection = useCallback((id: FarmPanelSectionId) => {
-    setFarmPanelSectionExpanded((current) => ({ ...current, [id]: current[id] !== true }));
+    setFarmPanelSectionExpanded((current) => current[id] === true ? {} : { [id]: true });
   }, []);
 
   const flashFarmPanelSectionPreset = useCallback((receipt: FarmPanelSectionPresetReceipt) => {
@@ -3021,7 +3023,6 @@ function FarmStoryPanelRuntime({
     onSelectTool?.('water');
   };
   const handleFarmQuickToolAction = (tool: FarmTool, quickRoute?: FarmQuickToolRouteHint, quickAssist?: FarmQuickToolAssistHint) => {
-    setFarmPanelSectionOpen('tools');
     onSelectTool?.(tool);
     const quickHint = quickRoute || quickAssist;
     if (!quickHint) return;
@@ -5095,34 +5096,64 @@ function FarmStoryPanelRuntime({
   const farmMonitorBriefTitle = `今日提醒：${farmMonitorBriefPrimary} · ${farmMonitorBriefSecondary} · ${farmMonitorBriefToneLabel} · ${farmMonitorBriefProgressLabel}`;
   const farmQuickPanelToggleBadge = panelOpen ? '收起' : farmMonitorBriefToneLabel;
   const farmQuickPanelToggleTitle = `${panelOpen ? '收起' : '展开'}牧场控制台：当前优先 ${farmMonitorBriefPrimary} · ${farmMonitorBriefSecondary} · ${farmMonitorBriefSectionLabel}`;
+  const activeFarmPanelSectionId = FARM_PANEL_SECTION_IDS.find((id) => isFarmPanelSectionExpanded(id)) || '';
+  const activeFarmPanelSectionItem = farmPanelSectionItems.find((item) => item.id === activeFarmPanelSectionId);
   const farmPanelOpenSectionCount = FARM_PANEL_SECTION_IDS.filter((id) => isFarmPanelSectionExpanded(id)).length;
   const farmPanelDailyOpenSectionCount = FARM_PANEL_DAILY_SECTION_IDS.filter((id) => isFarmPanelSectionExpanded(id)).length;
   const farmPanelPriorityPresetActive = farmPanelOpenSectionCount === 1 && isFarmPanelSectionExpanded(farmMonitorBriefSection);
-  const farmPanelDailyPresetActive = farmPanelOpenSectionCount === FARM_PANEL_DAILY_SECTION_IDS.length
-    && FARM_PANEL_DAILY_SECTION_IDS.every((id) => isFarmPanelSectionExpanded(id));
+  const farmPanelDailyPresetActive = Boolean(activeFarmPanelSectionId && FARM_PANEL_DAILY_SECTION_IDS.includes(activeFarmPanelSectionId as FarmPanelSectionId));
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !panelOpen || !activeFarmPanelSectionId) return undefined;
+    const frameId = window.requestAnimationFrame(() => {
+      const panelElement = farmPanelRef.current;
+      if (!panelElement || panelElement.dataset.farmPanelLayout !== 'split-detail') return;
+      panelElement.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    });
+    return () => window.cancelAnimationFrame(frameId);
+  }, [activeFarmPanelSectionId, panelOpen]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !panelOpen) return undefined;
+    const panelElement = farmPanelRef.current;
+    if (!panelElement || panelElement.dataset.farmPanelLayout !== 'split-detail') return undefined;
+    const syncDetailHeight = () => {
+      panelElement.style.setProperty('--farm-panel-detail-height', `${panelElement.getBoundingClientRect().height}px`);
+    };
+    syncDetailHeight();
+    window.addEventListener('resize', syncDetailHeight);
+    const resizeObserver = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(syncDetailHeight) : null;
+    resizeObserver?.observe(panelElement);
+    return () => {
+      window.removeEventListener('resize', syncDetailHeight);
+      resizeObserver?.disconnect();
+      panelElement.style.removeProperty('--farm-panel-detail-height');
+    };
+  }, [activeFarmPanelSectionId, panelOpen]);
   const applyFarmPanelSectionPreset = (presetId: FarmPanelSectionPresetId) => {
-    const presetSections = presetId === 'priority'
-      ? [farmMonitorBriefSection]
+    const activeDailyIndex = FARM_PANEL_DAILY_SECTION_IDS.indexOf(activeFarmPanelSectionId as FarmPanelSectionId);
+    const presetSection = presetId === 'priority'
+      ? farmMonitorBriefSection
       : presetId === 'daily'
-        ? FARM_PANEL_DAILY_SECTION_IDS
-        : [];
-    setFarmPanelSectionExpanded(() => presetSections.reduce<FarmPanelSectionExpandedState>((acc, id) => {
-      acc[id] = true;
-      return acc;
-    }, {}));
+        ? FARM_PANEL_DAILY_SECTION_IDS[activeDailyIndex >= 0 ? (activeDailyIndex + 1) % FARM_PANEL_DAILY_SECTION_IDS.length : 0]
+        : undefined;
+    const presetSectionLabel = presetSection
+      ? farmPanelSectionItems.find((item) => item.id === presetSection)?.label || '常用栏目'
+      : '';
+    setFarmPanelSectionExpanded(() => presetSection ? { [presetSection]: true } : {});
     flashFarmPanelSectionPreset({
       presetId,
-      label: presetId === 'priority' ? '已打开优先' : presetId === 'daily' ? '常用已展开' : '已全部收起',
+      label: presetId === 'priority' ? '已打开优先' : presetId === 'daily' ? '常用已切换' : '已全部收起',
       detail: presetId === 'priority'
         ? `${farmMonitorBriefSectionLabel} · ${farmMonitorBriefPrimary}`
         : presetId === 'daily'
-          ? '短反馈 / 今日目标 / 工具栏 / 最近农活'
+          ? `单栏展开：${presetSectionLabel}`
           : '控制台已整理，保留顶部看板',
-      count: presetSections.length,
-      targetSection: presetId === 'priority' ? farmMonitorBriefSection : undefined,
+      count: presetSection ? 1 : 0,
+      targetSection: presetSection,
     });
-    if (presetId === 'priority') {
-      flashFarmPrioritySection(farmMonitorBriefSection);
+    if (presetSection) {
+      flashFarmPrioritySection(presetSection);
     }
   };
   const handleFarmQuickPanelToggle = () => {
@@ -5745,7 +5776,8 @@ function FarmStoryPanelRuntime({
       )}
       <div
           className="t8-farm-story-panel__mini-status"
-          data-farm-mini-status={panelOpen ? 'monitor' : 'collapsed'}
+          data-farm-mini-status="monitor"
+          data-farm-mini-panel-state={panelOpen ? 'open' : 'closed'}
           data-farm-monitor-panel="true"
           data-farm-monitor-layout="pasture-dashboard-v1"
           data-farm-monitor-rail="compact-clean-v2"
@@ -7493,7 +7525,7 @@ function FarmStoryPanelRuntime({
               data-farm-quick-tool-assist-label={quickAssist?.label}
               data-farm-quick-tool-assist-target={quickAssist?.routeTarget}
               data-farm-quick-tool-assist-receipt={farmQuickToolAssistReceipt === tool.id ? 'true' : undefined}
-              data-farm-quick-tool-open-section="tools"
+              data-farm-quick-tool-independent-action="true"
               title={`${badge ? `${tool.label} · ${badge.title}` : tool.label}${quickRoute ? ` · 地图找${quickRoute.routeLabel}` : ''}${quickAssist ? ` · ${quickAssist.title}` : ''}${unavailable ? ' · 条件不足，点击查看提示' : ''}`}
               onClick={(event) => {
                 event.stopPropagation();
@@ -7519,6 +7551,7 @@ function FarmStoryPanelRuntime({
       </div>
       {panelOpen && (
         <section
+          ref={farmPanelRef}
           className="t8-farm-story-panel__panel"
           data-canvas-floating-ui="farm-story-panel"
           data-farm-section-feedback-open={isFarmPanelSectionExpanded('feedback') ? 'true' : undefined}
@@ -7535,6 +7568,9 @@ function FarmStoryPanelRuntime({
           data-farm-section-activity-open={isFarmPanelSectionExpanded('activity') ? 'true' : undefined}
           data-farm-section-actions-open={isFarmPanelSectionExpanded('actions') ? 'true' : undefined}
           data-farm-panel-readable="large"
+          data-farm-panel-layout="split-detail"
+          data-farm-panel-active-section={activeFarmPanelSectionId || undefined}
+          data-farm-panel-section-detail-label={activeFarmPanelSectionItem?.label || undefined}
           role="dialog"
           aria-modal="false"
           aria-label="牧场控制台"
@@ -7546,6 +7582,23 @@ function FarmStoryPanelRuntime({
             </div>
             <div className="t8-farm-story-panel__header-actions">
               <em>操作</em>
+              {devToolsEnabled && onGrantDevMaterials && (
+                <button
+                  type="button"
+                  className="t8-farm-story-panel__dev-materials"
+                  data-farm-dev-materials="9999"
+                  data-farm-dev-only="true"
+                  aria-label="开发环境测试：补齐牧场材料 9999"
+                  title="开发环境测试：补齐金币、木材、石头、种子、库存和装饰"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onGrantDevMaterials();
+                  }}
+                >
+                  <Package size={12} />
+                  <span>DEV 9999</span>
+                </button>
+              )}
               <button
                 type="button"
                 className={`t8-farm-story-panel__sound${soundEnabled ? ' is-active' : ''}`}
@@ -8006,6 +8059,39 @@ function FarmStoryPanelRuntime({
               );
             })}
           </div>
+          <div
+            className="t8-farm-story-panel__detail-rail"
+            data-farm-panel-detail-rail="true"
+            data-farm-panel-detail-rail-active={activeFarmPanelSectionId || undefined}
+          >
+          {activeFarmPanelSectionItem && (
+            <div
+              className="t8-farm-story-panel__section-detail-head"
+              data-farm-panel-section-detail-head="true"
+              data-farm-panel-section-detail={activeFarmPanelSectionItem.id}
+              data-farm-panel-section-detail-label={activeFarmPanelSectionItem.label}
+              role="heading"
+              aria-level={3}
+            >
+              <span>
+                <b>{activeFarmPanelSectionItem.label}</b>
+                <small>{activeFarmPanelSectionItem.summary}</small>
+              </span>
+              <button
+                type="button"
+                data-farm-panel-section-detail-collapse="true"
+                title={`折叠${activeFarmPanelSectionItem.label}`}
+                aria-label={`折叠${activeFarmPanelSectionItem.label}`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setFarmPanelSectionOpen(activeFarmPanelSectionItem.id, false);
+                }}
+              >
+                <X size={13} />
+                <span>折叠</span>
+              </button>
+            </div>
+          )}
           {farmMiniQuickActionFeedback && panelOpen && farmMiniQuickActionSummaryLabel && (
             <div
               className="t8-farm-story-panel__summary-detail"
@@ -11148,6 +11234,7 @@ function FarmStoryPanelRuntime({
             >
               {farmOrderSubmitLabel}
             </button>
+          </div>
           </div>
         </section>
       )}

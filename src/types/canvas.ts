@@ -112,6 +112,7 @@ export type AdvancedProviderProtocol =
   | 'openai-compatible'
   | 'modelscope'
   | 'volcengine'
+  | 'agnes'
   | 'comfyui'
   | 'jimeng-cli';
 

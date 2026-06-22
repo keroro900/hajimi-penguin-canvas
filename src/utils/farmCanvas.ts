@@ -124,6 +124,8 @@ export interface FarmToolAction {
   tool: FarmTool;
   x: number;
   y: number;
+  screenX?: number;
+  screenY?: number;
   id?: string;
   cropId?: FarmCropId;
   buildingId?: string;

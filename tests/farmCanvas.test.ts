@@ -1855,6 +1855,7 @@ test('farm canvas types are wired into CanvasData, Canvas persistence, import, a
 });
 
 test('farm render layer is mounted with ReactFlow coordinates and event exclusion', () => {
+  const utils = readFileSync(new URL('../src/utils/farmCanvas.ts', import.meta.url), 'utf8');
   const canvas = readFileSync(new URL('../src/components/Canvas.tsx', import.meta.url), 'utf8');
   const layer = readFileSync(new URL('../src/components/FarmCanvasLayer.tsx', import.meta.url), 'utf8');
   const panel = readFileSync(new URL('../src/components/FarmStoryPanel.tsx', import.meta.url), 'utf8');
@@ -1920,6 +1921,11 @@ test('farm render layer is mounted with ReactFlow coordinates and event exclusio
   const farmPanelActivityFollowupEffect = farmPanelActivityFollowupEffectStart >= 0
     ? panel.slice(farmPanelActivityFollowupEffectStart, farmPanelActivityFollowupEffectEnd > farmPanelActivityFollowupEffectStart ? farmPanelActivityFollowupEffectEnd : undefined)
     : '';
+  const farmFollowupCanvasHintHandlerStart = canvas.indexOf('const handleFarmFollowupCanvasHint = useCallback');
+  const farmFollowupCanvasHintHandlerEnd = canvas.indexOf('  // 选中节点 / 剪贴板', farmFollowupCanvasHintHandlerStart);
+  const farmFollowupCanvasHintHandler = farmFollowupCanvasHintHandlerStart >= 0
+    ? canvas.slice(farmFollowupCanvasHintHandlerStart, farmFollowupCanvasHintHandlerEnd > farmFollowupCanvasHintHandlerStart ? farmFollowupCanvasHintHandlerEnd : undefined)
+    : '';
   const farmPanelPlacementReceiptEffectGuard = panel.indexOf('if (!farmPlacementHudReceiptNextTargetOpenedCanvasHint || !onFollowupCanvasHint)');
   const farmPanelPlacementReceiptEffectStart = panel.lastIndexOf('useEffect(() => {', farmPanelPlacementReceiptEffectGuard);
   const farmPanelPlacementReceiptEffectEnd = panel.indexOf('const farmMiniBuildingEffectTitleLabel =', farmPanelPlacementReceiptEffectStart);
@@ -1931,20 +1937,49 @@ test('farm render layer is mounted with ReactFlow coordinates and event exclusio
   const farmPanelMiniFollowupActionCard = farmPanelMiniFollowupActionCardStart >= 0
     ? panel.slice(farmPanelMiniFollowupActionCardStart, farmPanelMiniFollowupActionCardEnd > farmPanelMiniFollowupActionCardStart ? farmPanelMiniFollowupActionCardEnd : undefined)
     : '';
+  const farmToolSelectionFeedbackStart = canvas.indexOf('const showFarmToolSelectionFeedback = useCallback');
+  const farmToolSelectionFeedbackEnd = canvas.indexOf('const handleFarmGrantDevMaterials = useCallback', farmToolSelectionFeedbackStart);
+  const farmToolSelectionFeedbackHandler = farmToolSelectionFeedbackStart >= 0
+    ? canvas.slice(farmToolSelectionFeedbackStart, farmToolSelectionFeedbackEnd > farmToolSelectionFeedbackStart ? farmToolSelectionFeedbackEnd : undefined)
+    : '';
 
   assert.match(canvas, /import FarmCanvasLayer, \{ type FarmCanvasFloatingFeedback \} from '\.\/FarmCanvasLayer'/);
   assert.match(canvas, /import \{ farmSoundCueForEvent, farmSoundCueForTool, playFarmActionSound, type FarmSoundCue \} from '\.\.\/utils\/farmSound'/);
   assert.match(canvas, /const \[farmCanvasEditing, setFarmCanvasEditing\] = useState\(false\)/);
   assert.match(canvas, /const \[farmStoryPanelOpen, setFarmStoryPanelOpen\] = useState/);
   assert.match(canvas, /const \[farmStoryPriorityFocusRequestId, setFarmStoryPriorityFocusRequestId\] = useState\(0\)/);
+  assert.match(canvas, /const FARM_FOLLOWUP_NOTICE_MS = 5600/);
+  assert.match(canvas, /const FARM_FEEDBACK_SCREEN_TOP_GUARD = 176/);
+  assert.match(canvas, /const FARM_DEV_TEST_MATERIAL_AMOUNT = 9999/);
+  assert.match(canvas, /const FARM_DEV_TEST_WATER_AMOUNT = 999/);
+  assert.match(canvas, /FARM_ANIMAL_PRODUCT_DEFINITIONS,/);
+  assert.match(canvas, /interface FarmFollowupNotice extends FarmStoryPanelCanvasHint/);
   assert.match(canvas, /const \[farmFloatingFeedbacks, setFarmFloatingFeedbacks\] = useState<FarmCanvasFloatingFeedback\[\]>\(\[\]\)/);
+  assert.match(canvas, /const \[farmFollowupNotice, setFarmFollowupNotice\] = useState<FarmFollowupNotice \| null>\(null\)/);
   assert.match(canvas, /const \[farmSoundEnabled, setFarmSoundEnabled\] = useState/);
   assert.match(canvas, /const farmFloatingFeedbackTimersRef = useRef<Map<string, number>>\(new Map\(\)\)/);
+  assert.match(canvas, /const farmFollowupNoticeTimerRef = useRef<number \| null>\(null\)/);
+  assert.match(canvas, /type FarmActionFeedbackAnchor = \{ x: number; y: number; placement: FarmCanvasFloatingFeedback\['placement'\] \}/);
+  assert.match(canvas, /function farmActionFeedbackAnchor\([\s\S]*previous: FarmCanvasState,[\s\S]*next: FarmCanvasState,[\s\S]*action: FarmToolAction[\s\S]*options: \{ screenTopGuard\?: number \} = \{\}[\s\S]*\): FarmActionFeedbackAnchor/);
+  assert.match(canvas, /const screenTopGuard = options\.screenTopGuard \?\? FARM_FEEDBACK_SCREEN_TOP_GUARD/);
+  assert.match(canvas, /const shouldPlaceBelowForScreen = typeof action\.screenY === 'number' && action\.screenY < screenTopGuard/);
+  assert.match(canvas, /shouldPlaceBelowForScreen \|\| fallbackFootprint\.y <= gridSize \? 'below' : 'above'/);
+  assert.match(canvas, /function farmActionSnappedPoint\(action: FarmToolAction, gridSize: number\) \{[\s\S]*return snapFarmPoint\(\{ x: action\.x, y: action\.y \}, gridSize\)/);
+  assert.match(canvas, /function farmActionFeedbackFootprintForAction\([\s\S]*action: FarmToolAction,[\s\S]*gridSize: number/);
+  assert.match(canvas, /FARM_BUILDING_DEFINITIONS\[action\.buildingId \|\| 'hut'\]/);
+  assert.match(canvas, /width: Math\.max\(1, building\?\.widthCells \|\| 1\) \* gridSize/);
+  assert.match(canvas, /height: Math\.max\(1, building\?\.heightCells \|\| 1\) \* gridSize/);
+  assert.match(canvas, /function farmActionFeedbackObjectForAction\([\s\S]*objects: FarmCanvasState\['objects'\],[\s\S]*action: FarmToolAction,[\s\S]*gridSize: number/);
+  assert.match(canvas, /const point = farmActionSnappedPoint\(action, gridSize\)/);
+  assert.match(canvas, /const fallbackFootprint = farmActionFeedbackFootprintForAction\(action, gridSize\)/);
+  assert.match(canvas, /x: fallbackFootprint\.x \+ fallbackFootprint\.width \/ 2/);
+  assert.match(canvas, /y: fallbackPlacement === 'above' \? fallbackFootprint\.y : fallbackFootprint\.y \+ fallbackFootprint\.height/);
   assert.match(canvas, /buildFarmActivityDigest,/);
   assert.match(canvas, /buildFarmFocusGoals,/);
   assert.match(canvas, /canCompleteFarmNpcVisit,/);
   assert.match(canvas, /canCompleteFarmOrder,/);
   assert.match(canvas, /countFarmScarecrowUnprotectedDryCrops,/);
+  assert.match(canvas, /const farmDevToolsEnabled = isFarmStory && import\.meta\.env\.DEV/);
   assert.match(canvas, /type FarmToolbarConsoleTone = 'water' \| 'order' \| 'visit' \| 'mature' \| 'guard' \| 'focus' \| 'stable'/);
   assert.match(canvas, /const FARM_TOOLBAR_CONSOLE_SECTION_LABELS: Record<FarmToolbarConsoleSection, string>/);
   assert.match(canvas, /function buildFarmToolbarConsoleHint\([\s\S]*stateInput: FarmCanvasState \| undefined,[\s\S]*panelOpen: boolean/);
@@ -1959,6 +1994,8 @@ test('farm render layer is mounted with ReactFlow coordinates and event exclusio
   assert.match(panel, /onOpenChange\?: \(open: boolean\) => void/);
   assert.match(panel, /showInlineToggle\?: boolean/);
   assert.match(panel, /priorityFocusRequestId\?: number/);
+  assert.match(panel, /devToolsEnabled\?: boolean/);
+  assert.match(panel, /onGrantDevMaterials\?: \(\) => void/);
   assert.match(panel, /export default function FarmStoryPanel\(props: FarmStoryPanelProps\) \{\s*if \(props\.visualStyle !== 'farm-story'\) return null;\s*return <FarmStoryPanelRuntime \{\.\.\.props\} \/>;\s*\}/);
   assert.match(panel, /function FarmStoryPanelRuntime\(\{[\s\S]*\}: FarmStoryPanelProps\) \{/);
   assert.ok(
@@ -1968,6 +2005,7 @@ test('farm render layer is mounted with ReactFlow coordinates and event exclusio
   assert.match(panel, /const panelOpen = controlledOpen \?\? internalOpen/);
   assert.match(panel, /const setOpen = useCallback/);
   assert.match(panel, /priorityFocusRequestId = 0/);
+  assert.match(panel, /devToolsEnabled = false/);
   assert.match(panel, /showInlineToggle && \(/);
   assert.match(canvas, /const farmStoryToolbarHint = useMemo\([\s\S]*buildFarmToolbarConsoleHint\(farmCanvas, farmStoryPanelOpen\)[\s\S]*\[farmCanvas, farmStoryPanelOpen, isFarmStory\]/);
   assert.match(canvas, /data-farm-control-console-toggle="toolbar"/);
@@ -2076,7 +2114,9 @@ test('farm render layer is mounted with ReactFlow coordinates and event exclusio
   assert.match(css, /\.t8-farm-story-panel__priority-action\[data-farm-panel-priority-action-route-receipt="true"\]/);
   assert.match(css, /\.t8-farm-story-panel__priority-action\[data-farm-panel-priority-action-route-ready="true"\]/);
   assert.match(css, /\.t8-farm-story-panel__priority-action\[data-farm-panel-priority-action-route-ready="true"\] mark/);
-  assert.match(panel, /data-farm-mini-status=\{panelOpen \? 'monitor' : 'collapsed'\}/);
+  assert.match(panel, /data-farm-mini-status="monitor"/);
+  assert.match(panel, /data-farm-mini-panel-state=\{panelOpen \? 'open' : 'closed'\}/);
+  assert.doesNotMatch(panel, /data-farm-mini-status=\{panelOpen \? 'monitor' : 'collapsed'\}/);
   assert.match(panel, /data-farm-monitor-panel="true"/);
   assert.match(panel, /data-farm-monitor-layout="pasture-dashboard-v1"/);
   assert.match(panel, /data-farm-monitor-density="focused"/);
@@ -2295,12 +2335,16 @@ test('farm render layer is mounted with ReactFlow coordinates and event exclusio
   assert.match(css, /--farm-top-rail-clearance:\s*clamp\(720px, 42vw, 900px\)/);
   assert.match(css, /\.t8-farm-story-panel \{[\s\S]*flex:\s*0 0 auto/);
   assert.match(css, /\.t8-farm-story-panel__mini-status \{[\s\S]*position:\s*fixed[\s\S]*left:\s*12px[\s\S]*right:\s*max\(calc\(var\(--farm-control-panel-width\) \+ 54px\), var\(--farm-top-rail-clearance\)\)[\s\S]*top:\s*56px[\s\S]*bottom:\s*auto[\s\S]*max-width:\s*none/);
-  assert.match(css, /\.t8-farm-story-panel:not\(\.is-open\) \.t8-farm-story-panel__mini-status \{[\s\S]*right:\s*var\(--farm-top-rail-clearance\)/);
+  assert.match(css, /\.t8-farm-story-panel:not\(\.is-open\) \.t8-farm-story-panel__mini-status \{[\s\S]*right:\s*max\(calc\(var\(--farm-control-panel-width\) \+ 54px\), var\(--farm-top-rail-clearance\)\)/);
   assert.match(css, /\.t8-main-layout\[data-sidebar-collapsed="false"\] \.t8-farm-story-panel__mini-status \{[\s\S]*left:\s*calc\(var\(--t8-sidebar-width, 256px\) \+ 12px\)/);
   assert.match(css, /\.t8-farm-story-panel__mini-status\[data-farm-mini-status="monitor"\] \{[\s\S]*display:\s*flex[\s\S]*flex-wrap:\s*nowrap[\s\S]*min-height:\s*60px[\s\S]*max-height:\s*60px/);
   assert.match(css, /\.t8-farm-story-panel__mini-status\[data-farm-mini-status="monitor"\]::before \{[\s\S]*content:\s*"FARM STORY\\A牧场看板"/);
   assert.match(css, /\.t8-farm-story-panel__mini-status\[data-farm-mini-status="monitor"\] button\[data-farm-mini-status-item\] \{[\s\S]*pointer-events:\s*none[\s\S]*cursor:\s*default/);
-  assert.match(css, /@media \(min-width:\s*760px\) \{[\s\S]*\.t8-farm-story-panel__mini-status,[\s\S]*\.t8-farm-story-panel:not\(\.is-open\) \.t8-farm-story-panel__mini-status \{[\s\S]*right:\s*var\(--farm-top-rail-clearance\)/);
+  const farmMiniDesktopMediaStart = css.indexOf('@media (min-width: 760px) {');
+  assert.ok(farmMiniDesktopMediaStart >= 0, 'Farm mini status desktop media query should exist');
+  const farmMiniDesktopMediaBlock = css.slice(farmMiniDesktopMediaStart, farmMiniDesktopMediaStart + 360);
+  assert.match(farmMiniDesktopMediaBlock, /\.t8-farm-story-panel__mini-status,[\s\S]*\.t8-farm-story-panel:not\(\.is-open\) \.t8-farm-story-panel__mini-status/);
+  assert.match(farmMiniDesktopMediaBlock, /right:\s*max\(calc\(var\(--farm-control-panel-width\) \+ 54px\), var\(--farm-top-rail-clearance\)\)/);
   assert.match(css, /\.t8-farm-story-panel__mini-status \{[\s\S]*overflow:\s*hidden/);
   assert.match(css, /\.t8-farm-story-panel__mini-status \{[\s\S]*display:\s*flex[\s\S]*flex-wrap:\s*wrap/);
   assert.match(css, /\.t8-farm-story-panel__panel \{[\s\S]*position:\s*fixed[\s\S]*right:\s*18px[\s\S]*top:\s*104px[\s\S]*width:\s*var\(--farm-control-panel-width\)[\s\S]*max-height:\s*calc\(100vh - 120px\)[\s\S]*display:\s*flex[\s\S]*flex-direction:\s*column[\s\S]*overflow:\s*auto/);
@@ -2321,6 +2365,7 @@ test('farm render layer is mounted with ReactFlow coordinates and event exclusio
   assert.match(css, /Farm command deck polish v2/);
   assert.match(css, /--farm-command-deck-clearance:\s*clamp\(780px, 40vw, 1040px\)/);
   assert.match(css, /\.t8-farm-story-panel__mini-status\[data-farm-monitor-rail="compact-clean-v2"\] \{[\s\S]*right:\s*max\(calc\(var\(--farm-control-panel-width\) \+ 72px\), var\(--farm-command-deck-clearance\)\)[\s\S]*min-height:\s*var\(--farm-command-deck-strip-height\)[\s\S]*max-height:\s*var\(--farm-command-deck-strip-height\)/);
+  assert.doesNotMatch(css, /\.t8-farm-story-panel:not\(\.is-open\) \.t8-farm-story-panel__mini-status\[data-farm-monitor-rail="compact-clean-v2"\] \{[^}]*right:\s*var\(--farm-command-deck-clearance\) !important/);
   assert.match(css, /\[data-farm-monitor-brief-label-chip="true"\]/);
   assert.match(css, /\.t8-farm-story-panel__mini-status\[data-farm-monitor-rail="compact-clean-v2"\] \[data-farm-monitor-group="brief"\] \{[\s\S]*display:\s*inline-grid !important[\s\S]*grid-template-columns:\s*14px max-content minmax\(52px, 1fr\) max-content max-content/);
   assert.match(css, /Farm browser QA readable header brand v1/);
@@ -2328,6 +2373,29 @@ test('farm render layer is mounted with ReactFlow coordinates and event exclusio
   assert.match(globalCss, /Farm browser QA readable header brand v1/);
   assert.match(globalCss, /\.t8-canvas-shell\[data-theme-visual="farm-story"\] \.t8-farm-story-panel__panel\[data-farm-panel-readable="large"\] \.t8-farm-story-panel__header span \{[\s\S]*font-size:\s*11px !important[\s\S]*-webkit-text-fill-color:\s*currentColor !important/);
   assert.match(css, /\.t8-farm-story-panel__quick-actions\[data-farm-quick-actions-mirror="top-monitor"\]\[data-farm-quick-actions-density="compact-readable"\] \{[\s\S]*right:\s*var\(--farm-command-deck-clearance\)[\s\S]*top:\s*calc\(56px \+ var\(--farm-command-deck-strip-height\) \+ var\(--farm-command-deck-gap\)\)/);
+  const farmQuickToolBlock = panel.match(/const FARM_TOOLS = \[([\s\S]*?)\];/);
+  assert.ok(farmQuickToolBlock, 'Farm quick tool registry should be statically visible');
+  [
+    ['select', '选择'],
+    ['hoe', '锄地'],
+    ['seed', '播种'],
+    ['water', '浇水'],
+    ['harvest', '收获'],
+    ['shovel', '铲除'],
+    ['build', '建造'],
+    ['decor', '装饰'],
+    ['move', '移动'],
+    ['delete', '删除'],
+  ].forEach(([toolId, label]) => {
+    assert.match(farmQuickToolBlock[1], new RegExp(`id: '${toolId}' as const, label: '${label}'`));
+  });
+  assert.match(panel, /FARM_TOOLS\.map\(\(tool\) =>/);
+  assert.doesNotMatch(panel, /FARM_TOOLS\.slice/);
+  const farmQuickFullStripStart = css.indexOf('/* Farm quick action full strip v1. */');
+  assert.ok(farmQuickFullStripStart > css.indexOf('/* Farm browser QA quick action clearance v1. */'));
+  const farmQuickFullStripCss = css.slice(farmQuickFullStripStart);
+  assert.match(farmQuickFullStripCss, /\.t8-farm-story-panel__quick-actions\[data-farm-quick-actions-mirror="top-monitor"\]\[data-farm-quick-actions-density="compact-readable"\] \{[\s\S]*grid-template-columns:\s*repeat\(6, minmax\(0, max-content\)\)[\s\S]*overflow-x:\s*visible !important[\s\S]*overflow-y:\s*visible !important[\s\S]*max-height:\s*none !important/);
+  assert.match(farmQuickFullStripCss, /\.t8-farm-story-panel__quick-actions\[data-farm-quick-actions-mirror="top-monitor"\]\[data-farm-quick-actions-density="compact-readable"\] button \{[\s\S]*min-width:\s*58px !important[\s\S]*max-height:\s*none !important/);
   assert.match(css, /button\[data-farm-quick-panel-toggle="true"\]/);
   assert.match(css, /button\[data-farm-quick-panel-state="open"\]/);
   assert.match(css, /\[data-farm-panel-night-readable="true"\] \.t8-farm-story-panel__mini-status\[data-farm-monitor-rail="compact-clean-v2"\]/);
@@ -2347,6 +2415,7 @@ test('farm render layer is mounted with ReactFlow coordinates and event exclusio
   assert.match(panel, /function readFarmPanelSectionExpanded\(\): FarmPanelSectionExpandedState/);
   assert.match(panel, /const \[farmPanelSectionExpanded, setFarmPanelSectionExpanded\] = useState<FarmPanelSectionExpandedState>\(readFarmPanelSectionExpanded\)/);
   assert.match(panel, /window\.localStorage\.setItem\(FARM_PANEL_SECTION_STORAGE_KEY, JSON\.stringify\(farmPanelSectionExpanded\)\)/);
+  assert.match(panel, /const activeEntry = Object\.entries\(parsed\)\.find\(\(\[key, value\]\) => FARM_PANEL_SECTION_ID_SET\.has\(key\) && value === true\)/);
   assert.match(panel, /type FarmPanelSectionPresetId = 'priority' \| 'daily' \| 'close-all'/);
   assert.match(panel, /interface FarmPanelSectionPresetReceipt/);
   assert.match(panel, /presetId: FarmPanelSectionPresetId;/);
@@ -2363,11 +2432,20 @@ test('farm render layer is mounted with ReactFlow coordinates and event exclusio
   assert.match(panel, /const farmPanelDailyOpenSectionCount = FARM_PANEL_DAILY_SECTION_IDS\.filter\(\(id\) => isFarmPanelSectionExpanded\(id\)\)\.length/);
   assert.match(panel, /const farmPanelPriorityPresetActive = farmPanelOpenSectionCount === 1 && isFarmPanelSectionExpanded\(farmMonitorBriefSection\)/);
   assert.match(panel, /const applyFarmPanelSectionPreset = \(presetId: FarmPanelSectionPresetId\) => \{/);
-  assert.match(panel, /setFarmPanelSectionExpanded\(\(\) => presetSections\.reduce<FarmPanelSectionExpandedState>/);
-  assert.match(panel, /flashFarmPanelSectionPreset\(\{[\s\S]*presetId,[\s\S]*label: presetId === 'priority' \? '已打开优先' : presetId === 'daily' \? '常用已展开' : '已全部收起'/);
-  assert.match(panel, /detail: presetId === 'priority'[\s\S]*\? `\$\{farmMonitorBriefSectionLabel\} · \$\{farmMonitorBriefPrimary\}`[\s\S]*: presetId === 'daily'[\s\S]*\? '短反馈 \/ 今日目标 \/ 工具栏 \/ 最近农活'[\s\S]*: '控制台已整理，保留顶部看板'/);
-  assert.match(panel, /count: presetSections\.length/);
-  assert.match(panel, /targetSection: presetId === 'priority' \? farmMonitorBriefSection : undefined/);
+  assert.match(panel, /const activeFarmPanelSectionId = FARM_PANEL_SECTION_IDS\.find\(\(id\) => isFarmPanelSectionExpanded\(id\)\) \|\| ''/);
+  assert.match(panel, /const activeFarmPanelSectionItem = farmPanelSectionItems\.find\(\(item\) => item\.id === activeFarmPanelSectionId\)/);
+  assert.match(panel, /const farmPanelRef = useRef<HTMLElement \| null>\(null\)/);
+  assert.match(panel, /useEffect\(\(\) => \{[\s\S]*!panelOpen \|\| !activeFarmPanelSectionId[\s\S]*panelElement\.dataset\.farmPanelLayout !== 'split-detail'[\s\S]*panelElement\.scrollTo\(\{ top: 0, left: 0, behavior: 'auto' \}\)[\s\S]*\}, \[activeFarmPanelSectionId, panelOpen\]\)/);
+  assert.match(panel, /const syncDetailHeight = \(\) => \{[\s\S]*panelElement\.style\.setProperty\('--farm-panel-detail-height', `\$\{panelElement\.getBoundingClientRect\(\)\.height\}px`\)/);
+  assert.match(panel, /const resizeObserver = typeof ResizeObserver !== 'undefined' \? new ResizeObserver\(syncDetailHeight\) : null/);
+  assert.match(panel, /panelElement\.style\.removeProperty\('--farm-panel-detail-height'\)/);
+  assert.match(panel, /setFarmPanelSectionExpanded\(\(current\) => \{[\s\S]*if \(!expanded\) return current\[id\] === true \? \{\} : current;[\s\S]*return \{ \[id\]: true \};[\s\S]*\}\)/);
+  assert.match(panel, /setFarmPanelSectionExpanded\(\(current\) => current\[id\] === true \? \{\} : \{ \[id\]: true \}\)/);
+  assert.match(panel, /setFarmPanelSectionExpanded\(\(\) => presetSection \? \{ \[presetSection\]: true \} : \{\}\)/);
+  assert.match(panel, /flashFarmPanelSectionPreset\(\{[\s\S]*presetId,[\s\S]*label: presetId === 'priority' \? '已打开优先' : presetId === 'daily' \? '常用已切换' : '已全部收起'/);
+  assert.match(panel, /detail: presetId === 'priority'[\s\S]*\? `\$\{farmMonitorBriefSectionLabel\} · \$\{farmMonitorBriefPrimary\}`[\s\S]*: presetId === 'daily'[\s\S]*\? `单栏展开：\$\{presetSectionLabel\}`[\s\S]*: '控制台已整理，保留顶部看板'/);
+  assert.match(panel, /count: presetSection \? 1 : 0/);
+  assert.match(panel, /targetSection: presetSection/);
   assert.match(panel, /flashFarmPrioritySection\(farmMonitorBriefSection\)/);
   assert.match(panel, /data-farm-panel-section-presets="true"/);
   assert.match(panel, /data-farm-panel-section-presets-open-count=\{farmPanelOpenSectionCount\}/);
@@ -2395,6 +2473,21 @@ test('farm render layer is mounted with ReactFlow coordinates and event exclusio
   assert.match(panel, /role="status"[\s\S]*aria-live="polite"/);
   assert.match(panel, /data-farm-panel-section-switchboard="true"/);
   assert.match(panel, /data-farm-panel-section-layout="compact-list"/);
+  assert.match(panel, /data-farm-panel-layout="split-detail"/);
+  assert.match(panel, /<section[\s\S]*ref=\{farmPanelRef\}[\s\S]*className="t8-farm-story-panel__panel"/);
+  assert.match(panel, /data-farm-panel-active-section=\{activeFarmPanelSectionId \|\| undefined\}/);
+  assert.match(panel, /data-farm-panel-section-detail-label=\{activeFarmPanelSectionItem\?\.label \|\| undefined\}/);
+  assert.match(panel, /className="t8-farm-story-panel__detail-rail"[\s\S]*data-farm-panel-detail-rail="true"[\s\S]*data-farm-panel-detail-rail-active=\{activeFarmPanelSectionId \|\| undefined\}/);
+  assert.match(panel, /data-farm-panel-section-detail-head="true"/);
+  assert.match(panel, /data-farm-panel-section-detail-collapse="true"/);
+  assert.match(panel, /setFarmPanelSectionOpen\(activeFarmPanelSectionItem\.id, false\)/);
+  assert.match(css, /Farm panel split detail rail v1/);
+  assert.ok(css.includes('.t8-farm-story-panel__panel:not([data-farm-section-build-open="true"]) .t8-farm-story-panel__detail-rail > .t8-farm-story-panel__palette,'));
+  assert.ok(css.includes('.t8-farm-story-panel__panel:not([data-farm-section-actions-open="true"]) .t8-farm-story-panel__detail-rail > .t8-farm-story-panel__footer {\n  display: none;\n}'));
+  assert.match(css, /\.t8-farm-story-panel__panel\[data-farm-panel-layout="split-detail"\] \{[\s\S]*width:\s*var\(--farm-control-panel-width\)[\s\S]*display:\s*flex[\s\S]*overflow-x:\s*hidden[\s\S]*scrollbar-gutter:\s*stable/);
+  assert.match(css, /\.t8-farm-story-panel__panel\[data-farm-panel-layout="split-detail"\] > \.t8-farm-story-panel__detail-rail \{[\s\S]*position:\s*fixed[\s\S]*right:\s*calc\(18px \+ var\(--farm-control-panel-width\) \+ 12px\)[\s\S]*height:\s*var\(--farm-panel-detail-height, auto\)[\s\S]*overflow:\s*auto[\s\S]*scrollbar-gutter:\s*stable/);
+  assert.match(css, /\.t8-farm-story-panel__panel\[data-farm-panel-layout="split-detail"\]:not\(\[data-farm-panel-active-section\]\) > \.t8-farm-story-panel__detail-rail \{[\s\S]*display:\s*none[\s\S]*pointer-events:\s*none/);
+  assert.match(css, /\.t8-farm-story-panel__panel\[data-farm-panel-layout="split-detail"\] > \.t8-farm-story-panel__detail-rail > \.t8-farm-story-panel__daily-route \{[\s\S]*order:\s*90/);
   assert.match(panel, /data-farm-panel-section-toggle=\{item\.id\}/);
   assert.match(panel, /data-farm-panel-section-label=\{item\.label\}/);
   assert.match(panel, /data-farm-panel-section-summary=\{item\.summary\}/);
@@ -2434,7 +2527,7 @@ test('farm render layer is mounted with ReactFlow coordinates and event exclusio
   assert.match(panel, /data-farm-quick-tool-id=\{tool\.id\}/);
   assert.match(panel, /data-farm-quick-tool-label=\{tool\.label\}/);
   assert.match(panel, /data-farm-quick-tool-summary=\{badge\?\.label \|\| '可用'\}/);
-  assert.match(panel, /data-farm-quick-tool-open-section="tools"/);
+  assert.match(panel, /data-farm-quick-tool-independent-action="true"/);
   assert.match(panel, /interface FarmQuickToolRouteHint/);
   assert.match(panel, /interface FarmQuickToolAssistHint/);
   assert.match(panel, /function farmQuickToolRouteHint\(/);
@@ -2452,6 +2545,7 @@ test('farm render layer is mounted with ReactFlow coordinates and event exclusio
   assert.match(panel, /data-farm-quick-tool-assist-target=\{quickAssist\?\.routeTarget\}/);
   assert.match(panel, /data-farm-quick-tool-assist-receipt=\{farmQuickToolAssistReceipt === tool\.id \? 'true' : undefined\}/);
   assert.match(panel, /handleFarmQuickToolAction\(tool\.id, quickRoute, quickAssist\)/);
+  assert.doesNotMatch(panel, /const handleFarmQuickToolAction = \(tool: FarmTool, quickRoute\?: FarmQuickToolRouteHint, quickAssist\?: FarmQuickToolAssistHint\) => \{\s*setFarmPanelSectionOpen\('tools'\)/);
   assert.match(panel, /data-farm-quick-tool-route-label="true"/);
   assert.match(panel, /data-farm-quick-tool-assist-label="true"/);
   assert.match(panel, /data-farm-panel-readable="large"/);
@@ -2519,6 +2613,7 @@ test('farm render layer is mounted with ReactFlow coordinates and event exclusio
   assert.match(css, /Farm priority section locator v1/);
   assert.match(css, /\.t8-farm-story-panel__priority-card\[data-farm-panel-priority-receipt="true"\] \{[\s\S]*border-color:\s*color-mix\(in srgb, var\(--farm-leaf\) 68%, var\(--farm-sky\)\)/);
   assert.match(css, /\.t8-farm-story-panel__section-switchboard\[data-farm-panel-section-layout="compact-list"\] button\[data-farm-panel-section-priority="true"\] \{[\s\S]*border-color:\s*color-mix\(in srgb, var\(--farm-sky\) 60%, var\(--farm-readable-line\)\)/);
+  assert.match(css, /\.t8-farm-story-panel__section-switchboard\[data-farm-panel-section-layout="compact-list"\] button\[data-farm-panel-section-priority="true"\]::before \{[\s\S]*position:\s*absolute[\s\S]*pointer-events:\s*none/);
   assert.match(css, /\.t8-farm-story-panel__section-switchboard\[data-farm-panel-section-layout="compact-list"\] button\[data-farm-panel-section-priority-receipt="true"\] \{[\s\S]*box-shadow:[\s\S]*rgba\(89, 143, 83, \.18\)/);
   assert.match(css, /\.t8-farm-story-panel \[data-farm-panel-priority-content="true"\] \{[\s\S]*outline:\s*2px solid color-mix\(in srgb, var\(--farm-sky\) 58%, transparent\)/);
   assert.match(css, /\[data-farm-panel-night-readable="true"\] \.t8-farm-story-panel__priority-card\[data-farm-panel-priority-card="true"\][\s\S]*color:\s*var\(--farm-readable-ink, #2e1708\) !important/);
@@ -2909,6 +3004,7 @@ test('farm render layer is mounted with ReactFlow coordinates and event exclusio
   assert.match(farmDarkConsoleLock, /html\[data-theme-mode="dark"\]\[data-theme-visual="farm-story"\] \.t8-farm-story-panel__mini-status :where\(span, button, b, strong, small, em, i, mark\),[\s\S]*html\[data-theme-mode="dark"\]\[data-theme-visual="farm-story"\] \.t8-farm-story-panel__quick-actions :where\(button, span, b, strong, small, em, i, mark\),[\s\S]*html\[data-theme-mode="dark"\]\[data-theme-visual="farm-story"\] \.t8-farm-story-panel__section-switchboard :where\(button, span, b, strong, small, em, i, mark\),[\s\S]*html\[data-theme-mode="dark"\]\[data-theme-visual="farm-story"\] \.t8-farm-story-panel__panel :where\(p, li, label, button, span, b, strong, small, em, i, mark\) \{[\s\S]*-webkit-text-fill-color:\s*currentColor !important[\s\S]*text-shadow:\s*none !important/);
   assert.match(farmDarkConsoleLock, /html\[data-theme-mode="dark"\]\[data-theme-visual="farm-story"\] \.t8-farm-story-panel :where\(button:disabled, \.is-unavailable, \[aria-disabled="true"\]\),[\s\S]*html\[data-theme-mode="dark"\]\[data-theme-visual="farm-story"\] \.t8-farm-story-panel__quick-actions button\.is-unavailable,[\s\S]*html\[data-theme-mode="dark"\]\[data-theme-visual="farm-story"\] \.t8-farm-story-panel__section-switchboard button:disabled \{[\s\S]*background:[\s\S]*var\(--farm-night-readable-chip\) !important[\s\S]*opacity:\s*1 !important/);
   assert.match(canvas, /<FarmStoryPanel[\s\S]*themeMode=\{theme\}[\s\S]*farmCanvas=\{farmCanvas\}/);
+  assert.match(canvas, /<FarmStoryPanel[\s\S]*devToolsEnabled=\{farmDevToolsEnabled\}[\s\S]*onGrantDevMaterials=\{handleFarmGrantDevMaterials\}/);
   assert.match(canvas, /className="t8-canvas-shell[\s\S]*data-theme-visual=\{visualStyle\}[\s\S]*data-theme-mode=\{theme\}/);
   assert.match(panel, /themeMode\?: ThemeMode \| string/);
   assert.match(panel, /data-farm-panel-night-readable=\{themeMode === 'dark' \? 'true' : undefined\}/);
@@ -2992,8 +3088,10 @@ test('farm render layer is mounted with ReactFlow coordinates and event exclusio
   assert.match(canvas, /const placementEcho = result\.changed && !result\.error[\s\S]*\? farmPlacementEchoForAction\(result\.feedback, action\.tool\)[\s\S]*: ''/);
   assert.match(canvas, /const beautyGain = result\.changed && !result\.error[\s\S]*farmBeautyGainForAction\(prev, result\.state, action\.tool\)/);
   assert.match(canvas, /const beautyRewardUnlock = result\.changed && !result\.error[\s\S]*farmBeautyRewardUnlockForAction\(prev, result\.state, action\.tool\)/);
+  assert.match(canvas, /const feedbackAnchor = farmActionFeedbackAnchor\(prev, result\.state, action\)/);
   assert.match(canvas, /queueFarmContinuousFeedback\(\{[\s\S]*label: continuousLabel[\s\S]*tone[\s\S]*placementEcho[\s\S]*beautyGain[\s\S]*beautyRewardTitle[\s\S]*beautyRewardCount/);
-  assert.match(canvas, /flushFarmContinuousFeedback\(\);[\s\S]*pushFarmFloatingFeedback\(\{[\s\S]*message: placementEcho \|\| result\.feedback/);
+  assert.match(canvas, /queueFarmContinuousFeedback\(\{[\s\S]*x: feedbackAnchor\.x,[\s\S]*y: feedbackAnchor\.y,[\s\S]*placement: feedbackAnchor\.placement/);
+  assert.match(canvas, /flushFarmContinuousFeedback\(\);[\s\S]*pushFarmFloatingFeedback\(\{[\s\S]*x: feedbackAnchor\.x,[\s\S]*y: feedbackAnchor\.y,[\s\S]*placement: feedbackAnchor\.placement,[\s\S]*message: placementEcho \|\| result\.feedback/);
   assert.match(canvas, /const handleFarmCancelContinuousAction = useCallback\(\(reason: 'escape' \| 'contextmenu' \| 'blur'\) => \{[\s\S]*flushFarmContinuousFeedback\(\)/);
   assert.match(canvas, /已暂停连续农活/);
   assert.match(canvas, /右键已取消连续农活/);
@@ -3012,7 +3110,12 @@ test('farm render layer is mounted with ReactFlow coordinates and event exclusio
   assert.match(canvas, /const handleFarmMiniMapMarkerClick = useCallback\(\(event: ReactMouseEvent<HTMLButtonElement>, marker: FarmMiniMapRenderableMarker\) => \{[\s\S]*event\.preventDefault\(\)[\s\S]*setCenter\(centerX, centerY, \{ zoom, duration: 420 \}\)[\s\S]*marker\.kind === 'mature'[\s\S]*selectedTool: 'harvest'[\s\S]*marker\.kind === 'dry'[\s\S]*selectedTool: 'water'[\s\S]*marker\.kind === 'withered'[\s\S]*selectedTool: 'shovel'[\s\S]*flashFarmObject\(marker\.objectId\)[\s\S]*farmMiniMapMarkerTone\(marker\.kind\)[\s\S]*playFarmSound\(farmMiniMapMarkerSoundCue\(marker\.kind\)\)/);
   assert.match(canvas, /const handleFarmAdvanceDay = useCallback\(\(\) => \{[\s\S]*pushFarmFloatingFeedback\(\{[\s\S]*tone: next\.lastDailySummary\?\.newMatureCrops \? 'reward' : 'success'/);
   assert.match(canvas, /const handleFarmCompleteOrder = useCallback\(\(orderId: string\) => \{[\s\S]*pushFarmFloatingFeedback\(\{[\s\S]*tone: result\.error \? 'warning' : 'reward'/);
-  assert.match(canvas, /const showFarmToolSelectionFeedback = useCallback\(\(feedback: FarmToolSelectionFeedback\) => \{[\s\S]*setFarmCanvasFeedback\(feedback\.message\)[\s\S]*pushFarmFloatingFeedback\(\{[\s\S]*message: feedback\.message[\s\S]*tone: feedback\.tone[\s\S]*playFarmSound\('select'\)/);
+  assert.match(farmToolSelectionFeedbackHandler, /setFarmCanvasFeedback\(feedback\.message\)/);
+  assert.match(farmToolSelectionFeedbackHandler, /playFarmSound\('select'\)/);
+  assert.doesNotMatch(farmToolSelectionFeedbackHandler, /getFarmViewportCenter/);
+  assert.doesNotMatch(farmToolSelectionFeedbackHandler, /pushFarmFloatingFeedback/);
+  assert.match(canvas, /const handleFarmGrantDevMaterials = useCallback\(\(\) => \{[\s\S]*if \(!import\.meta\.env\.DEV\) return;[\s\S]*const cropIds = Object\.keys\(FARM_CROP_DEFINITIONS\) as FarmCropId\[\];[\s\S]*const animalProductIds = Object\.keys\(FARM_ANIMAL_PRODUCT_DEFINITIONS\) as FarmAnimalProductId\[\];[\s\S]*gold: FARM_DEV_TEST_MATERIAL_AMOUNT,[\s\S]*water: FARM_DEV_TEST_WATER_AMOUNT,[\s\S]*discoveredCropIds: cropIds,[\s\S]*unlockedDecorIds: decorIds/);
+  assert.match(canvas, /setFarmCanvasFeedback\('开发环境测试材料已补齐：金币\/木材\/石头\/种子\/作物\/动物产物 9999，水量 999，装饰全解锁。'\)/);
   assert.match(canvas, /const handleFarmSelectTool = useCallback\(\(tool: FarmTool\) => \{[\s\S]*showFarmToolSelectionFeedback\(buildFarmToolSelectionFeedback\(tool, nextFarmCanvas\)\)/);
   assert.match(canvas, /const handleFarmSelectBuilding = useCallback\(\(buildingId: string\) => \{/);
   assert.match(canvas, /selectedTool:\s*'build'/);
@@ -3025,12 +3128,24 @@ test('farm render layer is mounted with ReactFlow coordinates and event exclusio
   assert.match(canvas, /showFarmToolSelectionFeedback\(buildFarmToolSelectionFeedback\('decor', nextFarmCanvas\)\)/);
   assert.match(canvas, /resourceDecorLabel: `\$\{resource\.title \|\| resource\.id\} -> \$\{typeLabel\}`/);
   assert.match(canvas, /<FarmStoryPanel[\s\S]*farmCanvas=\{farmCanvas\}[\s\S]*editing=\{farmCanvasEditing\}[\s\S]*onSelectTool=\{handleFarmSelectTool\}/);
+  assert.match(panel, /devToolsEnabled && onGrantDevMaterials && \([\s\S]*className="t8-farm-story-panel__dev-materials"[\s\S]*data-farm-dev-materials="9999"[\s\S]*data-farm-dev-only="true"[\s\S]*onGrantDevMaterials\(\)[\s\S]*DEV 9999/);
   assert.match(canvas, /onSelectBuilding=\{handleFarmSelectBuilding\}/);
   assert.match(canvas, /onSelectDecor=\{handleFarmSelectDecor\}/);
   assert.match(canvas, /onJumpToMature=\{handleFarmJumpToMature\}/);
   assert.match(canvas, /soundEnabled=\{farmSoundEnabled\}/);
   assert.match(canvas, /onToggleSound=\{handleFarmToggleSound\}/);
   assert.match(canvas, /<FarmCanvasLayer[\s\S]*farmCanvas=\{farmCanvas\}[\s\S]*editing=\{farmCanvasEditing\}[\s\S]*visualStyle=\{visualStyle\}[\s\S]*feedbacks=\{farmFloatingFeedbacks\}[\s\S]*onAction=\{handleFarmCanvasAction\}[\s\S]*onCancelContinuousAction=\{handleFarmCancelContinuousAction\}[\s\S]*onFinishContinuousAction=\{handleFarmFinishContinuousAction\}/);
+
+  assert.match(utils, /export interface FarmToolAction \{[\s\S]*screenX\?: number;[\s\S]*screenY\?: number;/);
+  assert.match(layer, /const buildFarmToolAction = useCallback\(\(x: number, y: number, screenX\?: number, screenY\?: number\): FarmToolAction =>/);
+  assert.match(layer, /screenX,[\s\S]*screenY,/);
+  assert.match(layer, /const action = buildFarmToolAction\(point\.x, point\.y, event\.clientX, event\.clientY\)/);
+  assert.match(layer, /placement\?: 'above' \| 'below'/);
+  assert.match(layer, /data-farm-feedback-placement=\{feedback\.placement \|\| 'above'\}/);
+  assert.match(css, /Farm canvas feedback anchor placement v1/);
+  assert.match(css, /\.t8-farm-canvas-feedback\[data-farm-feedback-placement="above"\] \{/);
+  assert.match(css, /\.t8-farm-canvas-feedback\[data-farm-feedback-placement="below"\] \{/);
+  assert.match(css, /\.t8-farm-canvas-feedback\[data-farm-feedback-placement="below"\]::before \{[\s\S]*top:\s*-7px[\s\S]*border-left:\s*2px solid var\(--farm-wood\)[\s\S]*border-top:\s*2px solid var\(--farm-wood\)/);
 
   assert.match(panel, /farmCanvas\?: FarmCanvasState/);
   assert.match(panel, /soundEnabled\?: boolean/);
@@ -3675,7 +3790,9 @@ test('farm render layer is mounted with ReactFlow coordinates and event exclusio
   assert.match(panel, /className="t8-farm-story-panel__live-feedback-item is-actionable"/);
   assert.match(panel, /aria-atomic="true"/);
   assert.match(panel, /t8-farm-story-panel__mini-status/);
-  assert.match(panel, /data-farm-mini-status=\{panelOpen \? 'monitor' : 'collapsed'\}/);
+  assert.match(panel, /data-farm-mini-status="monitor"/);
+  assert.match(panel, /data-farm-mini-panel-state=\{panelOpen \? 'open' : 'closed'\}/);
+  assert.doesNotMatch(panel, /data-farm-mini-status=\{panelOpen \? 'monitor' : 'collapsed'\}/);
   assert.match(panel, /data-farm-mini-day=\{farmCanvas\?\.day \|\| 1\}/);
   assert.match(panel, /data-farm-mini-season=\{currentSeason\}/);
   assert.match(panel, /data-farm-mini-weather=\{currentWeather\}/);
@@ -4221,11 +4338,21 @@ test('farm render layer is mounted with ReactFlow coordinates and event exclusio
   assert.match(farmPanelMiniFollowupActionCard, /onClick=\{\(event\) => \{[\s\S]*event\.stopPropagation\(\);[\s\S]*if \(farmActivityRewardStreakActionReceiptCanvasHint\) \{[\s\S]*onFollowupCanvasHint\?\.\(\{[\s\S]*message: `已定位：\$\{farmActivityRewardStreakActionReceiptCanvasHint\}`,[\s\S]*tone: farmActivityRewardStreakActionReceiptCanvasTone,[\s\S]*\}\);[\s\S]*\}[\s\S]*handleOpenFarmActivity\('action'\);[\s\S]*\}\}/);
   assert.match(canvas, /const handleFarmFollowupCanvasHint = useCallback\(\(hint: FarmStoryPanelCanvasHint\) => \{/);
   assert.match(canvas, /setFarmCanvasFeedback\(hint\.message\)/);
-  assert.match(canvas, /const center = getFarmViewportCenter\(\)/);
+  assert.match(farmFollowupCanvasHintHandler, /setFarmFollowupNotice\(\{[\s\S]*\.\.\.hint,[\s\S]*id: noticeId,[\s\S]*createdAt: Date\.now\(\),[\s\S]*\}\)/);
+  assert.match(farmFollowupCanvasHintHandler, /window\.setTimeout\(\(\) => \{[\s\S]*setFarmFollowupNotice\(\(current\) => \(current\?\.id === noticeId \? null : current\)\)/);
+  assert.match(farmFollowupCanvasHintHandler, /const center = getFarmViewportCenter\(\)/);
   assert.match(canvas, /hint\.routeTarget[\s\S]*flashFarmMiniMapRouteHint\(hint\.routeTarget, hint\.routeLabel \|\| hint\.message, center\)/);
-  assert.match(canvas, /pushFarmFloatingFeedback\(\{[\s\S]*message: hint\.message,[\s\S]*tone: hint\.tone/);
-  assert.match(canvas, /\}, \[flashFarmMiniMapRouteHint, getFarmViewportCenter, pushFarmFloatingFeedback\]\)/);
+  assert.doesNotMatch(farmFollowupCanvasHintHandler, /pushFarmFloatingFeedback/);
+  assert.match(canvas, /\}, \[flashFarmMiniMapRouteHint, getFarmViewportCenter\]\)/);
   assert.match(canvas, /<FarmStoryPanel[\s\S]*onFollowupCanvasHint=\{handleFarmFollowupCanvasHint\}/);
+  assert.match(canvas, /const farmTopNotice = useMemo<FarmFollowupNotice \| null>\(\(\) => \{[\s\S]*if \(!isFarmStory\) return null;[\s\S]*if \(farmFollowupNotice\) return farmFollowupNotice;[\s\S]*message: farmCanvasFeedback \|\| '点击工具后，在画布空白处开始经营。'[\s\S]*routeTitle: '当前提示'/);
+  assert.match(canvas, /\{isFarmStory && farmTopNotice && \(/);
+  assert.match(canvas, /data-canvas-floating-ui="farm-followup-notice"/);
+  assert.match(canvas, /data-farm-followup-notice="top-quick-board"/);
+  assert.match(canvas, /data-farm-followup-notice-state=\{farmFollowupNotice \? 'active' : 'idle'\}/);
+  assert.match(canvas, /className=\{`t8-farm-followup-notice is-\$\{farmTopNotice\.tone\}`\}/);
+  assert.match(canvas, /<span>牧场公告<\/span>/);
+  assert.match(canvas, /\{farmTopNotice\.routeTitle \|\| farmTopNotice\.routeLabel \|\| '下一步提示'\}/);
   assert.match(panel, /data-farm-mini-followup-action-count="true"[\s\S]*\{farmActivityRewardStreakActionReceiptNextCountLabel\}/);
   assert.match(panel, /data-farm-mini-followup-action-resource="true"[\s\S]*\{farmActivityRewardStreakActionResourcePreview\.replace\('预期：', ''\)\}/);
   assert.match(panel, /data-farm-mini-action-live-followup-receipt="true"[\s\S]*\{farmActivityRewardStreakActionReceiptEchoLabel\}/);
@@ -4762,6 +4889,16 @@ test('farm render layer is mounted with ReactFlow coordinates and event exclusio
   assert.match(css, /prefers-reduced-motion: reduce[\s\S]*\.t8-farm-canvas-object__placement-receipt[\s\S]*animation: none/);
   assert.match(css, /\.t8-farm-minimap-marker \{[\s\S]*pointer-events:\s*auto/);
   assert.match(css, /\.t8-farm-minimap-marker:focus-visible/);
+  assert.match(css, /Farm followup notice board v1/);
+  assert.match(css, /\.t8-farm-followup-notice\[data-farm-followup-notice="top-quick-board"\] \{[\s\S]*--farm-followup-quickbar-left:\s*12px[\s\S]*--farm-followup-board-left:\s*calc\(var\(--farm-followup-quickbar-left\) \+ var\(--farm-followup-quickbar-width\) \+ 12px\)[\s\S]*position:\s*fixed[\s\S]*top:\s*calc\(56px \+ var\(--farm-command-deck-strip-height, 52px\) \+ var\(--farm-command-deck-gap, 6px\)\)/);
+  assert.match(css, /\.t8-main-layout\[data-sidebar-collapsed="false"\] \.t8-farm-followup-notice\[data-farm-followup-notice="top-quick-board"\] \{[\s\S]*--farm-followup-quickbar-left:\s*calc\(var\(--t8-sidebar-width, 256px\) \+ 12px\)/);
+  assert.match(css, /\.t8-farm-followup-notice\[data-farm-followup-notice="top-quick-board"\] \{[\s\S]*grid-template-columns:\s*7px 28px minmax\(0, 1fr\) max-content/);
+  assert.match(css, /\.t8-farm-followup-notice__copy span[\s\S]*font-weight:\s*950/);
+  assert.match(css, /\.t8-farm-followup-notice em \{[\s\S]*border-radius:\s*999px/);
+  assert.match(css, /@keyframes farm-story-followup-board-in/);
+  assert.match(css, /prefers-reduced-motion: reduce[\s\S]*\.t8-farm-followup-notice\[data-farm-followup-notice="top-quick-board"\][\s\S]*animation: none/);
+  assert.match(css, /Farm dev-only material grant v1/);
+  assert.match(css, /\.t8-farm-story-panel__dev-materials\[data-farm-dev-materials="9999"\] \{[\s\S]*border:\s*1px dashed[\s\S]*white-space:\s*nowrap/);
 
   assert.match(sound, /export type FarmSoundCue/);
   assert.match(sound, /FARM_SOUND_PROFILES/);
@@ -4801,8 +4938,21 @@ test('farm render layer is mounted with ReactFlow coordinates and event exclusio
   assert.match(css, /--farm-scarecrow-range-size/);
   assert.match(css, /data-farm-scarecrow-coverage="true"[\s\S]*\.t8-farm-canvas-object__scarecrow-range/);
   assert.match(css, /data-farm-object-status="resource-missing"[\s\S]*\.t8-farm-canvas-object__badge/);
+  assert.match(css, /Farm canvas building pixel art v2/);
+  assert.doesNotMatch(css, /linear-gradient\(45deg, transparent 0 42%, var\(--farm-barn\) 43% 58%, transparent 59%\)/);
+  assert.match(css, /\.t8-farm-canvas-object\.is-building \{[\s\S]*--farm-building-outline:\s*var\(--farm-wood-dark\)[\s\S]*--farm-building-shadow:/);
+  assert.match(css, /\.t8-farm-canvas-object\.is-building-hut \{[\s\S]*--farm-building-roof:\s*#bf6a3c[\s\S]*--farm-building-door:\s*#7b5536/);
+  assert.match(css, /\.t8-farm-canvas-object\.is-building-storage \{[\s\S]*--farm-building-roof:\s*#8f6641[\s\S]*--farm-building-wall:\s*#c88f55/);
+  assert.match(css, /\.t8-farm-canvas-object\.is-building-well \{[\s\S]*--farm-building-roof:\s*#7fae8f[\s\S]*--farm-building-accent:\s*var\(--farm-water\)/);
+  assert.match(css, /\.t8-farm-canvas-object\.is-building-board \{[\s\S]*--farm-building-roof:\s*#8c623a[\s\S]*--farm-building-wall:\s*#fff4d2/);
+  assert.match(css, /\.t8-farm-canvas-object\.is-building-scarecrow \{[\s\S]*--farm-building-roof:\s*#d8a84f[\s\S]*--farm-building-wall:\s*#f0c35e/);
   assert.match(css, /\.t8-farm-canvas-object\.is-building-well/);
   assert.match(css, /\.t8-farm-canvas-object\.is-building-board/);
+  assert.match(css, /\.t8-farm-canvas-object\.is-building-hut \.t8-farm-canvas-object__building::after \{[\s\S]*linear-gradient\(90deg, var\(--farm-building-window\)/);
+  assert.match(css, /\.t8-farm-canvas-object\.is-building-storage \.t8-farm-canvas-object__building::after \{[\s\S]*repeating-linear-gradient\(90deg/);
+  assert.match(css, /\.t8-farm-canvas-object\.is-building-well \.t8-farm-canvas-object__building::after \{[\s\S]*radial-gradient\(ellipse at 50% 34%, var\(--farm-building-accent\)/);
+  assert.match(css, /\.t8-farm-canvas-object\.is-building-board \.t8-farm-canvas-object__building::after \{[\s\S]*box-shadow:\s*0 -8px 0/);
+  assert.match(css, /\.t8-farm-canvas-object\.is-building-scarecrow \.t8-farm-canvas-object__building::after \{[\s\S]*radial-gradient\(circle at 50% 44%, var\(--farm-building-head\)/);
   assert.match(css, /\.t8-farm-canvas-object\.is-decor/);
   assert.match(css, /\.t8-farm-canvas-object\.is-connect-path/);
   assert.match(css, /\.t8-farm-canvas-object\.is-connect-fence/);

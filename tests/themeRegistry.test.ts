@@ -122,7 +122,7 @@ test('Farm Story phase 5 acceptance guard keeps display, controls, and completio
   assert.match(panel, /data-farm-monitor-group="brief"/);
   assert.match(panel, /data-farm-quick-actions-mirror="top-monitor"/);
   assert.match(panel, /data-farm-quick-actions-density="compact-readable"/);
-  assert.match(panel, /data-farm-quick-tool-open-section="tools"/);
+  assert.match(panel, /data-farm-quick-tool-independent-action="true"/);
   assert.match(panel, /handleFarmQuickToolAction\(tool\.id, quickRoute, quickAssist\)/);
 
   assert.match(panel, /const FARM_PANEL_SECTION_STORAGE_KEY = 't8-farm-story-panel-sections-v1'/);
@@ -156,6 +156,25 @@ test('Farm Story browser QA keeps top quick actions from being vertically clippe
   assert.match(css, /\[data-farm-panel-night-readable="true"\] \.t8-farm-story-panel__quick-actions\[data-farm-quick-actions-mirror="top-monitor"\]\[data-farm-quick-actions-density="compact-readable"\] \{[\s\S]*color:\s*var\(--farm-night-text-final, #2e1708\) !important[\s\S]*opacity:\s*1 !important/);
 });
 
+test('Farm Story handle hover keeps ReactFlow anchor transform untouched', () => {
+  const css = read('../src/styles/theme-farm-story.css');
+  const farmHandleHoverRule = css.match(/html\[data-theme-visual="farm-story"\] \.react-flow__handle:hover\s*\{[^}]*\}/)?.[0] ?? '';
+  const farmNodeHoverRule = css.match(/html\[data-theme-visual="farm-story"\] \.react-flow__node\.t8-farm-node-state:hover:not\(\.react-flow__node-groupBox\) > div:first-child\s*\{[^}]*\}/)?.[0] ?? '';
+
+  assert.ok(farmHandleHoverRule, 'Farm Story handle hover rule should exist');
+  assert.doesNotMatch(
+    farmHandleHoverRule,
+    /transform\s*:/,
+    'Farm Story handle hover must not override ReactFlow positioning transform',
+  );
+  assert.ok(farmNodeHoverRule, 'Farm Story node hover rule should exist');
+  assert.doesNotMatch(
+    farmNodeHoverRule,
+    /transform\s*:/,
+    'Farm Story node hover must not move the node content away from hovered handles',
+  );
+});
+
 test('Farm Story theme mounts canvas chrome, sidebar icons, cuts, minimap, and the farm panel', () => {
   const cssIndex = read('../src/styles/index.css');
   const css = read('../src/styles/theme-farm-story.css');
@@ -164,6 +183,16 @@ test('Farm Story theme mounts canvas chrome, sidebar icons, cuts, minimap, and t
   const sidebar = read('../src/components/Sidebar.tsx');
   const panel = read('../src/components/FarmStoryPanel.tsx');
   const farm = read('../src/utils/farmCanvas.ts');
+  const farmToolSelectionFeedbackStart = canvas.indexOf('const showFarmToolSelectionFeedback = useCallback');
+  const farmToolSelectionFeedbackEnd = canvas.indexOf('const handleFarmGrantDevMaterials = useCallback', farmToolSelectionFeedbackStart);
+  const farmToolSelectionFeedbackHandler = farmToolSelectionFeedbackStart >= 0
+    ? canvas.slice(farmToolSelectionFeedbackStart, farmToolSelectionFeedbackEnd > farmToolSelectionFeedbackStart ? farmToolSelectionFeedbackEnd : undefined)
+    : '';
+  const farmFollowupCanvasHintStart = canvas.indexOf('const handleFarmFollowupCanvasHint = useCallback');
+  const farmFollowupCanvasHintEnd = canvas.indexOf('  // 选中节点 / 剪贴板', farmFollowupCanvasHintStart);
+  const farmFollowupCanvasHintHandler = farmFollowupCanvasHintStart >= 0
+    ? canvas.slice(farmFollowupCanvasHintStart, farmFollowupCanvasHintEnd > farmFollowupCanvasHintStart ? farmFollowupCanvasHintEnd : undefined)
+    : '';
 
   assert.equal(existsSync(new URL('../src/styles/theme-farm-story.css', import.meta.url)), true);
   assert.match(cssIndex, /theme-farm-story\.css/);
@@ -232,7 +261,10 @@ test('Farm Story theme mounts canvas chrome, sidebar icons, cuts, minimap, and t
   assert.match(canvas, /浇水工具：水桶 \$\{state\.resources\.water\}/);
   assert.match(canvas, /建造目标：\$\{building\.label\}，点击画布放置/);
   assert.match(canvas, /装饰目标：\$\{decor\.label\}，点击画布放置/);
-  assert.match(canvas, /const showFarmToolSelectionFeedback = useCallback\(\(feedback: FarmToolSelectionFeedback\) => \{[\s\S]*setFarmCanvasFeedback\(feedback\.message\)[\s\S]*pushFarmFloatingFeedback\(\{[\s\S]*tone: feedback\.tone/);
+  assert.match(farmToolSelectionFeedbackHandler, /flushFarmContinuousFeedback\(\)/);
+  assert.match(farmToolSelectionFeedbackHandler, /setFarmCanvasFeedback\(feedback\.message\)/);
+  assert.match(farmToolSelectionFeedbackHandler, /playFarmSound\('select'\)/);
+  assert.doesNotMatch(farmToolSelectionFeedbackHandler, /pushFarmFloatingFeedback/);
   assert.match(canvas, /showFarmToolSelectionFeedback\(buildFarmToolSelectionFeedback\(tool, nextFarmCanvas\)\)/);
   assert.match(canvas, /showFarmToolSelectionFeedback\(buildFarmToolSelectionFeedback\('build', nextFarmCanvas\)\)/);
   assert.match(canvas, /showFarmToolSelectionFeedback\(buildFarmToolSelectionFeedback\('decor', nextFarmCanvas/);
@@ -488,11 +520,15 @@ test('Farm Story theme mounts canvas chrome, sidebar icons, cuts, minimap, and t
   assert.match(css, /--farm-top-rail-clearance:\s*clamp\(720px, 42vw, 900px\)/);
   assert.match(css, /\.t8-farm-story-panel \{[\s\S]*flex:\s*0 0 auto/);
   assert.match(css, /\.t8-farm-story-panel__mini-status \{[\s\S]*right:\s*max\(calc\(var\(--farm-control-panel-width\) \+ 54px\), var\(--farm-top-rail-clearance\)\)/);
-  assert.match(css, /\.t8-farm-story-panel:not\(\.is-open\) \.t8-farm-story-panel__mini-status \{[\s\S]*right:\s*var\(--farm-top-rail-clearance\)/);
+  assert.match(css, /\.t8-farm-story-panel:not\(\.is-open\) \.t8-farm-story-panel__mini-status \{[\s\S]*right:\s*max\(calc\(var\(--farm-control-panel-width\) \+ 54px\), var\(--farm-top-rail-clearance\)\)/);
   assert.match(css, /\.t8-farm-story-panel__mini-status\[data-farm-mini-status="monitor"\] \{[\s\S]*display:\s*flex[\s\S]*flex-wrap:\s*nowrap[\s\S]*min-height:\s*60px[\s\S]*max-height:\s*60px/);
   assert.match(css, /\.t8-farm-story-panel__mini-status\[data-farm-mini-status="monitor"\]::before \{[\s\S]*content:\s*"FARM STORY\\A牧场看板"/);
   assert.match(css, /\.t8-farm-story-panel__mini-status\[data-farm-mini-status="monitor"\] button\[data-farm-mini-status-item\] \{[\s\S]*pointer-events:\s*none[\s\S]*cursor:\s*default/);
-  assert.match(css, /@media \(min-width:\s*760px\) \{[\s\S]*\.t8-farm-story-panel__mini-status,[\s\S]*\.t8-farm-story-panel:not\(\.is-open\) \.t8-farm-story-panel__mini-status \{[\s\S]*right:\s*var\(--farm-top-rail-clearance\)/);
+  const farmMiniDesktopMediaStart = css.indexOf('@media (min-width: 760px) {');
+  assert.ok(farmMiniDesktopMediaStart >= 0, 'Farm mini status desktop media query should exist');
+  const farmMiniDesktopMediaBlock = css.slice(farmMiniDesktopMediaStart, farmMiniDesktopMediaStart + 360);
+  assert.match(farmMiniDesktopMediaBlock, /\.t8-farm-story-panel__mini-status,[\s\S]*\.t8-farm-story-panel:not\(\.is-open\) \.t8-farm-story-panel__mini-status/);
+  assert.match(farmMiniDesktopMediaBlock, /right:\s*max\(calc\(var\(--farm-control-panel-width\) \+ 54px\), var\(--farm-top-rail-clearance\)\)/);
   assert.match(css, /\.t8-farm-story-panel__mini-status\[data-farm-mini-status="monitor"\] \[data-farm-mini-status-item="beauty-route"\][\s\S]*display:\s*none/);
   assert.match(css, /\.t8-farm-story-panel__mini-status\[data-farm-mini-status="monitor"\] \[data-farm-mini-status-item="focus-action"\][\s\S]*display:\s*none/);
   assert.match(css, /\.t8-farm-story-panel__mini-status\[data-farm-mini-status="monitor"\] \[data-farm-mini-status-item="tool"\][\s\S]*display:\s*none/);
@@ -510,7 +546,7 @@ test('Farm Story theme mounts canvas chrome, sidebar icons, cuts, minimap, and t
   assert.match(panel, /data-farm-section-tools-open=\{isFarmPanelSectionExpanded\('tools'\) \? 'true' : undefined\}/);
   assert.match(panel, /data-farm-quick-actions="true"/);
   assert.match(panel, /data-farm-quick-tool-id=\{tool\.id\}/);
-  assert.match(panel, /data-farm-quick-tool-open-section="tools"/);
+  assert.match(panel, /data-farm-quick-tool-independent-action="true"/);
   assert.match(css, /\.t8-farm-story-panel__quick-actions \{[\s\S]*position:\s*fixed[\s\S]*top:\s*124px[\s\S]*width:\s*fit-content/);
   assert.match(css, /\.t8-farm-story-panel__section-switchboard \{[\s\S]*display:\s*grid[\s\S]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/);
   assert.match(css, /\.t8-farm-story-panel__panel:not\(\[data-farm-section-tools-open="true"\]\) > \.t8-farm-story-panel__tools,[\s\S]*display:\s*none/);
@@ -533,7 +569,9 @@ test('Farm Story theme mounts canvas chrome, sidebar icons, cuts, minimap, and t
   assert.match(css, /\.t8-farm-canvas-object\.is-connect-fence\.is-decor-wood-fence \.t8-farm-canvas-object__decor \{[\s\S]*width:\s*16px[\s\S]*height:\s*16px/);
   assert.match(css, /\.t8-farm-canvas-object\[data-farm-object-placement-receipt\] \.t8-farm-canvas-object__badge \{[\s\S]*width:\s*max-content[\s\S]*overflow:\s*visible/);
   assert.match(css, /@media \(max-width:\s*900px\)[\s\S]*\.t8-farm-story-panel__mini-status \{[\s\S]*right:\s*12px[\s\S]*\.t8-farm-story-panel__panel \{[\s\S]*left:\s*12px[\s\S]*right:\s*12px[\s\S]*width:\s*auto/);
-  assert.match(panel, /data-farm-mini-status=\{panelOpen \? 'monitor' : 'collapsed'\}/);
+  assert.match(panel, /data-farm-mini-status="monitor"/);
+  assert.match(panel, /data-farm-mini-panel-state=\{panelOpen \? 'open' : 'closed'\}/);
+  assert.doesNotMatch(panel, /data-farm-mini-status=\{panelOpen \? 'monitor' : 'collapsed'\}/);
   assert.match(panel, /data-farm-monitor-panel="true"/);
   assert.match(panel, /<strong>牧场控制台<\/strong>/);
   assert.match(panel, /<em>操作<\/em>/);
@@ -1503,11 +1541,18 @@ test('Farm Story theme mounts canvas chrome, sidebar icons, cuts, minimap, and t
   assert.match(panel, /onClick=\{\(event\) => \{[\s\S]*event\.stopPropagation\(\);[\s\S]*if \(farmActivityRewardStreakActionReceiptCanvasHint\) \{[\s\S]*onFollowupCanvasHint\?\.\(\{[\s\S]*message: `已定位：\$\{farmActivityRewardStreakActionReceiptCanvasHint\}`,[\s\S]*tone: farmActivityRewardStreakActionReceiptCanvasTone,[\s\S]*\}\);[\s\S]*\}[\s\S]*handleOpenFarmActivity\('action'\);[\s\S]*\}\}/);
   assert.match(canvas, /const handleFarmFollowupCanvasHint = useCallback\(\(hint: FarmStoryPanelCanvasHint\) => \{/);
   assert.match(canvas, /setFarmCanvasFeedback\(hint\.message\)/);
-  assert.match(canvas, /const center = getFarmViewportCenter\(\)/);
+  assert.match(farmFollowupCanvasHintHandler, /setFarmFollowupNotice\(\{[\s\S]*\.\.\.hint,[\s\S]*id: noticeId,[\s\S]*createdAt: Date\.now\(\),[\s\S]*\}\)/);
+  assert.match(farmFollowupCanvasHintHandler, /window\.setTimeout\(\(\) => \{[\s\S]*setFarmFollowupNotice\(\(current\) => \(current\?\.id === noticeId \? null : current\)\)/);
+  assert.match(farmFollowupCanvasHintHandler, /const center = getFarmViewportCenter\(\)/);
   assert.match(canvas, /hint\.routeTarget[\s\S]*flashFarmMiniMapRouteHint\(hint\.routeTarget, hint\.routeLabel \|\| hint\.message, center\)/);
-  assert.match(canvas, /pushFarmFloatingFeedback\(\{[\s\S]*message: hint\.message,[\s\S]*tone: hint\.tone/);
-  assert.match(canvas, /\}, \[flashFarmMiniMapRouteHint, getFarmViewportCenter, pushFarmFloatingFeedback\]\)/);
+  assert.doesNotMatch(farmFollowupCanvasHintHandler, /pushFarmFloatingFeedback/);
+  assert.match(canvas, /\}, \[flashFarmMiniMapRouteHint, getFarmViewportCenter\]\)/);
   assert.match(canvas, /<FarmStoryPanel[\s\S]*onFollowupCanvasHint=\{handleFarmFollowupCanvasHint\}/);
+  assert.match(canvas, /const farmTopNotice = useMemo<FarmFollowupNotice \| null>\(\(\) => \{[\s\S]*if \(!isFarmStory\) return null;[\s\S]*if \(farmFollowupNotice\) return farmFollowupNotice;[\s\S]*message: farmCanvasFeedback \|\| '点击工具后，在画布空白处开始经营。'[\s\S]*routeTitle: '当前提示'/);
+  assert.match(canvas, /\{isFarmStory && farmTopNotice && \(/);
+  assert.match(canvas, /data-canvas-floating-ui="farm-followup-notice"/);
+  assert.match(canvas, /data-farm-followup-notice="top-quick-board"/);
+  assert.match(canvas, /data-farm-followup-notice-state=\{farmFollowupNotice \? 'active' : 'idle'\}/);
   assert.match(panel, /data-farm-mini-followup-action-count="true"[\s\S]*\{farmActivityRewardStreakActionReceiptNextCountLabel\}/);
   assert.match(panel, /data-farm-mini-followup-action-resource="true"[\s\S]*\{farmActivityRewardStreakActionResourcePreview\.replace\('预期：', ''\)\}/);
   assert.match(panel, /data-farm-mini-action-live-followup-receipt="true"[\s\S]*\{farmActivityRewardStreakActionReceiptEchoLabel\}/);

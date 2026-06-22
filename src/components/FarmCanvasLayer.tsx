@@ -45,6 +45,7 @@ export interface FarmCanvasFloatingFeedback {
   y: number;
   message: string;
   tone: 'success' | 'water' | 'reward' | 'build' | 'warning';
+  placement?: 'above' | 'below';
 }
 
 interface FarmContinuousActionSession {
@@ -531,10 +532,12 @@ function FarmCanvasLayerRuntime({
     && !nodeDragging
     && activeTool !== 'select';
 
-  const buildFarmToolAction = useCallback((x: number, y: number): FarmToolAction => ({
+  const buildFarmToolAction = useCallback((x: number, y: number, screenX?: number, screenY?: number): FarmToolAction => ({
     tool: activeTool,
     x,
     y,
+    screenX,
+    screenY,
     cropId: activeTool === 'seed' ? 'turnip' : undefined,
     buildingId: activeTool === 'build' ? (farmCanvas.selectedBuildingId || 'hut') : undefined,
     decorId: activeTool === 'decor' ? (farmCanvas.selectedDecorId || FARM_DEFAULT_DECOR_ID) : undefined,
@@ -545,7 +548,7 @@ function FarmCanvasLayerRuntime({
 
   const dispatchFarmToolAction = useCallback((event: PointerEvent, session?: FarmContinuousActionSession) => {
     const point = screenToFlowPosition({ x: event.clientX, y: event.clientY });
-    const action = buildFarmToolAction(point.x, point.y);
+    const action = buildFarmToolAction(point.x, point.y, event.clientX, event.clientY);
     if (session) {
       const gridKey = farmToolActionGridKey(action, farmCanvas.gridSize);
       if (session.seenGridKeys.has(gridKey)) return false;
@@ -855,6 +858,7 @@ function FarmCanvasLayerRuntime({
             aria-hidden="true"
             data-farm-feedback-id={feedback.id}
             data-farm-feedback-tone={feedback.tone}
+            data-farm-feedback-placement={feedback.placement || 'above'}
             style={{
               left: feedback.x,
               top: feedback.y,

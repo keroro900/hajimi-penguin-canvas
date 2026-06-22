@@ -406,6 +406,7 @@ export default function Sidebar({ onAddNode }: SidebarProps) {
     canvases,
     activeId,
     loading: canvasLoading,
+    completionNoticeCanvasIds,
     loadCanvases,
     createCanvas,
     deleteCanvas,
@@ -416,6 +417,7 @@ export default function Sidebar({ onAddNode }: SidebarProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const completionNoticeSet = useMemo(() => new Set(completionNoticeCanvasIds), [completionNoticeCanvasIds]);
 
   useEffect(() => {
     loadCanvases();
@@ -605,11 +607,13 @@ export default function Sidebar({ onAddNode }: SidebarProps) {
               const isActive = c.id === activeId;
               const isEditing = editingId === c.id;
               const needConfirm = confirmDelete === c.id;
+              const hasCompletionNotice = !isActive && completionNoticeSet.has(c.id);
               return (
                 <div
                   key={c.id}
                   onClick={() => !isEditing && setActive(c.id)}
-                  className={`group px-2 py-1 cursor-pointer text-[11px] transition-colors ${
+                  data-canvas-completion-notice={hasCompletionNotice ? 'true' : undefined}
+                  className={`t8-sidebar-canvas-row group px-2 py-1 cursor-pointer text-[11px] transition-colors ${
                     isPixel
                       ? `px-row ${isActive ? 'is-active' : ''}`
                       : `rounded-md ${
@@ -642,7 +646,17 @@ export default function Sidebar({ onAddNode }: SidebarProps) {
                   ) : (
                     <div className="flex items-center gap-1.5">
                       <div className="flex-1 min-w-0">
-                        <div className="truncate font-medium">{c.name}</div>
+                        <div className="t8-sidebar-canvas-title flex min-w-0 items-center gap-1">
+                          <span className="truncate font-medium">{c.name}</span>
+                          {hasCompletionNotice && (
+                            <span
+                              className="t8-sidebar-canvas-update-dot"
+                              role="img"
+                              aria-label="这个画布有新生成完成，切换后自动清除"
+                              title="这个画布有新生成完成，切换后自动清除"
+                            />
+                          )}
+                        </div>
                         <div
                           className={`text-[10px] ${
                             isDark ? 'text-white/30' : 'text-zinc-400'
