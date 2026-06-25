@@ -83,6 +83,51 @@ test('local VibeX browser bridge queues sanitized result payloads and drains onc
   assert.equal(secondDrain.data.messages.length, 0);
 });
 
+test('local browser bridge also queues web image reverse payloads for Electron canvas', async (t) => {
+  const route = require('../backend/src/routes/vibexBridge.js');
+  const app = express();
+  app.use(express.json({ limit: '2mb' }));
+  app.use('/api/vibex-bridge', route);
+  const server = await listen(app);
+  t.after(() => server.close());
+  const base = `http://127.0.0.1:${server.address().port}`;
+
+  const post = await fetch(`${base}/api/vibex-bridge/messages`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      type: 't8:web-image-result',
+      source: 't8-web-image-extension',
+      payload: {
+        messageId: 'web-image-electron-1',
+        mode: 'image',
+        prompt: '不应该随发图片模式创建文本',
+        images: ['https://cdn.example.com/generated.png'],
+        sourceImageUrl: 'https://cdn.example.com/source.png',
+        pageUrl: 'https://example.com/page',
+        pageTitle: 'Example Page',
+        apiKey: 'should-not-survive',
+      },
+    }),
+  }).then((res) => res.json());
+
+  assert.equal(post.success, true);
+  assert.equal(post.data.messageId, 'web-image-electron-1');
+  assert.equal(post.data.queued, true);
+
+  const pending = await fetch(`${base}/api/vibex-bridge/pending?limit=10`).then((res) => res.json());
+  assert.equal(pending.success, true);
+  assert.equal(pending.data.messages.length, 1);
+  assert.equal(pending.data.messages[0].type, 't8:web-image-result');
+  assert.equal(pending.data.messages[0].source, 't8-web-image-extension');
+  assert.equal(pending.data.messages[0].payload.mode, 'image');
+  assert.deepEqual(pending.data.messages[0].payload.images, ['https://cdn.example.com/generated.png']);
+  assert.equal(pending.data.messages[0].payload.prompt, '不应该随发图片模式创建文本');
+  assert.equal(pending.data.messages[0].payload.sourceImageUrl, 'https://cdn.example.com/source.png');
+  assert.equal(pending.data.messages[0].payload.pageUrl, 'https://example.com/page');
+  assert.equal(JSON.stringify(pending).includes('should-not-survive'), false);
+});
+
 test('Chrome extension exposes a RunningHub VibeX bridge content script and backend fallback', () => {
   const manifest = JSON.parse(read('extension/manifest.json'));
   assert.equal(manifest.version, '1.1.0');

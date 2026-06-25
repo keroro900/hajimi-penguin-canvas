@@ -2,8 +2,10 @@ const express = require('express');
 
 const router = express.Router();
 
-const MESSAGE_TYPE = 't8:vibex-result';
-const MESSAGE_SOURCE = 'vibex-workbench';
+const VIBEX_MESSAGE_TYPE = 't8:vibex-result';
+const VIBEX_MESSAGE_SOURCE = 'vibex-workbench';
+const WEB_IMAGE_MESSAGE_TYPE = 't8:web-image-result';
+const WEB_IMAGE_MESSAGE_SOURCE = 't8-web-image-extension';
 const MAX_QUEUE_SIZE = 80;
 const MAX_SEEN_IDS = 240;
 
@@ -57,6 +59,38 @@ function cleanMetadata(value) {
 function normalizeMessage(input) {
   const raw = input && typeof input === 'object' ? input : {};
   const payload = raw.payload && typeof raw.payload === 'object' ? raw.payload : raw;
+  if (raw.type === WEB_IMAGE_MESSAGE_TYPE || raw.source === WEB_IMAGE_MESSAGE_SOURCE) {
+    const images = collectUrls(payload.images, payload.imageUrls, payload.imageUrl);
+    const prompt = cleanText(payload.prompt || payload.text || payload.outputText);
+    if (images.length === 0 && !prompt) return null;
+
+    const mode = ['prompt', 'image', 'both'].includes(String(payload.mode || '').trim())
+      ? String(payload.mode || '').trim()
+      : 'both';
+    const messageId = cleanText(payload.messageId || raw.messageId || `web-image-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, 180);
+    return {
+      type: WEB_IMAGE_MESSAGE_TYPE,
+      source: WEB_IMAGE_MESSAGE_SOURCE,
+      receivedAt: new Date().toISOString(),
+      payload: {
+        messageId,
+        mode,
+        prompt,
+        images,
+        imageUrls: images,
+        sourceImageUrl: cleanUrl(payload.sourceImageUrl),
+        pageUrl: cleanText(payload.pageUrl || raw.pageUrl, 2048),
+        pageTitle: cleanText(payload.pageTitle || raw.pageTitle, 200),
+        source: 'web-image-reverse',
+        createdAt: Number(payload.createdAt) || Date.now(),
+        metadata: {
+          ...cleanMetadata(payload.metadata),
+          sentVia: 'browser-extension-local-bridge',
+        },
+      },
+    };
+  }
+
   const videoUrls = collectUrls(payload.videoUrls, payload.videos, payload.videoUrl, payload.resultUrl, payload.currentVideoUrl);
   const imageUrls = collectUrls(payload.imageUrls, payload.images, payload.imageUrl, payload.coverUrl, payload.thumbnailUrl);
   const audioUrls = collectUrls(payload.audioUrls, payload.audios, payload.audioUrl);
@@ -65,8 +99,8 @@ function normalizeMessage(input) {
 
   const messageId = cleanText(payload.messageId || raw.messageId || `vibex-web-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, 180);
   return {
-    type: MESSAGE_TYPE,
-    source: MESSAGE_SOURCE,
+    type: VIBEX_MESSAGE_TYPE,
+    source: VIBEX_MESSAGE_SOURCE,
     receivedAt: new Date().toISOString(),
     payload: {
       messageId,
@@ -105,8 +139,10 @@ router.get('/status', (_req, res) => {
     data: {
       ok: true,
       queueSize: queue.length,
-      messageType: MESSAGE_TYPE,
-      messageSource: MESSAGE_SOURCE,
+      messageType: VIBEX_MESSAGE_TYPE,
+      messageSource: VIBEX_MESSAGE_SOURCE,
+      supportedMessageTypes: [VIBEX_MESSAGE_TYPE, WEB_IMAGE_MESSAGE_TYPE],
+      supportedMessageSources: [VIBEX_MESSAGE_SOURCE, WEB_IMAGE_MESSAGE_SOURCE],
     },
   });
 });

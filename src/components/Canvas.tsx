@@ -4589,18 +4589,12 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
     logBus.success('已在选区右侧创建图像生成节点', '选区生成');
   }, [activeId, assignActiveNodeSerials, registerPlacementShelfNodes]);
 
-  useEffect(() => {
-    const handleWebImageMessage = (event: MessageEvent) => {
-      if (event.source !== window) return;
-      const data = event.data || {};
-      if (
-        data.type !== WEB_IMAGE_EXTENSION_MESSAGE_CONTRACT.type ||
-        data.source !== WEB_IMAGE_EXTENSION_MESSAGE_CONTRACT.source
-      ) return;
-      const payload = (data.payload || {}) as WebImageExtensionPayload;
+  const importWebImagePayload = useCallback((input: unknown, sourceLabel = '网页图片反推') => {
+      const data = input && typeof input === 'object' ? input as Record<string, any> : {};
+      const payload = (data.payload || data || {}) as WebImageExtensionPayload;
       const messageId = cleanWebImageText(payload.messageId || data.messageId, 160);
       if (messageId) {
-        if (webImageImportMessageIdsRef.current.has(messageId)) return;
+        if (webImageImportMessageIdsRef.current.has(messageId)) return false;
         webImageImportMessageIdsRef.current.add(messageId);
         if (webImageImportMessageIdsRef.current.size > 80) {
           webImageImportMessageIdsRef.current = new Set([...webImageImportMessageIdsRef.current].slice(-40));
@@ -4608,8 +4602,8 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       }
       const specs = buildWebImageSendNodeSpecs(payload);
       if (specs.length === 0) {
-        logBus.warn('网页图片反推没有可发送的提示词或生成图片', '网页反推');
-        return;
+        logBus.warn(`${sourceLabel} 没有可发送的提示词或生成图片`, '网页反推');
+        return false;
       }
 
       const selectedTarget = nodesRef.current.find((node) => node.selected && node.type === CREATIVE_TARGET_NODE_TYPE);
@@ -4632,8 +4626,8 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
               ? { ...node, data: { ...(node.data as any), ...built.targetPatch }, selected: true }
               : { ...node, selected: false },
           ));
-          logBus.success('网页图片反推结果已填入选中的生成目标框', '网页反推');
-          return;
+          logBus.success(`${sourceLabel}结果已填入选中的生成目标框`, '网页反推');
+          return true;
         }
         if (prompt) {
           setNodes(nodesRef.current.map((node) =>
@@ -4641,8 +4635,8 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
               ? { ...node, data: { ...(node.data as any), prompt, status: 'idle', error: '' }, selected: true }
               : { ...node, selected: false },
           ));
-          logBus.success('网页图片反推提示词已写入选中的生成目标框', '网页反推');
-          return;
+          logBus.success(`${sourceLabel}提示词已写入选中的生成目标框`, '网页反推');
+          return true;
         }
       }
 
@@ -4672,12 +4666,24 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       }
       setNodes([...nodesRef.current.map((node) => ({ ...node, selected: false })), ...assignedNewNodes]);
       registerPlacementShelfNodes(assignedNewNodes, '发送');
-      logBus.success(`已从网页图片反推发送 ${assignedNewNodes.length} 个节点到当前画布`, '网页反推');
+      logBus.success(`已从${sourceLabel}发送 ${assignedNewNodes.length} 个节点到当前画布`, '网页反推');
+      return true;
+  }, [activeId, assignActiveNodeSerials, getViewport, registerPlacementShelfNodes, screenToFlowPosition]);
+
+  useEffect(() => {
+    const handleWebImageMessage = (event: MessageEvent) => {
+      if (event.source !== window) return;
+      const data = event.data || {};
+      if (
+        data.type !== WEB_IMAGE_EXTENSION_MESSAGE_CONTRACT.type ||
+        data.source !== WEB_IMAGE_EXTENSION_MESSAGE_CONTRACT.source
+      ) return;
+      importWebImagePayload(data);
     };
 
     window.addEventListener('message', handleWebImageMessage);
     return () => window.removeEventListener('message', handleWebImageMessage);
-  }, [activeId, assignActiveNodeSerials, getViewport, registerPlacementShelfNodes, screenToFlowPosition]);
+  }, [importWebImagePayload]);
 
   const importVibeXPayload = useCallback((input: unknown, sourceLabel = 'VibeX') => {
       const data = input && typeof input === 'object' ? input as Record<string, any> : {};
@@ -4760,6 +4766,13 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
               message?.source === VIBEX_MESSAGE_CONTRACT.source
             ) {
               importVibeXPayload(message, '网页版 VibeX');
+              return;
+            }
+            if (
+              message?.type === WEB_IMAGE_EXTENSION_MESSAGE_CONTRACT.type &&
+              message?.source === WEB_IMAGE_EXTENSION_MESSAGE_CONTRACT.source
+            ) {
+              importWebImagePayload(message, '网页反推');
             }
           });
         }
@@ -4774,7 +4787,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       disposed = true;
       if (timerId != null) window.clearTimeout(timerId);
     };
-  }, [importVibeXPayload]);
+  }, [importVibeXPayload, importWebImagePayload]);
 
   useEffect(() => {
     const stopRadialPointerEvent = (event: PointerEvent | MouseEvent) => {

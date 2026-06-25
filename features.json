@@ -1,7 +1,66 @@
 {
   "$schema": "本文件为 T8-penguin-canvas 节点清单防丢失锁,任何节点删减都需要在 roadmap.md 中说明并更新本文件。",
-  "version": "2.3.6",
-  "lastUpdated": "2026-06-25-v236-electron-release",
+  "version": "2.3.7",
+  "lastUpdated": "2026-06-25-v237-electron-release",
+  "electronReleaseV237": {
+    "version": "2.3.7",
+    "status": "electron-release",
+    "date": "2026-06-25",
+    "description": "v2.3.7 Electron 自动更新版：修复网页图片反推 Chrome 插件在 Electron 安装包场景下无法直接回传本地画布的问题，并保留生成目标框回填能力。",
+    "highlights": [
+      "网页图片反推插件发送提示词、图片或图文结果时，会优先通过本机 /api/vibex-bridge/messages 桥接投递给正在运行的 Electron 画布，不再误开 127.0.0.1 错误页。",
+      "插件仍兼容开发环境的浏览器画布标签页注入；当没有可用画布标签页时才回退本地桥接，桥接失败后才尝试打开浏览器画布。",
+      "Electron 画布轮询 VibeX 本地桥接队列时现在同时识别 t8:vibex-result 与 t8:web-image-result，两条链路互不影响。",
+      "网页反推结果进入 Electron 后复用原有生成目标框逻辑：当前选中生成目标框时优先回填图片或提示词，不会只创建普通输出素材节点。",
+      "新增网页反推本地桥接与生成目标框回填回归测试，覆盖 Chrome 插件、后端桥接路由和 Canvas 轮询导入。"
+    ],
+    "releaseFiles": [
+      "package.json",
+      "package-lock.json",
+      "vite.config.ts",
+      "vite.config.js",
+      "electron/main.cjs",
+      "backend/src/config.js",
+      "features.json",
+      "README.md",
+      "release-notes/v2.3.7.md",
+      "backend/src/routes/vibexBridge.js",
+      "extension/scripts/background.js",
+      "src/components/Canvas.tsx",
+      "tests/vibexBrowserBridge.test.ts",
+      "tests/webImageReverseToCanvas.test.ts"
+    ],
+    "packaging": {
+      "script": "T8_RELEASE_APPROVAL=release-2.3.7 npm run dist:release（仅在用户明确要求发布时使用）",
+      "installer": "dist_electron/T8-PenguinCanvas-Setup-2.3.7.exe",
+      "blockmap": "dist_electron/T8-PenguinCanvas-Setup-2.3.7.exe.blockmap",
+      "latestYml": "dist_electron/latest.yml",
+      "updater": "GitHub Release v2.3.7 作为 latest.yml 自动更新源；安装继续使用前台 NSIS 向导，不静默安装。",
+      "releaseUrl": "https://github.com/T8mars/T8-penguin-canvas/releases/tag/v2.3.7",
+      "webImageReverseExtensionInstallDir": "安装后从 Electron 安装目录的 resources/extension/web-image-reverse/ 作为 Chrome 加载已解压扩展程序的目录。"
+    },
+    "releaseBoundary": [
+      "公开源码继续禁止 skill.md、roadmap.md、local-private/**、hermes-agent/**、comfyui-anima-t8/**、Electron 缓存目录、artifacts/**、vibex/** 本地完整子项目、本地维护者工具源码和任何私有计费/支付/充值/分组令牌实现进入 GitHub。",
+      "网页图片反推 Chrome 插件源码与 RunningHub/VibeX 桥接脚本必须保持在公开提交内：extension/manifest.json、extension/scripts/background.js、extension/scripts/content.js、extension/scripts/runninghub-bridge.js、extension/styles/content.css；浏览器已安装状态、真实 API Key 和本地调试数据不进入仓库。",
+      "Release 资产只上传 NSIS 安装包、blockmap 与 latest.yml。",
+      "npm run dist:release 与 npm run release:github 默认拒绝执行发布；必须设置 T8_RELEASE_APPROVAL=release-2.3.7，且只能在用户明确要求发布后设置。",
+      "2026-06-25 R514 正式发布：本轮来自用户明确发布授权，允许设置 T8_RELEASE_APPROVAL=release-2.3.7 运行 Electron 打包与 GitHub Release 上传链路。"
+    ],
+    "verification": [
+      "node --test tests\\webImageReverseToCanvas.test.ts tests\\vibexBrowserBridge.test.ts",
+      "node -c extension\\scripts\\background.js",
+      "node -c extension\\scripts\\content.js",
+      "node -c extension\\scripts\\runninghub-bridge.js",
+      "node -c backend\\src\\routes\\vibexBridge.js",
+      "node -e \"JSON.parse(require('fs').readFileSync('features.json','utf8'))\"",
+      "npm run type-check",
+      "npm run public:check",
+      "npm run rh-toolbox:check",
+      "npm run build",
+      "T8_RELEASE_APPROVAL=release-2.3.7 npm run dist:release",
+      "npm run release:verify -- v2.3.7"
+    ]
+  },
   "electronReleaseV236": {
     "version": "2.3.6",
     "status": "electron-release",
@@ -3389,11 +3448,11 @@
       "T8_RUNTIME_CACHE_DIR": "可选，覆盖运行时归档解压缓存目录；默认打包模式为 %APPDATA%/t8-penguin-canvas/runtime-cache",
       "T8_ENABLE_LOCAL_PRIVATE": "可选，0=强制关闭本机 local-private/extensions 私有扩展；默认只要本机 ignored 私有扩展存在，开发环境和本机打包 release 都会自动带入。GitHub/clean clone 因为没有 local-private 目录，所以不会带充值实现。"
     },
-    "version": "2.3.6",
-    "semverVersion": "2.3.6",
+    "version": "2.3.7",
+    "semverVersion": "2.3.7",
     "versionNumberPolicy": "T8 版本号仍采用 x.y.z 三段，但每一段只允许 0-9；任一段到 9 后下一次发布必须向左进位，禁止任一段出现两位数字。例：1.9.9 的下一版必须是 2.0.0。",
-    "versionNote": "v1.3.0 起统一采用三段阶段号 x.y.z；当前发布版本为 v2.3.6，发布 VibeX 插件安装提示、批量素材单策略与并发状态标记、顶部教程第十三弹和模型注意事项更新；公开源码仍排除本地私有计费/支付/充值/分组令牌实现。",
-    "installer": "v2.3.6 作为 Electron 自动更新发布版本：npm run dist:release 与 npm run release:github 继续带 T8_RELEASE_APPROVAL=release-2.3.6 防误触闸，只有用户明确要求发布后才能设置该变量并发布自动更新资产。",
+    "versionNote": "v1.3.0 起统一采用三段阶段号 x.y.z；当前发布版本为 v2.3.7，修复网页图片反推 Chrome 插件在 Electron 安装包场景下通过本地桥接回传画布，并保留生成目标框回填；公开源码仍排除本地私有计费/支付/充值/分组令牌实现。",
+    "installer": "v2.3.7 作为 Electron 自动更新发布版本：npm run dist:release 与 npm run release:github 继续带 T8_RELEASE_APPROVAL=release-2.3.7 防误触闸，只有用户明确要求发布后才能设置该变量并发布自动更新资产。",
     "updaterInstallMode": "自动更新下载完成后不得静默安装：main.cjs 必须设置 autoInstallOnAppQuit=false，显式安装调用 quitAndInstall(false,true)；electron/build-resources/installer.nsh 通过 SetSilent normal 让新版 NSIS 安装器即使收到旧客户端传入的 /S 也尽量切回前台安装向导。",
     "installerShortcutPolicy": "安装完成后必须创建桌面和开始菜单快捷方式：package.json build.nsis.createDesktopShortcut 必须为 \"always\"，createStartMenuShortcut 必须为 true；electron/build-resources/installer.nsh 必须保留 customInstall 兜底 CreateShortCut \"$newStartMenuLink\" 与 \"$DESKTOP\\${SHORTCUT_NAME}.lnk\"，防止更新安装/keepShortcuts 路径遗漏入口。",
     "updaterEntryPolicy": "顶栏桌面更新入口不得只因 window.t8pc.updater 缺失就静默消失；Electron UA 或 t8pc.getInfo/openExternal 可用时必须显示诊断入口，提示重新安装完整桌面包，Web/纯浏览器环境才隐藏。状态为 not-available 时按钮仍保留“更新”字样，避免用户误以为自动更新入口被删除。",
