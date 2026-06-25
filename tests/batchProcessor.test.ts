@@ -177,7 +177,7 @@ test('batch processor node is a toolbox executable that does not auto-output to 
   assert.match(loop, /'aggregate-parser',\s*'batch-processor'/);
   assert.match(placement, /'batch-processor':\s*\{\s*w:\s*640,\s*h:\s*560\s*\}/);
   assert.match(features, /"nodeType":\s*"batch-processor"/);
-  assert.match(features, /"totalNodes":\s*52/);
+  assert.match(features, /"totalNodes":\s*53/);
   assert.match(node, /batchProcessorItems/);
   assert.match(node, /batchProcessorResults/);
   assert.match(node, /copy-to-output/);
@@ -204,6 +204,8 @@ test('batch processor node is a toolbox executable that does not auto-output to 
   assert.match(node, /RH 4K/);
   assert.match(node, /并发/);
   assert.match(node, /重试失败/);
+  assert.match(node, /normalizeBatchConcurrency\(d\.batchProcessorRhConcurrency,\s*2,\s*1,\s*10\)/);
+  assert.match(node, /\[1,\s*2,\s*3,\s*4,\s*5,\s*6,\s*7,\s*8,\s*9,\s*10\]\.map\(\(item\) => <option key=\{item\} value=\{item\}>\{item\}<\/option>\)/);
   assert.doesNotMatch(node, /imageUrls:\s*result/);
   assert.doesNotMatch(node, /videoUrls:\s*result/);
   assert.doesNotMatch(node, /audioUrls:\s*result/);

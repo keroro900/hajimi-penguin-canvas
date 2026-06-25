@@ -119,6 +119,13 @@ import {
   type MaterialSetKind,
 } from '../utils/materialSet';
 import { chooseDefaultSendMode, resolveEffectiveSendMode } from '../utils/sendMode';
+import {
+  DEFAULT_VIDEO_EDIT_DATA,
+  appendVideoEditClips,
+  createVideoEditClipFromSendable,
+  normalizeVideoEditClips,
+  type VideoEditClip,
+} from '../utils/videoEdit';
 import { buildGenerationHistoryDataKey, collectGenerationHistory, countGenerationHistoryItems } from '../utils/generationHistory';
 import { validateUploadMediaFile } from '../utils/uploadMediaValidation';
 import {
@@ -1030,6 +1037,7 @@ const TextNode = lazyCanvasNode(() => import('./nodes/TextNode'), 'TextNode');
 const ImageNode = lazyCanvasNode(() => import('./nodes/ImageNode'), 'ImageNode');
 const LLMNode = lazyCanvasNode(() => import('./nodes/LLMNode'), 'LLMNode');
 const VideoNode = lazyCanvasNode(() => import('./nodes/VideoNode'), 'VideoNode');
+const VideoEditNode = lazyCanvasNode(() => import('./nodes/VideoEditNode'), 'VideoEditNode');
 const SeedanceNode = lazyCanvasNode(() => import('./nodes/SeedanceNode'), 'SeedanceNode');
 const DirectorStoryboardNode = lazyCanvasNode(() => import('./nodes/DirectorStoryboardNode'), 'DirectorStoryboardNode');
 const AudioNode = lazyCanvasNode(() => import('./nodes/AudioNode'), 'AudioNode');
@@ -1097,6 +1105,7 @@ const SPECIFIC_NODES: Record<string, any> = {
   text: TextNode,
   image: ImageNode,
   video: VideoNode,
+  'video-edit': VideoEditNode,
   seedance: SeedanceNode, // 完全对齐 gpt-image-2-web Seedance2.0(独立 /seedance/v3 路径)
   'director-storyboard': DirectorStoryboardNode,
   audio: AudioNode,
@@ -1282,6 +1291,7 @@ function withNodeSerialBadge(Component: ComponentType<any>): ComponentType<any> 
 const INITIAL_DATA: Record<string, Record<string, any>> = {
   image: { model: 'gpt-image-2', aspectRatio: '1:1', sizeLevel: '1K', referenceImages: [] },
   edit: { mode: 'edit', model: 'gpt-image-2', aspectRatio: '1:1', sizeLevel: '1K', referenceImages: [] },
+  'video-edit': { ...DEFAULT_VIDEO_EDIT_DATA, clips: [], settings: { ...DEFAULT_VIDEO_EDIT_DATA.settings }, job: { ...DEFAULT_VIDEO_EDIT_DATA.job } },
   seedance: {
     model: 'doubao-seedance-2-0-fast-260128',
     duration: 5,
@@ -2195,6 +2205,30 @@ function sourceNodeIdsFromMaterials(materials: SendableMaterial[]): string[] {
   return [...ids].sort();
 }
 
+function videoEditTargetLabel(node: Node): string {
+  const serial = getNodeSerialId(node);
+  return serial ? `视频剪辑#${serial}` : `视频剪辑 ${node.id.slice(-6)}`;
+}
+
+function selectVideoEditTargetNode(nodes: Node[], targetNodeId?: string | null): Node | null {
+  const candidates = nodes.filter((node) => node.type === 'video-edit');
+  if (targetNodeId) return candidates.find((node) => node.id === targetNodeId) || null;
+  return candidates.length === 1 ? candidates[0] : null;
+}
+
+function videoEditPatchFromIncomingClips(data: any, incomingClips: VideoEditClip[]): Record<string, any> {
+  const nextClips = appendVideoEditClips(data?.clips, incomingClips);
+  return {
+    clips: nextClips,
+    selectedClipId: data?.selectedClipId && nextClips.some((clip) => clip.id === data.selectedClipId)
+      ? data.selectedClipId
+      : nextClips[0]?.id || '',
+    status: nextClips.length ? 'ready' : 'idle',
+    error: '',
+    videoEditLastReceivedAt: Date.now(),
+  };
+}
+
 function removeDuplicateSendBridgeNodes(
   nodes: Node[],
   edges: Edge[],
@@ -2666,6 +2700,7 @@ const MODEL_USAGE_HELP_SECTIONS: readonly ModelUsageHelpSection[] = [
   {
     title: '图像模型注意事项（2K，4K只有FAL长期稳定，其他都不保证稳定）',
     items: [
+      '2026.06.25谷歌香蕉模型从preview模型升级为正式版，模型名字需要修改，如之前是 gemini-3-pro-image-preview ，需要改为 gemini-3-pro-image，请求的模型名字之前带preview 的都去掉preview以下是新名字gemini-3-pro-image，gemini-3-pro-image-2k，gemini-3-pro-image-4k，gemini-3.1-flash-image，gemini-3.1-flash-image-512px，gemini-3.1-flash-image-2k，gemini-3.1-flash-image-4k，特殊的nano-banana-pro模型不需要修改',
       'gpt-image-2模型，新增azure特价分组，固定0.3积分，支持2K,4K，目前稳定（2K,4K没法保证永久稳定，最稳定是FAL模型方法），支持质量参数传入！（2026.06.17）',
       'gpt-image-2-all模型（default分组）只能出1K图，速度最快，最稳定，审核最松',
       'gpt-image-2模型（default分组）可以出1K，2K，4K图，2K，4K不一定稳定，如果提示系统错误，降低分辨率重试，超过1K，需要选择分辨率， auto不支持1K以上',
@@ -5364,8 +5399,156 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
     [activeId, assignActiveNodeSerials, basePositionForActiveSend, getViewport, screenToFlowPosition],
   );
 
+  const loadVideoEditTargets = useCallback(async (targetCanvasId: string) => {
+    const sourceNodes = targetCanvasId === activeId
+      ? nodesRef.current
+      : normalizeCanvasNodeSerials(
+          ((await api.getCanvasData(targetCanvasId)).nodes || []) as Node[],
+        ).nodes;
+    return sourceNodes
+      .filter((node) => node.type === 'video-edit')
+      .map((node) => ({
+        id: node.id,
+        label: videoEditTargetLabel(node),
+        clipCount: normalizeVideoEditClips((node.data as any)?.clips).length,
+      }));
+  }, [activeId]);
+
+  const appendMaterialsToVideoEditNode = useCallback(
+    async (
+      targetCanvasId: string,
+      incomingClips: VideoEditClip[],
+      switchAfter: boolean,
+      targetNodeId?: string | null,
+    ) => {
+      if (incomingClips.length === 0) {
+        logBus.warn('没有可追加到视频剪辑的视频素材', '视频剪辑');
+        return;
+      }
+
+      const createVideoEditNode = (existingNodes: Node[], base: { x: number; y: number }): Node => {
+        const size = defaultSizeOf('video-edit');
+        const offset = placeBatchNodes([{ x: base.x, y: base.y, w: size.w, h: size.h }], existingNodes, {
+          source: 'placement:video-edit-send',
+        });
+        return {
+          id: `video-edit-send-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          type: 'video-edit',
+          position: { x: base.x + offset.dx, y: base.y + offset.dy },
+          selected: true,
+          data: {
+            ...(INITIAL_DATA['video-edit'] || {}),
+            ...videoEditPatchFromIncomingClips({}, incomingClips),
+            sentFromMaterialBridge: true,
+            sendBridgeMode: 'video-edit',
+            sendBridgeSourceCanvasId: activeId || undefined,
+            sendBridgeSourceNodeIds: incomingClips
+              .map((clip) => clip.sourceNodeId)
+              .filter((value): value is string => typeof value === 'string' && Boolean(value)),
+            sendBridgeCreatedAt: Date.now(),
+          },
+        } as Node;
+      };
+
+      if (targetCanvasId === activeId) {
+        const target = selectVideoEditTargetNode(nodesRef.current, targetNodeId);
+        if (target) {
+          setNodes((prev) => prev.map((node) => {
+            if (node.id !== target.id) return { ...node, selected: false };
+            return {
+              ...node,
+              selected: true,
+              data: {
+                ...(node.data || {}),
+                ...videoEditPatchFromIncomingClips(node.data, incomingClips),
+              },
+            };
+          }));
+          setSendModal(null);
+          logBus.success(`已追加 ${incomingClips.length} 段视频到 ${videoEditTargetLabel(target)}`, '视频剪辑');
+          return;
+        }
+
+        const newNode = createVideoEditNode(nodesRef.current, basePositionForActiveSend());
+        const assigned = assignActiveNodeSerials([newNode], nodesRef.current);
+        const focusCenter = centerOfMaterialNodes(assigned);
+        if (activeId && focusCenter) {
+          const { zoom } = getViewport();
+          pendingSendFocusRef.current = {
+            canvasId: activeId,
+            center: focusCenter,
+            zoom: Math.min(Math.max(zoom || 0.9, 0.72), 1.05),
+          };
+        }
+        setNodes([...nodesRef.current.map((node) => ({ ...node, selected: false })), ...assigned]);
+        registerPlacementShelfNodes(assigned, '发送');
+        setSendModal(null);
+        logBus.success(`已新建视频剪辑并追加 ${incomingClips.length} 段视频`, '视频剪辑');
+        return;
+      }
+
+      const data = await api.getCanvasData(targetCanvasId);
+      const normalizedTarget = normalizeCanvasNodeSerials(
+        (Array.isArray(data.nodes) ? data.nodes : []) as Node[],
+        data.nextNodeSerialId,
+      );
+      let targetNodes = normalizedTarget.nodes;
+      const targetEdges = (Array.isArray(data.edges) ? data.edges : []) as Edge[];
+      let nextNodeSerialId = normalizedTarget.nextNodeSerialId;
+      let focusCenter: { x: number; y: number } | null = null;
+      const target = selectVideoEditTargetNode(targetNodes, targetNodeId);
+      if (target) {
+        targetNodes = targetNodes.map((node) => node.id === target.id
+          ? {
+              ...node,
+              selected: true,
+              data: {
+                ...(node.data || {}),
+                ...videoEditPatchFromIncomingClips(node.data, incomingClips),
+                videoEditCrossCanvasReceivedAt: Date.now(),
+              },
+            }
+          : { ...node, selected: false });
+        focusCenter = centerOfMaterialNodes(targetNodes.filter((node) => node.id === target.id));
+      } else {
+        const draft = createVideoEditNode(targetNodes, basePositionForAppend(targetNodes));
+        const fresh = assignFreshNodeSerials([draft], targetNodes, nextNodeSerialId);
+        targetNodes = [...targetNodes.map((node) => ({ ...node, selected: false })), ...fresh.nodes];
+        nextNodeSerialId = fresh.nextNodeSerialId;
+        focusCenter = centerOfMaterialNodes(fresh.nodes);
+      }
+      if (switchAfter && focusCenter) {
+        pendingSendFocusRef.current = {
+          canvasId: targetCanvasId,
+          center: focusCenter,
+          zoom: 0.88,
+        };
+      }
+      const payload = {
+        nodes: targetNodes,
+        edges: targetEdges,
+        viewport: data.viewport || { x: 0, y: 0, zoom: 1 },
+        nextNodeSerialId,
+        creativeDesk: data.creativeDesk,
+        farmCanvas: sanitizeFarmCanvasState(data.farmCanvas),
+      };
+      await api.saveCanvasData(targetCanvasId, payload);
+      api.autoSaveCanvasData(targetCanvasId, payload).catch(() => {});
+      await loadCanvases();
+      if (switchAfter) setActive(targetCanvasId);
+      setSendModal(null);
+      logBus.success(`跨画布视频剪辑：已追加 ${incomingClips.length} 段视频到目标画布`, '视频剪辑');
+    },
+    [activeId, assignActiveNodeSerials, basePositionForActiveSend, getViewport, loadCanvases, registerPlacementShelfNodes, setActive],
+  );
+
   const handleSendMaterialsToCanvas = useCallback(
-    async (targetCanvasId: string, mode: SendTargetMode, switchAfter: boolean) => {
+    async (
+      targetCanvasId: string,
+      mode: SendTargetMode,
+      switchAfter: boolean,
+      options?: { videoEditTargetNodeId?: string | null },
+    ) => {
       if (!sendModal) return;
       const currentSend = {
         ...sendModal,
@@ -5444,6 +5627,18 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
 
       if (currentSend.materials.length === 0) {
         logBus.warn('当前发送方式需要素材；请选择“节点片段”发送选中节点和连线', '发送素材');
+        return;
+      }
+      if (effectiveMode === 'video-edit') {
+        const incomingClips = currentSend.materials
+          .map((item) => createVideoEditClipFromSendable(item))
+          .filter((clip): clip is VideoEditClip => Boolean(clip));
+        await appendMaterialsToVideoEditNode(
+          targetCanvasId,
+          incomingClips,
+          switchAfter,
+          options?.videoEditTargetNodeId ?? null,
+        );
         return;
       }
       const specs = buildSendNodeSpecs(currentSend.materials, effectiveMode);
@@ -5535,7 +5730,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         '发送素材',
       );
     },
-    [activeId, assignActiveNodeSerials, basePositionForActiveSend, getViewport, loadCanvases, registerPlacementShelfNodes, resolveSendMode, sendModal, setActive],
+    [activeId, appendMaterialsToVideoEditNode, assignActiveNodeSerials, basePositionForActiveSend, getViewport, loadCanvases, registerPlacementShelfNodes, resolveSendMode, sendModal, setActive],
   );
 
   const saveWorkflowFragmentToResource = useCallback(
@@ -10017,6 +10212,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         activeCanvasId={activeId}
         onClose={() => setSendModal(null)}
         onSendToCanvas={handleSendMaterialsToCanvas}
+        onLoadVideoEditTargets={loadVideoEditTargets}
         onSaveToResource={handleSaveSendMaterialsToResource}
         onSendToEagle={handleSendMaterialsToEagle}
         onSendToFigma={handleSendMaterialsToFigma}

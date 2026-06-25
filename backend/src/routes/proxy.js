@@ -197,7 +197,7 @@ function loadRawSettings() {
 
 // ========== 工具: 按提示词（模型名 / endpoint / 路由名）选择分类 API Key ==========
 // 未填分类 key 时 fallback 到 通用 zhenzhenApiKey。
-// hint 例: 'gpt-image-1' / 'nano-banana-pro' / 'gemini-3.1-flash-image-preview' / 'mj-fast' / 'veo3.1-fal'
+// hint 例: 'gpt-image-1' / 'gemini-3-pro-image' / 'gemini-3.1-flash-image' / 'mj-fast' / 'veo3.1-fal'
 //          / 'grok-video-fal' / 'seedance-v3' / 'suno-v5.5' / 'fal-ai/nano-banana/edit'
 function pickApiKey(settings, hint = '') {
   if (!settings) return '';
@@ -205,7 +205,7 @@ function pickApiKey(settings, hint = '') {
   const m = String(hint || '').toLowerCase();
   if (!m) return fb;
   if (m.includes('gpt-image') || m.includes('gpt2') || m.includes('gpt_image') || m.includes('gptimage')) return settings.gptImageApiKey || fb;
-  if (m.includes('nano-banana') || m.includes('nano_banana') || m.includes('nanobanana') || m.includes('flash-image-preview')) return settings.nanoBananaApiKey || fb;
+  if (m.includes('nano-banana') || m.includes('nano_banana') || m.includes('nanobanana') || m.includes('flash-image') || m.includes('gemini-3-pro-image')) return settings.nanoBananaApiKey || fb;
   if (m.includes('midjourney') || /\bmj[-_/]/.test(m) || m.startsWith('mj') || m === 'mj') return settings.mjApiKey || fb;
   if (m.includes('veo')) return settings.veoApiKey || fb;
   if (m.includes('sora')) return settings.soraApiKey || fb;
@@ -217,7 +217,12 @@ function pickApiKey(settings, hint = '') {
 
 function normalizeImageApiModel(model) {
   const raw = String(model || '').trim();
-  if (raw === 'nano-banana-2') return 'gemini-3.1-flash-image-preview';
+  if (raw === 'nano-banana-2') return 'gemini-3.1-flash-image';
+  if (raw === 'gemini-3.1-flash-image-preview') return 'gemini-3.1-flash-image';
+  if (raw === 'gemini-3.1-flash-image-previiew') return 'gemini-3.1-flash-image';
+  if (raw === 'gemini-3-pro-image-preview') return 'gemini-3-pro-image';
+  if (raw === 'gemini-3-pro-image-2k-preview') return 'gemini-3-pro-image-2k';
+  if (raw === 'gemini-3-pro-image-4k-preview') return 'gemini-3-pro-image-4k';
   if (gptImage2ZhenzhenVariantSize(raw)) return 'gpt-image-2';
   return raw;
 }
@@ -234,7 +239,8 @@ function isBananaImageModel(model) {
   return m.includes('nano-banana')
     || m.includes('nano_banana')
     || m.includes('nanobanana')
-    || m.includes('flash-image-preview');
+    || m.includes('flash-image')
+    || m.includes('gemini-3-pro-image');
 }
 
 // ========== 工具: 以提示词为准，将 settings.zhenzhenApiKey 临时覆盖为分类 key ==========

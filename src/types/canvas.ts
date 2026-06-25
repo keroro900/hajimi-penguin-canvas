@@ -9,6 +9,7 @@ export type NodeType =
   | 'text'
   | 'image'
   | 'video'
+  | 'video-edit'
   | 'seedance'
   | 'director-storyboard'
   | 'audio'

@@ -256,7 +256,7 @@ function BatchProcessorNode({ id, data, selected }: NodeProps) {
     || EXPAND_PRESET_OPTIONS.find((item) => item.id === RH_IMAGE_CAPABILITY_PRESETS.expand.defaultParamPresetId)
     || EXPAND_PRESET_OPTIONS[0];
   const localConcurrency = normalizeBatchConcurrency(d.batchProcessorLocalConcurrency, 4, 1, 8);
-  const rhConcurrency = normalizeBatchConcurrency(d.batchProcessorRhConcurrency, 2, 1, 4);
+  const rhConcurrency = normalizeBatchConcurrency(d.batchProcessorRhConcurrency, 2, 1, 10);
   const { retryCount, continueOnError } = normalizeBatchRetrySettings({
     retryCount: d.batchProcessorRetryCount,
     continueOnError: d.batchProcessorContinueOnError,
@@ -810,7 +810,7 @@ function BatchProcessorNode({ id, data, selected }: NodeProps) {
               <label className="min-w-0">
                 <FieldLabel>RH并发</FieldLabel>
                 <select className="t8-select w-full px-1.5 py-1 text-xs" value={rhConcurrency} onChange={(event) => update({ batchProcessorRhConcurrency: Number(event.target.value) })} disabled={running}>
-                  {[1, 2, 3, 4].map((item) => <option key={item} value={item}>{item}</option>)}
+                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((item) => <option key={item} value={item}>{item}</option>)}
                 </select>
               </label>
               <label className="min-w-0">
