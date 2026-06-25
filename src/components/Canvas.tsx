@@ -1375,6 +1375,7 @@ const INITIAL_DATA: Record<string, Record<string, any>> = {
     batchProcessorSequenceStart: 1,
     batchProcessorIndexPadding: 3,
     batchProcessorOutputFormat: 'keep',
+    batchProcessorOperation: 'trim',
     batchProcessorTrimBlackBars: true,
     batchProcessorTrimMode: 'auto',
     batchProcessorTrimAxis: 'vertical',
@@ -2680,6 +2681,7 @@ const MODEL_USAGE_HELP_SECTIONS: readonly ModelUsageHelpSection[] = [
   {
     title: '视频模型注意事项',
     items: [
+      '20250624更新，seedance2.0新增mini模型（720P是满血版的一半），支持原生4K，电影级质感（仅满血720P可选）',
       'seedance2.0（Default分组）非远景推荐480P+FAST模式，质量吊打快乐马，价格只要5个币15秒，后续用flashvsr放大即可，720P满血15秒大概15币，不排队，支持真人',
       'seedance2.0（sd-global分组）需要联系T8微信单独开通，只支持企业开通，由于除版权外基本无审核，防止有人搞色情，需要签协议才能开通，价格和上面一样',
       'veo3.1模型，需要看下网站左侧分类教程，有多个分组可用，目前比较稳的是veo&grok备用分组2的veo3.1模型和默认分组的fal模型',

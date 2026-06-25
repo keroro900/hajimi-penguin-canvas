@@ -85,6 +85,7 @@ test('local VibeX browser bridge queues sanitized result payloads and drains onc
 
 test('Chrome extension exposes a RunningHub VibeX bridge content script and backend fallback', () => {
   const manifest = JSON.parse(read('extension/manifest.json'));
+  assert.equal(manifest.version, '1.1.0');
   assert.ok(
     manifest.content_scripts.some((entry: any) =>
       entry.js?.includes('scripts/runninghub-bridge.js') &&

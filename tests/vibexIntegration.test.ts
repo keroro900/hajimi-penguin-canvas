@@ -59,6 +59,9 @@ test('Canvas exposes VibeX as a toolbar workflow, canvas node, and postMessage r
   assert.match(node, /allow-downloads/);
   assert.match(node, /新窗口/);
   assert.match(node, /注册 RH/);
+  assert.match(node, /resources\/extension\/web-image-reverse\//);
+  assert.match(node, /Chrome 扩展程序/);
+  assert.match(node, /加载已解压/);
   assert.match(node, /openUrl\(RUNNINGHUB_INVITE_URL\)/);
   assert.match(node, /isFrameMode\(data\?\.vibexFrameMode\)\s*\?\s*data\.vibexFrameMode\s*:\s*['"]online['"]/);
   assert.match(node, /\(\['online',\s*'custom'\]\s*as\s*VibeXFrameMode\[\]\)/);

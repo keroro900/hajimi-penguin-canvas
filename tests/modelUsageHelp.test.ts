@@ -12,6 +12,7 @@ test('model usage help text includes current image, video, audio and LLM notes',
   assert.match(canvasSource, /gpt-image-2-2k模型是备用模型，非gpt-image-2模型分支，直接支持2k，目前0\.1积分,2026\.06\.10新增（default分组）/);
   assert.match(canvasSource, /gpt-image-2-4k模型是备用模型，非gpt-image-2模型分支，直接支持2k，目前0\.1积分,2026\.06\.10新增（default分组）/);
   assert.match(canvasSource, /veo-omni模型，需要使用default分组（veo-omnii模型是2026\.06\.06刚上架的）/);
+  assert.match(canvasSource, /20250624更新，seedance2\.0新增mini模型（720P是满血版的一半），支持原生4K，电影级质感（仅满血720P可选）/);
   assert.match(canvasSource, /grok-video模型，需要看下网站左侧分类教程，有多个分组可用，目前比较稳的是fal模型和默认分组/);
   assert.match(canvasSource, /2026\.06\.11修复grok-video-3模型的defualt默认分组，直接升级成imagine 1\.5模型，0\.5积分10秒，2026\.06\.12新增grok-video-1\.5-6s，grok-video-1\.5-10s，grok-video-1\.5-15s模型，默认720P，分组default，3个模型，分别是0\.5，0\.7，0\.7积分，最佳SD2\.0平替/);
   assert.match(canvasSource, /sora-2模型，支持sora-vip分组以及default默认分组的FAL模型/);

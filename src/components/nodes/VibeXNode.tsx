@@ -1,6 +1,6 @@
 import { memo, useCallback, useMemo, useState, useEffect } from 'react';
 import { Handle, Position, useUpdateNodeInternals, type NodeProps, type ResizeParams } from '@xyflow/react';
-import { Clapperboard, ExternalLink, Maximize2, RefreshCw, UserPlus, Wifi } from 'lucide-react';
+import { Clapperboard, ExternalLink, Maximize2, Puzzle, RefreshCw, UserPlus, Wifi } from 'lucide-react';
 import {
   buildVibeXFrameUrl,
   RUNNINGHUB_INVITE_URL,
@@ -16,9 +16,11 @@ const MIN_VIBEX_NODE_WIDTH = 760;
 const MIN_VIBEX_NODE_HEIGHT = 620;
 const MAX_VIBEX_NODE_WIDTH = 1500;
 const MAX_VIBEX_NODE_HEIGHT = 1120;
-const VIBEX_FRAME_CHROME_HEIGHT = 170;
+const VIBEX_FRAME_CHROME_HEIGHT = 202;
 const VIBEX_CUSTOM_URL_EXTRA_HEIGHT = 48;
 const MIN_VIBEX_FRAME_HEIGHT = 420;
+const WEB_IMAGE_EXTENSION_INSTALL_DIR = 'resources/extension/web-image-reverse/';
+const WEB_IMAGE_EXTENSION_INSTALL_STEPS = 'Chrome 扩展程序 -> 开发者模式 -> 加载已解压';
 
 function clampNumber(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
@@ -216,6 +218,18 @@ const VibeXNode = (props: NodeProps) => {
             <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-white px-2.5 py-1 text-[11px] text-slate-600 ring-1 ring-cyan-200">
               <Wifi size={12} />
               线上嵌入，结果可通过“发送到 T8 画布”回传
+            </span>
+          </div>
+
+          <div className="flex shrink-0 items-center gap-2 rounded-xl border border-cyan-200 bg-white/85 px-3 py-2 text-[11px] text-slate-600 shadow-sm">
+            <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-cyan-100 text-cyan-800 ring-1 ring-cyan-200">
+              <Puzzle size={13} />
+            </span>
+            <span className="shrink-0 font-bold text-cyan-900">插件安装</span>
+            <span className="min-w-0 flex-1 truncate">
+              打包版目录：<code className="rounded bg-cyan-50 px-1 font-semibold text-cyan-900">{WEB_IMAGE_EXTENSION_INSTALL_DIR}</code>
+              <span className="mx-1 text-cyan-500">·</span>
+              {WEB_IMAGE_EXTENSION_INSTALL_STEPS}
             </span>
           </div>
 

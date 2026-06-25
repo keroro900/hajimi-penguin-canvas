@@ -44,6 +44,40 @@ export interface BatchProgressSummary {
   status: 'idle' | 'running' | 'success' | 'error';
 }
 
+export type BatchProcessorOperation = 'trim' | 'cutout' | 'expand' | 'upscale';
+
+export const BATCH_PROCESSOR_OPERATION_FIELDS: Record<BatchProcessorOperation, string> = {
+  trim: 'batchProcessorTrimBlackBars',
+  cutout: 'batchProcessorRemoveBg',
+  expand: 'batchProcessorExpandCanvas',
+  upscale: 'batchProcessorUpscale',
+};
+
+export const BATCH_PROCESSOR_OPERATION_ORDER: BatchProcessorOperation[] = ['trim', 'cutout', 'expand', 'upscale'];
+
+export function resolveBatchProcessorOperation(input: Record<string, unknown> = {}): BatchProcessorOperation | null {
+  const explicit = input.batchProcessorOperation;
+  if (typeof explicit === 'string' && (BATCH_PROCESSOR_OPERATION_ORDER as string[]).includes(explicit)) {
+    return explicit as BatchProcessorOperation;
+  }
+  for (const operation of BATCH_PROCESSOR_OPERATION_ORDER) {
+    if (Boolean(input[BATCH_PROCESSOR_OPERATION_FIELDS[operation]])) return operation;
+  }
+  return null;
+}
+
+export function createExclusiveBatchProcessorOperationPatch(
+  operation: BatchProcessorOperation | null,
+): Record<string, string | boolean> {
+  return {
+    batchProcessorOperation: operation || '',
+    batchProcessorTrimBlackBars: operation === 'trim',
+    batchProcessorRemoveBg: operation === 'cutout',
+    batchProcessorExpandCanvas: operation === 'expand',
+    batchProcessorUpscale: operation === 'upscale',
+  };
+}
+
 export type BatchWorkPoolItemStatus = 'start' | 'retry' | 'success' | 'error' | 'cancelled';
 
 export interface BatchWorkPoolItemEvent<T> {

@@ -1,7 +1,73 @@
 {
   "$schema": "本文件为 T8-penguin-canvas 节点清单防丢失锁,任何节点删减都需要在 roadmap.md 中说明并更新本文件。",
-  "version": "2.3.5",
-  "lastUpdated": "2026-06-25-v235-electron-release-r512",
+  "version": "2.3.6",
+  "lastUpdated": "2026-06-25-v236-electron-release",
+  "electronReleaseV236": {
+    "version": "2.3.6",
+    "status": "electron-release",
+    "date": "2026-06-25",
+    "description": "v2.3.6 Electron 自动更新版：收口 VibeX 插件安装提示、批量素材处理单策略与并发状态显示、顶部教程第十三弹和左下角模型注意事项更新。",
+    "highlights": [
+      "VibeX 工作台顶部补充网页图片反推 Chrome 插件的安装目录与步骤说明，提示用户从 Electron 安装目录的 resources/extension/web-image-reverse/ 加载已解压扩展。",
+      "网页图片反推 / RunningHub / VibeX 桥接 Chrome 插件 manifest 版本升级到 1.1.0；Electron 打包继续通过 extraResources 带上 extension/**，post-build 校验 manifest、background、content、runninghub-bridge 和样式文件。",
+      "批量素材处理节点改为一次只启用一种处理策略，避免同时启用抠图、扩图、高清放大后实际链路不清晰。",
+      "批量素材处理素材队列新增等待、处理中、完成和失败状态标记，并发执行时用户可以直接看到当前处理到哪个素材。",
+      "左下角模型注意事项更新：补充 Seedance2.0 mini、原生4K、满血 720P，以及 FAL / Seedance 预扣后多退少补说明。",
+      "顶部画布教程更新到第十三弹，覆盖牧场物语主题、放置栏收缩、图像编辑 Shift 等比例 / 实心图形 / 抠图、网页图片反推插件、历史记录和 Agnes 多模态能力。"
+    ],
+    "releaseFiles": [
+      "package.json",
+      "package-lock.json",
+      "vite.config.ts",
+      "vite.config.js",
+      "electron/main.cjs",
+      "backend/src/config.js",
+      "features.json",
+      "README.md",
+      "release-notes/v2.3.6.md",
+      "extension/manifest.json",
+      "extension/scripts/background.js",
+      "extension/scripts/content.js",
+      "extension/scripts/runninghub-bridge.js",
+      "extension/styles/content.css",
+      "src/App.tsx",
+      "src/components/Canvas.tsx",
+      "src/components/nodes/BatchProcessorNode.tsx",
+      "src/components/nodes/VibeXNode.tsx",
+      "src/utils/batchProcessor.ts",
+      "tests/batchProcessor.test.ts",
+      "tests/modelUsageHelp.test.ts",
+      "tests/updateMdRegressions.test.ts",
+      "tests/vibexBrowserBridge.test.ts",
+      "tests/vibexIntegration.test.ts"
+    ],
+    "packaging": {
+      "script": "T8_RELEASE_APPROVAL=release-2.3.6 npm run dist:release（仅在用户明确要求发布时使用）",
+      "installer": "dist_electron/T8-PenguinCanvas-Setup-2.3.6.exe",
+      "blockmap": "dist_electron/T8-PenguinCanvas-Setup-2.3.6.exe.blockmap",
+      "latestYml": "dist_electron/latest.yml",
+      "updater": "GitHub Release v2.3.6 作为 latest.yml 自动更新源；安装继续使用前台 NSIS 向导，不静默安装。",
+      "releaseUrl": "https://github.com/T8mars/T8-penguin-canvas/releases/tag/v2.3.6",
+      "webImageReverseExtensionInstallDir": "安装后从 Electron 安装目录的 resources/extension/web-image-reverse/ 作为 Chrome 加载已解压扩展程序的目录。"
+    },
+    "releaseBoundary": [
+      "公开源码继续禁止 skill.md、roadmap.md、local-private/**、hermes-agent/**、comfyui-anima-t8/**、Electron 缓存目录、artifacts/**、vibex/** 本地完整子项目、本地维护者工具源码和任何私有计费/支付/充值/分组令牌实现进入 GitHub。",
+      "网页图片反推 Chrome 插件源码与 RunningHub/VibeX 桥接脚本必须保持在公开提交内：extension/manifest.json、extension/scripts/background.js、extension/scripts/content.js、extension/scripts/runninghub-bridge.js、extension/styles/content.css；浏览器已安装状态、真实 API Key 和本地调试数据不进入仓库。",
+      "Release 资产只上传 NSIS 安装包、blockmap 与 latest.yml。",
+      "npm run dist:release 与 npm run release:github 默认拒绝执行发布；必须设置 T8_RELEASE_APPROVAL=release-2.3.6，且只能在用户明确要求发布后设置。",
+      "2026-06-25 R513 正式发布：本轮来自用户明确发布授权，允许设置 T8_RELEASE_APPROVAL=release-2.3.6 运行 Electron 打包与 GitHub Release 上传链路。"
+    ],
+    "verification": [
+      "node --test tests\\vibexIntegration.test.ts tests\\vibexBrowserBridge.test.ts tests\\batchProcessor.test.ts tests\\modelUsageHelp.test.ts tests\\updateMdRegressions.test.ts",
+      "node -e \"JSON.parse(require('fs').readFileSync('features.json','utf8'))\"",
+      "npm run type-check",
+      "npm run public:check",
+      "npm run rh-toolbox:check",
+      "npm run build",
+      "T8_RELEASE_APPROVAL=release-2.3.6 npm run dist:release",
+      "npm run release:verify -- v2.3.6"
+    ]
+  },
   "electronReleaseV235": {
     "version": "2.3.5",
     "status": "electron-release",
@@ -109,6 +175,26 @@
       "npm run build",
       "T8_RELEASE_APPROVAL=release-2.3.5 npm run dist:release",
       "npm run release:verify -- v2.3.5"
+    ]
+  },
+  "vibexExtensionInstallNoticeV236Dev": {
+    "version": "2.3.6",
+    "status": "included-in-electron-release",
+    "date": "2026-06-25",
+    "description": "VibeX 工作台顶部补充网页图片反推 Chrome 插件的打包目录与安装说明，并把插件 manifest 版本提升到 v1.1.0；该能力已纳入 v2.3.6 自动更新发布。",
+    "sourceFiles": [
+      "src/components/nodes/VibeXNode.tsx",
+      "extension/manifest.json",
+      "tests/vibexIntegration.test.ts",
+      "tests/vibexBrowserBridge.test.ts"
+    ],
+    "capabilities": [
+      "VibeX 工作台顶部显示打包版插件目录 resources/extension/web-image-reverse/。",
+      "VibeX 工作台顶部提示 Chrome 扩展程序 -> 开发者模式 -> 加载已解压 的安装路径。",
+      "网页图片反推 / RunningHub VibeX 桥接 Chrome 插件版本号升级为 1.1.0。"
+    ],
+    "verification": [
+      "node --test tests\\vibexIntegration.test.ts tests\\vibexBrowserBridge.test.ts"
     ]
   },
   "electronReleaseV234": {
@@ -2460,7 +2546,7 @@
   "canvasTutorialTopbarPanel": {
     "status": "implemented",
     "date": "2026-06-14",
-    "description": "顶部栏在“最新应用”左侧新增“画布教程”入口，按第一弹到第十二弹整理 T8 画布教程 Bilibili / Youtube 链接；“最新应用 · RunningHub”弹窗移除“获取 RH ApiKey”快捷入口，只保留 RunningHub 国内/海外站和邀请码提示。",
+    "description": "顶部栏在“最新应用”左侧新增“画布教程”入口，按第一弹到第十三弹整理 T8 画布教程 Bilibili / Youtube 链接；“最新应用 · RunningHub”弹窗移除“获取 RH ApiKey”快捷入口，只保留 RunningHub 国内/海外站和邀请码提示。",
     "paths": [
       "src/App.tsx",
       "tests/updateMdRegressions.test.ts",
@@ -2527,6 +2613,11 @@
         "title": "教程第十二弹（grok agent的节点修复图生视频功能，新增视频延展及视频编辑功能，新增codex cli agent节点，简约模式和创作台模式，新增Codex生图工作台节点，新增自定义快捷圆盘，FAL超市新增10多个新模型，视频节点新增3个grok video 1.5模型，解锁成就系统所有隐藏模式的奖励影片，新增俄罗斯方块主题及小游戏）",
         "bilibili": "https://www.bilibili.com/video/BV1phJs6oE2g/",
         "youtube": "https://www.youtube.com/watch?v=BKV8YA-kKK4"
+      },
+      {
+        "title": "教程第十三弹（新增牧场物语主题及养成游戏，放置栏可收缩，修复侧边栏按钮常驻BUG，3D全景节点新增2:1尺寸，修复部分用户无法新增资源库分类，新增画板及图像编辑功能Shift正圆、正方形及实心素材、抠图功能等，新增Chrome插件支持任意网络图像反推生成并发送画布，新增跨画布完成通知，优化ComfyUI节点，新增自定义系统字体，支持Agnes APIKey多模态模型免费调用，新增历史记录）",
+        "bilibili": "https://www.bilibili.com/video/BV1tYjy6jEuG/",
+        "youtube": "https://www.youtube.com/watch?v=AH24lGHA9E0"
       }
     ],
     "verification": [
@@ -3298,11 +3389,11 @@
       "T8_RUNTIME_CACHE_DIR": "可选，覆盖运行时归档解压缓存目录；默认打包模式为 %APPDATA%/t8-penguin-canvas/runtime-cache",
       "T8_ENABLE_LOCAL_PRIVATE": "可选，0=强制关闭本机 local-private/extensions 私有扩展；默认只要本机 ignored 私有扩展存在，开发环境和本机打包 release 都会自动带入。GitHub/clean clone 因为没有 local-private 目录，所以不会带充值实现。"
     },
-    "version": "2.3.5",
-    "semverVersion": "2.3.5",
+    "version": "2.3.6",
+    "semverVersion": "2.3.6",
     "versionNumberPolicy": "T8 版本号仍采用 x.y.z 三段，但每一段只允许 0-9；任一段到 9 后下一次发布必须向左进位，禁止任一段出现两位数字。例：1.9.9 的下一版必须是 2.0.0。",
-    "versionNote": "v1.3.0 起统一采用三段阶段号 x.y.z；当前发布版本为 v2.3.5，发布 VibeX 工作台、线上/插件回传桥接、批量素材 RH 能力层并发和大画布性能护栏；公开源码仍排除本地私有计费/支付/充值/分组令牌实现。",
-    "installer": "v2.3.5 作为 Electron 自动更新发布版本：npm run dist:release 与 npm run release:github 继续带 T8_RELEASE_APPROVAL=release-2.3.5 防误触闸，只有用户明确要求发布后才能设置该变量并发布自动更新资产。",
+    "versionNote": "v1.3.0 起统一采用三段阶段号 x.y.z；当前发布版本为 v2.3.6，发布 VibeX 插件安装提示、批量素材单策略与并发状态标记、顶部教程第十三弹和模型注意事项更新；公开源码仍排除本地私有计费/支付/充值/分组令牌实现。",
+    "installer": "v2.3.6 作为 Electron 自动更新发布版本：npm run dist:release 与 npm run release:github 继续带 T8_RELEASE_APPROVAL=release-2.3.6 防误触闸，只有用户明确要求发布后才能设置该变量并发布自动更新资产。",
     "updaterInstallMode": "自动更新下载完成后不得静默安装：main.cjs 必须设置 autoInstallOnAppQuit=false，显式安装调用 quitAndInstall(false,true)；electron/build-resources/installer.nsh 通过 SetSilent normal 让新版 NSIS 安装器即使收到旧客户端传入的 /S 也尽量切回前台安装向导。",
     "installerShortcutPolicy": "安装完成后必须创建桌面和开始菜单快捷方式：package.json build.nsis.createDesktopShortcut 必须为 \"always\"，createStartMenuShortcut 必须为 true；electron/build-resources/installer.nsh 必须保留 customInstall 兜底 CreateShortCut \"$newStartMenuLink\" 与 \"$DESKTOP\\${SHORTCUT_NAME}.lnk\"，防止更新安装/keepShortcuts 路径遗漏入口。",
     "updaterEntryPolicy": "顶栏桌面更新入口不得只因 window.t8pc.updater 缺失就静默消失；Electron UA 或 t8pc.getInfo/openExternal 可用时必须显示诊断入口，提示重新安装完整桌面包，Web/纯浏览器环境才隐藏。状态为 not-available 时按钮仍保留“更新”字样，避免用户误以为自动更新入口被删除。",

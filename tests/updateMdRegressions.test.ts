@@ -243,11 +243,15 @@ test('topbar canvas tutorial panel replaces RH ApiKey shortcut in latest apps', 
   assert.match(app, /教程第十二弹/);
   assert.match(app, /BV1phJs6oE2g/);
   assert.match(app, /BKV8YA-kKK4/);
+  assert.match(app, /教程第十三弹/);
+  assert.match(app, /牧场物语主题/);
+  assert.match(app, /BV1tYjy6jEuG/);
+  assert.match(app, /AH24lGHA9E0/);
   assert.ok(app.indexOf('画布教程') < app.indexOf('最新应用'));
   assert.doesNotMatch(app, /获取 RH ApiKey/);
   assert.doesNotMatch(app, /enterprise-api\/consumerApi/);
   assert.match(features, /canvasTutorialTopbarPanel/);
-  assert.match(features, /教程第十二弹/);
-  assert.match(features, /BV1phJs6oE2g/);
-  assert.match(features, /BKV8YA-kKK4/);
+  assert.match(features, /教程第十三弹/);
+  assert.match(features, /BV1tYjy6jEuG/);
+  assert.match(features, /AH24lGHA9E0/);
 });
