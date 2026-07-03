@@ -5,6 +5,20 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+# Local agent/runtime scratch
+.agents/
+.codex-run-logs/
+.codex-runtime-logs/
+.codex-tmp/
+.playwright-mcp/
+.superpowers/
+tmp/
+tmp-*.cjs
+/*.png
+/.last-merge-backup.txt
+/_test_body.json
+*.log.err
+
 # Editor
 .vscode/*
 !.vscode/extensions.json
@@ -84,6 +98,13 @@ _preview_*.svg
 /tools/runtime-archives/**
 !/tools/runtime-archives/
 !/tools/runtime-archives/README.md
+/tools/ffmpeg-runtime/**
+!/tools/ffmpeg-runtime/
+!/tools/ffmpeg-runtime/README.md
+
+# Local release/package artifacts
+/release_packages/
+/dist_electron_verify/
 
 # Dependencies
 node_modules
