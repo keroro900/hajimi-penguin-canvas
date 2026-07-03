@@ -794,7 +794,7 @@ export default function ClipStudioEditor({
     enabled: Boolean(open && generationPanelClipId),
     refs: generationPanelRef,
     onOutside: () => setGenerationPanelClipId(''),
-    ignoreSelector: 'input, textarea, select, [contenteditable="true"]',
+    ignoreSelector: 'input, textarea, select, [contenteditable="true"], [data-clip-generation-inline-actions], [data-clip-generation-inline-settings]',
   });
 
   const commitGenerationPromptDraft = (nextPrompt: string) => {
@@ -1130,7 +1130,7 @@ export default function ClipStudioEditor({
     }
     const added = addGenerationMaterialRefForVisual(visualId, generation, generationReferenceSupportFor(generation), material);
     showCommandFeedback(added ? '素材已作为生成参考' : '参考已存在或当前模型不支持');
-    if (added) setGenerationPanelClipId(visualId);
+    if (added) openGenerationPanelForClip(visualId);
   };
   const maxOccupiedVisualLane = useMemo(() => (
     Math.max(0, ...timelineLayout.items.map((item) => Math.max(0, Math.round(Number(item.lane || 0)))))
@@ -1246,9 +1246,12 @@ export default function ClipStudioEditor({
       showCommandFeedback('没有匹配的生成片段');
       return;
     }
-    selectClip(target.id);
-    seekPlayhead(Math.max(0, Number(target.start || 0)), { selectPlayback: false });
-    if (target.generation?.status !== 'success') setGenerationPanelClipId(target.id);
+    if (target.generation?.status !== 'success') {
+      openGenerationPanelForClip(target.id, Math.max(0, Number(target.start || 0)));
+    } else {
+      selectClip(target.id);
+      seekPlayhead(Math.max(0, Number(target.start || 0)), { selectPlayback: false });
+    }
     const lane = Math.max(0, Math.round(Number(target.lane || 0)));
     const laneIndex = visibleVisualLanes.indexOf(lane);
     const top = laneIndex >= 0 ? visualLaneTopOffsetForIndex(laneIndex) : 0;
@@ -1342,13 +1345,6 @@ export default function ClipStudioEditor({
   useEffect(() => {
     setPlayheadTime((value) => Math.min(value, duration));
   }, [duration]);
-
-  useEffect(() => {
-    const activeId = playbackVisibleState?.item.id || '';
-    if (!activeId || activeId === selectedId) return;
-    setSelectedId(activeId);
-    setSelectedIds([activeId]);
-  }, [playbackVisibleState?.item.id, selectedId]);
 
   useEffect(() => {
     if (!coverOpen) setCoverDraftTime(coverTime || playheadTime || 0);
@@ -1670,7 +1666,7 @@ export default function ClipStudioEditor({
   };
   const runPendingGenerationClips = async () => {
     if (firstBlockedGeneration) {
-      setGenerationPanelClipId(firstBlockedGeneration.id || '');
+      openGenerationPanelForClip(firstBlockedGeneration.id || '', Math.max(0, Number(firstBlockedGeneration.start || 0)));
       showCommandFeedback('先补全生成提示词');
       return;
     }
@@ -1684,7 +1680,7 @@ export default function ClipStudioEditor({
   const retryErroredGenerationClips = async () => {
     const firstBlockedError = erroredGenerationVisuals.find((item) => !item.generation?.prompt?.trim());
     if (firstBlockedError) {
-      setGenerationPanelClipId(firstBlockedError.id || '');
+      openGenerationPanelForClip(firstBlockedError.id || '', Math.max(0, Number(firstBlockedError.start || 0)));
       showCommandFeedback('先补全失败片段提示词');
       return;
     }
@@ -2000,6 +1996,13 @@ export default function ClipStudioEditor({
     if (options.selectPlayback !== false && nextState?.item.id) setSelectedIds([nextState.item.id]);
     const video = previewVideoRef.current;
     if (video) video.currentTime = nextState?.localTime || 0;
+  };
+
+  const openGenerationPanelForClip = (visualId: string, start?: number) => {
+    if (!visualId) return;
+    selectClip(visualId);
+    if (start != null) seekPlayhead(start, { selectPlayback: false });
+    setGenerationPanelClipId(visualId);
   };
 
   const seekFromClientX = (clientX: number) => {
@@ -4401,7 +4404,7 @@ export default function ClipStudioEditor({
                                           onClick={(event) => {
                                             event.preventDefault();
                                             event.stopPropagation();
-                                            setGenerationPanelClipId(item.id || '');
+                                            openGenerationPanelForClip(item.id || '', item.start);
                                           }}
                                         >
                                           <SlidersHorizontal size={11} />

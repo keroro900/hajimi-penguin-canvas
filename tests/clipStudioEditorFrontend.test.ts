@@ -207,14 +207,24 @@ test('clip studio opens generation settings only from clicked unfinished generat
   assert.match(source, /const generationPanelRef = useRef<HTMLDivElement>\(null\)/);
   assert.match(source, /useOutsideClose\(\{\s*enabled: Boolean\(open && generationPanelClipId\)/);
   assert.match(source, /onOutside: \(\) => setGenerationPanelClipId\(''\)/);
-  assert.match(source, /ignoreSelector: 'input, textarea, select, \[contenteditable="true"\]'/);
+  assert.match(source, /ignoreSelector: 'input, textarea, select, \[contenteditable="true"\], \[data-clip-generation-inline-actions\], \[data-clip-generation-inline-settings\]'/);
   assert.match(source, /ref=\{generationPanelRef\}/);
   assert.match(source, /timelineVisuals\.find\(\(item\) => item\.id === generationPanelClipId && item\.generation && item\.generation\.status !== 'success'\)/);
   assert.match(source, /if \(!panelVisual\?\.generation \|\| panelVisual\.generation\.status === 'success'\) \{\s*setGenerationPanelClipId\(''\);/);
   assert.doesNotMatch(source, /onClick=\{\(event\) => \{[\s\S]{0,260}if \(item\.generation && item\.generation\.status !== 'success'\) \{\s*setGenerationPanelClipId\(item\.id \|\| ''\);/);
-  assert.match(source, /data-clip-generation-inline-settings[\s\S]{0,420}setGenerationPanelClipId\(item\.id \|\| ''\)/);
+  assert.match(source, /data-clip-generation-inline-settings[\s\S]{0,460}openGenerationPanelForClip\(item\.id \|\| '', item\.start\)/);
   assert.doesNotMatch(source, /else \{\s*setGenerationPanelClipId\(''\);/);
   assert.doesNotMatch(source, /const selectedGenerationVisual = selectedTimelineVisual/);
+});
+
+test('clip studio keeps the generation popover and inspector on the same clicked clip', () => {
+  assert.match(source, /const openGenerationPanelForClip = \(visualId: string,\s*start\?: number\) =>/);
+  assert.match(source, /if \(!visualId\) return/);
+  assert.match(source, /selectClip\(visualId\)/);
+  assert.match(source, /if \(start != null\) seekPlayhead\(start,\s*\{ selectPlayback: false \}\)/);
+  assert.match(source, /setGenerationPanelClipId\(visualId\)/);
+  assert.match(source, /data-clip-generation-inline-settings[\s\S]{0,460}openGenerationPanelForClip\(item\.id \|\| '', item\.start\)/);
+  assert.doesNotMatch(source, /const activeId = playbackVisibleState\?\.item\.id \|\| ''[\s\S]{0,180}setSelectedId\(activeId\)/);
 });
 
 test('clip studio generation popover avoids covering the active track and viewport edges', () => {
@@ -279,7 +289,7 @@ test('clip studio keeps clicked timeline clip selected for delete even when trac
   assert.match(source, /if \(options\.selectPlayback !== false && nextState\?\.item\.id\) setSelectedId\(nextState\.item\.id\)/);
   assert.match(source, /seekPlayhead\(item\.start,\s*\{ selectPlayback: false \}\);\s*setSelectedId\(item\.id \|\| ''\);/);
   assert.doesNotMatch(source, /if \(item\.generation && item\.generation\.status !== 'success'\) \{\s*setGenerationPanelClipId\(item\.id \|\| ''\);/);
-  assert.match(source, /data-clip-generation-inline-settings[\s\S]{0,420}setGenerationPanelClipId\(item\.id \|\| ''\)/);
+  assert.match(source, /data-clip-generation-inline-settings[\s\S]{0,460}openGenerationPanelForClip\(item\.id \|\| '', item\.start\)/);
   assert.match(source, /removeSelectedClip\(\)/);
   assert.doesNotMatch(source, /setSelectedId\(item\.id \|\| ''\);\s*if \(item\.generation[\s\S]{0,180}seekPlayhead\(item\.start\);/);
 });
@@ -998,16 +1008,14 @@ test('clip studio exposes a compact AI generation queue bar', () => {
   assert.match(source, /data-clip-generation-batch-run/);
   assert.match(source, /data-clip-generation-batch-retry/);
   assert.match(source, /data-clip-generation-filter=\{filter\.id\}/);
-  assert.match(source, /setGenerationPanelClipId\(firstBlockedGeneration\.id \|\| ''\)/);
+  assert.match(source, /openGenerationPanelForClip\(firstBlockedGeneration\.id \|\| '',\s*Math\.max\(0, Number\(firstBlockedGeneration\.start \|\| 0\)\)\)/);
   assert.match(globalCss, /\.t8-clip-generation-queue-bar/);
 });
 
 test('clip studio generation queue chips jump to the first matching problem clip', () => {
   assert.match(source, /const focusGenerationQueueItem = \(kind: 'missingPrompt' \| 'runnable' \| 'error' \| 'unfinished'\) =>/);
   assert.match(source, /const target = generationTrackItems\.find\(\(item\) =>/);
-  assert.match(source, /selectClip\(target\.id\)/);
-  assert.match(source, /seekPlayhead\(Math\.max\(0, Number\(target\.start \|\| 0\)\), \{ selectPlayback: false \}\)/);
-  assert.match(source, /setGenerationPanelClipId\(target\.id\)/);
+  assert.match(source, /openGenerationPanelForClip\(target\.id,\s*Math\.max\(0, Number\(target\.start \|\| 0\)\)\)/);
   assert.match(source, /timelineScrollRef\.current\?\.scrollTo/);
   assert.match(source, /data-clip-generation-queue-jump="missingPrompt"/);
   assert.match(source, /data-clip-generation-queue-jump="runnable"/);
@@ -1021,7 +1029,7 @@ test('clip studio generation clips expose inline run retry and settings actions'
   assert.match(source, /data-clip-generation-inline-run/);
   assert.match(source, /void onRunGenerationClip\(item\.id \|\| ''\)/);
   assert.match(source, /data-clip-generation-inline-settings/);
-  assert.match(source, /setGenerationPanelClipId\(item\.id \|\| ''\)/);
+  assert.match(source, /openGenerationPanelForClip\(item\.id \|\| '', item\.start\)/);
   assert.match(globalCss, /\.t8-clip-generation-inline-actions/);
   assert.match(globalCss, /\.t8-clip-visual\.is-generation-filtered-out/);
 });
