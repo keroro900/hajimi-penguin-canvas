@@ -127,7 +127,6 @@ type ClipGenerationInsertDraft = Partial<ClipTimelineInsertTiming> & {
   params?: Record<string, unknown>;
   refs?: ClipGenerationRef[];
 };
-type ClipParamSectionId = 'generation' | 'base' | 'color' | 'motion' | 'transition';
 
 const CLIP_FILTER_PRESETS: Array<{ id: ClipFilterPreset; label: string; group: '调色预设 · 常用场景' | '开源滤镜 · CSSgram' | '视频效果 · FFmpeg' }> = [
   { id: 'none', label: '无滤镜', group: '调色预设 · 常用场景' },
@@ -538,6 +537,7 @@ export default function ClipStudioEditor({
   const [isDragOverImport, setIsDragOverImport] = useState(false);
   const [visualMaterialDragY, setVisualMaterialDragY] = useState<number | null>(null);
   const [visualLaneInsertIntent, setVisualLaneInsertIntent] = useState<'top' | 'bottom' | null>(null);
+  const [timelineScrollVersion, setTimelineScrollVersion] = useState(0);
   const [trackVisibility, setTrackVisibility] = useState<Record<string, boolean>>({});
   const [trackLocks, setTrackLocks] = useState<Record<string, boolean>>({});
   const [trackSolo, setTrackSolo] = useState('');
@@ -593,6 +593,7 @@ export default function ClipStudioEditor({
   const resizeStateRef = useRef<typeof resizeState>(null);
   const trackResizeStateRef = useRef<typeof trackResizeState>(null);
   const timelineScrubActiveRef = useRef(timelineScrubActive);
+  const timelineScrollFrameRef = useRef<number | null>(null);
   const playbackFrameRef = useRef<number | null>(null);
   const lastPlaybackTickRef = useRef<number | null>(null);
   const commandFeedbackTimerRef = useRef<number | null>(null);
@@ -1260,27 +1261,45 @@ export default function ClipStudioEditor({
     showCommandFeedback(kind === 'missingPrompt' ? '已定位缺提示词片段' : kind === 'runnable' ? '已定位可生成片段' : kind === 'error' ? '已定位失败片段' : '已定位待处理片段');
   };
   const selectedGenerationTimelineItem = timelineLayout.items.find((item) => item.id === selectedGenerationVisual?.id);
+  const timelineScrollLeft = useMemo(() => timelineScrollRef.current?.scrollLeft || 0, [timelineScrollVersion]);
+  const timelineScrollTop = useMemo(() => timelineScrollRef.current?.scrollTop || 0, [timelineScrollVersion]);
   const generationPanelAnchorLane = Math.max(0, Math.round(Number(selectedGenerationTimelineItem?.lane || selectedGenerationVisual?.lane || 0)));
   const generationPanelAnchorLaneIndex = visibleVisualLanes.indexOf(generationPanelAnchorLane);
   const generationPanelWidth = Math.min(360, Math.max(280, Math.min(timelineContentWidth - 24, 360)));
-  const generationPanelEstimatedHeight = 236;
+  const generationPanelEstimatedHeight = 300;
   const generationPanelAnchorTop = visualLaneTopOffsetForIndex(generationPanelAnchorLaneIndex);
   const generationPanelAnchorHeight = visualLaneHeightFor(generationPanelAnchorLane);
-  const generationPanelBelowTop = 12 + layoutState.topHeight + 8 + 40 + 40 + generationPanelAnchorTop + generationPanelAnchorHeight + 10 - (timelineScrollRef.current?.scrollTop || 0);
-  const generationPanelAboveTop = 12 + layoutState.topHeight + 8 + 40 + 40 + generationPanelAnchorTop - generationPanelEstimatedHeight - 10 - (timelineScrollRef.current?.scrollTop || 0);
+  const generationPanelShellRect = editorShellRef.current?.getBoundingClientRect();
+  const generationPanelTrackRect = timelineTrackRef.current?.getBoundingClientRect();
+  const generationPanelContentRect = timelineContentRef.current?.getBoundingClientRect();
+  const generationPanelViewportWidth = editorShellRef.current?.clientWidth || (typeof window !== 'undefined' ? window.innerWidth : 1280);
   const generationPanelViewportHeight = editorShellRef.current?.clientHeight || (typeof window !== 'undefined' ? window.innerHeight : 720);
-  const generationPanelShouldOpenUp = (generationPanelAnchorLaneIndex >= Math.ceil(visibleVisualLanes.length / 2) || generationPanelBelowTop + generationPanelEstimatedHeight > generationPanelViewportHeight - 20) && generationPanelAboveTop >= 12;
+  const generationPanelTrackTop = generationPanelShellRect && generationPanelTrackRect
+    ? generationPanelTrackRect.top - generationPanelShellRect.top
+    : 12 + layoutState.topHeight + 8 + 40 + 40 - timelineScrollTop;
+  const generationPanelContentLeft = generationPanelShellRect && generationPanelContentRect
+    ? generationPanelContentRect.left - generationPanelShellRect.left
+    : 12 + 180 - timelineScrollLeft;
+  const generationPanelAnchorY = generationPanelTrackTop + generationPanelAnchorTop;
+  const generationPanelAnchorBottom = generationPanelAnchorY + generationPanelAnchorHeight;
+  const generationPanelSpaceBelow = generationPanelViewportHeight - generationPanelAnchorBottom - 12;
+  const generationPanelSpaceAbove = generationPanelAnchorY - 12;
+  const generationPanelShouldOpenUp = generationPanelSpaceBelow < generationPanelEstimatedHeight && generationPanelSpaceAbove > generationPanelSpaceBelow;
   const generationPanelDirection = generationPanelShouldOpenUp ? 'up' : 'down';
+  const generationPanelGap = generationPanelDirection === 'up' ? -8 : 8;
+  const generationPanelRawTop = generationPanelDirection === 'up'
+    ? generationPanelAnchorY - generationPanelEstimatedHeight + generationPanelGap
+    : generationPanelAnchorBottom + generationPanelGap;
   const generationPanelAnchorStyle: CSSProperties | undefined = selectedGenerationTimelineItem && generationPanelAnchorLaneIndex >= 0
     ? {
       left: Math.max(
         12,
         Math.min(
-          12 + timelineContentWidth + 180 - generationPanelWidth,
-          12 + 180 + selectedGenerationTimelineItem.left + (selectedGenerationTimelineItem.width / 2) - (generationPanelWidth / 2) - (timelineScrollRef.current?.scrollLeft || 0),
+          Math.max(12, generationPanelViewportWidth - generationPanelWidth - 12),
+          generationPanelContentLeft + selectedGenerationTimelineItem.left + (selectedGenerationTimelineItem.width / 2) - (generationPanelWidth / 2),
         ),
       ),
-      top: Math.max(12, generationPanelShouldOpenUp ? generationPanelAboveTop : generationPanelBelowTop),
+      top: Math.max(12, Math.min(Math.max(12, generationPanelViewportHeight - generationPanelEstimatedHeight - 12), generationPanelRawTop)),
       width: generationPanelWidth,
     }
     : undefined;
@@ -1334,6 +1353,12 @@ export default function ClipStudioEditor({
   useEffect(() => {
     if (!coverOpen) setCoverDraftTime(coverTime || playheadTime || 0);
   }, [coverOpen, coverTime, playheadTime]);
+
+  useEffect(() => () => {
+    if (timelineScrollFrameRef.current != null && typeof window !== 'undefined') {
+      window.cancelAnimationFrame(timelineScrollFrameRef.current);
+    }
+  }, []);
 
   useEffect(() => {
     if (!generationPanelClipId) return;
@@ -1703,9 +1728,21 @@ export default function ClipStudioEditor({
       return { ...current, [trackKey]: nextCollapsed };
     });
   };
-  const scrollParamSectionIntoView = (section: ClipParamSectionId) => {
-    const target = editorShellRef.current?.querySelector(`[data-clip-param-section="${section}"]`) as HTMLElement | null;
-    target?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  const onTimelineScroll = () => {
+    if (timelineScrollFrameRef.current != null) return;
+    if (typeof window === 'undefined') {
+      setTimelineScrollVersion((value) => value + 1);
+      return;
+    }
+    timelineScrollFrameRef.current = window.requestAnimationFrame(() => {
+      timelineScrollFrameRef.current = null;
+      setTimelineScrollVersion((value) => value + 1);
+    });
+  };
+  const handleVisualTrackDragLeave = (event: ReactDragEvent<HTMLDivElement>) => {
+    if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+    setVisualMaterialDragY(null);
+    setVisualLaneInsertIntent(null);
   };
   const openClipContextMenu = (event: ReactMouseEvent, item: { id?: string }, kind: 'visual' | 'audio' | 'text' = 'visual') => {
     if (!item.id) return;
@@ -2170,29 +2207,6 @@ export default function ClipStudioEditor({
     } finally {
       if (lutFileInputRef.current) lutFileInputRef.current.value = '';
     }
-  };
-  const renderVisualParamSectionNav = (includeGeneration = false) => {
-    const sections: Array<[ClipParamSectionId, string]> = [
-      ...(includeGeneration ? [['generation', '生成'] as [ClipParamSectionId, string]] : []),
-      ['base', '基础'],
-      ['color', '调色'],
-      ['motion', '动效'],
-      ['transition', '转场'],
-    ];
-    return (
-    <div data-clip-param-section-nav className="t8-clip-param-section-nav sticky top-[102px] z-10 grid gap-1 rounded border border-[var(--t8-border)] bg-[var(--t8-bg-panel)]/95 p-1 backdrop-blur" style={{ gridTemplateColumns: `repeat(${sections.length}, minmax(0, 1fr))` }}>
-      {sections.map(([id, label]) => (
-        <button
-          key={id}
-          type="button"
-          className={paramActionClass}
-          onClick={() => scrollParamSectionIntoView(id as ClipParamSectionId)}
-        >
-          {label}
-        </button>
-      ))}
-    </div>
-    );
   };
   const renderSelectionSummaryCard = () => {
     if (selectedKind === 'none') return null;
@@ -3127,7 +3141,6 @@ export default function ClipStudioEditor({
             {selectedKind === 'visual' && selectedVisual?.generation ? (
               <div data-clip-generation-draft-panel className={paramPaneClass}>
                 {renderSelectionSummaryCard()}
-                {renderVisualParamSectionNav(true)}
                 <div data-clip-param-section="generation" className={`${paramCardClass} space-y-3`}>
                   <div className="flex items-center justify-between gap-2 text-xs font-black">
                     <span>生成</span>
@@ -3253,15 +3266,14 @@ export default function ClipStudioEditor({
                 <div className={`${paramCardClass} space-y-2`}>
                   <div className="text-xs font-black">素材后期</div>
                   <div className="grid grid-cols-2 gap-2">
-                    <button type="button" className={paramActionClass} onClick={() => setTab('color')}>调色 / LUT</button>
-                    <button type="button" className={paramActionClass} onClick={() => setTab('motion')}>动效 / 关键帧</button>
+                    <button type="button" data-clip-open-color-page className={paramActionClass} onClick={() => setTab('color')}>调色 / LUT</button>
+                    <button type="button" data-clip-open-motion-page className={paramActionClass} onClick={() => setTab('motion')}>动效 / 关键帧</button>
                   </div>
                 </div>
               </div>
             ) : selectedKind === 'visual' && selectedVisual ? (
               <div className={paramPaneClass}>
                 {renderSelectionSummaryCard()}
-                {renderVisualParamSectionNav()}
                 <div data-clip-param-section="base" className={paramCardClass}>
                   <div className="mb-1 text-sm font-black">{sourceName(selectedVisual)}</div>
                   <div className={paramLabelClass}>{selectedVisual.url}</div>
@@ -3302,8 +3314,8 @@ export default function ClipStudioEditor({
                 <div className={`${paramCardClass} space-y-2`}>
                   <div className="text-xs font-black">调色和动效</div>
                   <div className="grid grid-cols-2 gap-2">
-                    <button type="button" className={paramActionClass} onClick={() => setTab('color')}>打开调色</button>
-                    <button type="button" className={paramActionClass} onClick={() => setTab('motion')}>打开动效</button>
+                    <button type="button" data-clip-open-color-page className={paramActionClass} onClick={() => setTab('color')}>打开调色</button>
+                    <button type="button" data-clip-open-motion-page className={paramActionClass} onClick={() => setTab('motion')}>打开动效</button>
                   </div>
                 </div>
                 <div data-clip-param-section="transition" className={`${paramCardClass} space-y-2`}>
@@ -4090,6 +4102,7 @@ export default function ClipStudioEditor({
                   event.preventDefault();
                   el.scrollLeft += event.deltaX || event.deltaY;
                 }}
+                onScroll={onTimelineScroll}
               >
                 <div ref={timelineContentRef} className="relative h-full" style={{ minWidth: timelineContentWidth }}>
                   <div
@@ -4151,10 +4164,7 @@ export default function ClipStudioEditor({
                             const nextIntent = resolveVisualLaneInsertIntent(event.clientY, { previous: visualLaneInsertIntent });
                             setVisualLaneInsertIntent(nextIntent);
                           }}
-                          onDragLeave={() => {
-                            setVisualMaterialDragY(null);
-                            setVisualLaneInsertIntent(null);
-                          }}
+                          onDragLeave={handleVisualTrackDragLeave}
                           onDrop={(event) => {
                             event.preventDefault();
                             setVisualMaterialDragY(null);

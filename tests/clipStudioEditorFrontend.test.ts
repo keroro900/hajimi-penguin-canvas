@@ -218,7 +218,7 @@ test('clip studio opens generation settings only from clicked unfinished generat
 });
 
 test('clip studio generation popover avoids covering the active track and viewport edges', () => {
-  assert.match(source, /const timelineScrollVersion,\s*setTimelineScrollVersion/);
+  assert.match(source, /const \[timelineScrollVersion,\s*setTimelineScrollVersion\] = useState\(0\)/);
   assert.match(source, /onTimelineScroll/);
   assert.match(source, /generationPanelSpaceBelow/);
   assert.match(source, /generationPanelSpaceAbove/);
