@@ -289,7 +289,7 @@ test('Grok OAuth Agent supports slash commands and continuous artifact reference
   assert.match(input, /item\.material\.kind === 'audio' \? '♪' : 'T'/);
   assert.match(input, /function isImeKeyboardEvent/);
   assert.match(input, /keyCode === 229/);
-  assert.match(input, /function stripCompositionLeak/);
+  assert.match(input, /stripLeadingImeAsciiLeak/);
   assert.match(input, /compositionLeakRef/);
   assert.match(input, /lastPlainInputRef/);
 });

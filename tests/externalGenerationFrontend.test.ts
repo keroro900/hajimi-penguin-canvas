@@ -11,6 +11,9 @@ function jsonResponse(body: any, status = 200) {
   return {
     ok: status >= 200 && status < 300,
     status,
+    async text() {
+      return JSON.stringify(body);
+    },
     async json() {
       return body;
     },
@@ -37,12 +40,16 @@ test('generateExternalImage posts to external image route and returns normalized
       prompt: 'draw',
       model: 'flux-dev',
       size: '1024x1024',
+      n: 10,
+      quality: 'high',
       images: ['/files/input/a.png'],
     });
 
     assert.equal(calls[0].url, '/api/proxy/external/image');
     assert.equal(calls[0].body.providerId, 'modelscope');
     assert.equal(calls[0].body.model, 'flux-dev');
+    assert.equal(calls[0].body.n, 10);
+    assert.equal(calls[0].body.quality, 'high');
     assert.deepEqual(result.imageUrls, ['/files/output/external_1.png']);
     assert.deepEqual(result.remoteImageUrls, ['https://cdn.example.com/raw.png']);
   } finally {

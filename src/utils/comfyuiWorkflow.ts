@@ -685,7 +685,7 @@ export function buildComfyWorkflowImportChecklist(
     id: 'output',
     level: analysis.outputCount > 0 ? 'ok' : 'warn',
     label: analysis.outputCount > 0 ? `输出节点 ${analysis.outputCount} 个` : '未找到输出节点',
-    detail: analysis.outputCount > 0 ? 'SaveImage / PreviewImage 等输出会被 T8 自动归一化。' : '请确认 workflow 最后有 SaveImage、PreviewImage、SaveVideo 或 SaveAudio。',
+    detail: analysis.outputCount > 0 ? 'SaveImage / PreviewImage 等输出会被应用自动归一化。' : '请确认 workflow 最后有 SaveImage、PreviewImage、SaveVideo 或 SaveAudio。',
   });
 
   return items;

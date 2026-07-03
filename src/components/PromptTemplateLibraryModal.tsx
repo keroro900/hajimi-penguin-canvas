@@ -858,7 +858,7 @@ export default function PromptTemplateLibraryModal({
 
         <footer className={`flex items-center justify-between gap-2 px-4 py-3 ${isPixel ? 'border-t-2 border-[var(--px-ink)]' : isDark ? 'border-t border-white/10' : 'border-t border-black/10'}`}>
           <div className={`text-[11px] ${subtle}`}>
-            内置模板来自 T8 生成库、Infinite-Canvas 种子模板与公开提示词写法规律；我的模板保存在本机，可导入导出迁移。
+            内置模板来自本地生成模板库、Infinite-Canvas 种子模板与公开提示词写法规律；我的模板保存在本机，可导入导出迁移。
           </div>
           <div className="flex items-center gap-2">
             <input

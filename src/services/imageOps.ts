@@ -3,6 +3,14 @@
  */
 import type { GridComposeRequest } from '../utils/gridEditor';
 
+export type LutCurvePoint = [number, number];
+export type LutCurveMap = {
+  rgb?: LutCurvePoint[];
+  r?: LutCurvePoint[];
+  g?: LutCurvePoint[];
+  b?: LutCurvePoint[];
+};
+
 async function postOp<T = any>(path: string, body: any): Promise<T> {
   const r = await fetch(`/api/image/${path}`, {
     method: 'POST',
@@ -26,6 +34,102 @@ export const opResize = (imageUrl: string, width?: number, height?: number, fit?
 
 export const opUpscale = (imageUrl: string, scale: number) =>
   postOp<{ imageUrl: string; scale: number }>('upscale', { imageUrl, scale });
+
+export const opLut = (
+  imageUrl: string,
+  options: {
+    lutText: string;
+    lutEnabled?: boolean;
+    adjustEnabled?: boolean;
+    amount?: number;
+    hslHue?: number;
+    hslSaturation?: number;
+    hslLightness?: number;
+    hslRange?: 'master' | 'red' | 'yellow' | 'green' | 'cyan' | 'blue' | 'magenta';
+    hslColorize?: boolean;
+    brightness?: number;
+    contrast?: number;
+    curve?: 'linear' | 'soft-contrast' | 'matte' | 'film-fade' | 'deep-shadow';
+    curveAmount?: number;
+    curves?: LutCurveMap;
+  },
+) =>
+  postOp<{
+    imageUrl: string;
+    width: number;
+    height: number;
+    lutTitle?: string;
+    lutEnabled: boolean;
+    adjustEnabled: boolean;
+    amount: number;
+    hsl?: {
+      hue: number;
+      saturation: number;
+      lightness: number;
+      range: string;
+      colorize: boolean;
+    };
+    adjust?: {
+      brightness: number;
+      contrast: number;
+      curve: string;
+      curveAmount: number;
+      curves: Required<LutCurveMap>;
+    };
+  }>('lut', {
+    imageUrl,
+    lutText: options.lutText,
+    lutEnabled: options.lutEnabled ?? true,
+    adjustEnabled: options.adjustEnabled ?? true,
+    amount: options.amount ?? 1,
+    hslHue: options.hslHue ?? 0,
+    hslSaturation: options.hslSaturation ?? 0,
+    hslLightness: options.hslLightness ?? 0,
+    hslRange: options.hslRange ?? 'master',
+    hslColorize: options.hslColorize ?? false,
+    brightness: options.brightness ?? 0,
+    contrast: options.contrast ?? 0,
+    curve: options.curve ?? 'linear',
+    curveAmount: options.curveAmount ?? 100,
+    curves: options.curves ?? {},
+  });
+
+export interface LutLibraryItem {
+  id: string;
+  name: string;
+  displayName?: string;
+  englishName?: string;
+  fileName?: string;
+  category: string;
+  categoryLabel?: string;
+  source: 'open-source' | 'user';
+  sourceName: string;
+  sourceUrl?: string;
+  license?: string;
+  relPath: string;
+  size?: number;
+  updatedAt?: number;
+}
+
+export interface LutLibraryResponse {
+  userDir: string;
+  openSourceDir: string;
+  items: LutLibraryItem[];
+}
+
+export const getLutLibrary = async () => {
+  const r = await fetch('/api/image/lut-library');
+  const data = await r.json().catch(() => null);
+  if (!r.ok || !data?.success) throw new Error(data?.error || `HTTP ${r.status}`);
+  return data.data as LutLibraryResponse;
+};
+
+export const loadLutTemplate = async (id: string) => {
+  const r = await fetch(`/api/image/lut-library/${encodeURIComponent(id)}`);
+  const data = await r.json().catch(() => null);
+  if (!r.ok || !data?.success) throw new Error(data?.error || `HTTP ${r.status}`);
+  return data.data as LutLibraryItem & { lutText: string };
+};
 
 export const opTrimBorder = (
   imageUrl: string,

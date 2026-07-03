@@ -1,4 +1,5 @@
 import type { AdvancedProviderConfig, AdvancedProviderSummary, CanvasProviderSource } from '../types/canvas';
+import { registryModelsForProtocol } from './modelProtocolRegistry.ts';
 
 const MASKED_RE = /^\*{2,}/;
 
@@ -217,59 +218,37 @@ export interface AdvancedProviderSelection {
   available: boolean;
 }
 
-const IMAGE_PROTOCOLS = new Set(['openai-compatible', 'modelscope', 'volcengine', 'agnes', 'comfyui', 'jimeng-cli']);
-const VIDEO_PROTOCOLS = new Set(['openai-compatible', 'volcengine', 'agnes', 'jimeng-cli']);
-const LLM_PROTOCOLS = new Set(['openai-compatible', 'modelscope', 'volcengine', 'agnes']);
+const IMAGE_PROTOCOLS = new Set(['openai-compatible', 'openai', 'apimart', 'gemini', 'modelscope', 'volcengine', 'agnes', 'comfyui', 'jimeng-cli']);
+const VIDEO_PROTOCOLS = new Set(['openai-compatible', 'openai', 'apimart', 'volcengine', 'agnes', 'jimeng-cli']);
+const LLM_PROTOCOLS = new Set(['openai-compatible', 'openai', 'apimart', 'gemini', 'modelscope', 'volcengine', 'agnes']);
 
 const FALLBACK_MODELS: Record<AdvancedProviderNodeKind, Partial<Record<string, string[]>>> = {
   image: {
-    'openai-compatible': ['gpt-image-1'],
-    modelscope: [
-      'Tongyi-MAI/Z-Image-Turbo',
-      'Qwen/Qwen-Image-2512',
-      'Qwen/Qwen-Image-Edit-2511',
-      'black-forest-labs/FLUX.2-klein-9B',
-    ],
-    volcengine: ['doubao-seedream-4-0-250828'],
-    agnes: ['agnes-image-2.1-flash', 'agnes-image-2.0-flash'],
-    'jimeng-cli': [
-      'seedream-4.7',
-      'seedream-4.6',
-      'seedream-4.5',
-      'seedream-5.0',
-      'jimeng-image-2k',
-      'jimeng-image-4k',
-    ],
+    'openai-compatible': registryModelsForProtocol('openai', 'image'),
+    openai: registryModelsForProtocol('openai', 'image'),
+    apimart: registryModelsForProtocol('apimart', 'image'),
+    gemini: registryModelsForProtocol('gemini', 'image'),
+    modelscope: registryModelsForProtocol('modelscope', 'image'),
+    volcengine: registryModelsForProtocol('volcengine', 'image'),
+    agnes: registryModelsForProtocol('agnes', 'image'),
+    'jimeng-cli': registryModelsForProtocol('jimeng-cli', 'image'),
   },
   video: {
-    'openai-compatible': [],
-    agnes: ['agnes-video-v2.0'],
-    volcengine: [
-      'doubao-seedance-2-0-260128',
-      'doubao-seedance-2-0-fast-260128',
-      'doubao-seedance-1-5-pro-251215',
-      'doubao-seedance-1-0-pro-250528',
-      'doubao-seedance-1-0-lite-t2v-250428',
-      'doubao-seedance-1-0-lite-i2v-250428',
-    ],
-    'jimeng-cli': [
-      'seedance2.0fast_vip',
-      'seedance2.0_vip',
-      'seedance2.0fast',
-      'seedance2.0',
-      'jimeng-video-720p',
-      'jimeng-video-1080p',
-    ],
+    'openai-compatible': registryModelsForProtocol('openai', 'video'),
+    openai: registryModelsForProtocol('openai', 'video'),
+    apimart: registryModelsForProtocol('apimart', 'video'),
+    agnes: registryModelsForProtocol('agnes', 'video'),
+    volcengine: registryModelsForProtocol('volcengine', 'video'),
+    'jimeng-cli': registryModelsForProtocol('jimeng-cli', 'video'),
   },
   llm: {
-    'openai-compatible': ['gpt-4o-mini'],
-    modelscope: [
-      'Qwen/Qwen3-235B-A22B',
-      'Qwen/Qwen3-VL-235B-A22B-Instruct',
-      'MiniMax/MiniMax-M2.7:MiniMax',
-    ],
-    volcengine: ['doubao-seed-1-6-250615'],
-    agnes: ['agnes-2.0-flash'],
+    'openai-compatible': registryModelsForProtocol('openai', 'llm'),
+    openai: registryModelsForProtocol('openai', 'llm'),
+    apimart: registryModelsForProtocol('apimart', 'llm'),
+    gemini: registryModelsForProtocol('gemini', 'llm'),
+    modelscope: registryModelsForProtocol('modelscope', 'llm'),
+    volcengine: registryModelsForProtocol('volcengine', 'llm'),
+    agnes: registryModelsForProtocol('agnes', 'llm'),
   },
 };
 

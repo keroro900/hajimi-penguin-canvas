@@ -6,6 +6,7 @@ import {
   Controls,
   MiniMap,
   ReactFlowProvider,
+  ConnectionMode,
   SelectionMode,
   ViewportPortal,
   Handle,
@@ -33,7 +34,8 @@ import { getTemplateMode, resolveThemeTemplate } from '../theme/defaultTemplates
 import { useRunBusStore } from '../stores/runBus';
 import { useGroupBusStore, GROUP_COLORS, DEFAULT_GROUP_NAME } from '../stores/groupBus';
 import { useRadialMenuStore } from '../stores/radialMenu';
-import { topologicalSort } from '../utils/topologicalSort';
+import { topologicalBatches, topologicalSort } from '../utils/topologicalSort';
+import { createGroupExecutionPlan } from '../utils/groupExecutionPlan';
 import { installGlobalWheelBlockObserver } from '../utils/wheelBlock';
 // v1.2.10.5: 节点落点防重叠解析器 (单节点/整组双模式 + 兜底+toast+飞镜)
 import {
@@ -49,6 +51,7 @@ import {
   offsetClipboardNodes,
   positionClipboardNodesAtAnchor,
   remapPastedGroupMemberIds,
+  sanitizeClipboardNodeData,
 } from '../utils/canvasClipboard';
 import {
   createOutputDataFromItems,
@@ -56,9 +59,11 @@ import {
   createUploadReplacementData,
   fileNameFromUrl,
   getMediaItemsFromData,
+  mediaDownloadFileName,
   type MediaItem,
   type MediaKind,
 } from '../utils/mediaCollection';
+import { downloadMediaUrl } from '../utils/downloadMedia';
 import {
   buildPersistentOutputSnapshotData,
   readOutputMaterialPersistenceSetting,
@@ -141,6 +146,12 @@ import {
   buildVibeXSendNodeSpecs,
   normalizeVibeXResultPayload,
 } from '../utils/vibexBridge';
+import {
+  applyCanvasRealtimeOp,
+  makeCanvasRealtimeClientId,
+  normalizeCanvasRealtimeOp,
+} from '../utils/canvasRealtime';
+import { CanvasRealtimeClient } from '../services/canvasRealtime';
 import * as api from '../services/api';
 import { logBus } from '../stores/logs';
 import CanvasToolbar from './CanvasToolbar';
@@ -212,16 +223,26 @@ import {
   NODE_PORTS,
   type PortType,
 } from '../config/portTypes';
+import {
+  GENCLAW_DEFAULT_IMAGE_API_MODEL,
+  GENCLAW_DEFAULT_IMAGE_MODEL,
+  GENCLAW_DEFAULT_LLM_MODEL,
+  GENCLAW_SKETCH_SYSTEM_PROMPT,
+  GENCLAW_SYSTEM_PROMPT,
+} from '../genclaw/config';
 
+const CANVAS_PAN_MOUSE_BUTTONS = [0] as const;
 const CANVAS_MIN_ZOOM = 0.02;
+const RADIAL_MENU_MOUSE_BUTTON = 1;
+const MIDDLE_PAN_MOUSE_BUTTON = 1;
+const MIDDLE_PAN_MOVE_TOLERANCE = 4;
 const CANVAS_OVERVIEW_FIT_OPTIONS = {
   padding: 0.12,
   minZoom: CANVAS_MIN_ZOOM,
   maxZoom: 1.15,
 };
-const CANVAS_PAN_MOUSE_BUTTONS = [0, 1] as const;
-const RADIAL_MENU_MOUSE_BUTTON = 2;
 const RADIAL_MENU_CONTEXT_SUPPRESS_MS = 700;
+const MIDDLE_PAN_AUX_SUPPRESS_MS = 700;
 const MAX_FARM_FLOATING_FEEDBACKS = 8;
 const FARM_FLOATING_FEEDBACK_MS = 1350;
 const FARM_FOLLOWUP_NOTICE_MS = 5600;
@@ -259,7 +280,9 @@ const MAX_EDGE_CUT_FEEDBACKS = 4;
 const EDGE_CUT_FEEDBACK_MS = 1100;
 const MAX_EDGE_CONNECT_FEEDBACKS = 3;
 const EDGE_CONNECT_FEEDBACK_MS = 950;
+const CANVAS_EXTERNAL_SYNC_INTERVAL_MS = 2000;
 const RESOURCE_PACKAGE_LIBRARY_KINDS: api.ResourceKind[] = ['image', 'video', 'audio', 'panorama', 'set', 'pose', 'workflow'];
+const CARD_MODE_OWNS_OUTPUT_TYPES = new Set(['image', 'video', 'seedance', 'audio', 'runninghub', 'runninghub-wallet', 'rh-toolbox', 'fal-toolbox']);
 
 async function loadResourcePackageLibrarySnapshot() {
   const categories: api.ResourceCategory[] = [];
@@ -1033,6 +1056,32 @@ function lazyCanvasNode(load: () => Promise<any>, displayName: string): Componen
   return WrappedNode;
 }
 
+function missingPrivateToolNode(displayName: string, label: string, description: string): ComponentType<any> {
+  const MissingNode = (props: any) => (
+    <PlaceholderNode
+      {...props}
+      data={{
+        ...(props.data || {}),
+        label: (props.data as any)?.label || label,
+        description,
+        placeholderNote: '私有开发工具源码未包含在当前公开源码树中',
+      }}
+    />
+  );
+  MissingNode.displayName = `MissingPrivateToolNode(${displayName})`;
+  return MissingNode;
+}
+
+const privateMakerNodeModules = import.meta.glob('./nodes/*MakerNode.tsx');
+
+function privateToolNodeLoader(modulePath: string, displayName: string, label: string, description: string) {
+  const load = privateMakerNodeModules[`${modulePath}.tsx`];
+  if (load) return load as () => Promise<any>;
+  return async () => ({
+    default: missingPrivateToolNode(displayName, label, description),
+  });
+}
+
 const TextNode = lazyCanvasNode(() => import('./nodes/TextNode'), 'TextNode');
 const ImageNode = lazyCanvasNode(() => import('./nodes/ImageNode'), 'ImageNode');
 const LLMNode = lazyCanvasNode(() => import('./nodes/LLMNode'), 'LLMNode');
@@ -1050,23 +1099,29 @@ const Model3DPreviewNode = lazyCanvasNode(() => import('./nodes/Model3DPreviewNo
 const GrokOAuthAgentNode = lazyCanvasNode(() => import('./nodes/GrokOAuthAgentNode'), 'GrokOAuthAgentNode');
 const CodexCliAgentNode = lazyCanvasNode(() => import('./nodes/CodexCliAgentNode'), 'CodexCliAgentNode');
 const CodexImageConjureNode = lazyCanvasNode(() => import('./nodes/CodexImageConjureNode'), 'CodexImageConjureNode');
+const GenClawNode = lazyCanvasNode(() => import('./nodes/GenClawNode'), 'GenClawNode');
 const ArtistStyleMasterNode = lazyCanvasNode(() => import('./nodes/ArtistStyleMasterNode'), 'ArtistStyleMasterNode');
 const AnimeTagMasterNode = lazyCanvasNode(() => import('./nodes/AnimeTagMasterNode'), 'AnimeTagMasterNode');
 const ComfyUIStoreNode = lazyCanvasNode(() => import('./nodes/ComfyUIStoreNode'), 'ComfyUIStoreNode');
 const ComfyUIAppMakerNode = lazyCanvasNode(() => import('./nodes/ComfyUIAppMakerNode'), 'ComfyUIAppMakerNode');
 const ResizeNode = lazyCanvasNode(() => import('./nodes/ResizeNode'), 'ResizeNode');
+const LutColorNode = lazyCanvasNode(() => import('./nodes/LutColorNode'), 'LutColorNode');
 const UpscaleNode = lazyCanvasNode(() => import('./nodes/UpscaleNode'), 'UpscaleNode');
 const GridCropNode = lazyCanvasNode(() => import('./nodes/GridCropNode'), 'GridCropNode');
 const GridEditorNode = lazyCanvasNode(() => import('./nodes/GridEditorNode'), 'GridEditorNode');
+const ClipStudioNode = lazyCanvasNode(() => import('./nodes/ClipStudioNode'), 'ClipStudioNode');
+const SketchRenderNode = lazyCanvasNode(() => import('./nodes/SketchRenderNode'), 'SketchRenderNode');
 const CombineNode = lazyCanvasNode(() => import('./nodes/CombineNode'), 'CombineNode');
 const RemoveBgNode = lazyCanvasNode(() => import('./nodes/RemoveBgNode'), 'RemoveBgNode');
 const ImageCompareNode = lazyCanvasNode(() => import('./nodes/ImageCompareNode'), 'ImageCompareNode');
 const ToolboxParamNode = lazyCanvasNode(() => import('./nodes/ToolboxParamNode'), 'ToolboxParamNode');
 const PortraitMasterNode = lazyCanvasNode(() => import('./nodes/PortraitMasterNode'), 'PortraitMasterNode');
 const PoseMasterNode = lazyCanvasNode(() => import('./nodes/PoseMasterNode'), 'PoseMasterNode');
+const DirectorStudioNode = lazyCanvasNode(() => import('./nodes/DirectorStudioNode'), 'DirectorStudioNode');
 const Panorama3DNode = lazyCanvasNode(() => import('./nodes/Panorama3DNode'), 'Panorama3DNode');
 const AggregateParserNode = lazyCanvasNode(() => import('./nodes/AggregateParserNode'), 'AggregateParserNode');
 const BatchProcessorNode = lazyCanvasNode(() => import('./nodes/BatchProcessorNode'), 'BatchProcessorNode');
+const ApparelPackNode = lazyCanvasNode(() => import('./nodes/ApparelPackNode'), 'ApparelPackNode');
 const TopazImageUpscaleNode = lazyCanvasNode(() => import('./nodes/TopazImageUpscaleNode'), 'TopazImageUpscaleNode');
 const TopazVideoUpscaleNode = lazyCanvasNode(() => import('./nodes/TopazVideoUpscaleNode'), 'TopazVideoUpscaleNode');
 const IdeaNode = lazyCanvasNode(() => import('./nodes/IdeaNode'), 'IdeaNode');
@@ -1093,10 +1148,16 @@ const GroupBoxNode = lazyCanvasNode(() => import('./nodes/GroupBoxNode'), 'Group
 const RH_TOOLBOX_MAKER_MODULE = './nodes/RHToolboxMakerNode';
 const FAL_TOOLBOX_MAKER_MODULE = './nodes/FalToolboxMakerNode';
 const RHToolboxMakerNode = import.meta.env?.DEV
-  ? lazyCanvasNode(() => import(/* @vite-ignore */ RH_TOOLBOX_MAKER_MODULE), 'RHToolboxMakerNode')
+  ? lazyCanvasNode(
+    privateToolNodeLoader(RH_TOOLBOX_MAKER_MODULE, 'RHToolboxMakerNode', 'RH工具箱制作器', '维护者私有开发工具源码未包含在当前公开源码树中。'),
+    'RHToolboxMakerNode',
+  )
   : PlaceholderNode;
 const FalToolboxMakerNode = import.meta.env?.DEV
-  ? lazyCanvasNode(() => import(/* @vite-ignore */ FAL_TOOLBOX_MAKER_MODULE), 'FalToolboxMakerNode')
+  ? lazyCanvasNode(
+    privateToolNodeLoader(FAL_TOOLBOX_MAKER_MODULE, 'FalToolboxMakerNode', 'FAL应用制作工具', '维护者私有开发工具源码未包含在当前公开源码树中。'),
+    'FalToolboxMakerNode',
+  )
   : PlaceholderNode;
 
 // Phase 4 阶段:全部 24 个节点均已实现业务逻辑
@@ -1125,6 +1186,7 @@ const SPECIFIC_NODES: Record<string, any> = {
   'grok-oauth-agent': GrokOAuthAgentNode,
   'codex-cli-agent': CodexCliAgentNode,
   'codex-image-conjure': CodexImageConjureNode,
+  'genclaw': GenClawNode,
   'artist-style-master': ArtistStyleMasterNode,
   'anime-tag-master': AnimeTagMasterNode,
   ...(import.meta.env?.DEV ? { 'fal-toolbox-maker': FalToolboxMakerNode } : {}),
@@ -1148,11 +1210,14 @@ const SPECIFIC_NODES: Record<string, any> = {
   'material-set': MaterialSetNode,
   'generation-target': GenerationTargetNode,
   resize: ResizeNode,
+  'lut-color': LutColorNode,
   combine: CombineNode,
   'remove-bg': RemoveBgNode,
   upscale: UpscaleNode,
   'grid-crop': GridCropNode,
   'grid-editor': GridEditorNode,
+  'clip-studio': ClipStudioNode,
+  'sketch-renderer': SketchRenderNode,
   // Auxiliary (5)
   edit: ImageNode, // 复用 ImageNode,默认偏向 edit 能力
   idea: IdeaNode,
@@ -1168,8 +1233,10 @@ const SPECIFIC_NODES: Record<string, any> = {
   'pose-master': PoseMasterNode,
   'aggregate-parser': AggregateParserNode,
   'batch-processor': BatchProcessorNode,
+  'apparel-pack': ApparelPackNode,
   'topaz-image-upscale': TopazImageUpscaleNode,
   'topaz-video-upscale': TopazVideoUpscaleNode,
+  'director-studio': DirectorStudioNode,
   'panorama-3d': Panorama3DNode,
   // Input - 上传素材
   upload: UploadNode,
@@ -1649,6 +1716,61 @@ const INITIAL_DATA: Record<string, Record<string, any>> = {
     status: 'idle',
     error: '',
   },
+  genclaw: {
+    genclawPrompt: '',
+    genclawBriefText: '',
+    genclawSketchCode: '',
+    genclawSketchKind: 'svg',
+    genclawSketchImageUrl: '',
+    genclawFinalImageUrls: [],
+    genclawReviewText: '',
+    genclawStepStatus: {
+      brief: 'idle',
+      sketch: 'idle',
+      render: 'idle',
+      'final-review': 'idle',
+    },
+    genclawLlmModel: GENCLAW_DEFAULT_LLM_MODEL,
+    genclawImageModel: GENCLAW_DEFAULT_IMAGE_MODEL,
+    genclawImageApiModel: GENCLAW_DEFAULT_IMAGE_API_MODEL,
+    genclawSystemPrompt: GENCLAW_SYSTEM_PROMPT,
+    genclawSketchSystemPrompt: GENCLAW_SKETCH_SYSTEM_PROMPT,
+    genclawModel: GENCLAW_DEFAULT_IMAGE_MODEL,
+    genclawAspectRatio: '1:1',
+    genclawSize: '2K',
+    aspectRatio: '1:1',
+    sizeLevel: '2K',
+    genclawImageCount: 1,
+    imageCount: 1,
+    genclawImageQuality: 'auto',
+    imageQuality: 'auto',
+    genclawLlmProviderSource: 'zhenzhen',
+    genclawLlmProviderId: '',
+    genclawLlmProviderModel: '',
+    genclawImageProviderSource: 'zhenzhen',
+    genclawImageProviderId: '',
+    genclawImageProviderModel: '',
+    genclawProviderParams: {},
+    genclawImageProviderParams: {},
+    providerParams: {},
+    imageUrl: '',
+    imageUrls: [],
+    outputText: '',
+    status: 'idle',
+    error: '',
+  },
+  'sketch-renderer': {
+    sketchCode: '',
+    sketchKind: 'svg',
+    sketchImageUrl: '',
+    renderWidth: 1024,
+    renderHeight: 1024,
+    imageUrl: '',
+    imageUrls: [],
+    outputText: '',
+    status: 'idle',
+    error: '',
+  },
   'model-3d-preview': {
     modelUrl: '',
     modelUrls: [],
@@ -1748,6 +1870,18 @@ const INITIAL_DATA: Record<string, Record<string, any>> = {
   // 从合集获取: 默认 image + 第 1 个
   'pick-from-set': { pickKind: 'image', pickIndex: 1 },
   'image-compare': { mode: 'slider', align: 'contain', split: 50, opacity: 50, threshold: 24 },
+  'director-studio': {
+    directorMode: '3d',
+    directorProject: null,
+    imageUrl: '',
+    imageUrls: [],
+    videoUrl: '',
+    videoUrls: [],
+    urls: [],
+    outputText: '',
+    status: 'idle',
+    error: '',
+  },
   'panorama-3d': {
     panoramaRatio: 'ultrawide',
     panoramaCustomW: 21,
@@ -1816,6 +1950,29 @@ const INITIAL_DATA: Record<string, Record<string, any>> = {
     label: 'VibeX工作台',
   },
   'drawing-board': { boardRatio: '16:9', boardWidth: 960, boardHeight: 540, boardElements: [], boardColor: '#111827', boardStrokeSize: 5 },
+  'lut-color': {
+    lutPresetId: 'cinematic-teal-orange',
+    lutEnabled: true,
+    lutAdjustEnabled: true,
+    lutAmount: 1,
+    lutText: '',
+    lutCustomName: '',
+    lutHue: 0,
+    lutSaturation: 0,
+    lutLightness: 0,
+    lutBrightness: 0,
+    lutContrast: 0,
+    lutCurve: 'linear',
+    lutCurveAmount: 100,
+    lutCurves: {
+      rgb: [[0, 0], [255, 255]],
+      r: [[0, 0], [255, 255]],
+      g: [[0, 0], [255, 255]],
+      b: [[0, 0], [255, 255]],
+    },
+    lutColorize: false,
+    lutRange: 'master',
+  },
   'grid-crop': { rows: 3, cols: 3, gap: 0 },
   'grid-editor': {
     gridEditorRows: 3,
@@ -1829,6 +1986,17 @@ const INITIAL_DATA: Record<string, Record<string, any>> = {
     gridEditorOrder: [],
     gridEditorLocalItems: [],
     gridEditorHiddenIds: [],
+  },
+  'clip-studio': {
+    clipRatio: '16:9',
+    clipResolution: '720p',
+    clipFps: 30,
+    clipImageDuration: 3,
+    clipBackground: '#000000',
+    status: 'idle',
+    error: '',
+    videoUrl: '',
+    videoUrls: [],
   },
   'remove-ai-watermark': {
     aiWatermarkMode: 'smart',
@@ -1874,18 +2042,73 @@ const EXECUTABLE_NODE_TYPES = new Set<string>([
   'video', 'seedance', 'audio', 'llm', 'runninghub', 'runninghub-wallet',
   // v1.2.10.1: rh-tools 与 RunningHub 同质，同样可被批量运行调起
   'rh-tools', 'rh-toolbox', 'fal-toolbox', 'comfyui-store',
-  'grok-oauth-agent', 'codex-cli-agent', 'codex-image-conjure',
-  'resize', 'upscale', 'grid-crop', 'grid-editor', 'remove-bg', 'combine', 'image-compare', 'drawing-board',
-  'panorama-3d',
+  'grok-oauth-agent', 'codex-cli-agent', 'codex-image-conjure', 'genclaw',
+  'resize', 'lut-color', 'upscale', 'grid-crop', 'grid-editor', 'remove-bg', 'combine', 'image-compare', 'drawing-board',
+  'director-studio', 'panorama-3d',
   'frame-extractor', 'frame-pair',
+  'clip-studio',
+  'sketch-renderer',
   'upload',
   // v1.2.8 工具节点 (循环器 / 从合集获取)
   'loop', 'pick-from-set',
   // v1.4.8: 工具箱文本节点也可点击 RUN 直接外挂 OutputNode
-  'cinematic', 'video-motion', 'multi-angle-visual', 'portrait-master', 'pose-master', 'aggregate-parser', 'batch-processor',
+  'cinematic', 'video-motion', 'multi-angle-visual', 'portrait-master', 'pose-master', 'aggregate-parser', 'batch-processor', 'apparel-pack',
   'topaz-image-upscale', 'topaz-video-upscale',
   'remove-ai-watermark',
 ]);
+
+const BATCH_PASSIVE_SOURCE_NODE_TYPES = new Set<string>(['upload', 'model-3d-upload']);
+const BATCH_EXECUTABLE_NODE_TYPES = new Set<string>(
+  [...EXECUTABLE_NODE_TYPES].filter((type) => !BATCH_PASSIVE_SOURCE_NODE_TYPES.has(type)),
+);
+
+const groupMemberIdsFromNodes = (groupId: string, sourceNodes: Node[]): string[] => {
+  const groupNode = sourceNodes.find((node) => node.id === groupId && node.type === 'groupBox');
+  if (!groupNode) return [];
+  const memberIds = new Set<string>(
+    Array.isArray((groupNode.data as any)?.memberIds)
+      ? (groupNode.data as any).memberIds.filter((value: unknown): value is string => typeof value === 'string' && !!value)
+      : [],
+  );
+  const groupRect = rectOf(groupNode);
+  for (const node of sourceNodes) {
+    if (node.id === groupId || node.type === 'groupBox' || node.id === BULK_PHANTOM_ID) continue;
+    const rect = rectOf(node);
+    const center = { x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 };
+    if (
+      center.x >= groupRect.x &&
+      center.x <= groupRect.x + groupRect.w &&
+      center.y >= groupRect.y &&
+      center.y <= groupRect.y + groupRect.h
+    ) {
+      memberIds.add(node.id);
+    }
+  }
+  return Array.from(memberIds);
+};
+
+const expandGroupRunIds = (ids: string[], sourceNodes: Node[]): string[] => {
+  const expanded = new Set<string>();
+  ids.forEach((id) => {
+    const node = sourceNodes.find((item) => item.id === id);
+    if (node?.type === 'groupBox') {
+      groupMemberIdsFromNodes(id, sourceNodes).forEach((memberId) => expanded.add(memberId));
+    } else if (node?.type && node.type !== 'groupBox' && node.id !== BULK_PHANTOM_ID) {
+      expanded.add(id);
+    }
+  });
+  return Array.from(expanded);
+};
+
+const groupExecutableCount = (ids: string[], sourceNodes: Node[], sourceEdges: Edge[]): number => {
+  const memberIds = expandGroupRunIds(ids, sourceNodes);
+  return createGroupExecutionPlan({
+    nodes: sourceNodes,
+    edges: sourceEdges,
+    memberIds,
+    executableTypes: BATCH_EXECUTABLE_NODE_TYPES,
+  }).stages.flat().length;
+};
 
 // 网格吸附步长 / 对齐阈值(世界坐标)
 const SNAP_GRID: [number, number] = [20, 20];
@@ -2310,6 +2533,7 @@ const nodeTypes = NODE_REGISTRY.reduce<Record<string, any>>((acc, m) => {
   acc[m.type] = withNodeSerialBadge(SPECIFIC_NODES[m.type] || PlaceholderNode);
   return acc;
 }, {});
+nodeTypes['director-storyboard'] = withNodeSerialBadge(DirectorStoryboardNode);
 // 节点组容器(不在 NODE_REGISTRY 中,作为独立的视觉容器节点类型)
 nodeTypes.groupBox = withNodeSerialBadge(GroupBoxNode);
 
@@ -2390,6 +2614,13 @@ interface RadialPressState {
   start: RadialMenuPoint;
   timer: number;
   open: boolean;
+}
+
+interface MiddlePanState {
+  pointerId: number;
+  start: RadialMenuPoint;
+  viewport: { x: number; y: number; zoom: number };
+  dragging: boolean;
 }
 
 interface FileDragOutFeedback {
@@ -2684,6 +2915,14 @@ function isRadialMenuPaneTarget(target: EventTarget | null): boolean {
   return !!el.closest('.react-flow__pane, .react-flow__background, .react-flow__renderer');
 }
 
+function shouldTreatDragSourceAsMedia(target: EventTarget | null, event?: { ctrlKey?: boolean; metaKey?: boolean; buttons?: number }): boolean {
+  if (!(target instanceof Element)) return false;
+  const source = target.closest('[data-drag-source]') as HTMLElement | null;
+  if (!source) return false;
+  if (!source.closest('.t8-smart-node-card')) return true;
+  return Boolean(event?.ctrlKey || event?.metaKey || (event?.buttons !== undefined && isLeftRightMouseChord(event.buttons)));
+}
+
 type ModelUsageHelpSection = {
   title: string;
   paragraphs?: readonly string[];
@@ -2718,10 +2957,10 @@ const MODEL_USAGE_HELP_SECTIONS: readonly ModelUsageHelpSection[] = [
     items: [
       '20250624更新，seedance2.0新增mini模型（720P是满血版的一半），支持原生4K，电影级质感（仅满血720P可选）',
       'seedance2.0（Default分组）非远景推荐480P+FAST模式，质量吊打快乐马，价格只要5个币15秒，后续用flashvsr放大即可，720P满血15秒大概15币，不排队，支持真人',
-      'seedance2.0（sd-global分组）需要联系T8微信单独开通，只支持企业开通，由于除版权外基本无审核，防止有人搞色情，需要签协议才能开通，价格和上面一样',
+      'seedance2.0（sd-global分组）通常需要在上游平台单独开通，建议先确认账号权限、审核规则和计费方式后再使用',
       'veo3.1模型，需要看下网站左侧分类教程，有多个分组可用，目前比较稳的是veo&grok备用分组2的veo3.1模型和默认分组的fal模型',
       'veo-omni模型，需要使用default分组（veo-omnii模型是2026.06.06刚上架的）',
-      'grok-video模型，需要看下网站左侧分类教程，有多个分组可用，目前比较稳的是fal模型和默认分组，新增支持最新imagine 1.5模型（支持图生视频FAL模型），最佳SD平替（default分组），以及veo&grok备用分组2，支持15秒多参生视频，2026.06.11修复grok-video-3模型的defualt默认分组，直接升级成imagine 1.5模型，0.5积分10秒，2026.06.12新增grok-video-1.5-6s，grok-video-1.5-10s，grok-video-1.5-15s模型，默认720P，分组default，3个模型，分别是0.5，0.7，0.7积分，最佳SD2.0平替',
+      'grok-video模型，需要看下网站左侧分类教程，有多个分组可用，目前比较稳的是fal模型和默认分组，新增支持最新imagine 1.5模型（支持图生视频FAL模型），最佳SD平替（default分组），以及veo&grok备用分组2，支持15秒多参生视频，2026.06.11 修复 grok-video-3 模型的 default 默认分组，直接升级成 imagine 1.5 模型，0.5积分10秒，2026.06.12新增grok-video-1.5-6s，grok-video-1.5-10s，grok-video-1.5-15s模型，默认720P，分组default，3个模型，分别是0.5，0.7，0.7积分，最佳SD2.0平替',
       'sora-2模型，支持sora-vip分组以及default默认分组的FAL模型（sora-vip分组是2026.06.06刚修复的）',
     ],
   },
@@ -2737,8 +2976,13 @@ const MODEL_USAGE_HELP_SECTIONS: readonly ModelUsageHelpSection[] = [
       'LLM模型有时候因为官方问题会出现速度慢，失败等现象，这时候换个模型即可或者换一下分组即可，预置了多个模型。',
     ],
   },
+  {
+    title: '内容更新包 v2.1.8',
+    paragraphs: [
+      '内容更新包 v2.1.8：新增提示词模板库 content-pack-v2、画布食谱、ComfyUI/RH/FAL 示例清单。排障顺序：先确认分组和模型，再降低分辨率或时长，最后去异步任务页用 TASKID 找结果。',
+    ],
+  },
 ];
-
 function getReactFlowHandleInfo(target: EventTarget | null): {
   nodeId: string;
   handleType: 'source' | 'target';
@@ -2805,8 +3049,6 @@ function PlacementShelf({
     };
   }, [drag, onMoveNode]);
 
-  const visible = items.slice(0, open ? 20 : 5);
-  const displayLimit = Math.min(items.length, open ? 20 : 5);
   const shellStyle: CSSProperties = isPixel
     ? {
         border: '2px solid var(--px-ink, #1A1410)',
@@ -2823,6 +3065,27 @@ function PlacementShelf({
         borderRadius: 14,
         backdropFilter: 'blur(12px)',
       };
+  if (!open) return (
+    <div
+      data-canvas-floating-ui="placement-shelf"
+      className="t8-placement-shelf t8-placement-shelf--collapsed p-2"
+      style={shellStyle}
+    >
+      <button
+        type="button"
+        className={isPixel ? 'px-btn px-btn--sm px-btn--ghost !py-1' : 'rounded-md px-2 py-1 text-xs font-bold hover:bg-black/10'}
+        onClick={onToggle}
+        aria-label="展开放置栏"
+        title={`展开放置栏，显示 ${Math.min(items.length, 20)} 个素材`}
+      >
+        <LucideIcons.Inbox size={13} className="mr-1 inline-block" />
+        放置栏 {items.length}
+        <LucideIcons.ChevronUp size={14} className="ml-1 inline-block" />
+      </button>
+    </div>
+  );
+  const visible = items.slice(0, 20);
+  const displayLimit = Math.min(items.length, 20);
   const itemStyle: CSSProperties = isPixel
     ? {
         border: '1.5px solid var(--px-ink, #1A1410)',
@@ -2847,7 +3110,7 @@ function PlacementShelf({
             type="button"
             className={isPixel ? 'px-btn px-btn--sm px-btn--ghost !py-1' : 'rounded-md px-2 py-1 text-xs font-bold hover:bg-black/10'}
             onClick={onToggle}
-            title={open ? '收起放置栏，只显示最近 5 个' : '展开放置栏，显示最近 20 个'}
+            title="收起放置栏"
           >
             <LucideIcons.Inbox size={13} className="mr-1 inline-block" />
             放置栏 {visible.length}/{displayLimit}
@@ -2886,9 +3149,9 @@ function PlacementShelf({
               type="button"
               className="t8-mini-icon-button"
               onClick={onToggle}
-              title={open ? '收起' : '展开'}
+              title="收起"
             >
-              {open ? <LucideIcons.ChevronDown size={14} /> : <LucideIcons.ChevronUp size={14} />}
+              <LucideIcons.ChevronDown size={14} />
             </button>
           </div>
         </div>
@@ -2962,7 +3225,7 @@ function PlacementShelf({
       {drag && (
         <div
           className="pointer-events-none fixed z-[100] flex h-12 w-12 items-center justify-center rounded-md border bg-black/70 text-white shadow-xl"
-          style={{ left: drag.x + 10, top: drag.y + 10 }}
+            style={{ left: drag.x + 10, top: drag.y + 10 }}
         >
           <LucideIcons.Move size={20} />
         </div>
@@ -2975,6 +3238,26 @@ interface CanvasInnerProps {
   onAddNodeRef?: React.MutableRefObject<AddNodeFn | null>;
   onInsertWorkflowRef?: React.MutableRefObject<InsertWorkflowFn | null>;
 }
+
+type AgentActivityItem = {
+  id: string;
+  event: string;
+  label: string;
+  detail?: string;
+  nodeId?: string;
+  questionId?: string;
+  options?: Array<{ label: string; value: unknown }>;
+  status: 'running' | 'done' | 'preview' | 'waiting' | 'error';
+  createdAt: number;
+  agentId?: string;
+  runId?: string;
+};
+
+type AgentCursorState = {
+  x: number;
+  y: number;
+  label: string;
+};
 
 function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
   const { activeId, canvases, loadCanvases, setActive } = useCanvasStore();
@@ -3011,6 +3294,10 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
   );
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
+  const [agentActivityItems, setAgentActivityItems] = useState<AgentActivityItem[]>([]);
+  const [agentCursor, setAgentCursor] = useState<AgentCursorState | null>(null);
+  const agentRunNodeMetaRef = useRef<Map<string, { runId: string; agentId?: string; canvasId?: string; startedAt: number }>>(new Map());
+  const lastAgentRunDoneTsRef = useRef(0);
   const [generationHistoryOpen, setGenerationHistoryOpen] = useState(false);
   const generationHistoryDataKey = useMemo(() => buildGenerationHistoryDataKey(nodes), [nodes]);
   const generationHistoryCount = useMemo(() => countGenerationHistoryItems(nodes), [generationHistoryDataKey]);
@@ -3039,6 +3326,102 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
   const [farmResourceDecorLoading, setFarmResourceDecorLoading] = useState(false);
   const [edgeCutFeedbacks, setEdgeCutFeedbacks] = useState<EdgeCutFeedback[]>([]);
   const [edgeConnectFeedbacks, setEdgeConnectFeedbacks] = useState<EdgeConnectFeedback[]>([]);
+
+  const pushAgentActivity = useCallback((
+    event: string,
+    payload: any,
+    status: AgentActivityItem['status'] = 'running',
+  ) => {
+    const type = String(payload?.type || event.replace(/^canvas:/, '').replace(/^agent:/, ''));
+    const agentLabel = String(payload?.agentId || 'Codex');
+    const drivingModeLabel = payload?.drivingMode === 'autopilot' ? '自动驾驶' : '副驾驶';
+    const nodeType = payload?.payload?.type || payload?.result?.node?.type;
+    const runNodeStatus = String(payload?.status || payload?.runStatus || '').toLowerCase();
+    const nodeId = String(payload?.nodeId || payload?.payload?.nodeId || payload?.payload?.id || payload?.result?.nodeId || '').trim();
+    const label =
+      event === 'agent:run_started' ? `${agentLabel} 开始控制画布 · ${drivingModeLabel}`
+        : event === 'agent:plan_diff' ? `${agentLabel} 预演画布计划`
+        : event === 'agent:phase' ? `${agentLabel} ${payload?.payload?.label || payload?.payload?.phase || '推进流程'}`
+          : event === 'agent:ask_user' ? `${agentLabel} 等待用户选择`
+            : event === 'agent:user_answer' ? `${agentLabel} 收到用户选择`
+              : event === 'agent:run_done' ? `${agentLabel} 完成画布动作`
+                : event === 'agent:run_node_status'
+                  ? `${agentLabel} ${
+                    runNodeStatus === 'queued' ? '排队生成'
+                      : runNodeStatus === 'running' ? '正在生成'
+                        : runNodeStatus === 'preview' ? '预演生成'
+                          : runNodeStatus === 'success' ? '生成完成'
+                            : runNodeStatus === 'error' ? '生成失败'
+                              : '更新生成状态'
+                  }`
+                : event === 'agent:tool_call_start' ? `${agentLabel} 执行 ${type}`
+                  : event === 'agent:tool_call_end' ? `${agentLabel} 完成 ${type}`
+                      : event === 'canvas:preview_node' ? `${agentLabel} 预览节点`
+                        : event === 'canvas:focus_viewport' ? `${agentLabel} 聚焦视口`
+                          : event === 'canvas:run_node' ? `${agentLabel} 启动画布生成`
+                        : `${agentLabel} 更新画布`;
+    const createdAt = Number(payload?.createdAt || Date.now());
+    const askOptions: unknown[] = Array.isArray(payload?.payload?.options) ? payload.payload.options : [];
+    const normalizedOptions: Array<{ label: string; value: unknown }> = askOptions.map((option: unknown) => {
+      const optionRecord = option && typeof option === 'object' ? option as { label?: unknown; value?: unknown } : null;
+      return {
+        label: String(optionRecord?.label || optionRecord?.value || option || '选项'),
+        value: optionRecord?.value ?? optionRecord?.label ?? option,
+      };
+    });
+    const questionId = String(payload?.payload?.questionId || payload?.payload?.id || `${payload?.runId || 'run'}-${payload?.index ?? createdAt}`);
+    const detail = nodeType
+      ? String(nodeType)
+      : event === 'agent:plan_diff'
+        ? String(payload?.diff?.summary || payload?.payload?.summary || '准备预演节点、连线和模型运行')
+      : event === 'agent:run_node_status'
+        ? String(payload?.payload?.detail || payload?.detail || nodeId || '生成节点')
+      : payload?.payload?.question
+        ? `${payload.payload.question}${normalizedOptions.length ? ` · ${normalizedOptions.map((option) => option.label).join(' / ')}` : ''}`
+        : payload?.label || payload?.payload?.detail || payload?.payload?.label || payload?.payload?.text || payload?.payload?.phase || '';
+    const nextItem: AgentActivityItem = {
+        id: `${event}-${createdAt}-${Math.random().toString(36).slice(2, 6)}`,
+        event,
+        label,
+        detail: String(detail || '').slice(0, 80),
+        nodeId,
+        questionId: event === 'agent:ask_user' ? questionId : undefined,
+        options: event === 'agent:ask_user' ? normalizedOptions.slice(0, 3) : undefined,
+        status,
+        createdAt,
+        agentId: payload?.agentId,
+        runId: payload?.runId,
+      };
+    setAgentActivityItems((items) => {
+      if (event === 'agent:run_node_status' && nodeId) {
+        let replaced = false;
+        const updated = items.map((item) => {
+          if (item.event !== 'agent:run_node_status' || item.nodeId !== nodeId) return item;
+          replaced = true;
+          return { ...nextItem, id: item.id };
+        });
+        if (replaced) return updated;
+      }
+      return [nextItem, ...items].slice(0, 6);
+    });
+  }, []);
+  const handleAgentAnswerSelect = useCallback((item: AgentActivityItem, option: { label: string; value: unknown }) => {
+    if (!item.runId || !item.questionId) return;
+    void api.submitAgentCanvasAnswer(item.runId, {
+      canvasId: activeId || undefined,
+      questionId: item.questionId,
+      value: option.value,
+      label: option.label,
+    }).then(() => {
+      setAgentActivityItems((items) => items.map((entry) => (
+        entry.id === item.id
+          ? { ...entry, status: 'done', detail: `已选择：${option.label}`, options: undefined }
+          : entry
+      )));
+    }).catch((error) => {
+      console.warn('提交 Codex 选项失败', error);
+    });
+  }, [activeId]);
   const [farmSoundEnabled, setFarmSoundEnabled] = useState(() => {
     if (typeof window === 'undefined') return true;
     try {
@@ -3081,11 +3464,19 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
   const pendingSaveByCanvasRef = useRef<Map<string, { nodes: Node[]; edges: Edge[]; creativeDesk: CreativeDeskState; farmCanvas: FarmCanvasState; snapshot: string; nextNodeSerialId: number }>>(new Map());
   const lastSavedByCanvasRef = useRef<Map<string, string>>(new Map());
   const lastSavedNodeCountByCanvasRef = useRef<Map<string, number>>(new Map());
+  const lastKnownCanvasUpdatedAtRef = useRef<Map<string, number>>(new Map());
+  const realtimeClientRef = useRef<CanvasRealtimeClient | null>(null);
+  const realtimeClientIdRef = useRef<string>('');
+  const realtimeBroadcastTimerRef = useRef<number | null>(null);
+  const lastRealtimeSnapshotRef = useRef<string>('');
+  const applyingRemoteRealtimeRef = useRef(false);
   const nextNodeSerialIdRef = useRef(1);
   const radialMenuRef = useRef<RadialMenuSession | null>(null);
   const radialPressRef = useRef<RadialPressState | null>(null);
+  const middlePanRef = useRef<MiddlePanState | null>(null);
   const radialViewportLockRef = useRef<{ x: number; y: number; zoom: number } | null>(null);
   const radialContextMenuSuppressedUntilRef = useRef(0);
+  const middlePanAuxClickSuppressedUntilRef = useRef(0);
   const fileDragOutFeedbackTimerRef = useRef<number | null>(null);
   const allowEmptySaveCanvasIdsRef = useRef<Set<string>>(new Set());
   const edgeMotionReleaseTimerRef = useRef<number | null>(null);
@@ -3510,12 +3901,20 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
   // 跟踪最新 nodes/edges 供全局事件回调使用
   const nodesRef = useRef<Node[]>([]);
   const edgesRef = useRef<Edge[]>([]);
+  const creativeDeskRef = useRef<CreativeDeskState>(creativeDesk);
+  const farmCanvasRef = useRef<FarmCanvasState>(farmCanvas);
   useEffect(() => {
     nodesRef.current = nodes;
   }, [nodes]);
   useEffect(() => {
     edgesRef.current = edges;
   }, [edges]);
+  useEffect(() => {
+    creativeDeskRef.current = creativeDesk;
+  }, [creativeDesk]);
+  useEffect(() => {
+    farmCanvasRef.current = farmCanvas;
+  }, [farmCanvas]);
   useEffect(() => {
     radialMenuRef.current = radialMenu;
   }, [radialMenu]);
@@ -3579,8 +3978,13 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
     radialContextMenuSuppressedUntilRef.current = Date.now() + RADIAL_MENU_CONTEXT_SUPPRESS_MS;
   }, []);
 
+  const suppressMiddlePanAuxClick = useCallback(() => {
+    middlePanAuxClickSuppressedUntilRef.current = Date.now() + MIDDLE_PAN_AUX_SUPPRESS_MS;
+  }, []);
+
   const isRadialMenuContextMenuSuppressed = useCallback(() => (
     Date.now() < radialContextMenuSuppressedUntilRef.current ||
+    Date.now() < middlePanAuxClickSuppressedUntilRef.current ||
     Boolean(radialMenuRef.current) ||
     Boolean(radialPressRef.current?.open)
   ), []);
@@ -3636,6 +4040,39 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       trackAchievementEvent({ type: 'parsehub.resolved', theme: visualStyle, nodeType });
     }
   }, [lastDone, visualStyle]);
+
+  useEffect(() => {
+    if (!lastDone?.ts || lastAgentRunDoneTsRef.current === lastDone.ts) return;
+    if (!lastDone.id || !agentRunNodeMetaRef.current.has(lastDone.id)) return;
+    lastAgentRunDoneTsRef.current = lastDone.ts;
+    const runMeta = agentRunNodeMetaRef.current.get(lastDone.id);
+    agentRunNodeMetaRef.current.delete(lastDone.id);
+    const node = nodesRef.current.find((item) => item.id === lastDone.id);
+    if (runMeta?.runId) {
+      void api.submitAgentCanvasNodeResult(runMeta.runId, {
+        canvasId: runMeta.canvasId || activeId || undefined,
+        nodeId: lastDone.id,
+        ok: lastDone.ok,
+        error: lastDone.error,
+        node,
+        completedAt: lastDone.ts,
+      }).catch((error) => {
+        console.warn('agent node result report failed', error);
+      });
+    }
+    pushAgentActivity('agent:run_node_status', {
+      agentId: runMeta?.agentId || 'Codex',
+      nodeId: lastDone.id,
+      status: lastDone.ok ? 'success' : 'error',
+      payload: {
+        nodeId: lastDone.id,
+        detail: lastDone.ok
+          ? `${String(node?.type || '节点')} 已完成`
+          : (lastDone.error || '节点运行失败'),
+      },
+      createdAt: lastDone.ts,
+    }, lastDone.ok ? 'done' : 'error');
+  }, [activeId, lastDone, pushAgentActivity]);
 
   const assignActiveNodeSerials = useCallback((incomingNodes: Node[], existingNodes?: Node[]) => {
     const result = assignFreshNodeSerials(incomingNodes, existingNodes || nodesRef.current, nextNodeSerialIdRef.current);
@@ -3885,6 +4322,10 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
           : normalized.nextNodeSerialId;
         setPlacementShelfItems(placementShelfClearedCanvasIdsRef.current.has(requestedCanvasId) ? [] : placementShelfItemsFromCanvasNodes(fixedNs, '画布'));
         setPlacementShelfOpen(false);
+        const loadedCanvasMeta = useCanvasStore.getState().canvases.find((canvas) => canvas.id === requestedCanvasId);
+        if (loadedCanvasMeta?.updatedAt) {
+          lastKnownCanvasUpdatedAtRef.current.set(requestedCanvasId, loadedCanvasMeta.updatedAt);
+        }
         lastSavedByCanvasRef.current.set(requestedCanvasId, JSON.stringify({
           nodes: baselineNodes,
           edges: es,
@@ -3928,6 +4369,12 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       }
       saveTimersByCanvasRef.current.clear();
       pendingSaveByCanvasRef.current.clear();
+      if (realtimeBroadcastTimerRef.current) {
+        window.clearTimeout(realtimeBroadcastTimerRef.current);
+        realtimeBroadcastTimerRef.current = null;
+      }
+      realtimeClientRef.current?.close();
+      realtimeClientRef.current = null;
       if (edgeMotionReleaseTimerRef.current) {
         window.clearTimeout(edgeMotionReleaseTimerRef.current);
         edgeMotionReleaseTimerRef.current = null;
@@ -3960,12 +4407,290 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
     if (!activeId || !loaded || loadedCanvasId !== activeId) return;
     if (altDragCloneRef.current) return;
     if (nodes.some((node) => node.id === BULK_PHANTOM_ID || String(node.id || '').startsWith('_alt-ph-'))) return;
+    if (isDraggingRef.current) return;
     const normalized = normalizeCanvasNodeSerials(nodes, nextNodeSerialIdRef.current);
     nextNodeSerialIdRef.current = Math.max(nextNodeSerialIdRef.current, normalized.nextNodeSerialId);
     if (normalized.changed) {
       setNodes(normalized.nodes);
     }
   }, [activeId, loaded, loadedCanvasId, nodes]);
+
+  useEffect(() => {
+    if (!activeId || !loaded || loadedCanvasId !== activeId) return;
+    let cancelled = false;
+    let syncing = false;
+
+    const syncExternalCanvasUpdate = async () => {
+      if (cancelled || syncing) return;
+      if (isDraggingRef.current) return;
+      if (pendingSaveByCanvasRef.current.has(activeId)) return;
+      if (saveTimersByCanvasRef.current.has(activeId)) return;
+
+      syncing = true;
+      try {
+        const canvases = await api.listCanvases();
+        if (cancelled || useCanvasStore.getState().activeId !== activeId) return;
+        const activeCanvasMeta = canvases.find((canvas) => canvas.id === activeId);
+        const externalUpdatedAt = activeCanvasMeta?.updatedAt || 0;
+        const knownUpdatedAt = lastKnownCanvasUpdatedAtRef.current.get(activeId) || 0;
+        if (!externalUpdatedAt || externalUpdatedAt <= knownUpdatedAt) return;
+
+        const data = await api.getCanvasData(activeId);
+        if (cancelled || useCanvasStore.getState().activeId !== activeId) return;
+        if (pendingSaveByCanvasRef.current.has(activeId) || saveTimersByCanvasRef.current.has(activeId)) return;
+
+        const fixedNsBeforeSerials = (data.nodes || []).map((n: any) =>
+          n.type === 'groupBox' && n.connectable === false
+            ? { ...n, connectable: true }
+            : n,
+        );
+        const normalized = normalizeCanvasNodeSerials(fixedNsBeforeSerials, data.nextNodeSerialId);
+        const fixedNs = normalized.nodes;
+        const nextCreativeDesk = migrateCreativeDeskToViewportCoordinates(data.creativeDesk, data.viewport);
+        const nextFarmCanvas = sanitizeFarmCanvasState(data.farmCanvas);
+        nextNodeSerialIdRef.current = normalized.nextNodeSerialId;
+        setNodes(fixedNs);
+        setEdges(data.edges || []);
+        setCreativeDesk(nextCreativeDesk);
+        setFarmCanvas(nextFarmCanvas);
+        setPlacementShelfItems(placementShelfClearedCanvasIdsRef.current.has(activeId) ? [] : placementShelfItemsFromCanvasNodes(fixedNs, '画布'));
+        lastKnownCanvasUpdatedAtRef.current.set(activeId, externalUpdatedAt);
+        lastSavedByCanvasRef.current.set(activeId, JSON.stringify({
+          nodes: fixedNs,
+          edges: data.edges || [],
+          creativeDesk: nextCreativeDesk,
+          farmCanvas: nextFarmCanvas,
+          nextNodeSerialId: normalized.nextNodeSerialId,
+        }));
+        lastSavedNodeCountByCanvasRef.current.set(activeId, fixedNs.length);
+        histReset({ nodes: fixedNs, edges: data.edges || [] });
+        useCanvasStore.setState({
+          canvases: [...canvases].sort((a, b) => b.updatedAt - a.updatedAt),
+        });
+      } catch (error) {
+        console.warn('画布外部同步失败', error);
+      } finally {
+        syncing = false;
+      }
+    };
+
+    let canvasEventSource: EventSource | null = null;
+    try {
+      canvasEventSource = api.createCanvasEventSource();
+      const readEventPayload = (event: Event) => {
+        try {
+          return JSON.parse((event as MessageEvent).data || '{}');
+        } catch {
+          return null;
+        }
+      };
+      const handleAgentEvent = (eventName: string, status: AgentActivityItem['status'] = 'running') => (event: Event) => {
+        const payload = readEventPayload(event);
+        if (!payload) return;
+        pushAgentActivity(eventName, payload, status);
+      };
+      const handleAgentCanvasMutation = (eventName: string) => (event: Event) => {
+        const payload = readEventPayload(event);
+        if (!payload) return;
+        pushAgentActivity(eventName, payload, 'done');
+        if (payload.canvasId === activeId) void syncExternalCanvasUpdate();
+      };
+      canvasEventSource.addEventListener('canvas:updated', (event) => {
+        const payload = readEventPayload(event);
+        if (!payload?.canvasId) return;
+        if (payload.canvasId === activeId) {
+          void syncExternalCanvasUpdate();
+          return;
+        }
+        void api.listCanvases().then((canvases) => {
+          if (cancelled) return;
+          useCanvasStore.setState({
+            canvases: [...canvases].sort((a, b) => b.updatedAt - a.updatedAt),
+          });
+        }).catch((error) => {
+          console.warn('画布列表实时同步失败', error);
+        });
+      });
+      canvasEventSource.addEventListener('agent:run_started', handleAgentEvent('agent:run_started'));
+      canvasEventSource.addEventListener('agent:phase', handleAgentEvent('agent:phase', 'preview'));
+      canvasEventSource.addEventListener('agent:plan_diff', handleAgentEvent('agent:plan_diff', 'preview'));
+      canvasEventSource.addEventListener('agent:ask_user', handleAgentEvent('agent:ask_user', 'waiting'));
+      canvasEventSource.addEventListener('agent:user_answer', handleAgentEvent('agent:user_answer', 'done'));
+      canvasEventSource.addEventListener('agent:run_node_status', (event) => {
+        const payload = readEventPayload(event);
+        if (!payload) return;
+        const runStatus = String(payload.status || '').toLowerCase();
+        pushAgentActivity(
+          'agent:run_node_status',
+          payload,
+          runStatus === 'success' ? 'done' : runStatus === 'error' ? 'error' : runStatus === 'preview' ? 'preview' : 'running',
+        );
+      });
+      canvasEventSource.addEventListener('agent:tool_call_start', handleAgentEvent('agent:tool_call_start'));
+      canvasEventSource.addEventListener('agent:tool_call_end', handleAgentEvent('agent:tool_call_end', 'done'));
+      canvasEventSource.addEventListener('agent:run_done', handleAgentEvent('agent:run_done', 'done'));
+      canvasEventSource.addEventListener('agent:run_error', handleAgentEvent('agent:run_error', 'error'));
+      canvasEventSource.addEventListener('canvas:add_node', handleAgentCanvasMutation('canvas:add_node'));
+      canvasEventSource.addEventListener('canvas:update_node', handleAgentCanvasMutation('canvas:update_node'));
+      canvasEventSource.addEventListener('canvas:connect_edge', handleAgentCanvasMutation('canvas:connect_edge'));
+      canvasEventSource.addEventListener('canvas:run_node', (event) => {
+        const payload = readEventPayload(event);
+        if (!payload) return;
+        pushAgentActivity('canvas:run_node', payload, 'running');
+        if (payload.canvasId !== activeId) return;
+        const nodeId = String(payload?.payload?.nodeId || payload?.payload?.id || '').trim();
+        if (!nodeId) return;
+        agentRunNodeMetaRef.current.set(nodeId, {
+          runId: String(payload?.runId || '').trim(),
+          agentId: String(payload?.agentId || '').trim() || undefined,
+          canvasId: String(payload?.canvasId || activeId || '').trim() || undefined,
+          startedAt: Date.now(),
+        });
+        void syncExternalCanvasUpdate().finally(() => {
+          window.setTimeout(() => {
+            useRunBusStore.getState().triggerRun(nodeId, 'single');
+          }, 80);
+        });
+      });
+      canvasEventSource.addEventListener('canvas:preview_node', (event) => {
+        const payload = readEventPayload(event);
+        if (!payload) return;
+        pushAgentActivity('canvas:preview_node', payload, 'preview');
+        const position = payload?.payload?.position;
+        if (Number.isFinite(position?.x) && Number.isFinite(position?.y)) {
+          setAgentCursor({
+            x: Number(position.x),
+            y: Number(position.y),
+            label: String(payload?.agentId || 'Codex'),
+          });
+        }
+      });
+      canvasEventSource.addEventListener('canvas:focus_viewport', (event) => {
+        const payload = readEventPayload(event);
+        if (!payload) return;
+        pushAgentActivity('canvas:focus_viewport', payload, 'preview');
+        const view = payload?.payload || {};
+        if (Number.isFinite(view.x) && Number.isFinite(view.y)) {
+          setAgentCursor({
+            x: Number(view.x),
+            y: Number(view.y),
+            label: String(payload?.agentId || 'Codex'),
+          });
+          setCenter(Number(view.x), Number(view.y), {
+            zoom: Number.isFinite(view.zoom) ? Number(view.zoom) : getViewport().zoom,
+            duration: 420,
+          });
+        }
+      });
+      canvasEventSource.onerror = () => {
+        // Keep polling as the fallback if the realtime stream is interrupted.
+      };
+    } catch (error) {
+      console.warn('画布实时同步连接失败', error);
+    }
+
+    const timer = window.setInterval(syncExternalCanvasUpdate, CANVAS_EXTERNAL_SYNC_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      canvasEventSource?.close();
+      window.clearInterval(timer);
+    };
+  }, [activeId, getViewport, histReset, loaded, loadedCanvasId, pushAgentActivity, setCenter]);
+
+  useEffect(() => {
+    realtimeClientRef.current?.close();
+    realtimeClientRef.current = null;
+    lastRealtimeSnapshotRef.current = '';
+    if (!activeId || !loaded || loadedCanvasId !== activeId) return;
+
+    const clientId = makeCanvasRealtimeClientId(activeId);
+    realtimeClientIdRef.current = clientId;
+    const client = new CanvasRealtimeClient({
+      canvasId: activeId,
+      clientId,
+      onOp(op) {
+        if (op.clientId === clientId || op.canvasId !== activeId) return;
+        const result = applyCanvasRealtimeOp({
+          nodes: nodesRef.current,
+          edges: edgesRef.current,
+          viewport: getViewport(),
+          creativeDesk: creativeDeskRef.current,
+          farmCanvas: farmCanvasRef.current,
+        }, op);
+        if (!result.changed) return;
+        applyingRemoteRealtimeRef.current = true;
+        const nextCanvas = result.canvas;
+        setNodes(Array.isArray(nextCanvas.nodes) ? nextCanvas.nodes : []);
+        setEdges(Array.isArray(nextCanvas.edges) ? nextCanvas.edges : []);
+        if (nextCanvas.creativeDesk) {
+          setCreativeDesk(migrateCreativeDeskToViewportCoordinates(nextCanvas.creativeDesk, nextCanvas.viewport));
+        }
+        if (nextCanvas.farmCanvas) {
+          setFarmCanvas(sanitizeFarmCanvasState(nextCanvas.farmCanvas));
+        }
+        if (nextCanvas.viewport && op.type === 'viewport:update') {
+          setViewport(nextCanvas.viewport);
+        }
+        lastRealtimeSnapshotRef.current = JSON.stringify({
+          nodes: nextCanvas.nodes || [],
+          edges: nextCanvas.edges || [],
+          creativeDesk: nextCanvas.creativeDesk,
+          farmCanvas: nextCanvas.farmCanvas,
+          nextNodeSerialId: nextCanvas.nextNodeSerialId,
+        });
+        window.setTimeout(() => {
+          applyingRemoteRealtimeRef.current = false;
+        }, 120);
+      },
+    });
+    realtimeClientRef.current = client;
+    client.connect();
+    return () => {
+      client.close();
+      if (realtimeClientRef.current === client) realtimeClientRef.current = null;
+    };
+  }, [activeId, getViewport, loaded, loadedCanvasId, setViewport]);
+
+  useEffect(() => {
+    if (!activeId || !loaded || loadedCanvasId !== activeId) return;
+    if (applyingRemoteRealtimeRef.current) return;
+    if (isDraggingRef.current) return;
+    const client = realtimeClientRef.current;
+    if (!client || !realtimeClientIdRef.current) return;
+    const persistNodes = nodes.filter((n) => n.id !== BULK_PHANTOM_ID);
+    const persistEdges = edges.filter(
+      (ed) => ed.source !== BULK_PHANTOM_ID && ed.target !== BULK_PHANTOM_ID
+    );
+    const snapshot = JSON.stringify({
+      nodes: persistNodes,
+      edges: persistEdges,
+      creativeDesk,
+      farmCanvas,
+      nextNodeSerialId: nextNodeSerialIdRef.current,
+    });
+    if (snapshot === lastRealtimeSnapshotRef.current) return;
+    if (realtimeBroadcastTimerRef.current) window.clearTimeout(realtimeBroadcastTimerRef.current);
+    realtimeBroadcastTimerRef.current = window.setTimeout(() => {
+      realtimeBroadcastTimerRef.current = null;
+      if (applyingRemoteRealtimeRef.current) return;
+      const op = normalizeCanvasRealtimeOp({
+        canvasId: activeId,
+        clientId: realtimeClientIdRef.current,
+        type: 'canvas:snapshot',
+        payload: {
+          nodes: persistNodes,
+          edges: persistEdges,
+          viewport: getViewport(),
+          creativeDesk,
+          farmCanvas,
+          nextNodeSerialId: nextNodeSerialIdRef.current,
+        },
+      });
+      if (client.sendOp(op)) {
+        lastRealtimeSnapshotRef.current = snapshot;
+      }
+    }, 180);
+  }, [activeId, creativeDesk, edges, farmCanvas, getViewport, loaded, loadedCanvasId, nodes]);
 
   // nodes/edges 变化后压栈(节流防止拖拽中海量入栈)
   useEffect(() => {
@@ -3983,27 +4708,36 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       (ed) => ed.source !== BULK_PHANTOM_ID && ed.target !== BULK_PHANTOM_ID
     );
     const nextNodeSerialId = nextNodeSerialIdRef.current;
-    const snapshot = JSON.stringify({ nodes: persistNodes, edges: persistEdges, creativeDesk, farmCanvas, nextNodeSerialId });
+    const snapshot = JSON.stringify({ nodes: persistNodes, edges: persistEdges, creativeDesk, nextNodeSerialId, farmCanvas });
     const canvasIdForSave = activeId;
-    const previousSnapshot = lastSavedByCanvasRef.current.get(canvasIdForSave) || '';
-    if (snapshot === previousSnapshot) return;
-    const previousNodeCount = lastSavedNodeCountByCanvasRef.current.get(canvasIdForSave) || 0;
-    const allowEmptySave = allowEmptySaveCanvasIdsRef.current.has(canvasIdForSave);
-    if (persistNodes.length === 0 && previousNodeCount > 0 && !allowEmptySave) {
-      // 防止空数据覆盖
-      return;
-    }
     const previousTimer = saveTimersByCanvasRef.current.get(canvasIdForSave);
     if (previousTimer) window.clearTimeout(previousTimer);
-    pendingSaveByCanvasRef.current.set(canvasIdForSave, {
+    const pendingSave = {
       nodes: persistNodes,
       edges: persistEdges,
       creativeDesk,
       farmCanvas,
-      nextNodeSerialId,
       snapshot,
-    });
+      nextNodeSerialId,
+    };
+    pendingSaveByCanvasRef.current.set(canvasIdForSave, pendingSave);
     const timer = window.setTimeout(async () => {
+      const previousSnapshot = lastSavedByCanvasRef.current.get(canvasIdForSave) || '';
+      if (snapshot === previousSnapshot) {
+        if (pendingSaveByCanvasRef.current.get(canvasIdForSave) === pendingSave) {
+          pendingSaveByCanvasRef.current.delete(canvasIdForSave);
+        }
+        return;
+      }
+      const previousNodeCount = lastSavedNodeCountByCanvasRef.current.get(canvasIdForSave) || 0;
+      const allowEmptySave = allowEmptySaveCanvasIdsRef.current.has(canvasIdForSave);
+      if (persistNodes.length === 0 && previousNodeCount > 0 && !allowEmptySave) {
+        // 防止空数据覆盖
+        if (pendingSaveByCanvasRef.current.get(canvasIdForSave) === pendingSave) {
+          pendingSaveByCanvasRef.current.delete(canvasIdForSave);
+        }
+        return;
+      }
       const payload = { nodes: persistNodes, edges: persistEdges, viewport: getViewport(), nextNodeSerialId, creativeDesk, farmCanvas };
       try {
         await api.saveCanvasData(canvasIdForSave, payload, { allowEmpty: allowEmptySave });
@@ -4013,7 +4747,8 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         if (allowEmptySave) allowEmptySaveCanvasIdsRef.current.delete(canvasIdForSave);
         lastSavedByCanvasRef.current.set(canvasIdForSave, snapshot);
         lastSavedNodeCountByCanvasRef.current.set(canvasIdForSave, persistNodes.length);
-        if (pendingSaveByCanvasRef.current.get(canvasIdForSave)?.snapshot === snapshot) {
+        lastKnownCanvasUpdatedAtRef.current.set(canvasIdForSave, Date.now());
+        if (pendingSaveByCanvasRef.current.get(canvasIdForSave) === pendingSave) {
           pendingSaveByCanvasRef.current.delete(canvasIdForSave);
         }
         useCanvasStore.setState((state) => ({
@@ -4840,6 +5575,14 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       }
     };
 
+    const clearMiddlePan = () => {
+      if (middlePanRef.current?.dragging) {
+        document.documentElement.style.cursor = '';
+        document.body.style.cursor = '';
+      }
+      middlePanRef.current = null;
+    };
+
     const closeRadial = () => {
       clearPress();
       restoreRadialViewportLock();
@@ -4867,6 +5610,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         cursor: press.start,
         activeIndex: null,
       };
+      clearMiddlePan();
       radialMenuRef.current = next;
       setRadialMenu(next);
     };
@@ -4875,9 +5619,18 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       if (event.defaultPrevented || event.button !== RADIAL_MENU_MOUSE_BUTTON) return;
       if (event.pointerType && event.pointerType !== 'mouse') return;
       if (!isRadialMenuPaneTarget(event.target)) return;
+      if (middlePanRef.current?.dragging) return;
+      stopRadialPointerEvent(event);
       clearPress();
-      radialViewportLockRef.current = getViewport();
       const start = { x: event.clientX, y: event.clientY };
+      const viewport = getViewport();
+      middlePanRef.current = {
+        pointerId: event.pointerId,
+        start,
+        viewport,
+        dragging: false,
+      };
+      radialViewportLockRef.current = viewport;
       const press: RadialPressState = {
         pointerId: event.pointerId,
         start,
@@ -4890,6 +5643,28 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
     };
 
     const onPointerMove = (event: PointerEvent) => {
+      const middlePan = middlePanRef.current;
+      if (middlePan && middlePan.pointerId === event.pointerId) {
+        const point = { x: event.clientX, y: event.clientY };
+        const dx = point.x - middlePan.start.x;
+        const dy = point.y - middlePan.start.y;
+        if (middlePan.dragging || distanceBetween(middlePan.start, point) > MIDDLE_PAN_MOVE_TOLERANCE) {
+          if (!middlePan.dragging) {
+            document.documentElement.style.cursor = 'grabbing';
+            document.body.style.cursor = 'grabbing';
+          }
+          middlePan.dragging = true;
+          suppressMiddlePanAuxClick();
+          clearPress();
+          stopRadialPointerEvent(event);
+          setViewport({
+            x: middlePan.viewport.x + dx,
+            y: middlePan.viewport.y + dy,
+            zoom: middlePan.viewport.zoom,
+          });
+          return;
+        }
+      }
       const press = radialPressRef.current;
       if (!press || press.pointerId !== event.pointerId) return;
       const point = { x: event.clientX, y: event.clientY };
@@ -4909,6 +5684,17 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
     };
 
     const onPointerUp = (event: PointerEvent) => {
+      const middlePan = middlePanRef.current;
+      if (middlePan && middlePan.pointerId === event.pointerId) {
+        if (middlePan.dragging) {
+          suppressMiddlePanAuxClick();
+          clearPress();
+          clearMiddlePan();
+          stopRadialPointerEvent(event);
+          return;
+        }
+        clearMiddlePan();
+      }
       const press = radialPressRef.current;
       if (!press || press.pointerId !== event.pointerId) return;
       if (!press.open) {
@@ -4928,6 +5714,14 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
     };
 
     const onPointerCancel = (event: PointerEvent) => {
+      const middlePan = middlePanRef.current;
+      if (middlePan && middlePan.pointerId === event.pointerId) {
+        if (middlePan.dragging) {
+          suppressMiddlePanAuxClick();
+          stopRadialPointerEvent(event);
+        }
+        clearMiddlePan();
+      }
       const press = radialPressRef.current;
       if (!press || press.pointerId !== event.pointerId) return;
       if (press.open) {
@@ -4939,23 +5733,43 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
 
     const onAuxClick = (event: MouseEvent) => {
       if (event.button !== RADIAL_MENU_MOUSE_BUTTON) return;
+      if (Date.now() < middlePanAuxClickSuppressedUntilRef.current) {
+        stopRadialPointerEvent(event);
+        return;
+      }
       if (!radialMenuRef.current && !radialPressRef.current?.open) return;
       stopRadialPointerEvent(event);
     };
 
     const onMouseDown = (event: MouseEvent) => {
       if (event.button !== RADIAL_MENU_MOUSE_BUTTON) return;
+      if (middlePanRef.current) {
+        stopRadialPointerEvent(event);
+        return;
+      }
+      if (Date.now() < middlePanAuxClickSuppressedUntilRef.current) {
+        stopRadialPointerEvent(event);
+        return;
+      }
       if (!radialMenuRef.current && !radialPressRef.current?.open) return;
       stopRadialPointerEvent(event);
     };
 
     const onMouseMove = (event: MouseEvent) => {
+      if (middlePanRef.current?.dragging) {
+        stopRadialPointerEvent(event);
+        return;
+      }
       if (!radialMenuRef.current && !radialPressRef.current?.open) return;
       stopRadialPointerEvent(event);
     };
 
     const onMouseUp = (event: MouseEvent) => {
       if (event.button !== RADIAL_MENU_MOUSE_BUTTON) return;
+      if (Date.now() < middlePanAuxClickSuppressedUntilRef.current) {
+        stopRadialPointerEvent(event);
+        return;
+      }
       if (!radialMenuRef.current && !radialPressRef.current?.open) return;
       stopRadialPointerEvent(event);
     };
@@ -4995,6 +5809,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       window.removeEventListener('contextmenu', onContextMenu, true);
       window.removeEventListener('keydown', onKeyDown, true);
       window.removeEventListener('blur', closeRadial);
+      clearMiddlePan();
       closeRadial();
     };
   }, [
@@ -5004,6 +5819,8 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
     radialLongPressMs,
     radialSlots,
     restoreRadialViewportLock,
+    setViewport,
+    suppressMiddlePanAuxClick,
     suppressRadialContextMenu,
   ]);
 
@@ -5278,30 +6095,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
   }, []);
 
   const downloadMaterialItem = useCallback(async (item: MediaItem, index: number) => {
-    const fallbackName = `${item.kind}-${index + 1}`;
-    const fileName = item.name || fileNameFromUrl(item.url) || fallbackName;
-    try {
-      const res = await fetch(item.url);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const blob = await res.blob();
-      const objectUrl = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = objectUrl;
-      a.download = fileName;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1500);
-    } catch {
-      const a = document.createElement('a');
-      a.href = item.url;
-      a.download = fileName;
-      a.target = '_blank';
-      a.rel = 'noreferrer';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-    }
+    await downloadMediaUrl(item.kind, item.url, index, item.mime);
   }, []);
 
   const handleBatchDownloadSelected = useCallback(
@@ -5827,7 +6621,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         text: item.text,
         name: item.name,
       })),
-      tags: ['T8', '贞贞画布'],
+      tags: ['画布', '主题模板'],
     });
     if (!result.success) {
       logBus.warn(result.error || '发送到 Eagle 失败，请确认 Eagle 已启动并开启本地 API', 'Eagle');
@@ -5849,7 +6643,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         text: item.text,
         name: item.name,
       })),
-      tags: ['T8', '贞贞画布'],
+      tags: ['画布', '主题模板'],
     });
     if (!result.success) {
       const message = result.error || '发送到 Figma 失败：画布会自动启动本机 bridge，请确认 Figma 插件窗口已打开';
@@ -5938,17 +6732,6 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       outgoingEdges?: Edge[];
     }) | null;
     if (!cb || cb.nodes.length === 0) return;
-    // 运行时字段黑名单(复制/粘贴时必须重置,避免新节点显示为进行中/携带旧 taskId)
-    const RUNTIME_KEYS = [
-      'status', 'taskId', 'progress', 'error',
-      'isRunning', 'isPolling', 'pollingTimer',
-    ];
-    const sanitize = (data: any) => {
-      const next: any = { ...(data || {}) };
-      for (const k of RUNTIME_KEYS) delete next[k];
-      next.status = 'idle';
-      return next;
-    };
     const idMap = new Map<string, string>();
     const stamp = Date.now();
     const newNodes = cb.nodes.map((n, idx) => {
@@ -5958,7 +6741,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         ...n,
         id: newId,
         selected: true,
-        data: sanitize(n.data),
+        data: sanitizeClipboardNodeData(n.data),
       } as Node;
     });
     const remappedGroupNodes = remapPastedGroupMemberIds(newNodes, idMap) as Node[];
@@ -6164,37 +6947,42 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
   }, [assignActiveNodeSerials]);
 
   // ===== 批量运行 =====
-  // 通用: 在指定节点子集上拓扑排序 + 串行调 runBus
-  const runNodesByOrder = useCallback(
-    async (subNodes: Node[], subEdges: Edge[]) => {
-      const order = topologicalSort(subNodes, subEdges, EXECUTABLE_NODE_TYPES);
+  // 通用: 在指定节点子集上按可执行依赖分层调度；同层并发，链路内串行
+  const runStagesByOrder = useCallback(
+    async (stages: string[][]) => {
+      const order = stages.flat();
       if (order.length === 0) return 0;
       cancelRunRef.current = false;
       setIsRunning(true);
-      const { triggerRun, setBatchProgress, cancelAll } = useRunBusStore.getState();
+      const { triggerRunMany, setBatchProgress, cancelAll } = useRunBusStore.getState();
       setBatchProgress(order.length, 0);
-      try {
-        for (let i = 0; i < order.length; i++) {
-          if (cancelRunRef.current) break;
-          const id = order[i];
-          await new Promise<void>((resolve) => {
-            let done = false;
-            const finish = () => {
-              if (done) return;
-              done = true;
-              unsub();
-              window.clearTimeout(timer);
-              resolve();
-            };
-            const unsub = useRunBusStore.subscribe((state) => {
-              if (state.lastDone && state.lastDone.id === id) finish();
-              if (cancelRunRef.current) finish();
-            });
-            // 安全超时 60 分钟，避免图像/视频/SD2.0/音频长轮询被批量运行提前截断。
-            const timer = window.setTimeout(finish, 60 * 60 * 1000);
-            triggerRun(id, 'batch');
+      let completedCount = 0;
+      const waitForDone = (id: string, runStartTs: number) =>
+        new Promise<void>((resolve) => {
+          let done = false;
+          const finish = () => {
+            if (done) return;
+            done = true;
+            unsub();
+            window.clearTimeout(timer);
+            resolve();
+          };
+          const unsub = useRunBusStore.subscribe((state) => {
+            if (state.lastDone && state.lastDone.id === id && state.lastDone.ts >= runStartTs) finish();
+            if (cancelRunRef.current) finish();
           });
-          setBatchProgress(order.length, i + 1);
+          // 安全超时 60 分钟，避免图像/视频/SD2.0/音频长轮询被批量运行提前截断。
+          const timer = window.setTimeout(finish, 60 * 60 * 1000);
+        });
+      try {
+        for (const batch of stages) {
+          if (cancelRunRef.current) break;
+          const runStartTs = Date.now();
+          const waits = batch.map((id: string) => waitForDone(id, runStartTs));
+          triggerRunMany(batch, 'batch');
+          await Promise.all(waits);
+          completedCount += batch.length;
+          setBatchProgress(order.length, completedCount);
         }
       } finally {
         cancelAll();
@@ -6206,9 +6994,16 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
     []
   );
 
+  const runNodesByOrder = useCallback(
+    async (subNodes: Node[], subEdges: Edge[]) => (
+      runStagesByOrder(topologicalBatches(subNodes, subEdges, BATCH_EXECUTABLE_NODE_TYPES))
+    ),
+    [runStagesByOrder]
+  );
+
   const handleRunAll = useCallback(async () => {
     if (isRunning) return;
-    const order = topologicalSort(nodes, edges, EXECUTABLE_NODE_TYPES);
+    const order = topologicalSort(nodes, edges, BATCH_EXECUTABLE_NODE_TYPES);
     if (order.length === 0) {
       alert('画布上没有可执行节点');
       return;
@@ -6220,17 +7015,27 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
   const handleRunGroup = useCallback(
     async (ids: string[]) => {
       if (isRunning) return;
-      const idSet = new Set(ids);
+      const memberIds = expandGroupRunIds(ids, nodes);
+      const idSet = new Set(memberIds);
       const subNodes = nodes.filter((n) => idSet.has(n.id));
       const subEdges = edges.filter((e) => idSet.has(e.source) && idSet.has(e.target));
-      const executable = subNodes.filter((n) => n.type && EXECUTABLE_NODE_TYPES.has(n.type));
-      if (executable.length === 0) {
+      const plan = createGroupExecutionPlan({
+        nodes: subNodes,
+        edges: subEdges,
+        memberIds,
+        executableTypes: BATCH_EXECUTABLE_NODE_TYPES,
+      });
+      const stages = plan.stages.map((stage) => stage.map((item) => item.id));
+      if (stages.flat().length === 0) {
         alert('所选节点中没有可执行节点');
         return;
       }
-      await runNodesByOrder(subNodes, subEdges);
+      if (plan.cycleNodeIds.length > 0) {
+        logBus.warn(`组执行检测到循环依赖，已跳过 ${plan.cycleNodeIds.length} 个节点`, '组执行');
+      }
+      await runStagesByOrder(stages);
     },
-    [isRunning, nodes, edges, runNodesByOrder]
+    [isRunning, nodes, edges, runStagesByOrder]
   );
 
   // ===== ALT+拖动复制节点 =====
@@ -6243,6 +7048,41 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       isDraggingRef.current = true;
       setNodeDragging(true);
       altDragCloneRef.current = null;
+      groupDragRef.current = null;
+      if (node.type === 'groupBox') {
+        const groupRect = rectOf(node);
+        const memberIds = new Set<string>(
+          Array.isArray((node.data as any)?.memberIds)
+            ? (node.data as any).memberIds.filter((value: unknown): value is string => typeof value === 'string' && !!value)
+            : [],
+        );
+        for (const candidate of nodes) {
+          if (candidate.id === node.id || candidate.type === 'groupBox' || candidate.id === BULK_PHANTOM_ID) continue;
+          const rect = rectOf(candidate);
+          const center = { x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 };
+          if (
+            center.x >= groupRect.x &&
+            center.x <= groupRect.x + groupRect.w &&
+            center.y >= groupRect.y &&
+            center.y <= groupRect.y + groupRect.h
+          ) {
+            memberIds.add(candidate.id);
+          }
+        }
+        const memberPositions: Record<string, { x: number; y: number }> = {};
+        for (const candidate of nodes) {
+          if (memberIds.has(candidate.id)) {
+            memberPositions[candidate.id] = { ...candidate.position };
+          }
+        }
+        groupDragRef.current = {
+          groupId: node.id,
+          startX: node.position.x,
+          startY: node.position.y,
+          memberIds: Array.from(memberIds),
+          memberPositions,
+        };
+      }
       if (!e.altKey) return;
       // ALT 按下: 确定被拖动的节点集合
       const selected = nodes.filter((n) => n.selected);
@@ -6280,13 +7120,13 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
   );
 
   // ===== 节点组(GroupBox) =====
-  // 拖动组节点时使用,记录上一帧位置以计算 delta 同步偏移成员节点
-  // memberIds 在拖动开始时根据当前几何关系动态计算(不依赖创组时快照)
+  // 拖动组节点时使用,锁定拖动开始时的成员和相对位置
   const groupDragRef = useRef<{
     groupId: string;
-    lastX: number;
-    lastY: number;
+    startX: number;
+    startY: number;
     memberIds: string[];
+    memberPositions: Record<string, { x: number; y: number }>;
   } | null>(null);
 
   // 创建节点组: 计算 bounding box, 生成 type='groupBox' 节点装进 nodes
@@ -6347,28 +7187,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
   );
 
   const getGroupMemberIds = useCallback((groupId: string, sourceNodes: Node[] = nodesRef.current): string[] => {
-    const groupNode = sourceNodes.find((node) => node.id === groupId && node.type === 'groupBox');
-    if (!groupNode) return [];
-    const memberIds = new Set<string>(
-      Array.isArray((groupNode.data as any)?.memberIds)
-        ? (groupNode.data as any).memberIds.filter((value: unknown): value is string => typeof value === 'string' && !!value)
-        : [],
-    );
-    const groupRect = rectOf(groupNode);
-    for (const node of sourceNodes) {
-      if (node.id === groupId || node.type === 'groupBox' || node.id === BULK_PHANTOM_ID) continue;
-      const rect = rectOf(node);
-      const center = { x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 };
-      if (
-        center.x >= groupRect.x &&
-        center.x <= groupRect.x + groupRect.w &&
-        center.y >= groupRect.y &&
-        center.y <= groupRect.y + groupRect.h
-      ) {
-        memberIds.add(node.id);
-      }
-    }
-    return Array.from(memberIds);
+    return groupMemberIdsFromNodes(groupId, sourceNodes);
   }, []);
 
   const handleDeleteGroupsWithContents = useCallback((groupIds: string[]) => {
@@ -6449,56 +7268,19 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       // 拖动 GroupBox 节点: 联动所有成员节点同步偏移
       if (node.type === 'groupBox') {
         const ref = groupDragRef.current;
-        if (!ref || ref.groupId !== node.id) {
-          // 首帧: 根据当前几何位置重新计算哪些节点在组矩形内
-          // (节点中心点在组 bbox 内则视为成员,不再依赖创组时的静态 memberIds)
-          const gx = node.position.x;
-          const gy = node.position.y;
-          const gw =
-            (node.data as any)?.width ||
-            (node as any).width ||
-            (node as any).measured?.width ||
-            0;
-          const gh =
-            (node.data as any)?.height ||
-            (node as any).height ||
-            (node as any).measured?.height ||
-            0;
-          const liveMembers: string[] = [];
-          for (const n of nodes) {
-            if (n.id === node.id) continue;
-            if (n.type === 'groupBox') continue; // 不嵌套组
-            const nw =
-              (n as any).width || (n as any).measured?.width || 200;
-            const nh =
-              (n as any).height || (n as any).measured?.height || 100;
-            const cx = n.position.x + nw / 2;
-            const cy = n.position.y + nh / 2;
-            if (cx >= gx && cx <= gx + gw && cy >= gy && cy <= gy + gh) {
-              liveMembers.push(n.id);
-            }
-          }
-          groupDragRef.current = {
-            groupId: node.id,
-            lastX: node.position.x,
-            lastY: node.position.y,
-            memberIds: liveMembers,
-          };
-          return;
-        }
-        const dx = node.position.x - ref.lastX;
-        const dy = node.position.y - ref.lastY;
+        if (!ref || ref.groupId !== node.id) return;
+        const dx = node.position.x - ref.startX;
+        const dy = node.position.y - ref.startY;
         if (dx === 0 && dy === 0) return;
-        ref.lastX = node.position.x;
-        ref.lastY = node.position.y;
         if (ref.memberIds.length === 0) return;
         const idSet = new Set(ref.memberIds);
         setNodes((prev) =>
-          prev.map((n) =>
-            idSet.has(n.id)
-              ? { ...n, position: { x: n.position.x + dx, y: n.position.y + dy } }
-              : n
-          )
+          prev.map((n) => {
+            if (!idSet.has(n.id)) return n;
+            const initial = ref.memberPositions[n.id];
+            if (!initial) return n;
+            return { ...n, position: { x: initial.x + dx, y: initial.y + dy } };
+          })
         );
         return;
       }
@@ -6585,14 +7367,6 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       // phId → origId 反查表
       const phToOrig = new Map<string, string>();
       placeholderIds.forEach((phId, origId) => phToOrig.set(phId, origId));
-      // 运行时字段黑名单
-      const RUNTIME_KEYS = ['status', 'taskId', 'progress', 'error', 'isRunning', 'isPolling', 'pollingTimer'];
-      const sanitize = (data: any) => {
-        const next: any = { ...(data || {}) };
-        for (const k of RUNTIME_KEYS) delete next[k];
-        next.status = 'idle';
-        return next;
-      };
       const stamp = Date.now();
       const newIdMap = new Map<string, string>(); // origId -> newCopyId
 
@@ -6609,7 +7383,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
           if (origIds.has(n.id)) {
             const newId = `${n.type}-${stamp}-${newIdMap.size}-${Math.random().toString(36).slice(2, 5)}`;
             newIdMap.set(n.id, newId);
-            const copyNode = { ...n, id: newId, selected: true, data: sanitize(n.data) } as Node;
+            const copyNode = { ...n, id: newId, selected: true, data: sanitizeClipboardNodeData(n.data) } as Node;
             copyDrafts.push(copyNode);
             copyIds.add(newId);
             return copyNode;
@@ -6760,7 +7534,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       const target = e.target instanceof HTMLElement ? e.target : null;
       if (!target) return;
       if (target.closest('[data-resource-context-menu]')) return;
-      if (target.closest('[data-drag-source]')) return;
+      if (shouldTreatDragSourceAsMedia(target, e.nativeEvent)) return;
       const nodeEl = target.closest('.react-flow__node') as HTMLElement | null;
       const nodeId = nodeEl?.getAttribute('data-id') || '';
       if (!nodeId || nodeId === BULK_PHANTOM_ID) return;
@@ -6947,9 +7721,13 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       const filename = source.getAttribute('data-resource-title') || fileNameFromUrl(url) || `${kind}-${Date.now()}`;
       return { kind, url, filename };
     };
+    const isSmartNodeCardDragSource = (source: HTMLElement) =>
+      Boolean(source.closest('.t8-smart-node-card'));
     const armSource = (source: HTMLElement) => {
       source.setAttribute('draggable', 'true');
-      source.classList.add('nodrag', 'nopan');
+      if (!isSmartNodeCardDragSource(source)) {
+        source.classList.add('nodrag', 'nopan');
+      }
     };
     const clearCandidate = () => {
       candidate = null;
@@ -7018,7 +7796,9 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       return true;
     };
     const onPointerDown = (event: PointerEvent) => {
-      const source = findDragOutSourceAtPoint(event.target, event);
+      const source = shouldTreatDragSourceAsMedia(event.target, event)
+        ? findDragOutSourceAtPoint(event.target, event)
+        : null;
       const info = materialInfoFromSource(source);
       if (!source || !info) return;
       if (event.ctrlKey || event.metaKey) return;
@@ -7067,7 +7847,9 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       clearCandidate();
     };
     const onDragStart = (event: DragEvent) => {
-      const source = findDragOutSourceAtPoint(event.target, event);
+      const source = shouldTreatDragSourceAsMedia(event.target, event)
+        ? findDragOutSourceAtPoint(event.target, event)
+        : null;
       if (!source || !event.dataTransfer) return;
       const info = materialInfoFromSource(source);
       if (!info) return;
@@ -8197,6 +8979,16 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       const t = n.type as string;
       if (!t || SKIP_TYPES.has(t)) continue;
       const d = (n.data as any) || {};
+      if (CARD_MODE_OWNS_OUTPUT_TYPES.has(t) && d?.uiVariant !== 'classic') {
+        for (const edge of edges) {
+          if (edge.source !== n.id || !edge.id.startsWith('e-auto-')) continue;
+          const target = nodeById.get(edge.target);
+          if (target?.type === 'output' && target.id.startsWith('output-auto-')) {
+            toRemoveNodeIds.add(target.id);
+          }
+        }
+        continue;
+      }
       const directorOutputItems = t === 'director-storyboard' && Array.isArray(d.directorOutputItems)
         ? d.directorOutputItems
         : [];
@@ -8425,6 +9217,37 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       const modelItems = mods.map((url, i) => ({ kind: 'model3d' as const, url, kindIndex: i }));
       if (items.length === 0 && modelItems.length === 0) continue;
 
+      const buildImmediateOutputSnapshotData = (item: { kind: 'text' | 'image' | 'video' | 'audio'; url: string }) => {
+        const value = item.url.trim();
+        if (!value) return {};
+        if (item.kind === 'text') {
+          return {
+            directOutputSingleSnapshot: true,
+            directOutputText: value,
+            directTextSegments: [value],
+          };
+        }
+        if (item.kind === 'image') {
+          return {
+            directOutputSingleSnapshot: true,
+            directImageUrl: value,
+            directImageUrls: [value],
+          };
+        }
+        if (item.kind === 'video') {
+          return {
+            directOutputSingleSnapshot: true,
+            directVideoUrl: value,
+            directVideoUrls: [value],
+          };
+        }
+        return {
+          directOutputSingleSnapshot: true,
+          directAudioUrl: value,
+          directAudioUrls: [value],
+        };
+      };
+
       const outputDataForItem = (item: { kind: 'text' | 'image' | 'video' | 'audio'; url: string; kindIndex: number }) => {
         const base = { pickKind: item.kind, pickIndex: item.kindIndex };
         if (t === 'director-storyboard' && item.kind === 'video') {
@@ -8435,7 +9258,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         }
         return outputMaterialPersistenceEnabled
           ? { ...base, ...buildPersistentOutputSnapshotData(item) }
-          : base;
+          : { ...base, ...buildImmediateOutputSnapshotData(item) };
       };
 
       const outputPatchChanged = (current: any, patch: Record<string, any>) => (
@@ -9114,6 +9937,8 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
   const edgeMotionReduced = isDecorativeEdgeVisual && (viewportMoving || nodeDragging);
   const edgeMotionMode = isDecorativeEdgeVisual ? (edgeMotionReduced ? 'reduced' : 'scoped') : undefined;
   const heavyCanvasSurface = nodes.length >= 96 || edges.length >= EDGE_MOTION_HEAVY_EDGE_COUNT;
+  const canvasInteractionBusy = viewportMoving || nodeDragging;
+  const shouldCullOffscreenElements = heavyCanvasSurface || canvasInteractionBusy;
   const farmStoryToolbarHint = useMemo(
     () => (isFarmStory ? buildFarmToolbarConsoleHint(farmCanvas, farmStoryPanelOpen) : undefined),
     [farmCanvas, farmStoryPanelOpen, isFarmStory],
@@ -9260,7 +10085,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         style={{ background: bgColor, color: themeTokens.textMuted }}
       >
         <div className="text-center">
-          <div className="text-2xl mb-2 font-bold tracking-wide">🐧 贞贞的无限画布（企鹅共创版）</div>
+          <div className="text-2xl mb-2 font-bold tracking-wide">无限画布</div>
           <p>请先在左侧创建或选择一个画布</p>
         </div>
       </div>
@@ -9450,6 +10275,44 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       onContextMenuCapture={onCanvasContextMenuCapture}
       onMouseMove={handleCanvasPointerMove}
     >
+      {agentCursor && (
+        <div
+          className="t8-agent-cursor"
+          style={{ left: agentCursor.x, top: agentCursor.y }}
+        >
+          {agentCursor.label}
+        </div>
+      )}
+      {agentActivityItems.length > 0 && (
+        <div className="t8-agent-activity" aria-live="polite">
+          {agentActivityItems.map((item) => (
+            <div
+              key={item.id}
+              className={`t8-agent-activity__item is-${item.status}`}
+              title={item.event}
+            >
+              <span className="t8-agent-activity__dot" />
+              <span className="t8-agent-activity__text">
+                <strong>{item.label}</strong>
+                {item.detail ? <small>{item.detail}</small> : null}
+                {item.options?.length ? (
+                  <span className="t8-agent-activity__options">
+                    {item.options.map((option) => (
+                      <button
+                        key={`${item.id}-${option.label}`}
+                        type="button"
+                        onClick={() => handleAgentAnswerSelect(item, option)}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </span>
+                ) : null}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
       <CanvasToolbar
         canUndo={canUndo}
         canRedo={canRedo}
@@ -9476,8 +10339,6 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         historyCount={generationHistoryCount}
         historyOpen={generationHistoryOpen}
         onToggleHistory={() => setGenerationHistoryOpen((value) => !value)}
-        onOpenVibeXWorkbench={handleOpenVibeXWorkbench}
-        onCreateVibeXNode={handleCreateVibeXNode}
         onCreateGenerationTarget={handleCreateGenerationTarget}
         onExportResourcePackage={handleExportResourcePackage}
         onAlignSelection={handleAlignSelection}
@@ -9687,6 +10548,8 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         onConnectStart={onConnectStart}
         onConnectEnd={onConnectEnd}
         isValidConnection={onIsValidConnection}
+        connectionMode={ConnectionMode.Strict}
+        connectionRadius={40}
         connectionLineComponent={memoConnectionLineComponent}
         onNodeDragStart={onNodeDragStart}
         onNodeDrag={onNodeDrag}
@@ -9707,19 +10570,22 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         panOnDrag={memoPanOnDrag}
         snapToGrid={snapEnabled}
         snapGrid={SNAP_GRID}
-        elevateNodesOnSelect={false}
         minZoom={CANVAS_MIN_ZOOM}
+        elevateNodesOnSelect={false}
+        onlyRenderVisibleElements={shouldCullOffscreenElements}
         fitView
         fitViewOptions={CANVAS_OVERVIEW_FIT_OPTIONS}
         proOptions={memoProOptions}
         defaultEdgeOptions={memoDefaultEdgeOptions}
       >
-        <Background
-          variant={BackgroundVariant.Dots}
-          gap={20}
-          size={isPixel ? 1.6 : 1.2}
-          color={dotColor}
-        />
+        {!canvasInteractionBusy && (
+          <Background
+            variant={BackgroundVariant.Dots}
+            gap={20}
+            size={isPixel ? 1.6 : 1.2}
+            color={dotColor}
+          />
+        )}
         <FarmCanvasLayer
           farmCanvas={farmCanvas}
           editing={farmCanvasEditing}
@@ -9796,15 +10662,16 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
             </svg>
           </ViewportPortal>
         )}
-        <MiniMap
-          pannable
-          zoomable
-          onClick={(_e, position) => {
-            // 点击小地图任意位置 → 平滑居中到该 flow 坐标,保持当前缩放级别
-            const { zoom } = getViewport();
-            setCenter(position.x, position.y, { zoom, duration: 400 });
-          }}
-          style={{
+        {!canvasInteractionBusy && (
+          <MiniMap
+            pannable
+            zoomable
+            onClick={(_e, position) => {
+              // 点击小地图任意位置 → 平滑居中到该 flow 坐标,保持当前缩放级别
+              const { zoom } = getViewport();
+              setCenter(position.x, position.y, { zoom, duration: 400 });
+            }}
+            style={{
             width: isFarmStory ? 214 : isOp ? 144 : isNaruto ? 182 : isEva ? 258 : isYyh ? 224 : isSlamdunk ? 214 : isSoccer ? 224 : isDragonBall ? 192 : undefined,
             height: isFarmStory ? 136 : isOp ? 144 : isNaruto ? 122 : isEva ? 172 : isYyh ? 144 : isSlamdunk ? 128 : isSoccer ? 136 : isDragonBall ? 192 : undefined,
             background: isFarmStory
@@ -9868,6 +10735,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
           maskColor={isFarmStory ? 'rgba(111,191,74,.22)' : isOp ? 'rgba(15,124,140,.28)' : isNaruto ? 'rgba(255,91,31,.22)' : isEva ? 'rgba(156,255,0,.18)' : isYyh ? 'rgba(67,247,255,.16)' : isSlamdunk ? 'rgba(240,123,34,.22)' : isSoccer ? 'rgba(18,107,216,.22)' : isDragonBall ? 'rgba(255,176,0,.22)' : isDark ? 'rgba(0,0,0,.6)' : 'rgba(255,255,255,.6)'}
           nodeColor={() => (isFarmStory ? themeTokens.secondary : isOp ? themeTokens.secondary : isNaruto ? themeTokens.accent : isEva ? themeTokens.danger : isYyh ? themeTokens.success : isSlamdunk ? themeTokens.accent : isSoccer ? themeTokens.accent : isDragonBall ? themeTokens.warning : isDark ? '#a1a1aa' : '#52525b')}
         />
+        )}
         {farmMiniMapVisible && (
           <div
             className="t8-farm-minimap-markers"
@@ -10222,7 +11090,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       {contextMenu && (() => {
         const ids = contextMenu.ids;
         const selNodes = nodes.filter((n) => ids.includes(n.id));
-        const exeCount = selNodes.filter((n) => n.type && EXECUTABLE_NODE_TYPES.has(n.type)).length;
+        const exeCount = groupExecutableCount(ids, nodes, edges);
         const selectedGroupIds = selNodes.filter((n) => n.type === 'groupBox').map((n) => n.id);
         const groupCascadeMemberCount = selectedGroupIds.reduce(
           (sum, groupId) => sum + getGroupMemberIds(groupId, nodes).length,

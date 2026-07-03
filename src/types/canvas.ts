@@ -28,6 +28,7 @@ export type NodeType =
   | 'grok-oauth-agent'
   | 'codex-cli-agent'
   | 'codex-image-conjure'
+  | 'genclaw'
   | 'artist-style-master'
   | 'anime-tag-master'
   | 'comfyui-store'
@@ -48,11 +49,14 @@ export type NodeType =
   | 'pick-from-set'
   | 'text-split'
   | 'resize'
+  | 'lut-color'
   | 'combine'
   | 'remove-bg'
   | 'upscale'
   | 'grid-crop'
   | 'grid-editor'
+  | 'clip-studio'
+  | 'sketch-renderer'
   // Auxiliary (5)
   | 'edit'
   | 'idea'
@@ -68,9 +72,11 @@ export type NodeType =
   | 'pose-master'
   | 'aggregate-parser'
   | 'batch-processor'
+  | 'apparel-pack'
   | 'topaz-image-upscale'
   | 'topaz-video-upscale'
-  // 3D (1)
+  // 3D (2)
+  | 'director-studio'
   | 'panorama-3d'
   // Input/Output 素材 (2) - 上传素材(图像/视频/音频三合一) + 输出素材(文本/图像/视频/音频预览)
   | 'upload'
@@ -113,6 +119,9 @@ export interface NodeMeta {
 // 画布节点数据(xyflow Node.data)
 export type AdvancedProviderProtocol =
   | 'openai-compatible'
+  | 'openai'
+  | 'apimart'
+  | 'gemini'
   | 'modelscope'
   | 'volcengine'
   | 'agnes'
@@ -131,7 +140,9 @@ export interface AdvancedProviderConfig {
   imageModels?: string[];
   videoModels?: string[];
   chatModels?: string[];
-  defaults?: Record<string, any>;
+  defaults?: Record<string, any> & {
+    imageProtocol?: 'images' | 'openai-chat';
+  };
   modelscopeConfig?: {
     defaultsVersion?: number;
     loras?: Array<{
@@ -639,11 +650,11 @@ export interface CanvasData {
 export interface ApiSettings {
   // 三套通用 Key
   zhenzhenApiKey: string;
-  zhenzhenBaseUrl: string; // 锁定 https://ai.t8star.org
+  zhenzhenBaseUrl: string; // 用户填写的默认服务 Base URL
   rhApiKey: string;
   rhBaseUrl: string; // https://www.runninghub.cn
   llmApiKey: string;
-  llmBaseUrl: string; // 锁定 https://ai.t8star.org
+  llmBaseUrl: string; // 用户填写的 LLM Base URL
   // 分类 API Key（留空时 fallback 到 zhenzhenApiKey）
   gptImageApiKey?: string;
   nanoBananaApiKey?: string;
@@ -653,9 +664,12 @@ export interface ApiSettings {
   grokApiKey?: string;
   seedanceApiKey?: string;
   sunoApiKey?: string;
+  zhenzhenImageModelOverrides?: Record<string, string>;
+  zhenzhenVideoModelOverrides?: Record<string, string>;
+  zhenzhenImageModelProtocols?: Record<string, 'images' | 'images-generations' | 'images-edits' | 'openai-chat' | 'gemini-native'>;
   // v1.2.10.2: 全局生成素材自动保存到本地的路径(可用户自定义)
   fileSavePath?: string;
-  // v1.3.1: 画布自动保存导出路径(实际写入 <path>/T8-penguin-canvas/canvases)
+  // v1.3.1: 画布自动保存导出路径(实际写入 <path>/canvases)
   canvasAutoSavePath?: string;
   // v1.3.4: 资源库路径(资源文件 + resource_library.json 元数据)
   resourceLibraryPath?: string;
@@ -663,10 +677,17 @@ export interface ApiSettings {
   themeTemplatePath?: string;
   // 本地 Eagle API 地址(默认 http://127.0.0.1:41595)
   eagleApiBase?: string;
+  // Hakimi MCP 连接的画布后端地址(本地 Codex 控制远端画布时使用)
+  hakimiMcpBackendUrl?: string;
   advancedProviders?: AdvancedProviderConfig[];
   advancedProviderSummary?: AdvancedProviderSummary;
   cloudUploadTargets?: CloudUploadTargetConfig[];
   cloudUploadSummary?: CloudUploadSummary;
+  customNodeWorkshop?: {
+    enabled?: boolean;
+    pluginRoot?: string;
+    agentMode?: 'reviewed';
+  };
   taskCompletionSound?: {
     mode?: 'default' | 'custom';
     name?: string;

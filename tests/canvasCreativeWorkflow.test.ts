@@ -360,8 +360,8 @@ test('Cowart-inspired workflow is wired through node registry, toolbar, canvas, 
   assert.match(targetNode, /className="t8-generation-target-download nodrag nopan"/);
   assert.match(targetNode, /download/);
   assert.doesNotMatch(targetNode, /className=\{`t8-generation-target-node\s+nodrag/);
-  assert.match(targetNode, /className="t8-generation-target-title nodrag"/);
-  assert.match(targetNode, /className="t8-generation-target-prompt nodrag nowheel"/);
+  assert.match(targetNode, /className="t8-generation-target-title t8-input nodrag"/);
+  assert.match(targetNode, /className="t8-generation-target-prompt t8-textarea nodrag nowheel"/);
   assert.match(upstreamMaterials, /data\.resultUrl/);
   assert.match(upstreamMaterials, /'resultUrls'/);
   assert.match(mediaCollection, /data\.resultUrl/);
@@ -382,4 +382,19 @@ test('Cowart-inspired workflow is wired through node registry, toolbar, canvas, 
   assert.match(css, /\[data-theme-visual="saint-seiya"\] \.t8-generation-target-node/);
 
   assert.match(features, /cowartInspiredCanvasWorkflow/);
+});
+
+test('Generation target keeps the node drag surface while preserving nodrag on controls', () => {
+  const targetNode = read('../src/components/nodes/GenerationTargetNode.tsx');
+  const css = read('../src/styles/index.css');
+
+  assert.doesNotMatch(targetNode, /t8-generation-target-node nodrag/);
+  assert.match(targetNode, /className="t8-generation-target-title t8-input nodrag"/);
+  assert.match(targetNode, /className="t8-generation-target-prompt t8-textarea nodrag nowheel"/);
+  assert.match(targetNode, /<select className="t8-generation-target-select t8-select nodrag" value=\{aspectRatio\}/);
+  assert.match(targetNode, /<select className="t8-generation-target-select t8-select nodrag" value=\{sizeLevel\}/);
+  assert.match(targetNode, /className="t8-generation-target-action t8-btn t8-btn-primary nodrag"/);
+  assert.match(targetNode, /className="t8-generation-target-action t8-btn nodrag"/);
+  assert.match(css, /\.t8-generation-target-node[\s\S]*var\(--t8-bg-node/);
+  assert.match(css, /\.t8-generation-target-node[\s\S]*var\(--t8-border/);
 });

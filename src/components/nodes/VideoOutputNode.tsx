@@ -3,6 +3,8 @@ import { Handle, Position, useReactFlow, type NodeProps } from '@xyflow/react';
 import { MonitorPlay, Download } from 'lucide-react';
 import LoopingVideo from '../LoopingVideo';
 import SmartImage from '../SmartImage';
+import { mediaDownloadFileName } from '../../utils/mediaCollection';
+import { downloadMediaUrl } from '../../utils/downloadMedia';
 
 /**
  * VideoOutputNode - 视频结果展示
@@ -75,7 +77,12 @@ const VideoOutputNode = (p: NodeProps) => {
                 <span className="truncate flex-1">{u.split('/').pop()}</span>
                 <a
                   href={u}
-                  download
+                  download={mediaDownloadFileName(isVideoUrl(u) ? 'video' : 'image', u, i)}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    void downloadMediaUrl(isVideoUrl(u) ? 'video' : 'image', u, i);
+                  }}
                   className="flex items-center gap-0.5 text-white/60 hover:text-white px-1.5 py-0.5 rounded hover:bg-white/10"
                 >
                   <Download size={10} /> 下载

@@ -1,17 +1,24 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
-import { Handle, Position, type NodeProps } from '@xyflow/react';
-import { AlertCircle, Loader2, Music, Sparkles, Square, Upload, X } from 'lucide-react';
+import { flushSync } from 'react-dom';
+import { Handle, Position, useUpdateNodeInternals, type NodeProps } from '@xyflow/react';
+import { AlertCircle, Loader2, Music, RefreshCcw, Sparkles, Square, Upload, X } from 'lucide-react';
 import { submitAudio, queryAudio, uploadAudioForSuno, type AudioMode } from '../../services/generation';
 import { SUNO_VERSIONS, DEFAULT_SUNO_VERSION } from '../../providers/models';
 import { useUpdateNodeData } from './useUpdateNodeData';
 import { useHasAutoOutput } from './useHasAutoOutput';
 import { useRunTrigger } from '../../hooks/useRunTrigger';
+import { useRunBusStore } from '../../stores/runBus';
 import { logBus } from '../../stores/logs';
 import { PORT_COLOR } from '../../config/portTypes';
 import { useThemeStore } from '../../stores/theme';
 import { useUpstreamMaterials, type Material } from './useUpstreamMaterials';
 import { useOrderedMaterials } from './useOrderedMaterials';
 import MaterialPreviewSection from './MaterialPreviewSection';
+import {
+  pruneMaterialIdsForDisconnectedSource,
+  pruneMaterialOrderForDisconnectedSource,
+  useDisconnectUpstreamMaterial,
+} from './shared/upstreamMaterialConnections';
 import MentionPromptInput from './MentionPromptInput';
 import { resolveMediaMentions, type MediaMention } from './mediaMentions';
 import { useDragMaterialStore, type MaterialPayload } from '../../stores/dragMaterial';
@@ -19,11 +26,17 @@ import { useMaterialDropTarget } from '../../hooks/useMaterialDropTarget';
 import { taskCompletionSound } from '../../stores/taskCompletionSound';
 import {
   countExcludedMaterials,
-  excludeMaterialId,
   filterExcludedMaterials,
   normalizeExcludedMaterialIds,
 } from '../../utils/materialExclusion';
+import SmartNodeShell from './shared/SmartNodeShell';
+import SmartNodeComposer from './shared/SmartNodeComposer';
+import { useNodeGeometrySync } from './shared/useNodeGeometrySync';
+import { useOutsideClose } from './shared/useOutsideClose';
+import { useSmartNodePanelToggle } from './shared/useSmartNodePanelToggle';
+import { useThrottledNodeUpdate } from './shared/useThrottledNodeUpdate';
 import { LocalNodeAddonSlot } from 'virtual:t8-local-extensions';
+import ResizableCorners from './ResizableCorners';
 
 /**
  * AudioNode - Suno (generate / cover / extend) — 完全对齐 gpt-image-2-web
@@ -40,14 +53,22 @@ const MODES: Array<{ id: AudioMode; label: string }> = [
 const SUNO_POLL_INTERVAL_MS = 3000;
 const SUNO_POLL_TIMEOUT_SECONDS = 3600;
 const SUNO_MAX_POLL = Math.ceil((SUNO_POLL_TIMEOUT_SECONDS * 1000) / SUNO_POLL_INTERVAL_MS);
+const AUDIO_WAVEFORM_BARS = [34, 58, 42, 72, 50, 86, 64, 46, 78, 55, 38, 68, 48, 82, 57, 44, 73, 52, 62, 36, 66, 45, 76, 54];
 
 const AudioNode = ({ id, data, selected }: NodeProps) => {
   const update = useUpdateNodeData(id);
+  const { scheduleProgressUpdate, flushProgressUpdate } = useThrottledNodeUpdate(update, 500);
   const hasAutoOutput = useHasAutoOutput(id);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [smartCardDragging, setSmartCardDragging] = useState(false);
+  const [smartComposerOpenLocal, setSmartComposerOpenLocal] = useState(Boolean((data as any)?.smartComposerOpen));
   const pollTimer = useRef<number | null>(null);
+  const runCancelSeq = useRunBusStore((s) => s.cancelSeq);
+  const runCancelTargets = useRunBusStore((s) => s.cancelTargets);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const smartNodeRef = useRef<HTMLDivElement | null>(null);
+  const updateNodeInternals = useUpdateNodeInternals();
   const src = `audio:${id.slice(0, 6)}`;
 
   // 主题适配
@@ -74,6 +95,31 @@ const AudioNode = ({ id, data, selected }: NodeProps) => {
   const tracks: Array<{ id?: string; clipId?: string; audioUrl: string; remoteUrl?: string; imageUrl?: string; title?: string; tags?: string }>
     = d?.tracks || [];
   const pollProgress: string = d?.progress || '';
+  const isBusy = status === 'submitting' || status === 'polling';
+  const audioNodeUiVariant: 'smart-card' | 'classic' = d?.uiVariant === 'classic' ? 'classic' : 'smart-card';
+  const useSmartCardAudioNode = audioNodeUiVariant === 'smart-card';
+  const smartCardWidth = Math.max(300, Number(d?.smartCardWidth) || 320);
+  const smartCardHeight = Math.max(190, Number(d?.smartCardHeight) || 224);
+  const smartComposerOpen = smartComposerOpenLocal && !smartCardDragging;
+  const smartComposerWidth = Math.max(smartCardWidth, 560);
+  const syncAudioNodeGeometry = useNodeGeometrySync(id, updateNodeInternals);
+  const isSmartRegenerating = isBusy && tracks.length > 0;
+  const smartActiveTrackIndex = Math.min(
+    Math.max(0, Number.isFinite(Number(d?.smartActiveTrackIndex)) ? Number(d?.smartActiveTrackIndex) : 0),
+    Math.max(0, tracks.length - 1),
+  );
+  const smartActiveTrack = tracks[smartActiveTrackIndex] || tracks[0];
+  const smartModeLabel = MODES.find((m) => m.id === mode)?.label || mode;
+  const smartStatusLabel =
+    status === 'submitting'
+      ? '提交中'
+      : status === 'polling'
+        ? pollProgress ? `轮询 ${pollProgress}` : '轮询中'
+        : status === 'success'
+          ? '完成'
+          : status === 'error'
+            ? '错误'
+            : '待生成';
 
   const stopPoll = () => {
     if (pollTimer.current) {
@@ -105,11 +151,13 @@ const AudioNode = ({ id, data, selected }: NodeProps) => {
   const orderedTexts = useOrderedMaterials(visibleUpstreamTexts, materialOrder);
   const orderedAudios = useOrderedMaterials(visibleUpstreamAudios, materialOrder);
   const setMaterialOrder = (newOrder: string[]) => update({ materialOrder: newOrder });
+  const disconnectUpstreamMaterial = useDisconnectUpstreamMaterial(id);
   const handleExcludeUpstreamMaterial = (m: Material) => {
     if (m.origin !== 'upstream') return;
+    disconnectUpstreamMaterial(m);
     update({
-      excludedMaterialIds: excludeMaterialId(excludedMaterialIds, m.id),
-      materialOrder: materialOrder.filter((itemId) => itemId !== m.id),
+      excludedMaterialIds: pruneMaterialIdsForDisconnectedSource(excludedMaterialIds, m.sourceNodeId),
+      materialOrder: pruneMaterialOrderForDisconnectedSource(materialOrder, m.sourceNodeId),
     });
   };
   const handleRestoreExcludedMaterials = () => update({ excludedMaterialIds: [] });
@@ -130,9 +178,20 @@ const AudioNode = ({ id, data, selected }: NodeProps) => {
         : [],
     [localRefAudio, id],
   );
+  const orderedReferenceAudios = useOrderedMaterials(
+    [...visibleUpstreamAudios, ...localRefAudioMaterials],
+    materialOrder,
+  );
+  const handleRemoveLocalMaterial = (m: Material) => {
+    if (m.origin !== 'local') return;
+    update({
+      localRefAudio: '',
+      materialOrder: materialOrder.filter((itemId) => itemId !== m.id),
+    });
+  };
   const mentionMaterials = useMemo(
-    () => [...orderedAudios, ...localRefAudioMaterials],
-    [orderedAudios, localRefAudioMaterials],
+    () => orderedReferenceAudios,
+    [orderedReferenceAudios],
   );
   
   // 分组动态跟随模式: generate 只要文本, cover/extend 需要参考音频
@@ -141,10 +200,10 @@ const AudioNode = ({ id, data, selected }: NodeProps) => {
     [mode],
   );
   
-  // 收集上游: prompt + audioUrl(cover/extend 兼底, 取 ordered 首个, 后补本地拖入)
+  // 收集上游: prompt + audioUrl(cover/extend 兼底)，与卡片素材区的拖拽顺序保持一致。
   const collectUpstream = (): { prompt: string; audioUrl: string } => {
     const prompt = orderedTexts.map((t) => t.url).filter((s) => !!s).join('\n').trim();
-    const audioUrl = orderedAudios[0]?.url || localRefAudio || '';
+    const audioUrl = orderedReferenceAudios[0]?.url || '';
     return { prompt, audioUrl };
   };
 
@@ -204,6 +263,7 @@ const AudioNode = ({ id, data, selected }: NodeProps) => {
         elapsed += 1;
         if (elapsed > MAX) {
           stopPoll();
+          flushProgressUpdate();
           update({ status: 'error', error: '轮询超时 (60min)' });
           setError('轮询超时 (60min)');
           logBus.error('轮询超时', src);
@@ -214,6 +274,7 @@ const AudioNode = ({ id, data, selected }: NodeProps) => {
           const r = await queryAudio(clipIds, true);
           if (r.status === 'SUCCESS' && r.tracks.length > 0) {
             stopPoll();
+            flushProgressUpdate();
             // 双输出口: audioUrl=轨1, audioUrl_1=轨2
             update({
               status: 'success',
@@ -226,7 +287,7 @@ const AudioNode = ({ id, data, selected }: NodeProps) => {
             taskCompletionSound.notifyComplete(id, 'audio');
             resolve();
           } else {
-            update({ status: 'polling', progress: `${r.completed}/${r.total} · #${elapsed}` });
+            scheduleProgressUpdate({ status: 'polling', progress: `${r.completed}/${r.total} · #${elapsed}` });
             if (elapsed % 3 === 0) logBus.info(`轮询 #${elapsed} · ${r.completed}/${r.total}`, src);
           }
         } catch (e: any) {
@@ -246,7 +307,7 @@ const AudioNode = ({ id, data, selected }: NodeProps) => {
       return;
     }
     taskCompletionSound.primeAudio();
-    update({ status: 'submitting', error: null, tracks: [], audioUrl: undefined });
+    update({ status: 'submitting', error: null });
     try {
       // cover/extend: 如预传 clipId 为空但上游有 audioUrl, 则自动上传
       let clipIdForRef = uploadedClipId;
@@ -286,8 +347,16 @@ const AudioNode = ({ id, data, selected }: NodeProps) => {
 
   const handleStop = () => {
     stopPoll();
-    update({ status: 'idle' });
+    flushProgressUpdate();
+    setError(null);
+    update({ status: 'idle', progress: '', error: null });
   };
+
+  useEffect(() => {
+    if (runCancelSeq > 0 && runCancelTargets.includes(id) && (status === 'submitting' || status === 'polling')) {
+      handleStop();
+    }
+  }, [runCancelSeq, runCancelTargets, id, status]);
 
   // 接入运行总线
   useRunTrigger(id, async () => {
@@ -319,9 +388,370 @@ const AudioNode = ({ id, data, selected }: NodeProps) => {
     onDrop: handleDrop,
   });
 
-  const isBusy = status === 'submitting' || status === 'polling';
   const showRefArea = mode === 'cover' || mode === 'extend';
   const audioColor = PORT_COLOR.audio;
+
+  useEffect(() => {
+    if (!useSmartCardAudioNode) return;
+    const raf = window.requestAnimationFrame(syncAudioNodeGeometry);
+    return () => window.cancelAnimationFrame(raf);
+  }, [selected, smartCardWidth, smartCardHeight, smartComposerOpen, syncAudioNodeGeometry, useSmartCardAudioNode]);
+
+  useOutsideClose({
+    enabled: useSmartCardAudioNode && smartComposerOpenLocal,
+    refs: smartNodeRef,
+    onOutside: () => setSmartComposerOpenLocal(false),
+  });
+
+  const smartPanelToggle = useSmartNodePanelToggle({
+    open: smartComposerOpenLocal,
+    dragging: smartCardDragging,
+    onToggle: setSmartComposerOpenLocal,
+    onDragChange: setSmartCardDragging,
+    onDragClose: () => setSmartComposerOpenLocal(false),
+    disabled: !useSmartCardAudioNode,
+  });
+
+  const switchAudioNodeVariant = (variant: 'smart-card' | 'classic') => {
+    setSmartComposerOpenLocal(false);
+    smartPanelToggle.handledClickRef.current = false;
+    smartPanelToggle.suppressClickRef.current = true;
+    flushSync(() => {
+      update({ uiVariant: variant });
+    });
+    syncAudioNodeGeometry();
+  };
+
+  if (useSmartCardAudioNode) {
+    return (
+      <SmartNodeShell
+        rootRef={smartNodeRef}
+        className="t8-smart-audio-node relative overflow-visible"
+        style={{ width: smartCardWidth }}
+        rootProps={{
+          ...dropProps,
+          onPointerDown: smartPanelToggle.onPointerDown,
+          onPointerMove: smartPanelToggle.onPointerMove,
+          onPointerUp: smartPanelToggle.onPointerUp,
+          onPointerCancel: smartPanelToggle.onPointerCancel,
+          onClick: smartPanelToggle.onClick,
+        }}
+      >
+        <div
+          className={`t8-node t8-smart-node-card t8-smart-audio-card transition-all ${selected ? 't8-smart-node-card--selected' : ''} ${
+            isAccepting ? 't8-smart-node-card--accepting' : ''
+          } ${isSmartRegenerating ? 't8-smart-node-card--regenerating' : ''}`}
+          style={{ height: smartCardHeight }}
+        >
+          <Handle type="target" position={Position.Left} className="t8-smart-node-port !border-0" style={{ top: '50%' }} />
+          <Handle type="source" id="audio-0" position={Position.Right} className="t8-smart-node-port !border-0" style={{ top: '44%' }} />
+          <Handle type="source" id="audio-1" position={Position.Right} className="t8-smart-node-port !border-0" style={{ top: '56%' }} />
+          <ResizableCorners
+            selected={selected}
+            minWidth={300}
+            minHeight={190}
+            maxWidth={560}
+            maxHeight={420}
+            accent="var(--t8-accent)"
+            keepAspectRatio={false}
+            onResize={(_e, p) => {
+              update({ smartCardWidth: Math.round(p.width), smartCardHeight: Math.round(p.height) });
+              syncAudioNodeGeometry();
+            }}
+            onResizeEnd={(_e, p) => {
+              update({ smartCardWidth: Math.round(p.width), smartCardHeight: Math.round(p.height) });
+              syncAudioNodeGeometry();
+            }}
+          />
+
+          <div className="t8-smart-node-body">
+            <div className="t8-smart-node-preview t8-smart-audio-preview">
+              <div className="t8-smart-audio-topline">
+                <div className="t8-smart-audio-type">
+                  <Music size={12} />
+                  <span>音频</span>
+                </div>
+                <div className="t8-smart-audio-actions">
+                  <div className={`t8-smart-audio-status t8-smart-node-status--${status}`}>
+                    {isBusy && <Loader2 size={11} className="animate-spin" />}
+                    <span>{smartStatusLabel}</span>
+                  </div>
+                  <button
+                    type="button"
+                    className="nodrag nopan t8-btn t8-smart-classic-switch t8-smart-audio-switch"
+                    onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); switchAudioNodeVariant('classic'); }}
+                    title="切换到经典版节点"
+                    aria-label="切换到经典版节点"
+                  >
+                    <RefreshCcw size={13} />
+                  </button>
+                </div>
+              </div>
+
+              <div className="t8-smart-audio-center">
+                {smartActiveTrack?.imageUrl ? (
+                  <img className="t8-smart-audio-cover" src={smartActiveTrack.imageUrl} alt="" />
+                ) : (
+                  <div className="t8-smart-audio-cover t8-smart-audio-cover--empty">
+                    <Music size={22} />
+                  </div>
+                )}
+                <div className="t8-smart-audio-info">
+                  <div className="t8-smart-audio-title">
+                    {smartActiveTrack?.title || title || (tracks.length > 0 ? `轨道 ${smartActiveTrackIndex + 1}` : 'Suno 音频')}
+                  </div>
+                  <div className="t8-smart-audio-subtitle">
+                    {version} · {smartModeLabel}
+                    {tracks.length > 0 ? ` · ${tracks.length} 轨` : ''}
+                  </div>
+                </div>
+              </div>
+
+              <div className={`t8-smart-audio-waveform ${isBusy ? 'is-active' : ''}`}>
+                {AUDIO_WAVEFORM_BARS.map((height, index) => (
+                  <span key={`${height}-${index}`} style={{ height: `${height}%` }} />
+                ))}
+              </div>
+
+              {tracks.length > 1 && (
+                <div className="t8-smart-audio-track-tabs">
+                  {tracks.slice(0, 2).map((track, index) => (
+                    <button
+                      key={track.id || track.clipId || index}
+                      type="button"
+                      className="nodrag nopan"
+                      data-active={index === smartActiveTrackIndex}
+                      onPointerDown={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                      }}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        update({ smartActiveTrackIndex: index });
+                      }}
+                    >
+                      {index + 1}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {smartActiveTrack?.audioUrl ? (
+                <audio
+                  src={smartActiveTrack.audioUrl}
+                  controls
+                  className="nodrag nopan t8-smart-audio-player"
+                  data-drag-source
+                  data-drag-kind="audio"
+                  data-drag-url={smartActiveTrack.audioUrl}
+                  data-drag-preview={smartActiveTrack.audioUrl}
+                  data-drag-node-id={id}
+                  data-resource-title={smartActiveTrack.title || smartActiveTrack.audioUrl.split('/').pop() || '生成音频'}
+                  data-prompt-template-kind="video"
+                  data-prompt-template-category="video-music-audio"
+                  data-prompt-template-prompt={d?.lastPrompt || localPrompt}
+                  onMouseDown={(e) => beginMaterialDrag(e, { kind: 'audio', url: smartActiveTrack.audioUrl, sourceNodeId: id, previewUrl: smartActiveTrack.audioUrl })}
+                  title="按住 Ctrl 拖拽到其他节点"
+                />
+              ) : (
+                <div className="t8-smart-audio-empty-copy">
+                  {isBusy ? '正在等待 Suno 返回音频' : '点击卡片配置歌词和模式'}
+                </div>
+              )}
+
+            </div>
+            {error && (
+              <div className="t8-smart-node-error">
+                <AlertCircle size={12} />
+                <span>{error}</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {smartComposerOpen && (
+          <SmartNodeComposer portal anchorRef={smartNodeRef} style={{ width: smartComposerWidth }} onMouseDown={(e) => e.stopPropagation()}>
+            <MaterialPreviewSection
+              texts={orderedTexts}
+              audios={orderedReferenceAudios}
+              order={materialOrder}
+              onReorder={setMaterialOrder}
+              onRemoveLocal={handleRemoveLocalMaterial}
+              onExcludeUpstream={handleExcludeUpstreamMaterial}
+              excludedCount={excludedUpstreamCount}
+              onRestoreExcluded={handleRestoreExcludedMaterials}
+              selected={!!selected}
+              isDark={isDark}
+              isPixel={isPixel}
+              density="compact"
+              groups={['text', 'audio']}
+              title={mode === 'generate' ? '输入素材 · 歌词提示' : '输入素材 · 参考音频'}
+            />
+            <div className="t8-smart-ref-strip">
+              <div className="t8-smart-node-meta t8-smart-node-meta--composer">
+                <span>{version}</span>
+                <span>{smartModeLabel}</span>
+                <span>{smartStatusLabel}</span>
+                <span>{tracks.length || 0} 轨</span>
+              </div>
+              <div className="t8-smart-ref-spacer" />
+              <button
+                type="button"
+                className="nodrag nopan t8-btn t8-smart-classic-switch"
+                onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); switchAudioNodeVariant('classic'); }}
+                title="切换到经典版节点"
+                aria-label="切换到经典版节点"
+              >
+                <RefreshCcw size={13} />
+              </button>
+            </div>
+
+            <LocalNodeAddonSlot
+              nodeId={id}
+              nodeType="audio"
+              data={d}
+              update={update}
+              context={{
+                providerSource: 'zhenzhen',
+                model: version,
+                apiModel: `suno-${version}`,
+                providerKind: 'suno',
+              }}
+            />
+
+            <div className="t8-smart-audio-form-grid t8-smart-audio-form-grid--top">
+              <label className="t8-smart-field">
+                <span>模式</span>
+                <select value={mode} onChange={(e) => update({ mode: e.target.value })} className="t8-select t8-smart-select">
+                  {MODES.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+                </select>
+              </label>
+              <label className="t8-smart-field">
+                <span>版本</span>
+                <select value={version} onChange={(e) => update({ version: e.target.value })} className="t8-select t8-smart-select">
+                  {SUNO_VERSIONS.map((v) => <option key={v.value} value={v.value}>{v.label}</option>)}
+                </select>
+              </label>
+            </div>
+
+            <div className="t8-smart-audio-form-grid">
+              <label className="t8-smart-field">
+                <span>标题</span>
+                <input
+                  type="text"
+                  value={title}
+                  onChange={(e) => update({ title: e.target.value })}
+                  placeholder="My Song"
+                  className="t8-input"
+                />
+              </label>
+              <label className="t8-smart-field">
+                <span>风格 Tags</span>
+                <input
+                  type="text"
+                  value={tags}
+                  onChange={(e) => update({ tags: e.target.value })}
+                  placeholder="pop, electronic, female vocal"
+                  className="t8-input"
+                />
+              </label>
+            </div>
+
+            <div className="t8-smart-prompt-shell">
+              <MentionPromptInput
+                title="音频歌词 / 提示词"
+                value={localPrompt}
+                mentions={promptMentions}
+                materials={mentionMaterials}
+                onChange={(value, mentions) => update({ prompt: value, promptMentions: mentions })}
+                placeholder="[Verse]..."
+                isDark={isDark}
+                isPixel={isPixel}
+                promptTemplateKind="video"
+                className="t8-textarea t8-smart-prompt-input"
+              />
+            </div>
+
+            <div className="t8-smart-audio-form-grid t8-smart-audio-form-grid--compact">
+              <label className="t8-smart-field t8-smart-field--compact">
+                <span>Seed</span>
+                <input type="number" value={seed} onChange={(e) => update({ seed: parseInt(e.target.value) || 0 })} className="t8-input" />
+              </label>
+              {mode === 'extend' && (
+                <label className="t8-smart-field t8-smart-field--compact">
+                  <span>续点</span>
+                  <input type="number" value={continueAt} onChange={(e) => update({ continueAt: parseInt(e.target.value) || 28 })} className="t8-input" />
+                </label>
+              )}
+            </div>
+
+            {showRefArea && (
+              <div className="t8-smart-audio-ref-panel">
+                <div className="t8-smart-audio-ref-panel__main">
+                  <span>{mode === 'cover' ? 'Cover 参考音频' : 'Extend 参考音频'}</span>
+                  <strong>
+                    {uploadedClipId
+                      ? uploadedFilename || `${uploadedClipId.slice(0, 8)}...`
+                      : localRefAudio
+                        ? localRefAudio.split('/').pop() || '本地参考音频'
+                        : '未选择'}
+                  </strong>
+                </div>
+                {(uploadedClipId || localRefAudio) && (
+                  <button
+                    type="button"
+                    className="nodrag nopan t8-btn t8-smart-ref-btn"
+                    onClick={() => {
+                      clearUpload();
+                      if (localRefAudio) update({ localRefAudio: '' });
+                    }}
+                    title="清除参考音频"
+                  >
+                    <X size={12} />
+                  </button>
+                )}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="audio/*"
+                  className="hidden"
+                  onChange={onSelectFile}
+                />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploading}
+                  className="nodrag nopan t8-btn t8-smart-ref-btn"
+                >
+                  {uploading ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
+                  <span>{uploading ? '上传中' : '上传'}</span>
+                </button>
+              </div>
+            )}
+
+            <div className="t8-smart-composer-row">
+              {!isBusy ? (
+                <button type="button" onClick={handleGenerate} className="t8-btn t8-btn-primary t8-smart-run-btn">
+                  <Sparkles size={14} />
+                  <span>{uploading ? '处理中' : '生成音频'}</span>
+                </button>
+              ) : (
+                <button type="button" onClick={handleStop} className="t8-btn t8-smart-run-btn">
+                  <Square size={13} />
+                  <span>停止</span>
+                </button>
+              )}
+              <div className="t8-smart-param-spacer" />
+              {isBusy && <span className={`t8-chip t8-smart-mini-status t8-smart-node-status--${status}`}>{smartStatusLabel}</span>}
+            </div>
+          </SmartNodeComposer>
+        )}
+      </SmartNodeShell>
+    );
+  }
 
   return (
     <div
@@ -356,6 +786,23 @@ const AudioNode = ({ id, data, selected }: NodeProps) => {
             {version} · {MODES.find((m) => m.id === mode)?.label}
           </div>
         </div>
+        <button
+          type="button"
+          className="nodrag nopan t8-btn t8-smart-classic-switch"
+          onPointerDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          }}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            switchAudioNodeVariant('smart-card');
+          }}
+          title="切回卡片版节点"
+          aria-label="切回卡片版节点"
+        >
+          <Square size={12} />
+        </button>
       </div>
 
       <div className="p-2.5 space-y-2" onMouseDown={(e) => e.stopPropagation()}>

@@ -5,6 +5,7 @@ import {
   createUploadDataFromItems,
   createUploadMediaRemovalData,
   createUploadReplacementData,
+  mediaDownloadFileName,
 } from '../src/utils/mediaCollection.ts';
 
 test('createUploadReplacementData clears stale upload media fields when replacing kind', () => {
@@ -90,4 +91,26 @@ test('createOutputMediaRemovalData removes output material fields and records hi
   assert.equal(patch.directImageUrl, '/files/output/b.png');
   assert.deepEqual(patch.directImageUrls, ['/files/output/b.png']);
   assert.deepEqual(patch.hiddenMaterialUrls.image, ['/files/output/old.png', '/files/output/a.png']);
+});
+
+test('mediaDownloadFileName preserves existing media file extensions', () => {
+  const name = mediaDownloadFileName('image', '/files/output/final%20render.webp?token=abc', 0);
+
+  assert.equal(name, 'final render.webp');
+});
+
+test('mediaDownloadFileName adds a media extension when URL basename has none', () => {
+  assert.equal(
+    mediaDownloadFileName('image', '/files/output/3485ad8a-59b5-48f6-889a-19455926e258', 0),
+    '3485ad8a-59b5-48f6-889a-19455926e258.png',
+  );
+  assert.equal(mediaDownloadFileName('video', '/api/files/output/result', 1), 'result.mp4');
+  assert.equal(mediaDownloadFileName('audio', '/api/files/output/result', 1), 'result.mp3');
+  assert.equal(mediaDownloadFileName('model3d', '/api/files/output/result', 1), 'result.glb');
+});
+
+test('mediaDownloadFileName uses mime-specific extensions and safe fallback names', () => {
+  assert.equal(mediaDownloadFileName('image', 'blob:http://localhost/123', 2, 'image/webp'), 't8-output-image-3.webp');
+  assert.equal(mediaDownloadFileName('audio', '/api/files/output/name', 0, 'audio/wav'), 'name.wav');
+  assert.equal(mediaDownloadFileName('image', '/api/files/output/a:b?c', 0), 'a_b.png');
 });

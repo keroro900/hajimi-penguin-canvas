@@ -14,6 +14,12 @@ const {
   normalizeCloudUploadTargets,
   summarizeCloudUploadTargets,
 } = require('../cloudUploads/settings');
+const {
+  fetchModels: fetchOpenAICompatibleModels,
+} = require('../providers/openaiCompatible');
+const {
+  normalizeCustomNodeWorkshopSettings,
+} = require('../customNodes/manifest');
 
 const router = express.Router();
 
@@ -44,12 +50,12 @@ const TASK_COMPLETION_SOUND_EXTENSION_BY_MIME = {
 const DEFAULT_SETTINGS = {
   // 三套通用 Key
   zhenzhenApiKey: '',
-  zhenzhenBaseUrl: config.ZHENZHEN_BASE_URL, // 固定 https://ai.t8star.org
+  zhenzhenBaseUrl: config.ZHENZHEN_BASE_URL,
   rhApiKey: '',
   rhBaseUrl: config.RH_BASE_URL,
   // v1.2.9.16: 取消 rhWalletApiKey —— RH 钱包应用节点与普通 RunningHub 节点统一使用 rhApiKey
   llmApiKey: '',
-  llmBaseUrl: config.ZHENZHEN_BASE_URL, // 同贞贞工坊上游
+  llmBaseUrl: config.ZHENZHEN_BASE_URL,
   // 分类 Key（留空时 fallback 到 zhenzhenApiKey）
   gptImageApiKey: '',
   nanoBananaApiKey: '',
@@ -59,9 +65,12 @@ const DEFAULT_SETTINGS = {
   grokApiKey: '',
   seedanceApiKey: '',
   sunoApiKey: '',
+  zhenzhenImageModelOverrides: {},
+  zhenzhenVideoModelOverrides: {},
+  zhenzhenImageModelProtocols: {},
   // v1.2.10.2: 全局生成素材自动保存到本地的路径(可用户自定义)
   fileSavePath: config.DEFAULT_LOCAL_SAVE_DIR,
-  // v1.3.1: 画布自动保存导出路径(实际写入 <path>/T8-penguin-canvas/canvases)
+  // v1.3.1: 画布自动保存导出路径(实际写入 <path>/canvases)
   canvasAutoSavePath: config.DEFAULT_CANVAS_AUTO_SAVE_DIR,
   // v1.3.4: 资源库路径(资源文件 + resource_library.json 元数据)
   resourceLibraryPath: config.DEFAULT_RESOURCE_LIBRARY_DIR,
@@ -69,12 +78,16 @@ const DEFAULT_SETTINGS = {
   themeTemplatePath: config.DEFAULT_THEME_TEMPLATE_DIR,
   // 本地 Eagle API 地址，只用于“发送到 Eagle”功能。路由层仍会强制限制为本机地址。
   eagleApiBase: config.DEFAULT_EAGLE_API_BASE,
+  // Hakimi MCP 连接的画布后端地址。本地 Codex 控制远端画布时可改成服务器后端地址。
+  hakimiMcpBackendUrl: 'http://127.0.0.1:18766',
   // v1.8.0: 扩展 API 平台（高级可选）。默认只提供禁用的配置卡片，不影响主流程。
   advancedProviders: normalizeAdvancedProviders(),
   // v1.9.x: 云端上传目标（可选）。默认禁用，不影响资源库/自动保存主流程。
   cloudUploadTargets: normalizeCloudUploadTargets(),
   // 任务完成提示音；默认走前端内置短音，用户上传后走本地音频文件。
   taskCompletionSound: { ...TASK_COMPLETION_SOUND_DEFAULT },
+  // 外挂式自定义节点工坊；默认关闭，插件根目录默认在用户目录下，不写入主项目。
+  customNodeWorkshop: normalizeCustomNodeWorkshopSettings(),
   // 其他偏好
   preferences: {
     theme: 'dark',
@@ -197,9 +210,6 @@ function normalizePathForCompare(value) {
 }
 
 function migrateLegacyDefaultPaths(settings) {
-  if (process.platform === 'win32') {
-    return { settings, changed: false };
-  }
   let changed = false;
   const next = { ...settings };
   for (const field of Object.keys(CURRENT_DEFAULT_PATHS)) {
@@ -217,20 +227,91 @@ function maskKey(k) {
   return k ? '****' + String(k).slice(-4) : '';
 }
 
+function normalizeBaseUrl(value, fallback) {
+  const text = String(value || '').trim().replace(/\/+$/, '');
+  if (!text) return fallback || '';
+  try {
+    const parsed = new URL(text);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return fallback || '';
+    return text;
+  } catch {
+    return fallback || '';
+  }
+}
+
+function dropLegacyPersonalBaseUrl(value) {
+  const text = String(value || '').trim().replace(/\/+$/, '');
+  try {
+    const host = new URL(text).hostname.toLowerCase();
+    const legacyDomain = ['t8', 'star'].join('');
+    if (host === `ai.${legacyDomain}.org` || host === `ai.${legacyDomain}.cn`) return '';
+  } catch (_) {}
+  return text;
+}
+
+function normalizeModelOverrides(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const next = {};
+  for (const [key, raw] of Object.entries(value)) {
+    const id = String(key || '').trim();
+    const models = String(raw || '')
+      .split(/[\r\n,，;；]+/)
+      .map((item) => String(item || '').trim())
+      .filter(Boolean)
+      .filter((item, index, arr) => arr.indexOf(item) === index);
+    const model = models.join('\n');
+    if (!id || !model) continue;
+    if (id.length > 120 || model.length > 2000) continue;
+    if (/[\x00-\x1f\x7f]/.test(id) || /[\x00-\x09\x0b-\x1f\x7f]/.test(model)) continue;
+    next[id] = model;
+  }
+  return next;
+}
+
+function normalizeImageModelOverrides(value) {
+  return normalizeModelOverrides(value);
+}
+
+function normalizeImageModelProtocols(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const allowed = new Set(['images', 'images-generations', 'images-edits', 'openai-chat', 'gemini-native']);
+  const next = {};
+  for (const [key, raw] of Object.entries(value)) {
+    const id = String(key || '').trim();
+    const protocol = String(raw || '').trim();
+    if (!id || !allowed.has(protocol)) continue;
+    if (id.length > 120 || /[\x00-\x1f\x7f]/.test(id)) continue;
+    next[id] = protocol;
+  }
+  return next;
+}
+
+function normalizeSettingsBaseUrls(settings) {
+  const zhenzhenBaseUrl = normalizeBaseUrl(dropLegacyPersonalBaseUrl(settings.zhenzhenBaseUrl), config.ZHENZHEN_BASE_URL);
+  return {
+    ...settings,
+    zhenzhenBaseUrl,
+    rhBaseUrl: normalizeBaseUrl(settings.rhBaseUrl, config.RH_BASE_URL),
+    llmBaseUrl: normalizeBaseUrl(dropLegacyPersonalBaseUrl(settings.llmBaseUrl), zhenzhenBaseUrl || config.ZHENZHEN_BASE_URL),
+    hakimiMcpBackendUrl: normalizeBaseUrl(settings.hakimiMcpBackendUrl, DEFAULT_SETTINGS.hakimiMcpBackendUrl),
+    zhenzhenImageModelOverrides: normalizeImageModelOverrides(settings.zhenzhenImageModelOverrides),
+    zhenzhenVideoModelOverrides: normalizeModelOverrides(settings.zhenzhenVideoModelOverrides),
+    zhenzhenImageModelProtocols: normalizeImageModelProtocols(settings.zhenzhenImageModelProtocols),
+  };
+}
+
 function loadSettings({ persistMigrations = true } = {}) {
   if (!fs.existsSync(config.SETTINGS_FILE)) return { ...DEFAULT_SETTINGS };
   try {
     const data = JSON.parse(fs.readFileSync(config.SETTINGS_FILE, 'utf-8'));
-    // 强制 base URL 与配置一致(防篡改)
-    const merged = {
+    const merged = normalizeSettingsBaseUrls({
       ...DEFAULT_SETTINGS,
       ...data,
-      zhenzhenBaseUrl: config.ZHENZHEN_BASE_URL,
-      llmBaseUrl: config.ZHENZHEN_BASE_URL,
-    };
+    });
     merged.advancedProviders = normalizeAdvancedProviders(data.advancedProviders);
     merged.cloudUploadTargets = normalizeCloudUploadTargets(data.cloudUploadTargets);
     merged.taskCompletionSound = normalizeTaskCompletionSoundSettings(data.taskCompletionSound);
+    merged.customNodeWorkshop = normalizeCustomNodeWorkshopSettings(data.customNodeWorkshop);
     const migrated = migrateLegacyDefaultPaths(merged);
     if (persistMigrations && migrated.changed) {
       saveSettings(migrated.settings);
@@ -294,6 +375,54 @@ router.get('/', (_req, res) => {
 // GET /api/settings/raw — 内部接口,获取明文(供 Phase 4 代理调用使用)
 router.get('/raw', (_req, res) => {
   res.json({ success: true, data: loadSettings() });
+});
+
+router.post('/zhenzhen-models', async (req, res) => {
+  try {
+    const settings = loadSettings();
+    const baseUrl = normalizeBaseUrl(req.body?.baseUrl, settings.zhenzhenBaseUrl || config.ZHENZHEN_BASE_URL);
+    if (!baseUrl) {
+      return res.json({
+        success: true,
+        data: {
+          ok: false,
+          code: 'missing_base_url',
+          error: '请先填写通用服务 Base URL 后再拉取模型。',
+        },
+      });
+    }
+    const incomingKey = String(req.body?.apiKey || '').trim();
+    const apiKey = incomingKey || settings.zhenzhenApiKey || '';
+    if (!apiKey) {
+      return res.json({
+        success: true,
+        data: {
+          ok: false,
+          code: 'missing_api_key',
+          error: '请先填写通用服务 API Key，或保存已有 Key 后再拉取模型。',
+        },
+      });
+    }
+    const result = await fetchOpenAICompatibleModels({
+      id: 'zhenzhen-default',
+      protocol: 'openai-compatible',
+      baseUrl,
+      apiKey,
+    }, {
+      timeoutMs: Math.min(Math.max(Number(req.body?.timeoutMs) || 15000, 3000), 30000),
+    });
+    const { raw: _raw, provider: _provider, ...safeResult } = result || {};
+    res.json({ success: true, data: safeResult });
+  } catch (e) {
+    res.json({
+      success: true,
+      data: {
+        ok: false,
+        code: 'network_error',
+        error: e?.message || '拉取模型列表失败。',
+      },
+    });
+  }
 });
 
 // GET /api/settings/task-completion-sound — 获取当前提示音配置
@@ -372,13 +501,12 @@ router.post('/', (req, res) => {
   const { taskCompletionSound: _ignoredTaskCompletionSound, ...safeIncoming } = incoming;
   const hasAdvancedProviders = Object.prototype.hasOwnProperty.call(incoming, 'advancedProviders');
   const hasCloudUploadTargets = Object.prototype.hasOwnProperty.call(incoming, 'cloudUploadTargets');
+  const hasCustomNodeWorkshop = Object.prototype.hasOwnProperty.call(incoming, 'customNodeWorkshop');
   const merged = {
     ...current,
     ...safeIncoming,
-    // base URL 强制为配置值,不允许覆盖
-    zhenzhenBaseUrl: config.ZHENZHEN_BASE_URL,
-    llmBaseUrl: config.ZHENZHEN_BASE_URL,
   };
+  Object.assign(merged, normalizeSettingsBaseUrls(merged));
   merged.advancedProviders = hasAdvancedProviders
     ? normalizeAdvancedProviders(incoming.advancedProviders, current.advancedProviders)
     : normalizeAdvancedProviders(current.advancedProviders);
@@ -386,6 +514,9 @@ router.post('/', (req, res) => {
     ? normalizeCloudUploadTargets(incoming.cloudUploadTargets, current.cloudUploadTargets)
     : normalizeCloudUploadTargets(current.cloudUploadTargets);
   merged.taskCompletionSound = normalizeTaskCompletionSoundSettings(current.taskCompletionSound);
+  merged.customNodeWorkshop = hasCustomNodeWorkshop
+    ? normalizeCustomNodeWorkshopSettings(incoming.customNodeWorkshop)
+    : normalizeCustomNodeWorkshopSettings(current.customNodeWorkshop);
   saveSettings(merged);
   // v1.2.10.2/v1.3.1/v1.3.4: 保存后重新确保本地保存路径存在
   for (const field of ['fileSavePath', 'canvasAutoSavePath', 'resourceLibraryPath', 'themeTemplatePath']) {

@@ -7,9 +7,11 @@
 const express = require('express');
 const fs = require('fs');
 const fsp = require('fs').promises;
+const crypto = require('crypto');
 const path = require('path');
 const sharp = require('sharp');
 const config = require('../config');
+const { applyCubeLutToRgba, parseCubeLut } = require('../utils/lutCube');
 
 const router = express.Router();
 const RESOURCE_DB_FILE = 'resource_library.json';
@@ -56,6 +58,204 @@ function readResourceDb(root) {
   } catch {
     return null;
   }
+}
+
+function titleFromFilename(file) {
+  return path.basename(file, path.extname(file)).trim();
+}
+
+function humanizeLutFilename(file) {
+  return titleFromFilename(file).replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+const LUT_CATEGORY_ZH = {
+  'Bw': '黑白',
+  'Colorslide': '彩色反转片',
+  'Fujixtransiii': '富士 X-Trans III',
+  'Instant-Consumer': '消费级即影即有',
+  'Instant-Pro': '专业即影即有',
+  'Negative-Color': '彩色负片',
+  'Negative-New': '新式负片',
+  'Negative-Old': '经典负片',
+  'Print': '印片',
+};
+
+const LUT_TOKEN_ZH = {
+  agfa: '爱克发',
+  apx: 'APX',
+  bw: '黑白',
+  cn: 'CN',
+  cold: '冷调',
+  color: '彩色',
+  constlclip: '恒亮裁切',
+  constlmap: '恒亮映射',
+  cuspclip: '曲线裁切',
+  delta: 'Delta',
+  ektar: 'Ektar',
+  elite: 'Elite',
+  expired: '过期',
+  fp: 'FP',
+  fuji: '富士',
+  fujichrome: '富士反转片',
+  hie: 'HIE',
+  hp: 'HP',
+  hps: 'HPS',
+  hs: 'HS',
+  infra: '红外',
+  ilford: '伊尔福',
+  kodak: '柯达',
+  max: 'Max',
+  nc: 'NC',
+  negative: '负片',
+  neopan: 'Neopan',
+  pan: 'Pan',
+  polaroid: '宝丽来',
+  portra: 'Portra',
+  plus: 'Plus',
+  px: 'PX',
+  reala: 'Reala',
+  redscale: '红调',
+  superia: 'Superia',
+  t: 'T',
+  time: 'Time',
+  tri: 'Tri',
+  ultra: 'Ultra',
+  vc: 'VC',
+  vista: 'Vista',
+  warm: '暖调',
+  x: 'X',
+  xp: 'XP',
+  xpro: 'XPro',
+  xt: 'XT',
+  z: 'Z',
+};
+
+function translateLutDisplayName(filePath, category, source) {
+  const raw = titleFromFilename(filePath);
+  if (source === 'user') return raw;
+  const normalized = raw
+    .replace(/t-max/ig, 't max')
+    .replace(/tri-x/ig, 'tri x')
+    .replace(/x-tra/ig, 'x tra')
+    .replace(/([a-z])(\d)/ig, '$1 $2')
+    .replace(/(\d)([a-z])/ig, '$1 $2');
+  const tokens = normalized.split(/[_\s-]+/).filter(Boolean);
+  const translated = tokens.map((token) => {
+    if (/^[+\-]+$/.test(token)) return token;
+    if (/^\d+[a-z]?$/i.test(token)) return token.toUpperCase();
+    return LUT_TOKEN_ZH[token.toLowerCase()] || token.replace(/^\w/, (ch) => ch.toUpperCase());
+  }).join(' ');
+  const categoryLabel = LUT_CATEGORY_ZH[category] || category;
+  return categoryLabel && categoryLabel !== '未分类' ? `${translated} · ${categoryLabel}` : translated;
+}
+
+function lutIdFor(filePath) {
+  return crypto.createHash('sha1').update(path.resolve(filePath)).digest('hex').slice(0, 16);
+}
+
+function walkCubeFiles(root, limit = 600) {
+  const base = path.resolve(root || '');
+  if (!base || !fs.existsSync(base)) return [];
+  const out = [];
+  const stack = [base];
+  while (stack.length && out.length < limit) {
+    const dir = stack.pop();
+    let entries = [];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    entries.sort((a, b) => a.name.localeCompare(b.name, 'zh-Hans-CN'));
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (!entry.name.startsWith('.')) stack.push(full);
+      } else if (entry.isFile() && /\.cube$/i.test(entry.name)) {
+        out.push(full);
+        if (out.length >= limit) break;
+      }
+    }
+  }
+  return out;
+}
+
+function relativeCategory(root, filePath) {
+  const rel = path.relative(root, path.dirname(filePath));
+  if (!rel || rel === '.') return '未分类';
+  return rel.split(path.sep).filter(Boolean).slice(-2).join(' / ');
+}
+
+function normalizeLutCategory(category) {
+  return String(category || '未分类')
+    .replace(/^Film-Luts\s*(?:\/|\\|\s\/\s|\s\\\s)?\s*/i, '')
+    .trim() || '未分类';
+}
+
+function buildLutLibraryItems() {
+  const roots = [
+    {
+      source: 'open-source',
+      root: config.BUNDLED_LUT_DIR,
+      sourceName: 'YahiaAngelo/Film-Luts',
+      sourceUrl: 'https://github.com/YahiaAngelo/Film-Luts',
+      license: 'MIT',
+    },
+    {
+      source: 'user',
+      root: config.USER_LUT_DIR,
+      sourceName: '用户 LUT',
+      sourceUrl: '',
+      license: '',
+    },
+  ];
+  const items = [];
+  for (const rootInfo of roots) {
+    const root = path.resolve(rootInfo.root || '');
+    if (!root) continue;
+    if (rootInfo.source === 'user' && !fs.existsSync(root)) {
+      try { fs.mkdirSync(root, { recursive: true }); } catch (_) {}
+    }
+    for (const filePath of walkCubeFiles(root)) {
+      let stat = null;
+      try { stat = fs.statSync(filePath); } catch {}
+      const category = normalizeLutCategory(relativeCategory(root, filePath));
+      const name = titleFromFilename(filePath);
+      items.push({
+        id: lutIdFor(filePath),
+        name,
+        fileName: path.basename(filePath),
+        displayName: translateLutDisplayName(filePath, category, rootInfo.source),
+        englishName: humanizeLutFilename(filePath),
+        category,
+        categoryLabel: LUT_CATEGORY_ZH[category] || category,
+        source: rootInfo.source,
+        sourceName: rootInfo.sourceName,
+        sourceUrl: rootInfo.sourceUrl,
+        license: rootInfo.license,
+        size: stat?.size || 0,
+        updatedAt: stat?.mtimeMs || 0,
+        relPath: path.relative(root, filePath).split(path.sep).join('/'),
+        path: filePath,
+      });
+    }
+  }
+  items.sort((a, b) => {
+    if (a.source !== b.source) return a.source === 'open-source' ? -1 : 1;
+    return `${a.category}/${a.name}`.localeCompare(`${b.category}/${b.name}`, 'zh-Hans-CN');
+  });
+  return items;
+}
+
+function publicLutItem(item) {
+  const { path: _path, ...rest } = item;
+  return rest;
+}
+
+function findLutLibraryItem(id) {
+  const target = String(id || '').trim();
+  if (!target) return null;
+  return buildLutLibraryItems().find((item) => item.id === target) || null;
 }
 
 // 把本地 URL 解析为绝对路径
@@ -156,6 +356,254 @@ function clampNumber(v, min, max, fallback) {
   const n = Number(v);
   if (!Number.isFinite(n)) return fallback;
   return Math.max(min, Math.min(max, n));
+}
+
+function clamp01(value) {
+  return Math.max(0, Math.min(1, value));
+}
+
+function normalizeHue(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 0;
+  return ((n % 360) + 360) % 360;
+}
+
+const HSL_COLOR_RANGES = {
+  master: null,
+  red: 0,
+  yellow: 60,
+  green: 120,
+  cyan: 180,
+  blue: 240,
+  magenta: 300,
+};
+
+function normalizeHslRange(value) {
+  const key = String(value || 'master').toLowerCase();
+  return Object.prototype.hasOwnProperty.call(HSL_COLOR_RANGES, key) ? key : 'master';
+}
+
+function hueDistance(a, b) {
+  const d = Math.abs(normalizeHue(a) - normalizeHue(b)) % 360;
+  return Math.min(d, 360 - d);
+}
+
+function hslRangeWeight(hue, range) {
+  if (range === 'master') return 1;
+  const center = HSL_COLOR_RANGES[range];
+  if (center == null) return 1;
+  const dist = hueDistance(hue, center);
+  if (dist <= 30) return 1;
+  if (dist >= 50) return 0;
+  return 1 - ((dist - 30) / 20);
+}
+
+function rgbToHsl(r8, g8, b8) {
+  const r = r8 / 255;
+  const g = g8 / 255;
+  const b = b8 / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  let h = 0;
+  let s = 0;
+  const l = (max + min) / 2;
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) * 60;
+    else if (max === g) h = ((b - r) / d + 2) * 60;
+    else h = ((r - g) / d + 4) * 60;
+  }
+  return [h, s, l];
+}
+
+function hueToRgb(p, q, t) {
+  let x = t;
+  if (x < 0) x += 1;
+  if (x > 1) x -= 1;
+  if (x < 1 / 6) return p + (q - p) * 6 * x;
+  if (x < 1 / 2) return q;
+  if (x < 2 / 3) return p + (q - p) * (2 / 3 - x) * 6;
+  return p;
+}
+
+function hslToRgb(h, s, l) {
+  const hue = normalizeHue(h) / 360;
+  const sat = clamp01(s);
+  const light = clamp01(l);
+  if (sat === 0) {
+    const v = Math.round(light * 255);
+    return [v, v, v];
+  }
+  const q = light < 0.5 ? light * (1 + sat) : light + sat - light * sat;
+  const p = 2 * light - q;
+  return [
+    Math.round(hueToRgb(p, q, hue + 1 / 3) * 255),
+    Math.round(hueToRgb(p, q, hue) * 255),
+    Math.round(hueToRgb(p, q, hue - 1 / 3) * 255),
+  ];
+}
+
+function adjustSignedChannel(value, delta) {
+  const d = Math.max(-1, Math.min(1, delta));
+  return d >= 0 ? value + (1 - value) * d : value * (1 + d);
+}
+
+function normalizeHslAdjustment(input = {}) {
+  return {
+    hue: clampNumber(input.hslHue ?? input.hue, -180, 180, 0),
+    saturation: clampNumber(input.hslSaturation ?? input.saturation, -100, 100, 0),
+    lightness: clampNumber(input.hslLightness ?? input.lightness, -100, 100, 0),
+    range: normalizeHslRange(input.hslRange ?? input.range),
+    colorize: Boolean(input.hslColorize ?? input.colorize),
+  };
+}
+
+function applyHslAdjustmentsToRgba(input, adjustment) {
+  const hsl = normalizeHslAdjustment(adjustment);
+  if (!hsl.colorize && hsl.hue === 0 && hsl.saturation === 0 && hsl.lightness === 0) {
+    return Buffer.from(input);
+  }
+  const out = Buffer.from(input);
+  const satDelta = hsl.saturation / 100;
+  const lightDelta = hsl.lightness / 100;
+  for (let i = 0; i < out.length; i += 4) {
+    if (out[i + 3] === 0) continue;
+    const original = [out[i], out[i + 1], out[i + 2]];
+    let [h, s, l] = rgbToHsl(original[0], original[1], original[2]);
+    const weight = hslRangeWeight(h, hsl.range);
+    if (weight <= 0) continue;
+    if (hsl.colorize) {
+      h = normalizeHue(hsl.hue);
+      s = clamp01(0.5 + satDelta / 2);
+    } else {
+      h = normalizeHue(h + hsl.hue);
+      s = adjustSignedChannel(s, satDelta);
+    }
+    l = adjustSignedChannel(l, lightDelta);
+    const [r, g, b] = hslToRgb(h, s, l);
+    out[i] = Math.round(original[0] + (r - original[0]) * weight);
+    out[i + 1] = Math.round(original[1] + (g - original[1]) * weight);
+    out[i + 2] = Math.round(original[2] + (b - original[2]) * weight);
+  }
+  return out;
+}
+
+function normalizeCurve(value) {
+  const curve = String(value || 'linear');
+  return ['linear', 'soft-contrast', 'matte', 'film-fade', 'deep-shadow'].includes(curve) ? curve : 'linear';
+}
+
+function normalizeToneAdjustment(input = {}) {
+  return {
+    brightness: clampNumber(input.brightness, -100, 100, 0),
+    contrast: clampNumber(input.contrast, -100, 100, 0),
+    curve: normalizeCurve(input.curve),
+    curveAmount: clampNumber(input.curveAmount, 0, 100, 100),
+    curves: normalizeCurves(input.curves),
+  };
+}
+
+function normalizeCurvePoints(points) {
+  if (!Array.isArray(points)) return [[0, 0], [255, 255]];
+  const parsed = points
+    .map((point) => {
+      const x = Array.isArray(point) ? point[0] : point?.x;
+      const y = Array.isArray(point) ? point[1] : point?.y;
+      return [
+        Math.round(clampNumber(x, 0, 255, 0)),
+        Math.round(clampNumber(y, 0, 255, 0)),
+      ];
+    })
+    .filter((point) => Number.isFinite(point[0]) && Number.isFinite(point[1]));
+  parsed.push([0, 0], [255, 255]);
+  const byX = new Map();
+  parsed.forEach(([x, y]) => byX.set(x, y));
+  return [...byX.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([x, y]) => [x, y]);
+}
+
+function normalizeCurves(curves = {}) {
+  const source = curves && typeof curves === 'object' ? curves : {};
+  return {
+    rgb: normalizeCurvePoints(source.rgb),
+    r: normalizeCurvePoints(source.r),
+    g: normalizeCurvePoints(source.g),
+    b: normalizeCurvePoints(source.b),
+  };
+}
+
+function isIdentityCurve(points) {
+  return points.length === 2 && points[0][0] === 0 && points[0][1] === 0 && points[1][0] === 255 && points[1][1] === 255;
+}
+
+function buildCurveLut(points) {
+  const normalized = normalizeCurvePoints(points);
+  const lut = new Uint8Array(256);
+  let segment = 0;
+  for (let x = 0; x < 256; x += 1) {
+    while (segment < normalized.length - 2 && x > normalized[segment + 1][0]) segment += 1;
+    const [x0, y0] = normalized[segment];
+    const [x1, y1] = normalized[Math.min(segment + 1, normalized.length - 1)];
+    const t = x1 === x0 ? 0 : (x - x0) / (x1 - x0);
+    lut[x] = Math.round(clampNumber(y0 + (y1 - y0) * t, 0, 255, x));
+  }
+  return lut;
+}
+
+function smoothstep(edge0, edge1, value) {
+  const x = clamp01((value - edge0) / (edge1 - edge0));
+  return x * x * (3 - 2 * x);
+}
+
+function applyCurveChannel(value, curve) {
+  if (curve === 'soft-contrast') return smoothstep(0, 1, value);
+  if (curve === 'matte') return 0.08 + value * 0.86;
+  if (curve === 'film-fade') return Math.pow(value, 0.86) * 0.94 + 0.035;
+  if (curve === 'deep-shadow') return Math.pow(value, 1.18);
+  return value;
+}
+
+function applyToneAdjustmentsToRgba(input, adjustment) {
+  const tone = normalizeToneAdjustment(adjustment);
+  const hasCustomCurves = ['rgb', 'r', 'g', 'b'].some((key) => !isIdentityCurve(tone.curves[key]));
+  if (tone.brightness === 0 && tone.contrast === 0 && (tone.curve === 'linear' || tone.curveAmount === 0) && !hasCustomCurves) {
+    return Buffer.from(input);
+  }
+  const out = Buffer.from(input);
+  const brightness = tone.brightness / 100;
+  const contrast = tone.contrast / 100;
+  const curveMix = tone.curveAmount / 100;
+  const rgbCurve = buildCurveLut(tone.curves.rgb);
+  const channelCurves = [
+    buildCurveLut(tone.curves.r),
+    buildCurveLut(tone.curves.g),
+    buildCurveLut(tone.curves.b),
+  ];
+
+  // Formula adapted from evanw/glfx.js brightnessContrast and curves filters (MIT).
+  // Source project: https://github.com/evanw/glfx.js
+  for (let i = 0; i < out.length; i += 4) {
+    if (out[i + 3] === 0) continue;
+    for (let c = 0; c < 3; c += 1) {
+      let v = out[i + c] / 255;
+      v = clamp01(v + brightness);
+      if (contrast > 0) v = (v - 0.5) / Math.max(0.001, 1 - contrast) + 0.5;
+      else if (contrast < 0) v = (v - 0.5) * (1 + contrast) + 0.5;
+      v = clamp01(v);
+      if (tone.curve !== 'linear' && curveMix > 0) {
+        const curved = clamp01(applyCurveChannel(v, tone.curve));
+        v += (curved - v) * curveMix;
+      }
+      let byte = Math.round(clamp01(v) * 255);
+      if (hasCustomCurves) {
+        byte = channelCurves[c][rgbCurve[byte]];
+      }
+      out[i + c] = byte;
+    }
+  }
+  return out;
 }
 
 function normalizeTrimMode(value) {
@@ -778,6 +1226,102 @@ router.post('/upscale', async (req, res) => {
   } catch (e) {
     console.error('upscale 错误:', e);
     res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// ========== POST /api/image/lut — 3D LUT 调色 ==========
+router.post('/lut', async (req, res) => {
+  try {
+    const {
+      imageUrl,
+      lutText,
+      amount = 1,
+      lutEnabled: rawLutEnabled,
+      adjustEnabled: rawAdjustEnabled,
+    } = req.body || {};
+    const lutEnabled = rawLutEnabled !== false;
+    const adjustEnabled = rawAdjustEnabled !== false;
+    if (!imageUrl) return res.status(400).json({ success: false, error: '缺少 imageUrl' });
+    if (lutEnabled && (!lutText || typeof lutText !== 'string')) {
+      return res.status(400).json({ success: false, error: '缺少 LUT 内容' });
+    }
+
+    const input = await fetchImageBuffer(imageUrl);
+    const lut = lutEnabled ? parseCubeLut(lutText) : null;
+    const { data, info } = await sharp(input, { limitInputPixels: false })
+      .rotate()
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    const hsl = normalizeHslAdjustment(req.body || {});
+    const adjust = normalizeToneAdjustment(req.body || {});
+    let outRaw = lut ? applyCubeLutToRgba(data, lut, amount) : Buffer.from(data);
+    if (adjustEnabled) {
+      outRaw = applyHslAdjustmentsToRgba(outRaw, hsl);
+      outRaw = applyToneAdjustmentsToRgba(outRaw, adjust);
+    }
+    const out = await sharp(outRaw, {
+      raw: { width: info.width, height: info.height, channels: 4 },
+    })
+      .png({ compressionLevel: 3, effort: 1 })
+      .toBuffer();
+    const url = await saveBufferAsync(out, 'png');
+    res.json({
+      success: true,
+      data: {
+        imageUrl: url,
+        width: info.width,
+        height: info.height,
+        lutTitle: lut?.title || '',
+        lutEnabled,
+        adjustEnabled,
+        amount: Math.max(0, Math.min(1, Number(amount) || 0)),
+        hsl,
+        adjust,
+      },
+    });
+  } catch (e) {
+    console.error('lut 错误:', e);
+    res.status(500).json({ success: false, error: e.message || 'LUT 调色失败' });
+  }
+});
+
+// ========== GET /api/image/lut-library — 扫描开源 LUT 与用户 LUT 文件夹 ==========
+router.get('/lut-library', (_req, res) => {
+  try {
+    if (config.USER_LUT_DIR && !fs.existsSync(config.USER_LUT_DIR)) {
+      fs.mkdirSync(config.USER_LUT_DIR, { recursive: true });
+    }
+    res.json({
+      success: true,
+      data: {
+        userDir: config.USER_LUT_DIR,
+        openSourceDir: config.BUNDLED_LUT_DIR,
+        items: buildLutLibraryItems().map(publicLutItem),
+      },
+    });
+  } catch (e) {
+    console.error('lut-library 错误:', e);
+    res.status(500).json({ success: false, error: e.message || '读取 LUT 模板库失败' });
+  }
+});
+
+// ========== GET /api/image/lut-library/:id — 读取模板 cube 文本 ==========
+router.get('/lut-library/:id', async (req, res) => {
+  try {
+    const item = findLutLibraryItem(req.params.id);
+    if (!item) return res.status(404).json({ success: false, error: '未找到 LUT 模板' });
+    const root = item.source === 'user' ? config.USER_LUT_DIR : config.BUNDLED_LUT_DIR;
+    const safePath = assertInside(root, item.path);
+    if (!safePath || !/\.cube$/i.test(safePath)) {
+      return res.status(403).json({ success: false, error: 'LUT 路径不合法' });
+    }
+    const lutText = await fsp.readFile(safePath, 'utf-8');
+    parseCubeLut(lutText);
+    res.json({ success: true, data: { ...publicLutItem(item), lutText } });
+  } catch (e) {
+    console.error('lut-library load 错误:', e);
+    res.status(500).json({ success: false, error: e.message || '读取 LUT 模板失败' });
   }
 });
 

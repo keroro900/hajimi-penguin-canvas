@@ -1,14 +1,23 @@
 const DEFAULT_MODELSCOPE_BASE_URL = 'https://api-inference.modelscope.cn/v1';
 const DEFAULT_VOLCENGINE_BASE_URL = 'https://ark.cn-beijing.volces.com/api/v3';
 const DEFAULT_AGNES_BASE_URL = 'https://apihub.agnes-ai.com/v1';
+const MODEL_PROTOCOL_REGISTRY = require('../../../shared/modelProtocolRegistry.json');
 const { isAllowedComfyuiUrl } = require('./comfyuiAccess');
 
-const DEFAULT_MODELSCOPE_IMAGE_MODELS = [
-  'Tongyi-MAI/Z-Image-Turbo',
-  'Qwen/Qwen-Image-2512',
-  'Qwen/Qwen-Image-Edit-2511',
-  'black-forest-labs/FLUX.2-klein-9B',
-];
+function providerRegistry(protocol) {
+  return MODEL_PROTOCOL_REGISTRY.advancedProviders?.[protocol] || {};
+}
+
+function registryModels(protocol, kind) {
+  const list = providerRegistry(protocol)[`${kind}Models`];
+  return Array.isArray(list) ? [...list] : [];
+}
+
+function registryDefault(protocol, key, fallback = '') {
+  return String(providerRegistry(protocol).defaults?.[key] || fallback || '').trim();
+}
+
+const DEFAULT_MODELSCOPE_IMAGE_MODELS = registryModels('modelscope', 'image');
 
 const DEFAULT_MODELSCOPE_LORAS_VERSION = 1;
 
@@ -39,62 +48,37 @@ const DEFAULT_MODELSCOPE_LORAS = [
   },
 ];
 
-const DEFAULT_MODELSCOPE_CHAT_MODELS = [
-  'Qwen/Qwen3-235B-A22B',
-  'Qwen/Qwen3-VL-235B-A22B-Instruct',
-  'MiniMax/MiniMax-M2.7:MiniMax',
-];
+const DEFAULT_MODELSCOPE_CHAT_MODELS = registryModels('modelscope', 'chat');
 
-const DEFAULT_VOLCENGINE_IMAGE_MODELS = [
-  'doubao-seedream-4-0-250828',
-];
+const DEFAULT_VOLCENGINE_IMAGE_MODELS = registryModels('volcengine', 'image');
 
-const DEFAULT_VOLCENGINE_VIDEO_MODELS = [
-  'doubao-seedance-2-0-260128',
-  'doubao-seedance-2-0-fast-260128',
-  'doubao-seedance-1-5-pro-251215',
-  'doubao-seedance-1-0-pro-250528',
-  'doubao-seedance-1-0-lite-t2v-250428',
-  'doubao-seedance-1-0-lite-i2v-250428',
-];
+const DEFAULT_VOLCENGINE_VIDEO_MODELS = registryModels('volcengine', 'video');
 
-const DEFAULT_VOLCENGINE_CHAT_MODELS = [
-  'doubao-seed-1-6-250615',
-];
+const DEFAULT_VOLCENGINE_CHAT_MODELS = registryModels('volcengine', 'chat');
 
-const DEFAULT_AGNES_IMAGE_MODELS = [
-  'agnes-image-2.1-flash',
-  'agnes-image-2.0-flash',
-];
+const DEFAULT_OPENAI_IMAGE_MODELS = registryModels('openai', 'image');
 
-const DEFAULT_AGNES_VIDEO_MODELS = [
-  'agnes-video-v2.0',
-];
+const DEFAULT_OPENAI_CHAT_MODELS = registryModels('openai', 'chat');
 
-const DEFAULT_AGNES_CHAT_MODELS = [
-  'agnes-2.0-flash',
-];
+const DEFAULT_GEMINI_IMAGE_MODELS = registryModels('gemini', 'image');
 
-const DEFAULT_JIMENG_IMAGE_MODELS = [
-  'seedream-4.7',
-  'seedream-4.6',
-  'seedream-4.5',
-  'seedream-5.0',
-  'jimeng-image-2k',
-  'jimeng-image-4k',
-];
+const DEFAULT_GEMINI_CHAT_MODELS = registryModels('gemini', 'chat');
 
-const DEFAULT_JIMENG_VIDEO_MODELS = [
-  'seedance2.0fast_vip',
-  'seedance2.0_vip',
-  'seedance2.0fast',
-  'seedance2.0',
-  'jimeng-video-720p',
-  'jimeng-video-1080p',
-];
+const DEFAULT_AGNES_IMAGE_MODELS = registryModels('agnes', 'image');
+
+const DEFAULT_AGNES_VIDEO_MODELS = registryModels('agnes', 'video');
+
+const DEFAULT_AGNES_CHAT_MODELS = registryModels('agnes', 'chat');
+
+const DEFAULT_JIMENG_IMAGE_MODELS = registryModels('jimeng-cli', 'image');
+
+const DEFAULT_JIMENG_VIDEO_MODELS = registryModels('jimeng-cli', 'video');
 
 const SUPPORTED_PROTOCOLS = new Set([
   'openai-compatible',
+  'openai',
+  'apimart',
+  'gemini',
   'modelscope',
   'volcengine',
   'agnes',
@@ -118,6 +102,48 @@ const DEFAULT_ADVANCED_PROVIDERS = [
     defaults: {},
   },
   {
+    id: 'openai',
+    label: 'OpenAI 官方',
+    protocol: 'openai',
+    baseUrl: 'https://api.openai.com/v1',
+    enabled: false,
+    imageModels: DEFAULT_OPENAI_IMAGE_MODELS,
+    videoModels: [],
+    chatModels: DEFAULT_OPENAI_CHAT_MODELS,
+    defaults: {
+      imageModel: registryDefault('openai', 'imageModel', DEFAULT_OPENAI_IMAGE_MODELS[0]),
+      chatModel: registryDefault('openai', 'chatModel', DEFAULT_OPENAI_CHAT_MODELS[0]),
+    },
+  },
+  {
+    id: 'apimart',
+    label: 'API Mart',
+    protocol: 'apimart',
+    baseUrl: '',
+    enabled: false,
+    imageModels: DEFAULT_OPENAI_IMAGE_MODELS,
+    videoModels: [],
+    chatModels: DEFAULT_OPENAI_CHAT_MODELS,
+    defaults: {
+      imageModel: registryDefault('apimart', 'imageModel', DEFAULT_OPENAI_IMAGE_MODELS[0]),
+      chatModel: registryDefault('apimart', 'chatModel', DEFAULT_OPENAI_CHAT_MODELS[0]),
+    },
+  },
+  {
+    id: 'gemini',
+    label: 'Gemini',
+    protocol: 'gemini',
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+    enabled: false,
+    imageModels: DEFAULT_GEMINI_IMAGE_MODELS,
+    videoModels: [],
+    chatModels: DEFAULT_GEMINI_CHAT_MODELS,
+    defaults: {
+      imageModel: registryDefault('gemini', 'imageModel', DEFAULT_GEMINI_IMAGE_MODELS[0]),
+      chatModel: registryDefault('gemini', 'chatModel', DEFAULT_GEMINI_CHAT_MODELS[0]),
+    },
+  },
+  {
     id: 'modelscope',
     label: 'ModelScope',
     protocol: 'modelscope',
@@ -127,8 +153,8 @@ const DEFAULT_ADVANCED_PROVIDERS = [
     videoModels: [],
     chatModels: DEFAULT_MODELSCOPE_CHAT_MODELS,
     defaults: {
-      imageModel: DEFAULT_MODELSCOPE_IMAGE_MODELS[0],
-      chatModel: DEFAULT_MODELSCOPE_CHAT_MODELS[0],
+      imageModel: registryDefault('modelscope', 'imageModel', DEFAULT_MODELSCOPE_IMAGE_MODELS[0]),
+      chatModel: registryDefault('modelscope', 'chatModel', DEFAULT_MODELSCOPE_CHAT_MODELS[0]),
     },
     modelscopeConfig: {
       defaultsVersion: DEFAULT_MODELSCOPE_LORAS_VERSION,
@@ -145,9 +171,9 @@ const DEFAULT_ADVANCED_PROVIDERS = [
     videoModels: DEFAULT_VOLCENGINE_VIDEO_MODELS,
     chatModels: DEFAULT_VOLCENGINE_CHAT_MODELS,
     defaults: {
-      imageModel: DEFAULT_VOLCENGINE_IMAGE_MODELS[0],
-      videoModel: DEFAULT_VOLCENGINE_VIDEO_MODELS[1],
-      chatModel: DEFAULT_VOLCENGINE_CHAT_MODELS[0],
+      imageModel: registryDefault('volcengine', 'imageModel', DEFAULT_VOLCENGINE_IMAGE_MODELS[0]),
+      videoModel: registryDefault('volcengine', 'videoModel', DEFAULT_VOLCENGINE_VIDEO_MODELS[0]),
+      chatModel: registryDefault('volcengine', 'chatModel', DEFAULT_VOLCENGINE_CHAT_MODELS[0]),
     },
     volcengineConfig: {
       project: 'default',
@@ -164,10 +190,10 @@ const DEFAULT_ADVANCED_PROVIDERS = [
     videoModels: DEFAULT_AGNES_VIDEO_MODELS,
     chatModels: DEFAULT_AGNES_CHAT_MODELS,
     defaults: {
-      imageModel: DEFAULT_AGNES_IMAGE_MODELS[0],
-      videoModel: DEFAULT_AGNES_VIDEO_MODELS[0],
-      chatModel: DEFAULT_AGNES_CHAT_MODELS[0],
-      responseFormat: 'url',
+      imageModel: registryDefault('agnes', 'imageModel', DEFAULT_AGNES_IMAGE_MODELS[0]),
+      videoModel: registryDefault('agnes', 'videoModel', DEFAULT_AGNES_VIDEO_MODELS[0]),
+      chatModel: registryDefault('agnes', 'chatModel', DEFAULT_AGNES_CHAT_MODELS[0]),
+      responseFormat: registryDefault('agnes', 'responseFormat', 'url'),
     },
   },
   {
@@ -194,7 +220,10 @@ const DEFAULT_ADVANCED_PROVIDERS = [
     imageModels: DEFAULT_JIMENG_IMAGE_MODELS,
     videoModels: DEFAULT_JIMENG_VIDEO_MODELS,
     chatModels: [],
-    defaults: {},
+    defaults: {
+      imageModel: registryDefault('jimeng-cli', 'imageModel', DEFAULT_JIMENG_IMAGE_MODELS[0]),
+      videoModel: registryDefault('jimeng-cli', 'videoModel', DEFAULT_JIMENG_VIDEO_MODELS[0]),
+    },
     jimengConfig: {
       executablePath: '',
       useWsl: false,
@@ -225,6 +254,12 @@ function cleanId(value) {
 function cleanProtocol(value) {
   const protocol = String(value || '').trim().toLowerCase();
   return SUPPORTED_PROTOCOLS.has(protocol) ? protocol : '';
+}
+
+function protocolDefaultBaseUrl(protocol) {
+  if (protocol === 'openai') return 'https://api.openai.com/v1';
+  if (protocol === 'gemini') return 'https://generativelanguage.googleapis.com/v1beta';
+  return '';
 }
 
 function isMaskedSecret(value) {
@@ -334,10 +369,16 @@ function normalizePlainObject(value, maxEntries = 64) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
   const out = {};
   for (const [key, item] of Object.entries(value).slice(0, maxEntries)) {
+    if (CONTROL_CHAR_RE.test(String(key || ''))) continue;
     const cleanKey = cleanText(key, 80);
     if (!cleanKey || CONTROL_CHAR_RE.test(cleanKey)) continue;
     if (item == null) continue;
-    if (['string', 'number', 'boolean'].includes(typeof item)) out[cleanKey] = item;
+    if (typeof item === 'string') {
+      if (CONTROL_CHAR_RE.test(item)) continue;
+      out[cleanKey] = cleanText(item, 240);
+    } else if (['number', 'boolean'].includes(typeof item)) {
+      out[cleanKey] = item;
+    }
   }
   return out;
 }
@@ -441,6 +482,7 @@ function normalizeProvider(raw, previous = null) {
 
   const previousConfig = previous || {};
   let baseUrl = normalizeUrl(raw.baseUrl || raw.base_url || '');
+  if (!baseUrl) baseUrl = protocolDefaultBaseUrl(protocol);
   if (!baseUrl && protocol === 'modelscope') baseUrl = DEFAULT_MODELSCOPE_BASE_URL;
   if (!baseUrl && protocol === 'volcengine') baseUrl = DEFAULT_VOLCENGINE_BASE_URL;
   if (!baseUrl && protocol === 'agnes') baseUrl = DEFAULT_AGNES_BASE_URL;
@@ -474,8 +516,8 @@ function normalizeProvider(raw, previous = null) {
     provider.imageModels = mergeModelLists(DEFAULT_MODELSCOPE_IMAGE_MODELS, provider.imageModels);
     provider.chatModels = mergeModelLists(DEFAULT_MODELSCOPE_CHAT_MODELS, provider.chatModels);
     provider.defaults = {
-      imageModel: DEFAULT_MODELSCOPE_IMAGE_MODELS[0],
-      chatModel: DEFAULT_MODELSCOPE_CHAT_MODELS[0],
+      imageModel: registryDefault('modelscope', 'imageModel', DEFAULT_MODELSCOPE_IMAGE_MODELS[0]),
+      chatModel: registryDefault('modelscope', 'chatModel', DEFAULT_MODELSCOPE_CHAT_MODELS[0]),
       ...provider.defaults,
     };
     provider.modelscopeConfig = normalizeModelscopeConfig(raw.modelscopeConfig || raw.modelscope_config, raw);
@@ -486,9 +528,9 @@ function normalizeProvider(raw, previous = null) {
     provider.videoModels = mergeModelLists(DEFAULT_VOLCENGINE_VIDEO_MODELS, provider.videoModels);
     provider.chatModels = mergeModelLists(DEFAULT_VOLCENGINE_CHAT_MODELS, provider.chatModels);
     provider.defaults = {
-      imageModel: DEFAULT_VOLCENGINE_IMAGE_MODELS[0],
-      videoModel: DEFAULT_VOLCENGINE_VIDEO_MODELS[1],
-      chatModel: DEFAULT_VOLCENGINE_CHAT_MODELS[0],
+      imageModel: registryDefault('volcengine', 'imageModel', DEFAULT_VOLCENGINE_IMAGE_MODELS[0]),
+      videoModel: registryDefault('volcengine', 'videoModel', DEFAULT_VOLCENGINE_VIDEO_MODELS[0]),
+      chatModel: registryDefault('volcengine', 'chatModel', DEFAULT_VOLCENGINE_CHAT_MODELS[0]),
       ...provider.defaults,
     };
   }
@@ -512,10 +554,10 @@ function normalizeProvider(raw, previous = null) {
     provider.videoModels = mergeModelLists(DEFAULT_AGNES_VIDEO_MODELS, provider.videoModels);
     provider.chatModels = mergeModelLists(DEFAULT_AGNES_CHAT_MODELS, provider.chatModels);
     provider.defaults = {
-      imageModel: DEFAULT_AGNES_IMAGE_MODELS[0],
-      videoModel: DEFAULT_AGNES_VIDEO_MODELS[0],
-      chatModel: DEFAULT_AGNES_CHAT_MODELS[0],
-      responseFormat: 'url',
+      imageModel: registryDefault('agnes', 'imageModel', DEFAULT_AGNES_IMAGE_MODELS[0]),
+      videoModel: registryDefault('agnes', 'videoModel', DEFAULT_AGNES_VIDEO_MODELS[0]),
+      chatModel: registryDefault('agnes', 'chatModel', DEFAULT_AGNES_CHAT_MODELS[0]),
+      responseFormat: registryDefault('agnes', 'responseFormat', 'url'),
       ...provider.defaults,
     };
   }
@@ -597,10 +639,14 @@ function getEnabledAdvancedProviders(providers) {
 module.exports = {
   DEFAULT_ADVANCED_PROVIDERS,
   DEFAULT_ADVANCED_PROVIDER_IDS,
+  DEFAULT_GEMINI_CHAT_MODELS,
+  DEFAULT_GEMINI_IMAGE_MODELS,
   DEFAULT_MODELSCOPE_CHAT_MODELS,
   DEFAULT_MODELSCOPE_IMAGE_MODELS,
   DEFAULT_MODELSCOPE_LORAS,
   DEFAULT_MODELSCOPE_BASE_URL,
+  DEFAULT_OPENAI_CHAT_MODELS,
+  DEFAULT_OPENAI_IMAGE_MODELS,
   DEFAULT_AGNES_BASE_URL,
   DEFAULT_AGNES_CHAT_MODELS,
   DEFAULT_AGNES_IMAGE_MODELS,
@@ -618,3 +664,4 @@ module.exports = {
   normalizeModelscopeLoras,
   summarizeAdvancedProviders,
 };
+

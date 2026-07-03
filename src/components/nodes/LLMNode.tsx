@@ -32,6 +32,11 @@ import { useMaterialDropTarget } from '../../hooks/useMaterialDropTarget';
 import { useUpstreamMaterials, type Material } from './useUpstreamMaterials';
 import { useOrderedMaterials } from './useOrderedMaterials';
 import MaterialPreviewSection from './MaterialPreviewSection';
+import {
+  pruneMaterialIdsForDisconnectedSource,
+  pruneMaterialOrderForDisconnectedSource,
+  useDisconnectUpstreamMaterial,
+} from './shared/upstreamMaterialConnections';
 import { useThemeStore } from '../../stores/theme';
 import MentionPromptInput from './MentionPromptInput';
 import SmartImage from '../SmartImage';
@@ -48,7 +53,6 @@ import {
 } from '../../utils/advancedProviders';
 import {
   countExcludedMaterials,
-  excludeMaterialId,
   filterExcludedMaterials,
   normalizeExcludedMaterialIds,
 } from '../../utils/materialExclusion';
@@ -312,6 +316,7 @@ const LLMNode = ({ id, data, selected }: NodeProps) => {
   const orderedVideos = useOrderedMaterials(allVideosUnordered, materialOrder);
   const orderedTexts = useOrderedMaterials(visibleUpstreamTexts, materialOrder);
   const setMaterialOrder = (newOrder: string[]) => update({ materialOrder: newOrder });
+  const disconnectUpstreamMaterial = useDisconnectUpstreamMaterial(id);
   const handleRemoveLocalMaterial = (m: Material) => {
     if (m.origin !== 'local') return;
     if (m.kind === 'image') setPickedFiles((s) => s.filter((f) => f.dataUrl !== m.url));
@@ -319,9 +324,10 @@ const LLMNode = ({ id, data, selected }: NodeProps) => {
   };
   const handleExcludeUpstreamMaterial = (m: Material) => {
     if (m.origin !== 'upstream') return;
+    disconnectUpstreamMaterial(m);
     update({
-      excludedMaterialIds: excludeMaterialId(excludedMaterialIds, m.id),
-      materialOrder: materialOrder.filter((itemId) => itemId !== m.id),
+      excludedMaterialIds: pruneMaterialIdsForDisconnectedSource(excludedMaterialIds, m.sourceNodeId),
+      materialOrder: pruneMaterialOrderForDisconnectedSource(materialOrder, m.sourceNodeId),
     });
   };
   const handleRestoreExcludedMaterials = () => update({ excludedMaterialIds: [] });

@@ -1785,7 +1785,7 @@ const ToolboxParamNode = (p: NodeProps) => {
       try {
         const payload = JSON.parse(String(reader.result || '{}'));
         if (payload?.schema !== 't8-cinematic-presets') {
-          setError('JSON 格式不是 T8 电影感预设');
+          setError('JSON 格式不是电影感预设');
           return;
         }
         importCinematicPresetPayload(payload);
@@ -1958,7 +1958,7 @@ const ToolboxParamNode = (p: NodeProps) => {
       try {
         const payload = JSON.parse(String(reader.result || '{}'));
         if (payload?.schema !== 't8-video-motion-presets') {
-          setError('JSON 格式不是 T8 视频运镜预设');
+          setError('JSON 格式不是视频运镜预设');
           return;
         }
         importMotionPresetPayload(payload);
@@ -2115,7 +2115,7 @@ const ToolboxParamNode = (p: NodeProps) => {
       try {
         const payload = JSON.parse(String(reader.result || '{}'));
         if (payload?.schema !== 't8-multi-angle-presets') {
-          setError('JSON 格式不是 T8 多角度预设');
+          setError('JSON 格式不是多角度预设');
           return;
         }
         importMultiAnglePresetPayload(payload);

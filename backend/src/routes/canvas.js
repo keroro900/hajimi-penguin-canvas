@@ -3,6 +3,7 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const config = require('../config');
+const { broadcastCanvasEvent, handleCanvasEvents } = require('../utils/canvasEvents');
 
 const router = express.Router();
 
@@ -86,15 +87,47 @@ function getCanvasAutoSaveDir() {
   const settings = loadSettings();
   const base = String(settings.canvasAutoSavePath || config.DEFAULT_CANVAS_AUTO_SAVE_DIR || '').trim();
   if (!base) return '';
-  return path.join(base, 'T8-penguin-canvas', 'canvases');
+  return path.join(base, 'canvases');
+}
+
+function isTransientReplaceError(error) {
+  return error && ['EPERM', 'EBUSY', 'EACCES'].includes(error.code);
+}
+
+function waitForRetry(delayMs) {
+  if (delayMs <= 0) return;
+  const end = Date.now() + delayMs;
+  while (Date.now() < end) {
+    // Keep this synchronous because all canvas route persistence is synchronous.
+  }
+}
+
+function replaceFileWithRetry(tmp, file) {
+  const delays = [0, 20, 60, 140, 300];
+  let lastError = null;
+  for (const delay of delays) {
+    waitForRetry(delay);
+    try {
+      fs.renameSync(tmp, file);
+      return;
+    } catch (error) {
+      lastError = error;
+      if (!isTransientReplaceError(error)) throw error;
+    }
+  }
+  fs.copyFileSync(tmp, file);
+  fs.unlinkSync(tmp);
+  if (lastError) {
+    console.warn(`⚠ JSON 原子替换被系统占用，已用复制兜底保存: ${file} (${lastError.code})`);
+  }
 }
 
 function atomicWriteJson(file, data) {
   const dir = path.dirname(file);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  const tmp = `${file}.tmp`;
+  const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
   fs.writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf-8');
-  fs.renameSync(tmp, file);
+  replaceFileWithRetry(tmp, file);
 }
 
 function parseNodeSerialId(value) {
@@ -833,6 +866,9 @@ router.get('/', (_req, res) => {
   res.json({ success: true, data: list });
 });
 
+// GET /api/canvas/events — Codex/Hakimi 外部写入的实时画布事件 (text/event-stream, broadcastCanvasEvent)
+router.get('/events', handleCanvasEvents);
+
 // POST /api/canvas — 创建画布
 router.post('/', (req, res) => {
   const list = loadCanvasList();
@@ -847,6 +883,12 @@ router.post('/', (req, res) => {
   };
   list.push(canvas);
   saveCanvasList(list);
+  broadcastCanvasEvent('canvas:updated', {
+    canvasId: id,
+    action: 'created',
+    updatedAt: now,
+    nodeCount: 0,
+  });
   // 初始化空画布数据
   atomicWriteJson(getCanvasFile(id), {
     nodes: [],
@@ -909,13 +951,19 @@ router.put('/:id', (req, res) => {
     item.nodeCount = persisted.nodes.length;
     item.updatedAt = Date.now();
     saveCanvasList(list);
+    broadcastCanvasEvent('canvas:updated', {
+      canvasId: req.params.id,
+      action: 'saved',
+      updatedAt: item.updatedAt,
+      nodeCount: item.nodeCount,
+    });
   }
   res.json({ success: true });
 });
 
 // POST /api/canvas/:id/auto-save — 将当前画布镜像保存到用户配置的本地目录
 // 用于跨版本迁移: 用户可在「API 设置 → 画布自动保存路径」配置基础路径。
-// 实际保存位置: <path>/T8-penguin-canvas/canvases/<画布名>-<id>.json
+// 实际保存位置: <path>/canvases/<画布名>-<id>.json
 router.post('/:id/auto-save', (req, res) => {
   try {
     const incoming = req.body;
@@ -972,6 +1020,12 @@ router.delete('/:id', (req, res) => {
   saveCanvasList(filtered);
   const file = getCanvasFile(req.params.id);
   if (fs.existsSync(file)) fs.unlinkSync(file);
+  broadcastCanvasEvent('canvas:updated', {
+    canvasId: req.params.id,
+    action: 'deleted',
+    updatedAt: Date.now(),
+    nodeCount: 0,
+  });
   res.json({ success: true });
 });
 
@@ -983,6 +1037,12 @@ router.patch('/:id/name', (req, res) => {
   item.name = req.body?.name || item.name;
   item.updatedAt = Date.now();
   saveCanvasList(list);
+  broadcastCanvasEvent('canvas:updated', {
+    canvasId: req.params.id,
+    action: 'renamed',
+    updatedAt: item.updatedAt,
+    nodeCount: item.nodeCount,
+  });
   res.json({ success: true, data: item });
 });
 

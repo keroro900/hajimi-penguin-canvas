@@ -144,7 +144,10 @@ test('Codex image conjure frontend only uses Codex CLI image generation and reso
   assert.match(node, /data-codex-image-conjure-input-materials="true"/);
   assert.match(node, /const visibleUpstreamImages = useMemo\([\s\S]*filterExcludedMaterials\(upstream\.images, excludedMaterialIds\)/);
   assert.match(node, /const orderedInputImages = useOrderedMaterials\(inputImageMaterials, materialOrder\)/);
-  assert.match(node, /codexConjureExcludedMaterialIds: excludeMaterialId\(excludedMaterialIds, material\.id\)/);
+  assert.match(node, /useDisconnectUpstreamMaterial/);
+  assert.match(node, /disconnectUpstreamMaterial\(material\)/);
+  assert.match(node, /codexConjureExcludedMaterialIds: pruneMaterialIdsForDisconnectedSource\(excludedMaterialIds, material\.sourceNodeId\)/);
+  assert.match(node, /codexConjureMaterialOrder: pruneMaterialOrderForDisconnectedSource\(materialOrder, material\.sourceNodeId\)/);
   assert.match(node, /codexConjureGalleryRefs: galleryRefs\.filter\(\(url\) => url !== material\.url\)/);
   assert.match(node, /const imageRefs = unique\(\[[\s\S]*\.\.\.orderedInputImages\.map\(\(item\) => item\.url\)/);
   assert.doesNotMatch(node, /const imageRefs = unique\(\[[\s\S]*\.\.\.upstream\.images\.map/);

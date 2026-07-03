@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+const modelProtocolRegistry = require('../shared/modelProtocolRegistry.json');
 
 const apiSettingsSource = readFileSync(new URL('../src/components/ApiSettings.tsx', import.meta.url), 'utf8');
 const appSource = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
@@ -84,9 +88,23 @@ test('ApiSettings Volcengine panel separates Ark API Key from AK/SK credentials'
   assert.match(apiSettingsSource, /Secret Access Key（SK，素材签名）/);
   assert.match(apiSettingsSource, /目前它只作为素材签名类能力的预留凭证/);
   assert.match(apiSettingsSource, /Seedance2\.0 开通提醒/);
-  assert.match(apiSettingsSource, /doubao-seedance-2-0-260128/);
-  assert.match(apiSettingsSource, /doubao-seedance-2-0-fast-260128/);
+  assert.deepEqual(modelProtocolRegistry.advancedProviders.volcengine.display.seedanceOpenReminderModels, [
+    'doubao-seedance-2-0-260128',
+    'doubao-seedance-2-0-fast-260128',
+  ]);
+  assert.match(apiSettingsSource, /registryDisplay\.seedanceOpenReminderModels/);
   assert.match(apiSettingsSource, /ModelNotOpen \/ HTTP 404/);
+});
+
+test('ApiSettings can fetch upstream provider models into node model lists', () => {
+  const apiSource = readFileSync(new URL('../src/services/api.ts', import.meta.url), 'utf8');
+
+  assert.match(apiSource, /fetchAdvancedProviderModels/);
+  assert.match(apiSource, /proxy\/external\/fetch-models/);
+  assert.match(apiSettingsSource, /handleFetchAdvancedProviderModels/);
+  assert.match(apiSettingsSource, /拉取并添加模型/);
+  assert.match(apiSettingsSource, /保存后在对应节点的高级来源里可选/);
+  assert.match(apiSettingsSource, /mergeModelLists/);
 });
 
 test('ApiSettings classified API keys expose explicit clear actions', () => {
@@ -136,6 +154,9 @@ test('UI font preference resolves readable defaults and custom stacks', async ()
 test('ApiSettings exposes a persisted global UI font control', () => {
   assert.match(apiSettingsSource, /UI_FONT_PRESETS/);
   assert.match(apiSettingsSource, /界面字体/);
+  assert.match(apiSettingsSource, /const \[uiFontSettingsOpen,\s*setUiFontSettingsOpen\] = useState\(false\)/);
+  assert.match(apiSettingsSource, /data-ui-font-settings-open=\{uiFontSettingsOpen\}/);
+  assert.match(apiSettingsSource, /setUiFontSettingsOpen\(\(open\) => !open\)/);
   assert.match(apiSettingsSource, /data-ui-font-settings="true"/);
   assert.match(apiSettingsSource, /data-ui-font-preset/);
   assert.match(apiSettingsSource, /界面字体预览/);

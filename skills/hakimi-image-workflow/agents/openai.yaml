@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hakimi Image Workflow"
+  short_description: "Build and run image generation workflows on Hakimi canvas."
+  default_prompt: "Use Hakimi image workflow to plan, generate, place, and verify image assets on the canvas."

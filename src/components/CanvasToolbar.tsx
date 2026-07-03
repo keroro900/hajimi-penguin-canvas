@@ -34,7 +34,8 @@ import {
   AlignVerticalSpaceBetween,
   Grid3x3,
   ScanLine,
-  Clapperboard,
+  PanelRightClose,
+  PanelRightOpen,
 } from 'lucide-react';
 import { useThemeStore } from '../stores/theme';
 import { useLogStore } from '../stores/logs';
@@ -88,8 +89,6 @@ interface CanvasToolbarProps {
   historyCount: number;
   historyOpen: boolean;
   onToggleHistory: () => void;
-  onOpenVibeXWorkbench: () => void;
-  onCreateVibeXNode: () => void;
   onCreateGenerationTarget: () => void;
   onExportResourcePackage: () => void;
   onAlignSelection: (action: NodeAlignAction) => void;
@@ -122,8 +121,6 @@ export default function CanvasToolbar({
   historyCount,
   historyOpen,
   onToggleHistory,
-  onOpenVibeXWorkbench,
-  onCreateVibeXNode,
   onCreateGenerationTarget,
   onExportResourcePackage,
   onAlignSelection,
@@ -155,6 +152,7 @@ export default function CanvasToolbar({
   const [recordingActionId, setRecordingActionId] = useState<string | null>(null);
   const [shortcutMessage, setShortcutMessage] = useState<string>('');
   const [draggingRadialSlot, setDraggingRadialSlot] = useState<number | null>(null);
+  const [toolbarCollapsed, setToolbarCollapsed] = useState(false);
   const tplRef = useRef<HTMLDivElement>(null);
   const alignRef = useRef<HTMLDivElement>(null);
   const radialNodeOptions = useMemo(() => visibleRadialMenuNodeOptions(NODE_REGISTRY), []);
@@ -341,9 +339,50 @@ export default function CanvasToolbar({
       ? 'text-emerald-300 hover:bg-emerald-500/15'
       : 'text-emerald-600 hover:bg-emerald-500/10';
 
+  const collapseToolbar = () => {
+    setTplOpen(false);
+    setAlignOpen(false);
+    setToolbarCollapsed(true);
+  };
+
+  if (toolbarCollapsed) {
+    return (
+      <div
+        className="t8-canvas-toolbar absolute top-3 right-3 z-20 flex items-start gap-2 select-none"
+        data-canvas-toolbar-collapsed={toolbarCollapsed ? 'true' : 'false'}
+      >
+        <div className={containerCls}>
+          <button
+            className={baseBtn}
+            onClick={() => setToolbarCollapsed(false)}
+            title="展开工具栏"
+            aria-label="展开工具栏"
+            aria-expanded={!toolbarCollapsed}
+          >
+            <PanelRightOpen size={15} />
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="t8-canvas-toolbar absolute top-3 right-3 z-20 flex items-start gap-2 select-none">
+    <div
+      className="t8-canvas-toolbar absolute top-3 right-3 z-20 flex items-start gap-2 select-none"
+      data-canvas-toolbar-collapsed={toolbarCollapsed ? 'true' : 'false'}
+    >
       <div className={containerCls}>
+        <button
+          className={baseBtn}
+          onClick={collapseToolbar}
+          title="收起工具栏"
+          aria-label="收起工具栏"
+          aria-expanded={!toolbarCollapsed}
+        >
+          <PanelRightClose size={15} />
+        </button>
+        <div className={sep} />
+
         {/* 批量运行 */}
         {isRunning ? (
           <button
@@ -496,23 +535,6 @@ export default function CanvasToolbar({
               {historyCount > 99 ? '99+' : historyCount}
             </span>
           )}
-        </button>
-        <button
-          className={baseBtn}
-          onClick={onOpenVibeXWorkbench}
-          title="打开 VibeX 工作台"
-          aria-label="打开 VibeX 工作台"
-        >
-          <Clapperboard size={15} />
-        </button>
-        <button
-          className={baseBtn}
-          onClick={onCreateVibeXNode}
-          title="创建 VibeX 节点：在画布中嵌入工作台"
-          aria-label="创建 VibeX 节点"
-        >
-          <Clapperboard size={15} />
-          <span className="absolute -bottom-1 -right-1 h-2 w-2 rounded-full bg-cyan-400 ring-1 ring-white" />
         </button>
         <button
           className={baseBtn}

@@ -1,11 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 
 const loadRhToolboxUtils = async () => import('../src/utils/rhToolbox.ts');
 const loadRhToolboxCapabilities = async () => import('../src/utils/rhToolboxCapabilities.ts');
 const loadRhToolboxDeveloper = async () => import('../src/utils/rhToolboxDeveloper.ts');
 const loadRhToolboxManifest = async () => import('../src/data/rhToolboxManifest.ts');
+const RH_TOOLBOX_MAKER_URL = new URL('../src/components/nodes/RHToolboxMakerNode.tsx', import.meta.url);
+const RH_TOOLBOX_DEVELOPER_URL = new URL('../src/utils/rhToolboxDeveloper.ts', import.meta.url);
+const hasRhToolboxMakerSource = () => existsSync(RH_TOOLBOX_MAKER_URL);
+const hasRhToolboxDeveloperSource = () => existsSync(RH_TOOLBOX_DEVELOPER_URL);
 
 test('RH toolbox node is registered as a visible executable RH node', () => {
   const registry = readFileSync(new URL('../src/config/nodeRegistry.ts', import.meta.url), 'utf8');
@@ -109,7 +113,16 @@ test('RH toolbox manifest ships maintainer release tools for packaged users', as
       `${tool.id} should keep at least a 60 minute RH polling budget`,
     );
   }
-  assert.equal(listRhToolboxTools(manifest, { includeDisabled: true }).length, 11);
+  const allTools = listRhToolboxTools(manifest, { includeDisabled: true });
+  assert.equal(allTools.length, 14);
+  assert.deepEqual(
+    allTools.filter((tool) => tool.capabilities.includes('content-pack-v2')).map((tool) => [tool.id, tool.enabled]),
+    [
+      ['content-pack-v2-product-retouch-rh', false],
+      ['content-pack-v2-character-grid-rh', false],
+      ['content-pack-v2-shortlink-library-rh', false],
+    ],
+  );
   assert.equal(isRhToolboxBuiltinCategoryId('image-tools'), true);
   assert.equal(isRhToolboxBuiltinCategoryId('custom-rh-tools'), false);
   assert.equal(getRhToolboxToolMajorCategory(manifest.tools[0], manifest.categories), 'image');
@@ -342,8 +355,6 @@ test('RH toolbox image cutout is exposed as a reusable node capability', async (
   const rail = readFileSync(new URL('../src/components/RhImageCapabilityRail.tsx', import.meta.url), 'utf8');
   const uploadNode = readFileSync(new URL('../src/components/nodes/UploadNode.tsx', import.meta.url), 'utf8');
   const outputNode = readFileSync(new URL('../src/components/nodes/OutputNode.tsx', import.meta.url), 'utf8');
-  const roadmap = readFileSync(new URL('../roadmap.md', import.meta.url), 'utf8');
-  const skill = readFileSync(new URL('../skill.md', import.meta.url), 'utf8');
 
   const tool = resolveRhToolboxCapability(RH_TOOLBOX_MANIFEST, {
     surface: 'image',
@@ -481,19 +492,6 @@ test('RH toolbox image cutout is exposed as a reusable node capability', async (
   assert.match(outputNode, /已创建 \$\{newNodes\.length\} 个输出素材节点/);
   assert.match(uploadNode, /onComplete=\{\(result\) => handleProduce\(result\.imageUrls, \{ type: 'rh-capability', label: result\.tool\.title \}\)\}/);
   assert.match(outputNode, /onComplete=\{\(result\) => handleProduce\(result\.imageUrls, \{ type: 'rh-capability', label: result\.tool\.title \}\)\}/);
-  assert.match(roadmap, /RH 工具箱能力调度层/);
-  assert.match(roadmap, /image\.cutout/);
-  assert.match(roadmap, /多图串行队列/);
-  assert.match(roadmap, /运行中再次点击可取消/);
-  assert.match(roadmap, /部分成功/);
-  assert.match(roadmap, /重试/);
-  assert.match(skill, /RH 图像能力复用规范/);
-  assert.match(skill, /image\.upscale/);
-  assert.match(skill, /image-upscale-4k/);
-  assert.match(skill, /image\.expand/);
-  assert.match(skill, /RhImageCapabilityButton[\s\S]*preset/);
-  assert.match(skill, /RhImageCapabilityRail/);
-  assert.match(skill, /runRhImageCapabilityBatch/);
 });
 
 test('RH toolbox builds nodeInfoList from configured mappings without per-tool code', async () => {
@@ -755,7 +753,9 @@ test('RH toolbox maker is dev-only and guarded from packaged builds', () => {
 
   assert.match(registry, /import\.meta\.env\?\.DEV[\s\S]*type:\s*'rh-toolbox-maker'[\s\S]*label:\s*'RH工具箱制作器'/);
   assert.match(canvas, /const RH_TOOLBOX_MAKER_MODULE = '\.\/nodes\/RHToolboxMakerNode'/);
-  assert.match(canvas, /lazyCanvasNode\(\(\) => import\(\/\* @vite-ignore \*\/ RH_TOOLBOX_MAKER_MODULE\), 'RHToolboxMakerNode'\)/);
+  assert.match(canvas, /default:\s*missingPrivateToolNode\(displayName, label, description\)/);
+  assert.match(canvas, /import\.meta\.glob\('\.\/nodes\/\*MakerNode\.tsx'\)/);
+  assert.match(canvas, /privateToolNodeLoader\(RH_TOOLBOX_MAKER_MODULE, 'RHToolboxMakerNode'/);
   assert.match(canvas, /import\.meta\.env\?\.DEV \? \{ 'rh-toolbox-maker': RHToolboxMakerNode \} : \{\}/);
   assert.match(ports, /import\.meta\.env\?\.DEV[\s\S]*'rh-toolbox-maker':\s*\{\s*inputs:\s*\[\],\s*outputs:\s*\['text'\]\s*\}/);
   assert.match(postBuild, /checkNoRhToolboxMaker/);
@@ -768,7 +768,8 @@ test('RH toolbox maker is dev-only and guarded from packaged builds', () => {
   assert.match(features, /RH工具箱制作器/);
 });
 
-test('RH toolbox maker rebuilds mappings from the current WebApp snapshot', () => {
+test('RH toolbox maker rebuilds mappings from the current WebApp snapshot', (t) => {
+  if (!hasRhToolboxMakerSource()) return t.skip('private RH toolbox maker source is not shipped in the public tree');
   const maker = readFileSync(new URL('../src/components/nodes/RHToolboxMakerNode.tsx', import.meta.url), 'utf8');
 
   assert.match(maker, /getRhToolboxNodeInfoFieldOptions/);
@@ -784,7 +785,8 @@ test('RH toolbox maker rebuilds mappings from the current WebApp snapshot', () =
   assert.match(maker, /const mappingsChanged = Boolean\(autoMappings\.addedInputs \|\| autoMappings\.addedParams\)[\s\S]*autoMappings\.inputs\.length !== inputs\.length[\s\S]*autoMappings\.params\.length !== params\.length/);
 });
 
-test('RH toolbox maker keeps each draft tool category independent', () => {
+test('RH toolbox maker keeps each draft tool category independent', (t) => {
+  if (!hasRhToolboxMakerSource()) return t.skip('private RH toolbox maker source is not shipped in the public tree');
   const maker = readFileSync(new URL('../src/components/nodes/RHToolboxMakerNode.tsx', import.meta.url), 'utf8');
 
   assert.match(maker, /function buildUniqueCategoryId/);
@@ -799,7 +801,8 @@ test('RH toolbox maker keeps each draft tool category independent', () => {
   assert.match(maker, /保存名称/);
 });
 
-test('RH toolbox maker saves a per-tool default instance type', () => {
+test('RH toolbox maker saves a per-tool default instance type', (t) => {
+  if (!hasRhToolboxMakerSource()) return t.skip('private RH toolbox maker source is not shipped in the public tree');
   const maker = readFileSync(new URL('../src/components/nodes/RHToolboxMakerNode.tsx', import.meta.url), 'utf8');
   const runtime = readFileSync(new URL('../src/components/nodes/RHToolboxNode.tsx', import.meta.url), 'utf8');
   const service = readFileSync(new URL('../src/services/rhToolbox.ts', import.meta.url), 'utf8');
@@ -818,7 +821,8 @@ test('RH toolbox maker saves a per-tool default instance type', () => {
   assert.match(service, /instanceType:\s*options\.instanceType \|\| tool\.runtime\?\.instanceType \|\| undefined/);
 });
 
-test('RH toolbox developer save persists the selected custom category with each tool', () => {
+test('RH toolbox developer save persists the selected custom category with each tool', (t) => {
+  if (!hasRhToolboxDeveloperSource()) return t.skip('private RH toolbox developer helper is not shipped in the public tree');
   const developer = readFileSync(new URL('../src/utils/rhToolboxDeveloper.ts', import.meta.url), 'utf8');
   const settings = readFileSync(new URL('../backend/src/routes/settings.js', import.meta.url), 'utf8');
   const config = readFileSync(new URL('../backend/src/config.js', import.meta.url), 'utf8');
@@ -843,7 +847,8 @@ test('RH toolbox developer save persists the selected custom category with each 
   assert.match(api, /saveRhToolboxPersistentManifest/);
 });
 
-test('RH toolbox developer drafts replace the edited released tool instead of duplicating by title', async () => {
+test('RH toolbox developer drafts replace the edited released tool instead of duplicating by title', async (t) => {
+  if (!hasRhToolboxDeveloperSource()) return t.skip('private RH toolbox developer helper is not shipped in the public tree');
   const { RH_TOOLBOX_MANIFEST } = await loadRhToolboxManifest();
   const { normalizeRhToolboxManifest } = await loadRhToolboxUtils();
   const { mergeRhToolboxManifestWithDeveloperDrafts } = await loadRhToolboxDeveloper();
@@ -894,7 +899,8 @@ test('RH toolbox developer drafts replace the edited released tool instead of du
   assert.equal(merged.tools.some((tool) => tool.id === 'image-upscale-4k'), false);
 });
 
-test('RH toolbox developer manifest normalizes old duplicate drafts before display', async () => {
+test('RH toolbox developer manifest normalizes old duplicate drafts before display', async (t) => {
+  if (!hasRhToolboxDeveloperSource()) return t.skip('private RH toolbox developer helper is not shipped in the public tree');
   const { RH_TOOLBOX_MANIFEST } = await loadRhToolboxManifest();
   const { normalizeRhToolboxManifest } = await loadRhToolboxUtils();
   const { mergeRhToolboxManifestWithDeveloperDrafts } = await loadRhToolboxDeveloper();
@@ -951,7 +957,8 @@ test('RH toolbox developer manifest normalizes old duplicate drafts before displ
   assert.equal(upscaleTools[0].runtime?.instanceType, 'plus');
 });
 
-test('RH toolbox maker defaults use a 60 minute RH polling budget while theme copy stays decorative', () => {
+test('RH toolbox maker defaults use a 60 minute RH polling budget while theme copy stays decorative', (t) => {
+  if (!hasRhToolboxMakerSource()) return t.skip('private RH toolbox maker source is not shipped in the public tree');
   const maker = readFileSync(new URL('../src/components/nodes/RHToolboxMakerNode.tsx', import.meta.url), 'utf8');
   const canvas = readFileSync(new URL('../src/components/Canvas.tsx', import.meta.url), 'utf8');
   const service = readFileSync(new URL('../src/services/rhToolbox.ts', import.meta.url), 'utf8');

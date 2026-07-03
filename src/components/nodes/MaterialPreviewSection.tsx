@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState, type PointerEvent } from 'react';
+import { memo, useEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode } from 'react';
 import {
   Image as ImageIcon,
   Video as VideoIcon,
@@ -45,7 +45,7 @@ interface Props {
   onReorder: (newOrder: string[]) => void;
   /** 仅 origin='local' 的素材会显示删除按钮, 点击触发本回调 */
   onRemoveLocal?: (m: Material) => void;
-  /** origin='upstream' 的素材可从当前节点排除, 不会断开连线 */
+  /** origin='upstream' 的素材点击 X 会断开对应上游连线 */
   onExcludeUpstream?: (m: Material) => void;
   /** 当前节点已排除但仍存在的上游素材数量 */
   excludedCount?: number;
@@ -59,8 +59,16 @@ interface Props {
   groups?: ReadonlyArray<'text' | 'image' | 'video' | 'audio'>;
   /** 在 image 分组末尾追加 [+] 上传按钮 (仅 ImageNode 等需要本地上传的节点用) */
   imageUploadAction?: UploadAction;
+  /** 在 image / video / audio 分组末尾追加上传按钮 */
+  uploadActions?: Partial<Record<'image' | 'video' | 'audio', UploadAction>>;
+  /** 供调用方测试/识别这一段素材带的角色 */
+  dataRole?: string;
   /** 自定义头部标题, 默认「上游素材」 */
   title?: string;
+  /** 卡片 composer 使用 compact: 单行素材轨道；经典面板保持 default 分组展示 */
+  density?: 'default' | 'compact';
+  /** compact 素材轨道右侧追加的小控件区，例如状态 chip / 切换按钮 */
+  compactAccessory?: ReactNode;
 }
 
 const ICON_MAP = {
@@ -91,9 +99,14 @@ const MaterialPreviewSection = ({
   isPixel,
   groups = ['text', 'image', 'video', 'audio'],
   imageUploadAction,
+  uploadActions,
+  dataRole,
   title = '上游素材',
+  density = 'default',
+  compactAccessory,
 }: Props) => {
   const total = texts.length + images.length + videos.length + audios.length;
+  const isCompact = density === 'compact';
   const sortScopeRef = useRef(`material-preview-${Math.random().toString(36).slice(2)}`);
   const [sortDrag, setSortDrag] = useState<{ activeId: string; overId: string | null; moved: boolean } | null>(null);
   const sortDragRef = useRef<{ activeId: string; overId: string | null; moved: boolean } | null>(null);
@@ -188,7 +201,10 @@ const MaterialPreviewSection = ({
   useEffect(() => () => cleanupSortWindowListeners(), []);
 
   // 没有任何素材也没有上传入口 → 不渲染
-  if (total === 0 && !imageUploadAction && excludedCount <= 0) return null;
+  const hasUploadAction = Boolean(imageUploadAction || Object.values(uploadActions || {}).some(Boolean));
+  if (total === 0 && !hasUploadAction && excludedCount <= 0) return null;
+  const uploadActionForGroup = (group: 'text' | 'image' | 'video' | 'audio') =>
+    uploadActions?.[group as 'image' | 'video' | 'audio'] || (group === 'image' ? imageUploadAction : undefined);
 
   // ============== 主题样式 ==============
   const headerStyle: React.CSSProperties = isPixel
@@ -197,18 +213,18 @@ const MaterialPreviewSection = ({
         color: '#1a1a1a',
         border: '1.5px solid #1a1a1a',
         boxShadow: '1px 1px 0 #1a1a1a',
-        padding: '4px 8px',
+        padding: isCompact ? '3px 7px' : '4px 8px',
         fontWeight: 700,
-        fontSize: 11,
+        fontSize: isCompact ? 10 : 11,
       }
     : {
         background: isDark ? 'rgba(20,184,166,.20)' : 'rgba(20,184,166,.15)',
         color: isDark ? '#5eead4' : '#0d9488',
         border: `1px solid ${isDark ? 'rgba(94,234,212,.35)' : 'rgba(13,148,136,.35)'}`,
         borderRadius: 6,
-        padding: '4px 8px',
+        padding: isCompact ? '3px 7px' : '4px 8px',
         fontWeight: 600,
-        fontSize: 11,
+        fontSize: isCompact ? 10 : 11,
       };
   const headerCountStyle: React.CSSProperties = isPixel
     ? {
@@ -252,8 +268,8 @@ const MaterialPreviewSection = ({
 
   const uploadBtnStyle: React.CSSProperties = isPixel
     ? {
-        width: 56,
-        height: 56,
+        width: isCompact ? 36 : 56,
+        height: isCompact ? 36 : 56,
         background: '#fefce8',
         border: '1.5px dashed #1a1a1a',
         boxShadow: '1px 1px 0 #1a1a1a',
@@ -265,8 +281,8 @@ const MaterialPreviewSection = ({
         flexShrink: 0,
       }
     : {
-        width: 56,
-        height: 56,
+        width: isCompact ? 36 : 56,
+        height: isCompact ? 36 : 56,
         background: isDark ? 'rgba(255,255,255,.04)' : 'rgba(0,0,0,.04)',
         border: `2px dashed ${isDark ? 'rgba(255,255,255,.20)' : 'rgba(0,0,0,.20)'}`,
         borderRadius: 6,
@@ -278,9 +294,16 @@ const MaterialPreviewSection = ({
         flexShrink: 0,
       };
 
+  const compactUploadEntries = groups.flatMap((g) => {
+    const action = uploadActionForGroup(g);
+    return action ? [{ group: g, action }] : [];
+  });
+
   return (
     <div
-      className="space-y-1.5"
+      className={`t8-material-preview-section ${isCompact ? 't8-material-preview-section--compact' : ''} space-y-1.5`}
+      data-material-preview-role={dataRole}
+      data-density={density}
       onMouseDown={(e) => e.stopPropagation()}
     >
       {/* ============== 标题头 (仅作为分组标识 + 数量徽章, 不再可折叠) ============== */}
@@ -308,13 +331,71 @@ const MaterialPreviewSection = ({
         <span className="t8-material-preview-count" style={headerCountStyle}>{total}</span>
       </div>
 
-      {/* ============== 内容区 - 分组 + pointer 排序 (始终展开) ============== */}
-      {total > 0 || imageUploadAction ? (
+      {isCompact ? (
+        <div
+          className="t8-material-preview-rail"
+          style={{
+            display: 'flex',
+            flexWrap: 'nowrap',
+            alignItems: 'center',
+            gap: 6,
+            overflowX: 'auto',
+            overflowY: 'hidden',
+            paddingBottom: 2,
+          }}
+        >
+          {allItems.map((m, i) => (
+            <MaterialThumbnail
+              key={m.id}
+              material={m}
+              index={i}
+              isPixel={isPixel}
+              isDark={isDark}
+              draggable
+              size={isCompact ? 36 : 56}
+              sortScope={sortScopeRef.current}
+              isSorting={sortDrag?.activeId === m.id && !!sortDrag.moved}
+              isSortOver={!!sortDrag?.moved && sortDrag.overId === m.id && sortDrag.activeId !== m.id}
+              onSortPointerDown={(event) => beginSortDrag(event, m.id)}
+              removable={m.origin === 'local'}
+              onRemove={onRemoveLocal ? () => onRemoveLocal(m) : undefined}
+              excludeable={m.origin === 'upstream' && !!onExcludeUpstream}
+              onExclude={onExcludeUpstream ? () => onExcludeUpstream(m) : undefined}
+            />
+          ))}
+          {compactUploadEntries.map(({ group, action }) => (
+            <button
+              key={`upload-${group}`}
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                action.onClick();
+              }}
+              onPointerDown={(e) => e.stopPropagation()}
+              className="t8-material-preview-upload nodrag"
+              style={uploadBtnStyle}
+              title={action.title || '上传本地素材'}
+              aria-label={action.title || '上传本地素材'}
+            >
+              <Plus size={13} />
+            </button>
+          ))}
+          {compactAccessory && (
+            <div className="t8-material-preview-rail-accessory">
+              {compactAccessory}
+            </div>
+          )}
+        </div>
+      ) : (
         <>
-          {groups.map((g) => {
+          {/* ============== 内容区 - 分组 + pointer 排序 (始终展开) ============== */}
+          {total > 0 || hasUploadAction ? (
+            <>
+              {groups.map((g) => {
             const list =
               g === 'text' ? texts : g === 'image' ? images : g === 'video' ? videos : audios;
-            const showUpload = g === 'image' && imageUploadAction;
+            const uploadAction = uploadActionForGroup(g);
+            const showUpload = Boolean(uploadAction);
             if (!list.length && !showUpload) return null;
             const Ic = ICON_MAP[g];
             const indexOffset = (() => {
@@ -331,8 +412,8 @@ const MaterialPreviewSection = ({
                   <Ic size={10} />
                   <span>
                     {LABEL_MAP[g]} ({list.length}
-                    {showUpload && imageUploadAction?.remaining != null
-                      ? `/${list.length + imageUploadAction.remaining}`
+                    {showUpload && uploadAction?.remaining != null
+                      ? `/${list.length + uploadAction.remaining}`
                       : ''}
                     )
                   </span>
@@ -346,6 +427,7 @@ const MaterialPreviewSection = ({
                       isPixel={isPixel}
                       isDark={isDark}
                       draggable
+                      size={isCompact ? 36 : 56}
                       sortScope={sortScopeRef.current}
                       isSorting={sortDrag?.activeId === m.id && !!sortDrag.moved}
                       isSortOver={!!sortDrag?.moved && sortDrag.overId === m.id && sortDrag.activeId !== m.id}
@@ -356,17 +438,17 @@ const MaterialPreviewSection = ({
                       onExclude={onExcludeUpstream ? () => onExcludeUpstream(m) : undefined}
                     />
                   ))}
-                  {showUpload && imageUploadAction && (
+                  {showUpload && uploadAction && (
                     <button
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
-                        imageUploadAction.onClick();
+                        uploadAction.onClick();
                       }}
                       onPointerDown={(e) => e.stopPropagation()}
                       className="t8-material-preview-upload nodrag"
                       style={uploadBtnStyle}
-                      title={imageUploadAction.title || '上传本地素材'}
+                      title={uploadAction.title || '上传本地素材'}
                     >
                       <Plus size={16} />
                     </button>
@@ -374,9 +456,11 @@ const MaterialPreviewSection = ({
                 </div>
               </div>
             );
-          })}
+              })}
+            </>
+          ) : null}
         </>
-      ) : null}
+      )}
     </div>
   );
 };

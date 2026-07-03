@@ -10,8 +10,8 @@ const ROOT = path.resolve(__dirname, '..');
 const pkg = require(path.join(ROOT, 'package.json'));
 const version = pkg.version;
 const tag = process.argv[2] || process.env.T8_RELEASE_TAG || `v${version}`;
-const repo = process.env.T8_RELEASE_REPO || process.env.GITHUB_REPOSITORY || 'T8mars/T8-penguin-canvas';
-const productName = pkg.build && pkg.build.productName ? pkg.build.productName : 'T8-PenguinCanvas';
+const repo = process.env.T8_RELEASE_REPO || process.env.GITHUB_REPOSITORY || '';
+const productName = pkg.build && pkg.build.productName ? pkg.build.productName : '哈基米画布';
 const installerName = `${productName}-Setup-${version}.exe`;
 const blockmapName = `${installerName}.blockmap`;
 

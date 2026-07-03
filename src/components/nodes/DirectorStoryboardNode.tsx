@@ -1174,7 +1174,7 @@ const DirectorStoryboardNode = ({ id, data, selected }: NodeProps) => {
       await Promise.all(recoverable.map(async ([job, result]) => {
         if (!result?.taskId) return;
         try {
-          const query = await querySeedance(result.taskId);
+          const query = await querySeedance(result.taskId, job.payload.model);
           if (query.status === 'succeeded' && query.videoUrl) {
             setJobPatch(job, {
               status: 'success',
@@ -1226,7 +1226,7 @@ const DirectorStoryboardNode = ({ id, data, selected }: NodeProps) => {
 
     for (let elapsed = 1; elapsed <= maxPoll; elapsed += 1) {
       await sleep(pollInt * 1000, signal);
-      const result = await querySeedance(submitted.taskId);
+      const result = await querySeedance(submitted.taskId, job.payload.model);
       const pct = Math.min(95, Math.round(15 + (elapsed * 80) / maxPoll));
       if (result.status === 'succeeded' && result.videoUrl) {
         logBus.success(`${job.title} 完成 → ${result.videoUrl}`, src);

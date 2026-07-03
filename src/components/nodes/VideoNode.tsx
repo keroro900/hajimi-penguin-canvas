@@ -1,10 +1,12 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
-import { Handle, Position, useReactFlow, type NodeProps } from '@xyflow/react';
-import { AlertCircle, Loader2, Video as VideoIcon, Sparkles, Square, X } from 'lucide-react';
+import { flushSync } from 'react-dom';
+import { Handle, Position, useReactFlow, useUpdateNodeInternals, type NodeProps } from '@xyflow/react';
+import { AlertCircle, Loader2, RefreshCcw, Video as VideoIcon, Sparkles, Square, X } from 'lucide-react';
 import {
   VIDEO_MODELS,
   GROK_VIDEO_1_5_NEW_SIZES,
   grokVideo15NewSizeFromRatio,
+  isApishuVeoOmniModel,
   isFalVideoModel,
   isGrokVideo15NewModel,
   VIDEO_FAL_REGISTRY,
@@ -18,6 +20,8 @@ import {
   SORA2_FAL_RATIOS,
   SORA2_FAL_DURATIONS,
   SORA2_FAL_RESOLUTIONS,
+  parseModelList,
+  withUpstreamModelOption,
 } from '../../providers/models';
 import {
   generateExternalVideo,
@@ -31,11 +35,17 @@ import {
 import { useUpdateNodeData } from './useUpdateNodeData';
 import { useHasAutoOutput } from './useHasAutoOutput';
 import { useRunTrigger } from '../../hooks/useRunTrigger';
+import { useRunBusStore } from '../../stores/runBus';
 import { logBus } from '../../stores/logs';
 import { useThemeStore } from '../../stores/theme';
 import { useUpstreamMaterials, type Material } from './useUpstreamMaterials';
 import { useOrderedMaterials } from './useOrderedMaterials';
 import MaterialPreviewSection from './MaterialPreviewSection';
+import {
+  pruneMaterialIdsForDisconnectedSource,
+  pruneMaterialOrderForDisconnectedSource,
+  useDisconnectUpstreamMaterial,
+} from './shared/upstreamMaterialConnections';
 import MentionPromptInput from './MentionPromptInput';
 import LoopingVideo from '../LoopingVideo';
 import SmartImage from '../SmartImage';
@@ -51,11 +61,18 @@ import {
 } from '../../utils/advancedProviders';
 import {
   countExcludedMaterials,
-  excludeMaterialId,
   filterExcludedMaterials,
   normalizeExcludedMaterialIds,
 } from '../../utils/materialExclusion';
+import { resolveSmartMediaCardSize } from '../../utils/smartNodeAspect';
 import { LocalNodeAddonSlot } from 'virtual:t8-local-extensions';
+import ResizableCorners from './ResizableCorners';
+import SmartNodeComposer from './shared/SmartNodeComposer';
+import SmartNodeShell from './shared/SmartNodeShell';
+import { useNodeGeometrySync } from './shared/useNodeGeometrySync';
+import { useOutsideClose } from './shared/useOutsideClose';
+import { useSmartNodePanelToggle } from './shared/useSmartNodePanelToggle';
+import { useThrottledNodeUpdate } from './shared/useThrottledNodeUpdate';
 
 /**
  * VideoNode - 异步视频生成(完全对齐 gpt-image-2-web)
@@ -94,13 +111,46 @@ const normalizeJimengSeedanceMode = (value: unknown): JimengSeedanceMode => {
   return 'omni';
 };
 
+function formatVideoNodeText(value: unknown, fallback = ''): string {
+  if (value === undefined || value === null || value === '') return fallback;
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (value instanceof Error) return value.message || fallback;
+  if (typeof value === 'object') {
+    const source = value as Record<string, unknown>;
+    const code = formatVideoNodeText(source.code);
+    const message = formatVideoNodeText(source.message || source.error || source.reason || source.failReason);
+    if (code && message) return `${code}: ${message}`;
+    if (message) return message;
+    if (code) return code;
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return fallback || String(value);
+    }
+  }
+  return String(value);
+}
+
 const VideoNode = ({ id, data, selected }: NodeProps) => {
   const update = useUpdateNodeData(id);
+  const { scheduleProgressUpdate, flushProgressUpdate } = useThrottledNodeUpdate(update, 500);
   const hasAutoOutput = useHasAutoOutput(id);
+  const updateNodeInternals = useUpdateNodeInternals();
   const { getEdges, getNodes } = useReactFlow();
   const [error, setError] = useState<string | null>(null);
+  const [smartComposerOpenLocal, setSmartComposerOpenLocal] = useState(false);
+  const [smartCardDragging, setSmartCardDragging] = useState(false);
   const pollTimer = useRef<number | null>(null);
+  const videoRunSeqRef = useRef(0);
+  const activePollRejectRef = useRef<((error: Error) => void) | null>(null);
+  const runCancelSeq = useRunBusStore((s) => s.cancelSeq);
+  const runCancelTargets = useRunBusStore((s) => s.cancelTargets);
+  const smartNodeRef = useRef<HTMLDivElement | null>(null);
   const src = `video:${id.slice(0, 6)}`;
+  const throwIfVideoRunCancelled = (runSeq: number) => {
+    if (videoRunSeqRef.current !== runSeq) throw new Error('已停止生成');
+  };
 
   // 主题适配 (默认科技风深色, 传递给聚合预览区)
   const { theme, style: themeStyle } = useThemeStore();
@@ -109,7 +159,8 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
 
   const d = data as any;
   const providerParams = (d?.providerParams && typeof d.providerParams === 'object') ? d.providerParams : {};
-  const advancedProviders = useApiKeysStore((s) => s.settings.advancedProviders);
+  const apiSettings = useApiKeysStore((s) => s.settings);
+  const advancedProviders = apiSettings.advancedProviders;
   const videoAdvancedProviders = useMemo(
     () => advancedProvidersForNode(advancedProviders, 'video'),
     [advancedProviders],
@@ -140,8 +191,17 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
   const isLegacySora2Model = /^sora-2(?:-\d{4}-\d{2}-\d{2})?$/.test(rawModel);
   const mainId = d?.mainId || (isLegacySora2Model ? 'sora-2' : (d?.model && VIDEO_MODELS.find((m) => m.id === d.model || m.apiModelOptions.some((o) => o.value === d.model))?.id)) || VIDEO_MODELS[0].id;
   const modelDef = useMemo(() => VIDEO_MODELS.find((m) => m.id === mainId) || VIDEO_MODELS[0], [mainId]);
+  const configuredApiModelOverride = String(apiSettings.zhenzhenVideoModelOverrides?.[modelDef.id] || '').trim();
+  const configuredApiModels = parseModelList(configuredApiModelOverride);
+  const apiModelOptions = withUpstreamModelOption(modelDef.apiModelOptions, configuredApiModelOverride);
   // 子模型(上游真实 model 名)
-  const apiModel: string = d?.model && modelDef.apiModelOptions.some((o) => o.value === d.model) ? d.model : modelDef.apiModelOptions[0].value;
+  const apiModel: string = d?.model && apiModelOptions.some((o) => o.value === d.model) && (!configuredApiModels.length || configuredApiModels.includes(d.model))
+    ? d.model
+    : (configuredApiModels[0] || modelDef.apiModelOptions[0].value);
+  const effectiveApiModel = apiModel;
+  const protocolModel: string = String(d?.protocolModel || '').trim();
+  const pollingApiModel = protocolModel || effectiveApiModel;
+  const defaultProviderApiModel = effectiveApiModel;
   // 各参数(跳过着调用 update 默认值)
   const ratio: string = d?.ratio || modelDef.defaultRatio;
   const duration: number = d?.duration ?? modelDef.defaultDuration ?? (modelDef.durations?.[0] || 0);
@@ -159,6 +219,8 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
     ? d.size
     : grokVideo15NewSizeFromRatio(ratio);
   const isSoraZhenzhen = !isExternalSelected && modelDef.kind === 'sora' && !isFal;
+  const isApishuVeoOmni = !isExternalSelected && isApishuVeoOmniModel(apiModel);
+  const isApishuVeoOmniEdit = apiModel === 'veo-omni-flash-video-edit';
   const isVeoOmni = !isExternalSelected && apiModel === 'veo-omni-10s';
   const showBuiltinFalControls = !isExternalSelected && isFal && !!falReg;
   const showGenericVideoControls = isExternalSelected || !isFal;
@@ -210,7 +272,7 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
   const status: 'idle' | 'submitting' | 'polling' | 'success' | 'error' = d?.status || 'idle';
   const taskId: string | undefined = d?.taskId;
   const videoUrl: string | undefined = d?.videoUrl;
-  const progress: string = d?.progress || '';
+  const progress: string = formatVideoNodeText(d?.progress);
   const localPrompt: string = d?.prompt || '';
   const promptMentions: MediaMention[] = Array.isArray(d?.promptMentions) ? d.promptMentions : [];
 
@@ -246,11 +308,13 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
   const orderedVideos = useOrderedMaterials(visibleUpstreamVideos, materialOrder);
   const orderedAudios = useOrderedMaterials(visibleUpstreamAudios, materialOrder);
   const setMaterialOrder = (newOrder: string[]) => update({ materialOrder: newOrder });
+  const disconnectUpstreamMaterial = useDisconnectUpstreamMaterial(id);
   const handleExcludeUpstreamMaterial = (m: Material) => {
     if (m.origin !== 'upstream') return;
+    disconnectUpstreamMaterial(m);
     update({
-      excludedMaterialIds: excludeMaterialId(excludedMaterialIds, m.id),
-      materialOrder: materialOrder.filter((itemId) => itemId !== m.id),
+      excludedMaterialIds: pruneMaterialIdsForDisconnectedSource(excludedMaterialIds, m.sourceNodeId),
+      materialOrder: pruneMaterialOrderForDisconnectedSource(materialOrder, m.sourceNodeId),
     });
   };
   const handleRestoreExcludedMaterials = () => update({ excludedMaterialIds: [] });
@@ -288,8 +352,30 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
     ],
     [localRefImages, localRefVideos, localRefAudios, id],
   );
+  const orderedReferenceImages = useOrderedMaterials(
+    [...visibleUpstreamImages, ...localRefMaterials.filter((m) => m.kind === 'image')],
+    materialOrder,
+  );
+  const orderedReferenceVideos = useOrderedMaterials(
+    [...visibleUpstreamVideos, ...localRefMaterials.filter((m) => m.kind === 'video')],
+    materialOrder,
+  );
+  const orderedReferenceAudios = useOrderedMaterials(
+    [...visibleUpstreamAudios, ...localRefMaterials.filter((m) => m.kind === 'audio')],
+    materialOrder,
+  );
+  const handleRemoveLocalMaterial = (m: Material) => {
+    if (m.origin !== 'local') return;
+    const nextOrder = materialOrder.filter((itemId) => itemId !== m.id);
+    if (m.kind === 'image') update({ localRefImages: localRefImages.filter((url) => url !== m.url), materialOrder: nextOrder });
+    if (m.kind === 'video') update({ localRefVideos: localRefVideos.filter((url) => url !== m.url), materialOrder: nextOrder });
+    if (m.kind === 'audio') update({ localRefAudios: localRefAudios.filter((url) => url !== m.url), materialOrder: nextOrder });
+  };
+  const maxApishuVeoOmniRefs = isApishuVeoOmni ? 9 : 0;
   const maxMentionRefs =
-    isVeoOmni
+    maxApishuVeoOmniRefs
+      ? maxApishuVeoOmniRefs
+      : isVeoOmni
       ? 1
       : isGrok15New
       ? 1
@@ -300,39 +386,112 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
         ? 1
         : falReg.maxRefImages
       : modelDef.maxRefImages;
-  const maxMentionVideos = isJimengSeedanceSelected ? JIMENG_SEEDANCE_LIMITS.videos : 0;
+  const maxMentionVideos = isJimengSeedanceSelected ? JIMENG_SEEDANCE_LIMITS.videos : (isApishuVeoOmniEdit ? 1 : 0);
   const maxMentionAudios = isJimengSeedanceSelected ? JIMENG_SEEDANCE_LIMITS.audios : 0;
   const mentionMaterials = useMemo(
     () => [
-      ...[...orderedImages, ...localRefMaterials.filter((m) => m.kind === 'image')].slice(0, maxMentionRefs),
-      ...[...orderedVideos, ...localRefMaterials.filter((m) => m.kind === 'video')].slice(0, maxMentionVideos),
-      ...[...orderedAudios, ...localRefMaterials.filter((m) => m.kind === 'audio')].slice(0, maxMentionAudios),
+      ...orderedReferenceImages.slice(0, maxMentionRefs),
+      ...orderedReferenceVideos.slice(0, maxMentionVideos),
+      ...orderedReferenceAudios.slice(0, maxMentionAudios),
     ],
-    [orderedImages, orderedVideos, orderedAudios, localRefMaterials, maxMentionRefs, maxMentionVideos, maxMentionAudios],
+    [orderedReferenceImages, orderedReferenceVideos, orderedReferenceAudios, maxMentionRefs, maxMentionVideos, maxMentionAudios],
   );
+  const primarySmartReferenceVideo = orderedReferenceVideos[0]?.url || '';
+  const primarySmartReferenceImage = orderedReferenceImages[0]?.url || '';
+
+  const collectConnectedVideoNodeMaterials = (): { imageUrls: string[]; videoUrls: string[]; audioUrls: string[]; texts: string[] } => {
+    const imageUrls: string[] = [];
+    const videoUrls: string[] = [];
+    const audioUrls: string[] = [];
+    const texts: string[] = [];
+    const nodesById = new Map(getNodes().map((node) => [node.id, node]));
+    const addString = (list: string[], value: unknown) => {
+      if (typeof value !== 'string') return;
+      const trimmed = value.trim();
+      if (trimmed && !list.includes(trimmed)) list.push(trimmed);
+    };
+    const addArray = (list: string[], value: unknown) => {
+      if (!Array.isArray(value)) return;
+      value.forEach((item) => addString(list, item));
+    };
+
+    for (const edge of getEdges()) {
+      if (edge.target !== id) continue;
+      const source = nodesById.get(edge.source);
+      const sourceData: any = source?.data || {};
+      const portType = String((edge.data as any)?.portType || '').trim();
+      const allowAll = !portType || portType === 'any';
+      if (allowAll || portType === 'text') {
+        addString(texts, sourceData.outputText);
+        addString(texts, sourceData.reply);
+        addString(texts, sourceData.promptResolved);
+        addString(texts, sourceData.prompt);
+        addString(texts, sourceData.text);
+      }
+      if (allowAll || portType === 'image') {
+        addString(imageUrls, sourceData.imageUrl);
+        addString(imageUrls, sourceData.directImageUrl);
+        addString(imageUrls, sourceData.resultUrl);
+        addString(imageUrls, sourceData.firstFrameUrl);
+        addString(imageUrls, sourceData.lastFrameUrl);
+        addArray(imageUrls, sourceData.imageUrls);
+        addArray(imageUrls, sourceData.urls);
+        addArray(imageUrls, sourceData.generatedImages);
+        addArray(imageUrls, sourceData.directImageUrls);
+        addArray(imageUrls, sourceData.resultUrls);
+        addArray(imageUrls, sourceData.referenceImages);
+        addArray(imageUrls, sourceData.localRefImages);
+      }
+      if (allowAll || portType === 'video') {
+        addString(videoUrls, sourceData.videoUrl);
+        addString(videoUrls, sourceData.directVideoUrl);
+        addArray(videoUrls, sourceData.videoUrls);
+        addArray(videoUrls, sourceData.directVideoUrls);
+        addArray(videoUrls, sourceData.referenceVideos);
+        addArray(videoUrls, sourceData.localRefVideos);
+      }
+      if (allowAll || portType === 'audio') {
+        addString(audioUrls, sourceData.audioUrl);
+        addString(audioUrls, sourceData.audioUrl_1);
+        addString(audioUrls, sourceData.directAudioUrl);
+        addString(audioUrls, sourceData.localRefAudio);
+        addArray(audioUrls, sourceData.audioUrls);
+        addArray(audioUrls, sourceData.directAudioUrls);
+        addArray(audioUrls, sourceData.referenceAudios);
+        addArray(audioUrls, sourceData.localRefAudios);
+      }
+    }
+    return { imageUrls, videoUrls, audioUrls, texts };
+  };
 
   // 分组动态跟随子模型: Seedance / 即梦 CLI 支持 image/video/audio, 其他 (grok/veo/sora) 仅 image
   const previewGroups = useMemo<ReadonlyArray<'text' | 'image' | 'video' | 'audio'>>(
-    () => (modelDef.kind === 'seedance' || isJimengSeedanceSelected ? ['text', 'image', 'video', 'audio'] : ['text', 'image']),
-    [modelDef.kind, isJimengSeedanceSelected],
+    () => (isApishuVeoOmniEdit ? ['text', 'image', 'video'] : (modelDef.kind === 'seedance' || isJimengSeedanceSelected ? ['text', 'image', 'video', 'audio'] : ['text', 'image'])),
+    [isApishuVeoOmniEdit, modelDef.kind, isJimengSeedanceSelected],
   );
 
   // 收集上游 prompt + 参考图/视频/音频 (按用户拖拽顺序), 合并本地拖入素材
   const collectUpstream = (): { prompt: string; imageUrls: string[]; videoUrls: string[]; audioUrls: string[] } => {
     const prompts = orderedTexts.map((t) => t.url).filter((s) => !!s);
-    const upImageUrls = orderedImages.map((m) => m.url).filter((s) => !!s);
-    const upVideoUrls = orderedVideos.map((m) => m.url).filter((s) => !!s);
-    const upAudioUrls = orderedAudios.map((m) => m.url).filter((s) => !!s);
+    const imageUrls = orderedReferenceImages.map((m) => m.url).filter((s) => !!s);
+    const videoUrls = orderedReferenceVideos.map((m) => m.url).filter((s) => !!s);
+    const audioUrls = orderedReferenceAudios.map((m) => m.url).filter((s) => !!s);
+    const {
+      imageUrls: fallbackImageUrls,
+      videoUrls: fallbackVideoUrls,
+      audioUrls: fallbackAudioUrls,
+      texts: fallbackTexts,
+    } = collectConnectedVideoNodeMaterials();
     const dedupe = (items: string[]) => {
       const out: string[] = [];
       for (const item of items) if (item && !out.includes(item)) out.push(item);
       return out;
     };
     return {
-      prompt: prompts.join('\n').trim(),
-      imageUrls: dedupe([...upImageUrls, ...localRefImages]),
-      videoUrls: dedupe([...upVideoUrls, ...localRefVideos]),
-      audioUrls: dedupe([...upAudioUrls, ...localRefAudios]),
+      prompt: dedupe([...prompts, ...fallbackTexts]).join('\n').trim(),
+      imageUrls: dedupe([...imageUrls, ...fallbackImageUrls]),
+      videoUrls: dedupe([...videoUrls, ...fallbackVideoUrls]),
+      audioUrls: dedupe([...audioUrls, ...fallbackAudioUrls]),
     };
   };
 
@@ -348,10 +507,17 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
     });
   };
 
-  const stopPoll = () => {
+  const stopPoll = (reason?: Error) => {
     if (pollTimer.current) {
       window.clearInterval(pollTimer.current);
       pollTimer.current = null;
+    }
+    if (reason && activePollRejectRef.current) {
+      const reject = activePollRejectRef.current;
+      activePollRejectRef.current = null;
+      reject(reason);
+    } else if (!reason) {
+      activePollRejectRef.current = null;
     }
   };
 
@@ -360,7 +526,7 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
   // 切主模型时重置所有参数为该模型默认值(避免跨模型参数遗留)
   const switchMainModel = (nextId: string) => {
     const def = VIDEO_MODELS.find((m) => m.id === nextId) || VIDEO_MODELS[0];
-    const nextModel = def.apiModelOptions[0].value;
+    const nextModel = parseModelList(apiSettings.zhenzhenVideoModelOverrides?.[def.id])[0] || def.apiModelOptions[0].value;
     update({
       mainId: def.id,
       model: nextModel,
@@ -377,9 +543,10 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
   //   useRunTrigger 认为 runFn 完成 markDone(true)。 但实际任务 videoUrl 还未赋值 → LoopNode awaitNode
   //   立即继续 → extractFromNode 读不到 videoUrl → result=null → failCount++。
   //   修复: 轮询完成才 resolve，handleGenerate await 它，markDone 时机=任务真正结束。
-  const startPolling = (tid: string): Promise<void> => {
+  const startPolling = (tid: string, runSeq = videoRunSeqRef.current): Promise<void> => {
     stopPoll();
     return new Promise<void>((resolve, reject) => {
+      activePollRejectRef.current = reject;
       let elapsed = 0;
       const POLL_INT = VIDEO_POLL_INTERVAL_MS;
       const MAX = VIDEO_MAX_POLL; // 60 分钟
@@ -388,6 +555,7 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
         elapsed += 1;
         if (elapsed > MAX) {
           stopPoll();
+          flushProgressUpdate();
           update({ status: 'error', error: '轮询超时' });
           setError('轮询超时');
           logBus.error('轮询超时', src);
@@ -395,42 +563,53 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
           return;
         }
         try {
-          const r = await queryVideo(tid, apiModel);
-          if (r.progress && r.progress !== lastProgress) {
-            lastProgress = r.progress;
-            logBus.debug(`[${elapsed}/${MAX}] status=${r.status} progress=${r.progress}`, src);
+          throwIfVideoRunCancelled(runSeq);
+          const r = await queryVideo(tid, pollingApiModel);
+          throwIfVideoRunCancelled(runSeq);
+          const nextProgress = formatVideoNodeText(r.progress);
+          if (nextProgress && nextProgress !== lastProgress) {
+            lastProgress = nextProgress;
+            logBus.debug(`[${elapsed}/${MAX}] status=${r.status} progress=${nextProgress}`, src);
           }
           if (r.status === 'SUCCESS' && r.videoUrl) {
             stopPoll();
+            flushProgressUpdate();
             update({ status: 'success', videoUrl: r.videoUrl, progress: '100%' });
             logBus.success(`任务完成 → ${r.videoUrl}`, src);
             taskCompletionSound.notifyComplete(id, 'video');
             resolve();
           } else if (r.status === 'FAILURE') {
             stopPoll();
-            const msg = r.failReason || '生成失败';
+            flushProgressUpdate();
+            const msg = formatVideoNodeText(r.failReason, '生成失败');
             update({ status: 'error', error: msg });
             setError(msg);
             logBus.error(`生成失败: ${msg}`, src);
             reject(new Error(msg));
           } else {
-            update({ status: 'polling', progress: r.progress || '' });
+            scheduleProgressUpdate({ status: 'polling', progress: nextProgress });
           }
         } catch (e: any) {
           // 偶尔失败不停止
-          console.warn('轮询出错', e?.message);
+          console.warn('轮询出错', formatVideoNodeText(e?.message || e));
         }
       }, POLL_INT);
     });
   };
 
+  useEffect(() => {
+    if (status !== 'polling' || !taskId || videoUrl || pollTimer.current) return;
+    void startPolling(taskId).catch(() => undefined);
+  }, [status, taskId, videoUrl, pollingApiModel]);
+
   // FAL 轮询
   const falPollRef = useRef<{ responseUrl?: string; endpoint?: string; requestId?: string } | null>(null);
 
   // v1.2.9.11: 同样改造为 Promise（理由同 startPolling）
-  const startFalPolling = (): Promise<void> => {
+  const startFalPolling = (runSeq = videoRunSeqRef.current): Promise<void> => {
     stopPoll();
     return new Promise<void>((resolve, reject) => {
+      activePollRejectRef.current = reject;
       let elapsed = 0;
       const POLL_INT = VIDEO_FAL_POLL_INTERVAL_MS;
       const MAX = VIDEO_FAL_MAX_POLL; // 60分钟
@@ -438,6 +617,7 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
         elapsed += 1;
         if (elapsed > MAX) {
           stopPoll();
+          flushProgressUpdate();
           update({ status: 'error', error: 'FAL 轮询超时' });
           setError('FAL 轮询超时');
           logBus.error('FAL 轮询超时', src);
@@ -445,32 +625,37 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
           return;
         }
         try {
+          throwIfVideoRunCancelled(runSeq);
           const r = await queryVideoFal(falPollRef.current!);
+          throwIfVideoRunCancelled(runSeq);
           if (elapsed % 10 === 0) logBus.debug(`[FAL ${elapsed}/${MAX}] status=${r.status}`, src);
           if (r.status === 'completed' && r.videoUrl) {
             stopPoll();
+            flushProgressUpdate();
             update({ status: 'success', videoUrl: r.videoUrl, progress: '100%' });
             logBus.success(`FAL 视频完成 → ${r.videoUrl}`, src);
             taskCompletionSound.notifyComplete(id, 'video');
             resolve();
           } else if (r.status === 'failed') {
             stopPoll();
-            const msg = r.error || 'FAL 生成失败';
+            flushProgressUpdate();
+            const msg = formatVideoNodeText(r.error, 'FAL 生成失败');
             update({ status: 'error', error: msg });
             setError(msg);
             logBus.error(`FAL 生成失败: ${msg}`, src);
             reject(new Error(msg));
           } else {
-            update({ status: 'polling', progress: `${Math.min(95, Math.round(20 + elapsed / MAX * 75))}%` });
+            scheduleProgressUpdate({ status: 'polling', progress: `${Math.min(95, Math.round(20 + elapsed / MAX * 75))}%` });
           }
         } catch (e: any) {
-          console.warn('FAL 轮询出错', e?.message);
+          console.warn('FAL 轮询出错', formatVideoNodeText(e?.message || e));
         }
       }, POLL_INT);
     });
   };
 
   const handleGenerate = async () => {
+    const runSeq = ++videoRunSeqRef.current;
     setError(null);
     const { prompt: upstreamPrompt, imageUrls, videoUrls, audioUrls } = collectUpstream();
     const resolvedLocalPrompt = resolveMediaMentions(localPrompt, promptMentions, mentionMaterials);
@@ -490,8 +675,13 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
       logBus.error('生成中止: Grok 1.5 New 缺少参考图', src);
       return;
     }
+    if (isApishuVeoOmniEdit && videoUrls.length === 0) {
+      setError('veo-omni-flash-video-edit 需要 1 个源视频(video_url/video)');
+      logBus.error('生成中止: veo-omni-flash-video-edit 缺少源视频', src);
+      return;
+    }
     taskCompletionSound.primeAudio();
-    update({ status: 'submitting', error: null, videoUrl: null, taskId: null });
+    update({ status: 'submitting', error: null, taskId: null });
     try {
       if (isExternalSelected && providerSelection.provider) {
         const providerModel = externalProviderModel;
@@ -521,6 +711,7 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
             ? { ...providerParams, frameMode: jimengSeedanceMode }
             : providerParams,
         });
+        throwIfVideoRunCancelled(runSeq);
         const nextVideoUrl = r.videoUrls[0];
         if (!nextVideoUrl) throw new Error('扩展平台没有返回视频。');
         update({
@@ -606,6 +797,7 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
         );
 
         const r = await submitVideoFal(falReq);
+        throwIfVideoRunCancelled(runSeq);
         if (r.sync && r.videoUrl) {
           update({ status: 'success', videoUrl: r.videoUrl, lastPrompt: finalPrompt, progress: '100%' });
           logBus.success(`FAL 同步完成 → ${r.videoUrl}`, src);
@@ -615,16 +807,16 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
           update({ status: 'polling', lastPrompt: finalPrompt, progress: '15%' });
           logBus.info(`FAL 异步任务 requestId=${r.requestId} 进入轮询…`, src);
           // v1.2.9.11: await 让 useRunTrigger 等到任务真正完成才 markDone
-          await startFalPolling();
+          await startFalPolling(runSeq);
         }
         return;
       }
 
-      // === 原有贞贞工坊分支 ===
+      // === 默认视频接口分支 ===
       // 参考图预处理:
       //   - Grok: 直接传 URL (本地 /files/* 也可,后端会转上游 URL)
       //   - Veo / Sora2 / Seedance: 转 base64
-      const refs = imageUrls.slice(0, (isVeoOmni || isGrok15New) ? 1 : modelDef.maxRefImages);
+      const refs = imageUrls.slice(0, isApishuVeoOmni ? 9 : ((isVeoOmni || isGrok15New) ? 1 : modelDef.maxRefImages));
       let images: string[] | undefined;
       if (modelDef.supportImages && refs.length > 0) {
         if (modelDef.kind === 'grok') {
@@ -640,7 +832,7 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
       }
 
       // 按 kind 走不同字段(完全对齐 gpt-image-2-web payload)
-      const payload: VideoSubmitRequest = { model: apiModel, prompt: finalPrompt, providerParams };
+      const payload: VideoSubmitRequest = { model: effectiveApiModel, protocolModel: apiModel, prompt: finalPrompt, providerParams };
       if (isGrok15New) {
         payload.size = grok15NewSize;
       } else if (modelDef.kind === 'grok') {
@@ -656,7 +848,13 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
       } else {
         // veo / seedance
         payload.aspect_ratio = ratio;
-        if (isVeoOmni) {
+        if (isApishuVeoOmni) {
+          payload.duration = 10;
+          if (isApishuVeoOmniEdit && videoUrls.length) {
+            payload.video_url = videoUrls[0];
+            payload.videos = videoUrls.slice(0, 1);
+          }
+        } else if (isVeoOmni) {
           payload.duration = 10;
         } else {
           payload.enhance_prompt = enhancePrompt;
@@ -667,27 +865,40 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
       if (images && images.length) payload.images = images;
 
       logBus.info(
-        `提交任务: kind=${modelDef.kind} model=${apiModel} ratio=${ratio}` +
+        `提交任务: kind=${modelDef.kind} model=${effectiveApiModel} ratio=${ratio}` +
         (isGrok15New
           ? ` size=${payload.size} v1-multipart`
           : modelDef.kind === 'grok'
           ? ` duration=${payload.duration}s resolution=${payload.resolution}`
           : modelDef.kind === 'sora'
             ? ` duration=${payload.duration}s private=${payload.private}`
-            : isVeoOmni
-              ? ' duration=10s endpoint=/v1/videos'
+            : isApishuVeoOmni
+                ? ` duration=10s endpoint=/v1/videos apishu-json video=${isApishuVeoOmniEdit ? (videoUrls[0] ? 1 : 0) : 0}`
+              : isVeoOmni
+                ? ' duration=10s endpoint=/v1/videos'
               : ` enhance=${payload.enhance_prompt}`) +
         ` refs=${images?.length || 0} prompt="${finalPrompt.slice(0, 30)}…"`,
         src,
       );
 
       const r = await submitVideo(payload);
-      update({ status: 'polling', taskId: r.taskId, lastPrompt: finalPrompt, progress: '0%' });
+      throwIfVideoRunCancelled(runSeq);
+      update({
+        status: 'polling',
+        taskId: r.taskId,
+        protocolModel: r.protocol || r.effectiveModel || r.requestedModel,
+        lastPrompt: finalPrompt,
+        progress: '0%',
+      });
       logBus.info(`异步任务已提交 taskId=${r.taskId} 进入轮询…`, src);
       // v1.2.9.11: await 让 useRunTrigger 等到任务真正完成才 markDone
-      await startPolling(r.taskId);
+      await startPolling(r.taskId, runSeq);
     } catch (e: any) {
-      const msg = e?.message || '提交失败';
+      if (e?.message === '已停止生成') {
+        logBus.warn('已停止生成', src);
+        return;
+      }
+      const msg = formatVideoNodeText(e?.message || e, '提交失败');
       setError(msg);
       update({ status: 'error', error: msg });
       logBus.error(`提交失败: ${msg}`, src);
@@ -695,10 +906,19 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
   };
 
   const handleStop = () => {
-    stopPoll();
-    update({ status: 'idle' });
+    videoRunSeqRef.current += 1;
+    flushProgressUpdate();
+    stopPoll(new Error('已停止生成'));
+    setError(null);
+    update({ status: 'idle', progress: '', error: null });
     logBus.warn('用户主动停止', src);
   };
+
+  useEffect(() => {
+    if (runCancelSeq > 0 && runCancelTargets.includes(id) && (status === 'submitting' || status === 'polling')) {
+      handleStop();
+    }
+  }, [runCancelSeq, runCancelTargets, id, status]);
 
   // 批量运行接入
   useRunTrigger(id, async () => {
@@ -723,9 +943,10 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
       const cap = isGrok15New ? 1 : isJimengSeedanceSelected ? JIMENG_SEEDANCE_LIMITS.images : (modelDef.maxRefImages || 7) + 4;
       if (cur.length >= cap) return;
       update({ localRefImages: [...cur, payload.url] });
-    } else if (payload.kind === 'video' && payload.url && isJimengSeedanceSelected) {
+    } else if (payload.kind === 'video' && payload.url && (isJimengSeedanceSelected || isApishuVeoOmniEdit)) {
       const cur = Array.isArray(d?.localRefVideos) ? d.localRefVideos : [];
-      if (cur.indexOf(payload.url) !== -1 || cur.length >= JIMENG_SEEDANCE_LIMITS.videos) return;
+      const cap = isApishuVeoOmniEdit ? 1 : JIMENG_SEEDANCE_LIMITS.videos;
+      if (cur.indexOf(payload.url) !== -1 || cur.length >= cap) return;
       update({ localRefVideos: [...cur, payload.url] });
     } else if (payload.kind === 'audio' && payload.url && isJimengSeedanceSelected) {
       const cur = Array.isArray(d?.localRefAudios) ? d.localRefAudios : [];
@@ -737,17 +958,379 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
   };
   const { dropProps, isAccepting } = useMaterialDropTarget({
     id,
-    accepts: isJimengSeedanceSelected ? ['image', 'video', 'audio', 'text'] : ['image', 'text'],
+    accepts: isApishuVeoOmniEdit ? ['image', 'video', 'text'] : (isJimengSeedanceSelected ? ['image', 'video', 'audio', 'text'] : ['image', 'text']),
     onDrop: handleDrop,
   });
 
   const isBusy = status === 'submitting' || status === 'polling';
-  const refsCount = orderedImages.length + localRefImages.length;
-  const videoRefsCount = orderedVideos.length + localRefVideos.length;
-  const audioRefsCount = orderedAudios.length + localRefAudios.length;
+  const safeError = formatVideoNodeText(error);
+  const safeProgress = formatVideoNodeText(progress);
+  const refsCount = orderedReferenceImages.length;
+  const videoRefsCount = orderedReferenceVideos.length;
+  const audioRefsCount = orderedReferenceAudios.length;
   const previewTitle = isJimengSeedanceSelected
     ? `上游素材 · 图${Math.min(refsCount, JIMENG_SEEDANCE_LIMITS.images)}/${JIMENG_SEEDANCE_LIMITS.images} 视${Math.min(videoRefsCount, JIMENG_SEEDANCE_LIMITS.videos)}/${JIMENG_SEEDANCE_LIMITS.videos} 音${Math.min(audioRefsCount, JIMENG_SEEDANCE_LIMITS.audios)}/${JIMENG_SEEDANCE_LIMITS.audios}`
     : `上游素材 · 参考图 ${Math.min(refsCount, maxMentionRefs)}/${maxMentionRefs}`;
+  const videoNodeUiVariant: 'smart-card' | 'classic' = d?.uiVariant === 'classic' ? 'classic' : 'smart-card';
+  const useSmartCardVideoNode = videoNodeUiVariant === 'smart-card';
+  const hasManualSmartSize = d?.smartCardManualSize === true;
+  const smartAspectSize = resolveSmartMediaCardSize(ratio, hasManualSmartSize ? d?.smartCardWidth : undefined);
+  const smartCardWidth = smartAspectSize.width;
+  const smartCardHeight = smartAspectSize.height;
+  const smartComposerOpen = smartComposerOpenLocal && !smartCardDragging;
+  const smartComposerWidth = Math.max(smartCardWidth, 620);
+  const smartVideoAspect = ratio && ratio.includes(':') ? ratio.replace(':', '/') : '16/9';
+  const isSmartRegenerating = isBusy && Boolean(videoUrl);
+  const smartStatusLabel =
+    status === 'submitting'
+      ? '提交中'
+      : status === 'polling'
+        ? `生成中 ${safeProgress || ''}`.trim()
+        : status === 'success'
+          ? '已生成'
+          : status === 'error'
+            ? '生成失败'
+            : '待生成';
+  const smartSourceLabel = isExternalSelected && providerSelection.provider
+    ? `${providerSelection.provider.label || providerSelection.provider.id}${externalProviderModel ? ` · ${externalProviderModel}` : ''}`
+    : `${modelDef.label}${effectiveApiModel ? ` · ${effectiveApiModel}` : ''}`;
+  const syncVideoNodeGeometry = useNodeGeometrySync(id, updateNodeInternals);
+
+  useEffect(() => {
+    if (!useSmartCardVideoNode) return;
+    const raf = window.requestAnimationFrame(syncVideoNodeGeometry);
+    return () => window.cancelAnimationFrame(raf);
+  }, [selected, smartCardWidth, smartCardHeight, smartComposerOpen, syncVideoNodeGeometry, useSmartCardVideoNode]);
+
+  useOutsideClose({
+    enabled: useSmartCardVideoNode && smartComposerOpenLocal,
+    refs: smartNodeRef,
+    onOutside: () => setSmartComposerOpenLocal(false),
+  });
+
+  const smartPanelToggle = useSmartNodePanelToggle({
+    open: smartComposerOpenLocal,
+    dragging: false,
+    onToggle: setSmartComposerOpenLocal,
+    onDragChange: setSmartCardDragging,
+    onDragClose: () => setSmartComposerOpenLocal(false),
+    disabled: !useSmartCardVideoNode,
+  });
+
+  const switchVideoNodeVariant = (variant: 'smart-card' | 'classic') => {
+    setSmartComposerOpenLocal(false);
+    smartPanelToggle.handledClickRef.current = false;
+    smartPanelToggle.suppressClickRef.current = true;
+    flushSync(() => {
+      update({ uiVariant: variant });
+    });
+    syncVideoNodeGeometry();
+  };
+
+  if (useSmartCardVideoNode) {
+    return (
+      <SmartNodeShell
+        rootRef={smartNodeRef}
+        className="t8-smart-video-node relative overflow-visible"
+        style={{ width: smartCardWidth }}
+        rootProps={{
+          ...dropProps,
+          onPointerDown: smartPanelToggle.onPointerDown,
+          onPointerMove: smartPanelToggle.onPointerMove,
+          onPointerUp: smartPanelToggle.onPointerUp,
+          onPointerCancel: smartPanelToggle.onPointerCancel,
+          onClick: smartPanelToggle.onClick,
+        }}
+      >
+        <div
+          className={`t8-node t8-smart-node-card t8-smart-video-card transition-all ${selected ? 't8-smart-node-card--selected' : ''} ${
+            isAccepting ? 't8-smart-node-card--accepting' : ''
+          } ${isSmartRegenerating ? 't8-smart-node-card--regenerating' : ''}`}
+          style={{ height: smartCardHeight }}
+        >
+          <Handle type="target" position={Position.Left} className="t8-smart-node-port !border-0" style={{ top: '50%' }} />
+          <Handle type="source" position={Position.Right} className="t8-smart-node-port !border-0" style={{ top: '50%' }} />
+          <ResizableCorners
+            selected={selected}
+            minWidth={300}
+            minHeight={170}
+            maxWidth={760}
+            maxHeight={720}
+            accent="var(--t8-accent)"
+            keepAspectRatio
+            onResize={(_e, p) => {
+              const nextWidth = Math.round(p.width);
+              const nextSize = resolveSmartMediaCardSize(ratio, nextWidth);
+              update({
+                smartCardWidth: nextSize.width,
+                smartCardHeight: nextSize.height,
+                smartCardManualSize: true,
+              });
+              syncVideoNodeGeometry();
+            }}
+            onResizeEnd={(_e, p) => {
+              const nextWidth = Math.round(p.width);
+              const nextSize = resolveSmartMediaCardSize(ratio, nextWidth);
+              update({
+                smartCardWidth: nextSize.width,
+                smartCardHeight: nextSize.height,
+                smartCardManualSize: true,
+              });
+              syncVideoNodeGeometry();
+            }}
+          />
+
+          <div className="t8-smart-node-body">
+            <div className="t8-smart-node-preview t8-smart-video-preview">
+              {videoUrl ? (
+                <LoopingVideo
+                  src={videoUrl}
+                  controls
+                  className="h-full w-full object-cover"
+                  style={{ aspectRatio: smartVideoAspect }}
+                  data-drag-source
+                  data-drag-kind="video"
+                  data-drag-url={videoUrl}
+                  data-drag-preview={videoUrl}
+                  data-drag-node-id={id}
+                  data-resource-title={videoUrl.split('/').pop() || '生成视频'}
+                  data-prompt-template-kind="video"
+                  data-prompt-template-category="video-image-to-video"
+                  data-prompt-template-prompt={d?.lastPrompt || localPrompt}
+                  onLoadedMetadata={() => syncVideoNodeGeometry()}
+                  onMouseDown={(e) => beginMaterialDrag(e, { kind: 'video', url: videoUrl, sourceNodeId: id, previewUrl: videoUrl })}
+                  title="按住 Ctrl 拖拽到其他节点"
+                />
+              ) : (
+                <div className="t8-smart-node-empty t8-smart-video-empty">
+                  <VideoIcon size={28} />
+                </div>
+              )}
+              <div className="t8-smart-video-badge">
+                <VideoIcon size={12} />
+                <span>视频</span>
+              </div>
+              {status !== 'idle' && (
+                <div className={`t8-smart-video-status t8-smart-node-status--${status}`}>
+                  {isBusy && <Loader2 size={11} className="animate-spin" />}
+                  <span>{smartStatusLabel}</span>
+                </div>
+              )}
+            </div>
+            {safeError && (
+              <div className="t8-smart-node-error">
+                <AlertCircle size={12} />
+                <span>{safeError}</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {smartComposerOpen && (
+          <SmartNodeComposer
+            portal
+            anchorRef={smartNodeRef}
+            style={{ width: smartComposerWidth }}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <MaterialPreviewSection
+              texts={orderedTexts}
+              images={orderedReferenceImages}
+              videos={orderedReferenceVideos}
+              audios={orderedReferenceAudios}
+              order={materialOrder}
+              onReorder={setMaterialOrder}
+              onRemoveLocal={handleRemoveLocalMaterial}
+              onExcludeUpstream={handleExcludeUpstreamMaterial}
+              excludedCount={excludedUpstreamCount}
+              onRestoreExcluded={handleRestoreExcludedMaterials}
+              selected={!!selected}
+              isDark={isDark}
+              isPixel={isPixel}
+              density="compact"
+              groups={previewGroups}
+              title={previewTitle}
+            />
+            <div className="t8-smart-ref-strip">
+              <div className="t8-smart-node-meta t8-smart-node-meta--composer">
+                <span>{smartSourceLabel}</span>
+                <span>{smartStatusLabel}</span>
+                <span>参考 {refsCount}</span>
+              </div>
+              <div className="t8-smart-ref-spacer" />
+              <button
+                type="button"
+                className="nodrag nopan t8-btn t8-smart-classic-switch"
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  switchVideoNodeVariant('classic');
+                }}
+                title="切换到经典版节点"
+                aria-label="切换到经典版节点"
+              >
+                <RefreshCcw size={13} />
+              </button>
+            </div>
+
+            <div className="t8-smart-composer-row">
+              {videoAdvancedProviders.length > 0 && (
+                <label className="t8-smart-field t8-smart-field--compact">
+                  <span>来源</span>
+                  <select
+                    value={isExternalSelected ? providerSelection.providerId : 'zhenzhen'}
+                    onChange={(e) => {
+                      const nextId = e.target.value;
+                      if (nextId === 'zhenzhen') {
+                        update({ providerSource: 'zhenzhen', providerId: '', providerModel: '' });
+                        return;
+                      }
+                      const provider = videoAdvancedProviders.find((item) => item.id === nextId);
+                      if (!provider) return;
+                      const nextModels = advancedProviderModelOptions(provider, 'video');
+                      update({
+                        providerSource: provider.protocol,
+                        providerId: provider.id,
+                        providerModel: nextModels[0] || '',
+                        ...(provider.protocol === 'agnes'
+                          ? {
+                            ratio: '16:9',
+                            duration: 5,
+                            resolution: '720p',
+                            providerParams: { ...providerParams, frameRate: 24 },
+                          }
+                          : {}),
+                      });
+                    }}
+                    className="t8-select t8-smart-select"
+                  >
+                    <option value="zhenzhen">默认</option>
+                    {videoAdvancedProviders.map((provider) => (
+                      <option key={provider.id} value={provider.id}>
+                        {provider.label || provider.id}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {!isExternalSelected && (
+                <label className="t8-smart-field">
+                  <span>模型类型</span>
+                  <select value={modelDef.id} onChange={(e) => switchMainModel(e.target.value)} className="t8-select t8-smart-select">
+                    {VIDEO_MODELS.filter((m) => m.kind !== 'seedance').map((m) => (
+                      <option key={m.id} value={m.id}>{m.label}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {isExternalSelected && providerSelection.provider ? (
+                <label className="t8-smart-field">
+                  <span>具体模型</span>
+                  <select
+                    value={externalProviderModel}
+                    onChange={(e) => update({ providerModel: e.target.value })}
+                    className="t8-select t8-smart-select"
+                  >
+                    {externalModelOptions.map((m) => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                  </select>
+                </label>
+              ) : apiModelOptions.length > 1 && (
+                <label className="t8-smart-field">
+                  <span>具体模型</span>
+                  <select
+                    value={defaultProviderApiModel}
+                    onChange={(e) => {
+                      const nextModel = e.target.value;
+                      update({
+                        model: nextModel,
+                        ...(nextModel === 'grok-imagine-video-1.5' ? { gkfMode: 'image_to_video' } : {}),
+                        ...(isGrokVideo15NewModel(nextModel) ? { ratio: '16:9', size: '1280x720', resolution: '' } : {}),
+                        ...(nextModel === 'sora-2-zhenzhen' ? { ratio: '16:9', duration: 15, resolution: '' } : {}),
+                        ...(nextModel === 'veo-omni-10s' ? { ratio: '16:9', duration: 10, resolution: '' } : {}),
+                      });
+                    }}
+                    className="t8-select t8-smart-select"
+                  >
+                    {apiModelOptions.map((o) => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
+            </div>
+
+            <div className="t8-smart-prompt-shell">
+              <MentionPromptInput
+                title="视频 Prompt"
+                value={localPrompt}
+                mentions={promptMentions}
+                materials={mentionMaterials}
+                onChange={(value, mentions) => update({ prompt: value, promptMentions: mentions })}
+                placeholder="描述要生成的视频..."
+                isDark={isDark}
+                isPixel={isPixel}
+                promptTemplateKind="video"
+                className="t8-textarea t8-smart-prompt-input"
+              />
+            </div>
+
+            <div className="t8-smart-composer-row t8-smart-composer-row--params">
+              {showGenericVideoControls && !isGrok15New && (
+                <label className="t8-smart-field t8-smart-field--compact">
+                  <span>比例</span>
+                  <select value={ratio} onChange={(e) => update({ ratio: e.target.value })} className="t8-select t8-smart-select">
+                    {ratioOptions.map((r) => <option key={r} value={r}>{r}</option>)}
+                  </select>
+                </label>
+              )}
+              {showGenericVideoControls && !isGrok15New && durationOptions.length > 0 && (
+                <label className="t8-smart-field t8-smart-field--compact">
+                  <span>时长</span>
+                  <select value={String(duration)} onChange={(e) => update({ duration: Number(e.target.value) })} className="t8-select t8-smart-select">
+                    {durationOptions.map((s) => <option key={s} value={s}>{s}s</option>)}
+                  </select>
+                </label>
+              )}
+              {showGenericVideoControls && resolutionOptions.length > 0 && (
+                <label className="t8-smart-field t8-smart-field--compact">
+                  <span>分辨率</span>
+                  <select value={resolution || resolutionOptions[0]} onChange={(e) => update({ resolution: e.target.value })} className="t8-select t8-smart-select">
+                    {resolutionOptions.map((r) => <option key={r} value={r}>{r}</option>)}
+                  </select>
+                </label>
+              )}
+              <div className="t8-smart-param-spacer" />
+              {!isBusy ? (
+                <button type="button" onClick={handleGenerate} className="t8-btn t8-btn-primary t8-smart-run-btn">
+                  <Sparkles size={14} />
+                  <span>生成</span>
+                </button>
+              ) : (
+                <button type="button" onClick={handleStop} className="t8-btn t8-smart-run-btn">
+                  <Square size={13} />
+                  <span>停止</span>
+                </button>
+              )}
+            </div>
+
+            {isBusy && (
+              <div className="t8-smart-inline-state">
+                <Loader2 size={12} className="animate-spin" />
+                <span>{status === 'submitting' ? '提交任务...' : `轮询中 ${safeProgress}`}</span>
+                {taskId && <span>{taskId.slice(0, 10)}...</span>}
+              </div>
+            )}
+          </SmartNodeComposer>
+        )}
+      </SmartNodeShell>
+    );
+  }
 
   return (
     <div
@@ -776,82 +1359,70 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
           <div className="text-[10px] text-white/40">
             {isExternalSelected && providerSelection.provider
               ? `${providerSelection.provider.label || providerSelection.provider.id} · ${externalProviderModel || '未选模型'}`
-              : `${modelDef.label} · ${modelDef.kind}`}
+              : `${modelDef.label} · ${effectiveApiModel}`}
           </div>
         </div>
+        <button
+          type="button"
+          className="nodrag nopan t8-btn t8-smart-classic-switch"
+          onPointerDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          }}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            switchVideoNodeVariant('smart-card');
+          }}
+          title="切回卡片版节点"
+          aria-label="切回卡片版节点"
+        >
+          <RefreshCcw size={13} />
+        </button>
       </div>
 
       <div className="p-2.5 space-y-2" onMouseDown={(e) => e.stopPropagation()}>
         {videoAdvancedProviders.length > 0 && (
           <div className="rounded border border-white/10 bg-white/[0.03] p-2 space-y-2">
-            <button
-              type="button"
-              onClick={() => update({ advancedProviderOpen: !d?.advancedProviderOpen })}
-              className="w-full flex items-center justify-between text-[10px] font-semibold text-white/70 hover:text-white"
+            <label className="text-[10px] text-white/50 block mb-1">来源</label>
+            <select
+              value={isExternalSelected ? providerSelection.providerId : 'zhenzhen'}
+              onChange={(e) => {
+                const nextId = e.target.value;
+                if (nextId === 'zhenzhen') {
+                  update({ providerSource: 'zhenzhen', providerId: '', providerModel: '' });
+                  return;
+                }
+                const provider = videoAdvancedProviders.find((item) => item.id === nextId);
+                if (!provider) return;
+                const nextModels = advancedProviderModelOptions(provider, 'video');
+                update({
+                  providerSource: provider.protocol,
+                  providerId: provider.id,
+                  providerModel: nextModels[0] || '',
+                  ...(provider.protocol === 'agnes'
+                    ? {
+                      ratio: '16:9',
+                      duration: 5,
+                      resolution: '720p',
+                      providerParams: { ...providerParams, frameRate: 24 },
+                    }
+                    : {}),
+                });
+              }}
+              style={{ background: '#18181b', color: '#ffffff' }}
+              className="w-full rounded border border-white/10 px-2 py-1 text-xs outline-none focus:border-white/30"
             >
-              <span>高级来源</span>
-              <span>{isExternalSelected && providerSelection.provider ? providerSelection.provider.label : '默认视频接口'}</span>
-            </button>
-            {d?.advancedProviderOpen && (
-              <div className="space-y-2">
-                <div>
-                  <label className="text-[10px] text-white/50 block mb-1">平台</label>
-                  <select
-                    value={isExternalSelected ? providerSelection.providerId : 'zhenzhen'}
-                    onChange={(e) => {
-                      const nextId = e.target.value;
-                      if (nextId === 'zhenzhen') {
-                        update({ providerSource: 'zhenzhen', providerId: '', providerModel: '' });
-                        return;
-                      }
-                      const provider = videoAdvancedProviders.find((item) => item.id === nextId);
-                      if (!provider) return;
-                      const nextModels = advancedProviderModelOptions(provider, 'video');
-                      update({
-                        providerSource: provider.protocol,
-                        providerId: provider.id,
-                        providerModel: nextModels[0] || '',
-                        ...(provider.protocol === 'agnes'
-                          ? {
-                            ratio: '16:9',
-                            duration: 5,
-                            resolution: '720p',
-                            providerParams: { ...providerParams, frameRate: 24 },
-                          }
-                          : {}),
-                      });
-                    }}
-                    style={{ background: '#18181b', color: '#ffffff' }}
-                    className="w-full rounded border border-white/10 px-2 py-1 text-xs outline-none focus:border-white/30"
-                  >
-                    <option value="zhenzhen" style={{ background: '#18181b', color: '#ffffff' }}>贞贞工坊（默认）</option>
-                    {videoAdvancedProviders.map((provider) => (
-                      <option key={provider.id} value={provider.id} style={{ background: '#18181b', color: '#ffffff' }}>
-                        {provider.label || provider.id}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                {isExternalSelected && providerSelection.provider && (
-                  <div>
-                    <label className="text-[10px] text-white/50 block mb-1">外部模型</label>
-                    <select
-                      value={externalProviderModel}
-                      onChange={(e) => update({ providerModel: e.target.value })}
-                      style={{ background: '#18181b', color: '#ffffff' }}
-                      className="w-full rounded border border-white/10 px-2 py-1 text-xs outline-none focus:border-white/30"
-                    >
-                      {externalModelOptions.map((m) => (
-                        <option key={m} value={m} style={{ background: '#18181b', color: '#ffffff' }}>{m}</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-                {savedExternalMissing && (
-                  <div className="text-[10px] text-amber-200 bg-amber-500/10 border border-amber-500/20 rounded px-2 py-1">
-                    当前画布记录的扩展平台未启用或不存在，已临时回到默认来源。
-                  </div>
-                )}
+              <option value="zhenzhen" style={{ background: '#18181b', color: '#ffffff' }}>默认</option>
+              {videoAdvancedProviders.map((provider) => (
+                <option key={provider.id} value={provider.id} style={{ background: '#18181b', color: '#ffffff' }}>
+                  {provider.label || provider.id}
+                </option>
+              ))}
+            </select>
+            {savedExternalMissing && (
+              <div className="text-[10px] text-amber-200 bg-amber-500/10 border border-amber-500/20 rounded px-2 py-1">
+                当前画布记录的扩展平台未启用或不存在，已临时回到默认来源。
               </div>
             )}
           </div>
@@ -874,11 +1445,25 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
         )}
 
         {/* 子模型(主项目 veo_model / gk_model) */}
-        {!isExternalSelected && modelDef.apiModelOptions.length > 1 && (
+        {isExternalSelected && providerSelection.provider ? (
           <div>
             <label className="text-[10px] text-white/50 block mb-1">具体模型</label>
             <select
-              value={apiModel}
+              value={externalProviderModel}
+              onChange={(e) => update({ providerModel: e.target.value })}
+              style={{ background: '#18181b', color: '#ffffff' }}
+              className="w-full rounded border border-white/10 px-2 py-1 text-xs outline-none focus:border-white/30"
+            >
+              {externalModelOptions.map((m) => (
+                <option key={m} value={m} style={{ background: '#18181b', color: '#ffffff' }}>{m}</option>
+              ))}
+            </select>
+          </div>
+        ) : apiModelOptions.length > 1 && (
+          <div>
+            <label className="text-[10px] text-white/50 block mb-1">具体模型</label>
+            <select
+              value={defaultProviderApiModel}
               onChange={(e) => {
                 const nextModel = e.target.value;
                 update({
@@ -891,7 +1476,7 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
               }}
               className="w-full rounded bg-white/5 border border-white/10 px-2 py-1 text-xs text-white outline-none focus:border-white/30"
             >
-              {modelDef.apiModelOptions.map((o) => (
+              {apiModelOptions.map((o) => (
                 <option key={o.value} value={o.value} className="bg-zinc-900">{o.label}</option>
               ))}
             </select>
@@ -906,9 +1491,9 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
           context={{
             providerSource: isExternalSelected ? providerSelection.providerSource : 'zhenzhen',
             providerId: providerSelection.providerId,
-            providerModel: isExternalSelected ? externalProviderModel : apiModel,
+            providerModel: isExternalSelected ? externalProviderModel : effectiveApiModel,
             model: apiModel,
-            apiModel,
+            apiModel: effectiveApiModel,
             mainId,
             providerKind: isFal ? 'fal' : modelDef.kind,
           }}
@@ -1415,22 +2000,22 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
             onClick={handleStop}
             className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded bg-zinc-500/20 hover:bg-zinc-500/30 text-zinc-200 text-xs font-medium transition-colors"
           >
-            <Square size={11} /> 停止({progress || (status === 'submitting' ? '提交中' : '排队中')})
+            <Square size={11} /> 停止({safeProgress || (status === 'submitting' ? '提交中' : '排队中')})
           </button>
         )}
 
         {isBusy && (
           <div className="flex items-center gap-1 text-[10px] text-rose-200/80">
             <Loader2 size={11} className="animate-spin" />
-            {status === 'submitting' ? '提交任务...' : `轮询中 ${progress}`}
+            {status === 'submitting' ? '提交任务...' : `轮询中 ${safeProgress}`}
             {taskId && <span className="ml-auto text-white/30">{taskId.slice(0, 10)}…</span>}
           </div>
         )}
 
-        {error && (
+        {safeError && (
           <div className="flex items-start gap-1 text-[10px] text-red-300 bg-red-500/10 border border-red-500/20 rounded px-2 py-1">
             <AlertCircle size={11} className="mt-0.5 flex-shrink-0" />
-            <span className="break-all">{error}</span>
+            <span className="break-all">{safeError}</span>
           </div>
         )}
       </div>

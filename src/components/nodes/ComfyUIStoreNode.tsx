@@ -28,11 +28,15 @@ import {
 } from '../../utils/comfyuiApps';
 import {
   countExcludedMaterials,
-  excludeMaterialId,
   filterExcludedMaterials,
   normalizeExcludedMaterialIds,
 } from '../../utils/materialExclusion';
 import MaterialPreviewSection from './MaterialPreviewSection';
+import {
+  pruneMaterialIdsForDisconnectedSource,
+  pruneMaterialOrderForDisconnectedSource,
+  useDisconnectUpstreamMaterial,
+} from './shared/upstreamMaterialConnections';
 import SmartImage from '../SmartImage';
 import PromptTextarea from '../PromptTextarea';
 import ResizableCorners from './ResizableCorners';
@@ -158,11 +162,13 @@ const ComfyUIStoreNode = ({ id, data, selected }: NodeProps) => {
   };
 
   const setOrder = (next: string[]) => update({ materialOrder: next });
+  const disconnectUpstreamMaterial = useDisconnectUpstreamMaterial(id);
   const excludeMaterial = (m: Material) => {
     if (m.origin !== 'upstream') return;
+    disconnectUpstreamMaterial(m);
     update({
-      excludedMaterialIds: excludeMaterialId(excludedMaterialIds, m.id),
-      materialOrder: order.filter((item) => item !== m.id),
+      excludedMaterialIds: pruneMaterialIdsForDisconnectedSource(excludedMaterialIds, m.sourceNodeId),
+      materialOrder: pruneMaterialOrderForDisconnectedSource(order, m.sourceNodeId),
     });
   };
   const setParam = (key: string, value: any) => update({ comfyuiStoreParamValues: { ...paramValues, [key]: value } });

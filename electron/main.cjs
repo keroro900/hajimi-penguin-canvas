@@ -1,5 +1,5 @@
 // ============================================================================
-// T8-penguin-canvas Electron 主进程
+// Hakimi Canvas Electron main process
 // 设计要点 (与参考项目 gpt-image-2-web Python 方案的区别):
 //   1. 本项目无 Python 依赖,直接复用 Electron 内置 Node.js runtime 启动 Express
 //   2. 后端核心源码已被 bytenode 编译为 .jsc 字节码 + T8ENC1 加密 (.t8c)
@@ -21,7 +21,7 @@ const UPDATE_DISABLED_MESSAGE = '开发模式不会检查 GitHub Release 更新'
 // 允许在 Linux/某些机型上规避 GPU 沙盒导致的启动延迟
 app.commandLine.appendSwitch('disable-features', 'OutOfBlinkCors');
 if (process.platform === 'win32') {
-  app.setAppUserModelId('cn.t8star.penguin-canvas');
+  app.setAppUserModelId('cn.hajimi.canvas');
 }
 
 let mainWindow = null;
@@ -1080,6 +1080,13 @@ function getUserDataDir() {
   return path.resolve(__dirname, '..');
 }
 
+function resolveAppIconPath() {
+  const iconPath = isPackaged()
+    ? path.join(process.resourcesPath, 'icon.ico')
+    : path.join(__dirname, 'build-resources', 'icon.ico');
+  return fs.existsSync(iconPath) ? iconPath : undefined;
+}
+
 function isPathInside(parentDir, candidatePath) {
   const parent = path.resolve(parentDir);
   const candidate = path.resolve(candidatePath);
@@ -1482,6 +1489,7 @@ async function startBackend() {
 
 // ---------- 创建主窗口 ----------
 function createMainWindow() {
+  const icon = resolveAppIconPath();
   mainWindow = new BrowserWindow({
     width: 1480,
     height: 920,
@@ -1489,7 +1497,8 @@ function createMainWindow() {
     minHeight: 640,
     show: false,
     backgroundColor: '#0b0b0d',
-    title: `贞贞的无限画布（企鹅共创版） v${APP_VERSION}`,
+    ...(icon ? { icon } : {}),
+    title: `哈基米画布 v${APP_VERSION}`,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -1569,7 +1578,7 @@ function createLogWindow() {
 .h b{color:#ffd76b;}
 #log{padding:12px 18px;white-space:pre-wrap;line-height:1.5;font-size:12px;}
 </style></head><body>
-<div class="h">🐧 <b>贞贞的无限画布</b>（企鹅共创版）<span style="float:right;color:#666;">v${APP_VERSION}</span></div>
+<div class="h">🐧 <b>哈基米画布</b><span style="float:right;color:#666;">v${APP_VERSION}</span></div>
 <div id="log">[启动] 正在初始化加密内核 + Express 后端...\n</div>
 </body></html>`;
   fs.writeFileSync(logHtmlPath, html, 'utf-8');

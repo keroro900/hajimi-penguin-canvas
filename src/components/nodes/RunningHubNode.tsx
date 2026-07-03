@@ -1,6 +1,7 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
-import { Handle, Position, useNodeConnections, useNodesData, type NodeProps } from '@xyflow/react';
-import { AlertCircle, Loader2, Workflow, Wallet, Sparkles, Square, Search, RefreshCw } from 'lucide-react';
+import { flushSync } from 'react-dom';
+import { Handle, Position, useNodeConnections, useNodesData, useUpdateNodeInternals, type NodeProps } from '@xyflow/react';
+import { AlertCircle, Loader2, Workflow, Wallet, Sparkles, Square, Search, RefreshCw, RefreshCcw } from 'lucide-react';
 import { submitRh, queryRh, cancelRh, fetchRhAppInfo, uploadRhAsset } from '../../services/generation';
 import { useUpdateNodeData } from './useUpdateNodeData';
 import { useHasAutoOutput } from './useHasAutoOutput';
@@ -12,13 +13,17 @@ import MentionPromptInput from './MentionPromptInput';
 import LoopingVideo from '../LoopingVideo';
 import SmartImage from '../SmartImage';
 import PromptTextarea from '../PromptTextarea';
+import SmartNodeComposer from './shared/SmartNodeComposer';
+import SmartNodeShell from './shared/SmartNodeShell';
 import { resolveMediaMentions, type MediaMention } from './mediaMentions';
+import { useNodeGeometrySync } from './shared/useNodeGeometrySync';
+import { useOutsideClose } from './shared/useOutsideClose';
+import { useSmartNodePanelToggle } from './shared/useSmartNodePanelToggle';
 import { useThemeStore } from '../../stores/theme';
 import { logBus } from '../../stores/logs';
 import { useRunBusStore } from '../../stores/runBus';
 import {
   countExcludedMaterials,
-  excludeMaterialId,
   filterExcludedMaterials,
   normalizeExcludedMaterialIds,
 } from '../../utils/materialExclusion';
@@ -31,6 +36,11 @@ import {
   rhParamKey,
   type RhParamValue,
 } from '../../utils/rhTextBinding';
+import {
+  pruneMaterialIdsForDisconnectedSource,
+  pruneMaterialOrderForDisconnectedSource,
+  useDisconnectUpstreamMaterial,
+} from './shared/upstreamMaterialConnections';
 
 /**
  * RunningHubNode - 主工作流节点
@@ -132,10 +142,14 @@ const paramKey = rhParamKey;
 
 const RunningHubNode = ({ id, data, selected, type }: NodeProps) => {
   const update = useUpdateNodeData(id);
+  const updateNodeInternals = useUpdateNodeInternals();
   const hasAutoOutput = useHasAutoOutput(id);
   const [error, setError] = useState<string | null>(null);
   const pollTimer = useRef<number | null>(null);
   const [fetchingInfo, setFetchingInfo] = useState(false);
+  const smartNodeRef = useRef<HTMLDivElement | null>(null);
+  const [smartPanelOpenLocal, setSmartPanelOpenLocal] = useState(false);
+  const [smartCardDragging, setSmartCardDragging] = useState(false);
 
   // v1.2.9.16: 取消 rhWalletApiKey 单独字段 —— RH 钱包应用与普通 RunningHub
   // 节点统一使用 settings.rhApiKey。useWallet 变量仅用于 UI 区分（标题/图标/配色），
@@ -242,11 +256,13 @@ const RunningHubNode = ({ id, data, selected, type }: NodeProps) => {
   // 与 VideoNode/SeedanceNode 保持一致，不同节点类型使用不同前缀 rh / rh-wallet。
   const src = `${type === 'rhWallet' ? 'rh-wallet' : 'rh'}:${id}`;
   const setMaterialOrder = (newOrder: string[]) => update({ materialOrder: newOrder });
+  const disconnectUpstreamMaterial = useDisconnectUpstreamMaterial(id);
   const handleExcludeUpstreamMaterial = (m: Material) => {
     if (m.origin !== 'upstream') return;
+    disconnectUpstreamMaterial(m);
     update({
-      excludedMaterialIds: excludeMaterialId(excludedMaterialIds, m.id),
-      materialOrder: materialOrder.filter((itemId) => itemId !== m.id),
+      excludedMaterialIds: pruneMaterialIdsForDisconnectedSource(excludedMaterialIds, m.sourceNodeId),
+      materialOrder: pruneMaterialOrderForDisconnectedSource(materialOrder, m.sourceNodeId),
     });
   };
   const handleRestoreExcludedMaterials = () => update({ excludedMaterialIds: [] });
@@ -312,8 +328,14 @@ const RunningHubNode = ({ id, data, selected, type }: NodeProps) => {
       const cur = next[k];
       const idx = counters[vt]++;
       const upUrl = findUpstreamUrl(vt, idx);
-      if (!upUrl) continue;
       if (cur?.sourceFromUpstream === false) continue; // 用户主动关闭
+      if (!upUrl) {
+        if (cur?.sourceFromUpstream === true && cur.value) {
+          next[k] = { ...cur, value: '' };
+          changed = true;
+        }
+        continue;
+      }
       if (cur?.sourceFromUpstream === true) {
         if (upUrl !== cur.value) {
           next[k] = { ...cur, value: upUrl };
@@ -349,7 +371,12 @@ const RunningHubNode = ({ id, data, selected, type }: NodeProps) => {
       const idx = counters[vt]++;
       if (cur?.sourceFromUpstream === false) continue; // 用户主动关闭
       const upUrl = findUpstreamUrl(vt, idx);
-      if (!upUrl) continue;
+      if (!upUrl) {
+        if (cur?.sourceFromUpstream === true && cur.value) {
+          next[k] = { ...cur, value: '' };
+        }
+        continue;
+      }
       // sourceFromUpstream === true 或 undefined（初次看到上游）都采用上游实时 url
       next[k] = { value: upUrl, sourceFromUpstream: true };
     }
@@ -765,6 +792,485 @@ const RunningHubNode = ({ id, data, selected, type }: NodeProps) => {
 
   const isBusy = status === 'submitting' || status === 'polling' || cancelling;
   const nodeInfoList: any[] = appInfo?.nodeInfoList || [];
+  const runningHubNodeUiVariant: 'smart-card' | 'classic' = d?.uiVariant === 'classic' ? 'classic' : 'smart-card';
+  const useSmartCardRunningHubNode = runningHubNodeUiVariant === 'smart-card';
+  const syncRunningHubNodeGeometry = useNodeGeometrySync(id, updateNodeInternals);
+  const smartPanelOpen = smartPanelOpenLocal && !smartCardDragging;
+  const upstreamCount = orderedTexts.length + orderedImages.length + orderedVideos.length + orderedAudios.length;
+  const outputCount = urls.length;
+  const smartStatusLabel =
+    status === 'submitting'
+      ? '提交中'
+      : status === 'polling'
+        ? '生成中'
+        : status === 'success'
+          ? '已完成'
+          : status === 'error'
+            ? '失败'
+            : '待运行';
+  const appTitle = appInfo?.appName || appInfo?.name || titleText;
+  const appSubtitle = webappId ? `Webapp ${webappId}` : (useWallet ? 'RH 钱包应用' : 'AI 工作流');
+
+  useEffect(() => {
+    if (!useSmartCardRunningHubNode) return;
+    const raf = window.requestAnimationFrame(syncRunningHubNodeGeometry);
+    return () => window.cancelAnimationFrame(raf);
+  }, [selected, smartPanelOpen, status, urls.length, syncRunningHubNodeGeometry, useSmartCardRunningHubNode]);
+
+  useOutsideClose({
+    enabled: useSmartCardRunningHubNode && smartPanelOpenLocal,
+    refs: smartNodeRef,
+    onOutside: () => setSmartPanelOpenLocal(false),
+  });
+
+  const smartPanelToggle = useSmartNodePanelToggle({
+    open: smartPanelOpenLocal,
+    dragging: false,
+    onToggle: setSmartPanelOpenLocal,
+    onDragChange: setSmartCardDragging,
+    onDragClose: () => setSmartPanelOpenLocal(false),
+    disabled: !useSmartCardRunningHubNode,
+  });
+
+  const switchRunningHubNodeVariant = (variant: 'smart-card' | 'classic') => {
+    setSmartPanelOpenLocal(false);
+    smartPanelToggle.handledClickRef.current = false;
+    smartPanelToggle.suppressClickRef.current = true;
+    flushSync(() => {
+      update({ uiVariant: variant });
+    });
+    syncRunningHubNodeGeometry();
+  };
+
+  const renderRhParamValuePreview = (
+    valueType: ReturnType<typeof inferValueType>,
+    value: unknown,
+  ) => {
+    const raw = String(value ?? '').trim();
+    if (!raw) return null;
+
+    if (valueType === 'image') {
+      return (
+        <div className="nowheel nodrag t8-smart-rh-param-preview t8-smart-rh-param-preview--image" title={raw}>
+          <SmartImage src={raw} thumbSize={360} alt="参数图片预览" />
+        </div>
+      );
+    }
+
+    if (valueType === 'video') {
+      return (
+        <div className="nowheel nodrag t8-smart-rh-param-preview t8-smart-rh-param-preview--video" title={raw}>
+          <LoopingVideo src={raw} controls />
+        </div>
+      );
+    }
+
+    if (valueType === 'audio') {
+      return (
+        <div className="nowheel nodrag t8-smart-rh-param-preview t8-smart-rh-param-preview--audio" title={raw}>
+          <audio src={raw} controls />
+        </div>
+      );
+    }
+
+    return null;
+  };
+
+  const renderRunningHubControls = (mode: 'smart' | 'classic') => (
+    <div className={mode === 'smart' ? 't8-smart-rh-controls' : 'p-2.5 space-y-2'} onMouseDown={(e) => e.stopPropagation()}>
+      {(orderedTexts.length + orderedImages.length + orderedVideos.length + orderedAudios.length + excludedUpstreamCount) > 0 && (
+        <MaterialPreviewSection
+          texts={orderedTexts}
+          images={orderedImages}
+          videos={orderedVideos}
+          audios={orderedAudios}
+          order={materialOrder}
+          onReorder={setMaterialOrder}
+          onExcludeUpstream={handleExcludeUpstreamMaterial}
+          excludedCount={excludedUpstreamCount}
+          onRestoreExcluded={handleRestoreExcludedMaterials}
+          isDark={isDark}
+          isPixel={isPixel}
+          groups={['text', 'image', 'video', 'audio']}
+          title="上游素材 · 拖拽可调整顺序"
+        />
+      )}
+      <div className={mode === 'smart' ? 't8-smart-composer-row' : ''}>
+        <label className={mode === 'smart' ? 't8-smart-field' : 'block'}>
+          <span className={mode === 'smart' ? '' : 'text-[10px] text-white/50 block mb-1'}>Webapp ID</span>
+          <div className={mode === 'smart' ? 't8-smart-rh-id-row' : 'flex gap-1'}>
+            <input
+              type="text"
+              value={webappId}
+              onChange={(e) => update({ webappId: e.target.value })}
+              placeholder="1234567890"
+              className={mode === 'smart' ? 't8-input t8-smart-input' : 'flex-1 rounded bg-white/5 border border-white/10 px-2 py-1 text-xs text-white outline-none focus:border-white/30 placeholder:text-white/30'}
+            />
+            <button
+              onClick={handleFetchInfo}
+              disabled={fetchingInfo}
+              title="拉取应用信息"
+              className={mode === 'smart' ? 't8-btn t8-smart-icon-btn' : 'px-2 rounded bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 disabled:opacity-50'}
+            >
+              {fetchingInfo ? <Loader2 size={11} className="animate-spin" /> : <Search size={11} />}
+            </button>
+          </div>
+        </label>
+      </div>
+
+      {nodeInfoList.length > 0 && (
+        <div
+          className={mode === 'smart'
+            ? 'nowheel nodrag t8-smart-rh-param-list'
+            : `nowheel nodrag rounded border ${accent.subBg} p-2 space-y-2 max-h-[420px] overflow-auto overscroll-contain`}
+          onWheelCapture={(e) => e.stopPropagation()}
+        >
+          <div className={mode === 'smart' ? 't8-smart-rh-section-title' : `text-[10px] ${accent.sub} flex items-center justify-between`}>
+            <span>参数 ({nodeInfoList.length})</span>
+            <span>点击字段可编辑</span>
+          </div>
+          {nodeInfoList.map((it: any, i: number) => {
+            const vt = inferValueType(it?.fieldType);
+            const k = paramKey(it.nodeId, it.fieldName);
+            const cur = paramValues[k] || { value: extractDefaultValue(it) };
+            const isMedia = vt === 'image' || vt === 'video' || vt === 'audio';
+            const fieldDataOptions = extractFieldOptions(it);
+            return (
+              <div key={i} className={mode === 'smart' ? 't8-smart-rh-param' : 'space-y-1 pb-2 border-b border-white/5 last:border-0 last:pb-0'}>
+                <div className={mode === 'smart' ? 't8-smart-rh-param__head' : 'flex items-center gap-1 text-[10px] leading-tight'}>
+                  <span className={mode === 'smart' ? '' : 'text-white/80 font-medium truncate'}>{it.fieldName}</span>
+                  <span>{fieldDataOptions ? `select(${fieldDataOptions.length})` : vt}</span>
+                  <span>#{it.nodeId}</span>
+                </div>
+                {it?.description && (
+                  <div className={mode === 'smart' ? 't8-smart-rh-param__desc' : 'text-[9px] text-white/40 leading-tight'}>{it.description}</div>
+                )}
+                {isMedia ? (
+                  <>
+                    <div className={mode === 'smart' ? 't8-smart-rh-inline' : 'flex items-center justify-between text-[10px]'}>
+                      <label className={mode === 'smart' ? 't8-smart-rh-check' : 'flex items-center gap-1 text-cyan-200/80 cursor-pointer'}>
+                        <input
+                          type="checkbox"
+                          checked={!!cur.sourceFromUpstream}
+                          onChange={(e) => setParam(k, { sourceFromUpstream: e.target.checked })}
+                          className="accent-cyan-400"
+                        />
+                        从上游自动获取
+                      </label>
+                      {cur.sourceFromUpstream && (
+                        <button
+                          onClick={() => {
+                            const u = findUpstreamUrl(vt, fieldKindIndex[k] ?? 0);
+                            if (u) setParam(k, { value: u });
+                          }}
+                          className={mode === 'smart' ? 't8-smart-rh-link' : 'flex items-center gap-1 text-cyan-200/80 hover:text-cyan-100'}
+                          title="重新同步上游 url"
+                        >
+                          <RefreshCw size={9} /> 同步
+                        </button>
+                      )}
+                    </div>
+                    <input
+                      type="text"
+                      value={cur.value}
+                      onChange={(e) => setParam(k, { value: e.target.value })}
+                      placeholder={cur.sourceFromUpstream ? '(从上游自动填入)' : `${vt} url 或 fileName`}
+                      readOnly={!!cur.sourceFromUpstream}
+                      className={mode === 'smart'
+                        ? 't8-input t8-smart-input'
+                        : `w-full rounded border px-2 py-1 text-[11px] text-white outline-none placeholder:text-white/30 ${
+                          cur.sourceFromUpstream
+                            ? 'bg-cyan-500/10 border-cyan-500/30 cursor-not-allowed'
+                            : 'bg-white/5 border-white/10 focus:border-white/30'
+                        }`}
+                    />
+                    {mode === 'smart' && renderRhParamValuePreview(vt, cur.value)}
+                  </>
+                ) : fieldDataOptions ? (
+                  <>
+                    <select
+                      value={cur.value}
+                      onChange={(e) => setParam(k, { value: e.target.value })}
+                      className={mode === 'smart' ? 't8-select t8-smart-select' : 'w-full rounded bg-white/5 border border-white/10 px-2 py-1 text-[11px] text-white outline-none focus:border-white/30'}
+                    >
+                      {cur.value && !fieldDataOptions.some((o) => String(o) === String(cur.value)) && (
+                        <option value={String(cur.value)}>(当前) {String(cur.value)}</option>
+                      )}
+                      {!cur.value && <option value="">(选择)</option>}
+                      {fieldDataOptions.map((opt, oi) => (
+                        <option key={oi} value={String(opt)}>{String(opt)}</option>
+                      ))}
+                    </select>
+                  </>
+                ) : vt === 'number' ? (
+                  <>
+                    <input
+                      type="number"
+                      value={cur.value}
+                      onChange={(e) => setParam(k, { value: e.target.value })}
+                      placeholder={extractDefaultValue(it)}
+                      className={mode === 'smart' ? 't8-input t8-smart-input' : 'w-full rounded bg-white/5 border border-white/10 px-2 py-1 text-[11px] text-white outline-none focus:border-white/30 placeholder:text-white/30'}
+                    />
+                  </>
+                ) : (
+                  (() => {
+                    const selectedTextMaterial = findMaterialById(orderedTexts, cur.sourceMaterialId);
+                    const autoTextMatch = findRhTextMaterialForField(it, orderedTexts);
+                    const linkedTextMaterial = selectedTextMaterial || (autoTextMatch.status === 'matched' ? autoTextMatch.material || null : null);
+                    const isLinked = !!cur.sourceFromUpstream && !!linkedTextMaterial;
+                    const bindHint =
+                      autoTextMatch.status === 'conflict'
+                        ? `多个上游文本都填写了 RH#${normalizeRhNodeId(it.nodeId)}，请改成唯一 RH# 或手动选择。`
+                        : autoTextMatch.status === 'no-match'
+                          ? `给文本节点填写 RH#${normalizeRhNodeId(it.nodeId)} 后可自动绑定。`
+                          : isLinked
+                            ? `已绑定 ${linkedTextMaterial?.rhNodeId ? `RH#${linkedTextMaterial.rhNodeId}` : '手动选择的文本'}`
+                            : '可按文本节点 RH# 自动绑定，也可手动选择上游文本。';
+                    return (
+                      <>
+                        {orderedTexts.length > 0 && (
+                          <div className={mode === 'smart' ? 't8-smart-rh-text-bind' : 'rounded border border-white/10 bg-white/[0.03] px-2 py-1.5 space-y-1'}>
+                            <div className={mode === 'smart' ? 't8-smart-rh-inline' : 'flex items-center justify-between gap-2 text-[10px]'}>
+                              <label className={mode === 'smart' ? 't8-smart-rh-check' : 'flex items-center gap-1 text-cyan-200/80 cursor-pointer'}>
+                                <input
+                                  type="checkbox"
+                                  checked={!!cur.sourceFromUpstream}
+                                  onChange={(e) => {
+                                    if (!e.target.checked) {
+                                      setParam(k, { sourceFromUpstream: false, sourceMaterialId: '', sourceRhNodeId: '' });
+                                      return;
+                                    }
+                                    const fallback = linkedTextMaterial || (orderedTexts.length === 1 ? orderedTexts[0] : null);
+                                    if (fallback) {
+                                      setParam(k, {
+                                        value: fallback.url,
+                                        sourceFromUpstream: true,
+                                        sourceMaterialId: fallback.id,
+                                        sourceRhNodeId: normalizeRhNodeId(fallback.rhNodeId),
+                                      });
+                                    } else {
+                                      setParam(k, { sourceFromUpstream: true });
+                                    }
+                                  }}
+                                  className="accent-cyan-400"
+                                />
+                                从上游文本获取
+                              </label>
+                              {linkedTextMaterial && (
+                                <button
+                                  onClick={() => setParam(k, {
+                                    value: linkedTextMaterial.url,
+                                    sourceFromUpstream: true,
+                                    sourceMaterialId: linkedTextMaterial.id,
+                                    sourceRhNodeId: normalizeRhNodeId(linkedTextMaterial.rhNodeId),
+                                  })}
+                                  className={mode === 'smart' ? 't8-smart-rh-link' : 'flex items-center gap-1 text-cyan-200/80 hover:text-cyan-100'}
+                                  title="重新同步上游文本"
+                                >
+                                  <RefreshCw size={9} /> 同步
+                                </button>
+                              )}
+                            </div>
+                            <select
+                              value={cur.sourceMaterialId || ''}
+                              onChange={(e) => {
+                                const material = findMaterialById(orderedTexts, e.target.value);
+                                if (!material) {
+                                  setParam(k, { sourceMaterialId: '', sourceRhNodeId: '', sourceFromUpstream: true });
+                                  return;
+                                }
+                                setParam(k, {
+                                  value: material.url,
+                                  sourceFromUpstream: true,
+                                  sourceMaterialId: material.id,
+                                  sourceRhNodeId: normalizeRhNodeId(material.rhNodeId),
+                                });
+                              }}
+                              className={mode === 'smart' ? 't8-select t8-smart-select' : 'w-full rounded bg-white/5 border border-white/10 px-2 py-1 text-[10px] text-white outline-none focus:border-white/30'}
+                            >
+                              <option value="">按 RH# 自动匹配</option>
+                              {orderedTexts.map((material) => (
+                                <option key={material.id} value={material.id}>
+                                  {material.rhNodeId ? `RH#${material.rhNodeId}` : '未填 RH#'} · {material.label || material.url.slice(0, 24)}
+                                </option>
+                              ))}
+                            </select>
+                            <div className={mode === 'smart' ? 't8-smart-rh-param__desc' : 'text-[9px] text-white/35 leading-tight'}>{bindHint}</div>
+                          </div>
+                        )}
+                        {isLinked ? (
+                          <PromptTextarea
+                            title={`RunningHub 参数 · ${it.fieldName || '文本'} #${it.nodeId || ''}`}
+                            value={cur.value}
+                            onValueChange={() => undefined}
+                            readOnly
+                            className={mode === 'smart' ? 't8-textarea t8-smart-prompt-input' : 'w-full min-h-14 resize-none rounded bg-cyan-500/10 border border-cyan-500/30 px-2 py-1 text-[11px] text-white outline-none cursor-not-allowed'}
+                          />
+                        ) : (
+                          <MentionPromptInput
+                            title={`RunningHub 参数 · ${it.fieldName || '文本'} #${it.nodeId || ''}`}
+                            value={cur.value}
+                            mentions={getParamMentions(k)}
+                            materials={mentionMaterials}
+                            onChange={(value, mentions) => setTextParam(k, value, mentions)}
+                            placeholder={extractDefaultValue(it)}
+                            isDark={isDark}
+                            isPixel={isPixel}
+                            promptTemplateKind="image"
+                            className={mode === 'smart' ? 't8-textarea t8-smart-prompt-input' : 'w-full min-h-14 resize-none rounded bg-white/5 border border-white/10 px-2 py-1 text-[11px] text-white outline-none focus:border-white/30 placeholder:text-white/30'}
+                          />
+                        )}
+                      </>
+                    );
+                  })()
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <div className={mode === 'smart' ? 't8-smart-composer-row t8-smart-composer-row--params' : ''}>
+        <label className={mode === 'smart' ? 't8-smart-field t8-smart-field--compact' : 'block'}>
+          <span className={mode === 'smart' ? '' : 'text-[10px] text-white/50 block mb-1'}>实例类型(可选)</span>
+          <select
+            value={instanceType || ''}
+            onChange={(e) => update({ instanceType: e.target.value })}
+            className={mode === 'smart' ? 't8-select t8-smart-select' : 'w-full rounded bg-white/5 border border-white/10 px-2 py-1 text-xs text-white outline-none focus:border-white/30'}
+          >
+            <option value="" className="bg-zinc-800">默认</option>
+            <option value="plus" className="bg-zinc-800">plus</option>
+          </select>
+        </label>
+        {mode === 'smart' && <div className="t8-smart-param-spacer" />}
+        {!isBusy ? (
+          <button
+            onClick={handleRun}
+            className={mode === 'smart' ? 't8-btn t8-btn-primary t8-smart-run-btn' : `w-full flex items-center justify-center gap-1.5 py-1.5 rounded ${accent.primary} text-xs font-medium transition-colors`}
+          >
+            <Sparkles size={12} /> {useWallet ? '运行钱包工作流' : '运行工作流'}
+          </button>
+        ) : (
+          <button
+            onClick={handleStop}
+            className={mode === 'smart' ? 't8-btn t8-smart-run-btn' : 'w-full flex items-center justify-center gap-1.5 py-1.5 rounded bg-zinc-500/20 hover:bg-zinc-500/30 text-zinc-200 text-xs font-medium transition-colors'}
+          >
+            <Square size={11} /> {cancelling ? '取消中...' : '停止'}
+          </button>
+        )}
+      </div>
+
+      {isBusy && (
+        <div className={mode === 'smart' ? 't8-smart-inline-state' : `flex items-center gap-1 text-[10px] ${accent.spin}`}>
+          <Loader2 size={11} className="animate-spin" />
+          {cancelling ? '正在取消 RH 后台任务...' : status === 'submitting' ? '提交任务...' : '轮询中'}
+          {taskId && <span>{String(taskId).slice(0, 10)}...</span>}
+        </div>
+      )}
+
+      {error && (
+        <div className={mode === 'smart' ? 't8-smart-node-error' : 'flex items-start gap-1 text-[10px] text-red-300 bg-red-500/10 border border-red-500/20 rounded px-2 py-1'}>
+          <AlertCircle size={11} className="mt-0.5 flex-shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
+    </div>
+  );
+
+  if (useSmartCardRunningHubNode) {
+    return (
+      <SmartNodeShell
+        rootRef={smartNodeRef}
+        className="t8-smart-rh-node relative overflow-visible"
+        rootProps={{
+          onPointerDown: smartPanelToggle.onPointerDown,
+          onPointerMove: smartPanelToggle.onPointerMove,
+          onPointerUp: smartPanelToggle.onPointerUp,
+          onPointerCancel: smartPanelToggle.onPointerCancel,
+          onClick: smartPanelToggle.onClick,
+        }}
+      >
+        <div
+          className={`t8-node t8-smart-node-card t8-smart-rh-card transition-all ${selected ? 't8-smart-node-card--selected' : ''} ${
+            smartPanelOpen ? 't8-smart-rh-card--open' : ''
+          }`}
+        >
+          <Handle type="target" position={Position.Left} className="t8-smart-node-port !border-0" style={{ top: '50%' }} />
+          <Handle type="source" position={Position.Right} className="t8-smart-node-port !border-0" style={{ top: '50%' }} />
+          <div className="t8-smart-rh-card__top">
+            <div className="t8-smart-node-icon">
+              <TitleIcon size={15} />
+            </div>
+            <div className="t8-smart-rh-card__title">
+              <div className="t8-smart-node-title">{appTitle}</div>
+              <div className="t8-smart-node-subtitle">{appSubtitle}</div>
+            </div>
+            <div className={`t8-smart-rh-status t8-smart-node-status--${status}`}>
+              {isBusy && <Loader2 size={10} className="animate-spin" />}
+              <span>{smartStatusLabel}</span>
+            </div>
+          </div>
+          <div className="t8-smart-rh-card__metrics">
+            <span>参数 {nodeInfoList.length}</span>
+            <span>上游 {upstreamCount}</span>
+            <span>输出 {outputCount}</span>
+          </div>
+          <div className="t8-smart-rh-card__foot">
+            <span>{taskId ? `Task ${String(taskId).slice(0, 8)}...` : useWallet ? '钱包工作流' : '普通工作流'}</span>
+          </div>
+        </div>
+
+        {smartPanelOpen && (
+          <SmartNodeComposer
+            portal
+            anchorRef={smartNodeRef}
+            className="t8-smart-rh-composer"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div className="t8-smart-ref-strip">
+              <div className="t8-smart-node-meta t8-smart-node-meta--composer">
+                <span>{appTitle}</span>
+                <span>{smartStatusLabel}</span>
+                <span>上游 {upstreamCount}</span>
+              </div>
+              <div className="t8-smart-ref-spacer" />
+              <button
+                type="button"
+                className="nodrag nopan t8-btn t8-smart-classic-switch"
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  switchRunningHubNodeVariant('classic');
+                }}
+                title="切换到经典版节点"
+                aria-label="切换到经典版节点"
+              >
+                <RefreshCcw size={13} />
+              </button>
+            </div>
+            {renderRunningHubControls('smart')}
+            {urls.length > 0 && !hasAutoOutput && (
+              <div className="t8-smart-rh-output-grid">
+                {urls.map((u, i) => {
+                  if (/\.(mp4|webm|mov)$/i.test(u)) {
+                    return <LoopingVideo key={i} src={u} controls className="t8-smart-rh-output-media" />;
+                  }
+                  if (/\.(mp3|wav|ogg)$/i.test(u)) {
+                    return <audio key={i} src={u} controls className="t8-smart-rh-output-audio" />;
+                  }
+                  return <SmartImage key={i} src={u} alt={`输出 ${i}`} className="t8-smart-rh-output-media" thumbSize={720} />;
+                })}
+              </div>
+            )}
+          </SmartNodeComposer>
+        )}
+      </SmartNodeShell>
+    );
+  }
 
   return (
     <div
@@ -792,6 +1298,23 @@ const RunningHubNode = ({ id, data, selected, type }: NodeProps) => {
           <div className="text-sm font-semibold text-white truncate">{titleText}</div>
           <div className="text-[10px] text-white/40 truncate">{appInfo?.appName || appInfo?.name || (useWallet ? 'RH 钱包应用 (共享 APIKEY)' : 'AI 工作流')}</div>
         </div>
+        <button
+          type="button"
+          className="nodrag nopan t8-btn t8-smart-classic-switch"
+          onPointerDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          }}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            switchRunningHubNodeVariant('smart-card');
+          }}
+          title="切回卡片版节点"
+          aria-label="切回卡片版节点"
+        >
+          <RefreshCcw size={13} />
+        </button>
       </div>
 
       <div className="p-2.5 space-y-2" onMouseDown={(e) => e.stopPropagation()}>

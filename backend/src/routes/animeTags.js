@@ -13,7 +13,7 @@ const config = require('../config');
 
 const router = express.Router();
 
-const USER_AGENT = 'T8-PenguinCanvas AnimeTagMaster/2.2 (+https://github.com/T8mars/T8-penguin-canvas)';
+const USER_AGENT = 'HakimiCanvas AnimeTagMaster/2.2';
 const GELBOORU_BASE = 'https://gelbooru.com';
 const DANBOORU_BASE = 'https://danbooru.donmai.us';
 const IMAGE_HOSTS = new Set(['cdn.donmai.us', 'danbooru.donmai.us', 'gelbooru.com']);

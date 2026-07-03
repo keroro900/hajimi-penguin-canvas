@@ -6,6 +6,7 @@ const config = require('../config');
 const settingsRouter = require('./settings');
 const { maskAdvancedProviders, normalizeAdvancedProviders } = require('../providers/registry');
 const {
+  fetchModelsWithProvider,
   generateChatWithProvider,
   generateImageWithProvider,
   generateVideoWithProvider,
@@ -15,6 +16,9 @@ const { resolveMediaRef } = require('../providers/mediaResolver');
 
 const router = express.Router();
 const EXTERNAL_GENERATION_TIMEOUT_MS = 60 * 60 * 1000;
+const MAX_EXTERNAL_IMAGE_COUNT = 10;
+const DEFAULT_NATIVE_IMAGE_BATCH_LIMIT = 1;
+const NATIVE_IMAGE_BATCH_LIMIT = 4;
 const WEB_IMAGE_FETCH_TIMEOUT_MS = 30 * 1000;
 const WEB_IMAGE_FETCH_MAX_BYTES = 20 * 1024 * 1024;
 const DEFAULT_WEB_IMAGE_PROVIDER_ID = 'modelscope';
@@ -36,6 +40,75 @@ function safeProviderForResponse(provider) {
   const id = String(provider?.id || '').trim();
   const protocol = String(provider?.protocol || '').trim();
   return masked.find((item) => item.id === id && item.protocol === protocol) || masked[0] || null;
+}
+
+function normalizeImageCount(value) {
+  const n = Math.floor(Number(value));
+  if (!Number.isFinite(n) || n <= 0) return 1;
+  return Math.max(1, Math.min(MAX_EXTERNAL_IMAGE_COUNT, n));
+}
+
+function requestedImageCount(body) {
+  return normalizeImageCount(body?.n ?? body?.providerParams?.n);
+}
+
+function imageBatchLimitForProvider(provider, body = {}) {
+  const protocol = String(provider?.protocol || '').trim().toLowerCase();
+  const imageProtocol = String(provider?.defaults?.imageProtocol || provider?.defaults?.image_protocol || '').trim().toLowerCase();
+  const hasRefs = [body?.images, body?.referenceImages, body?.reference_images]
+    .some((value) => Array.isArray(value) ? value.length > 0 : !!value);
+  if (imageProtocol === 'openai-chat' && hasRefs) return DEFAULT_NATIVE_IMAGE_BATCH_LIMIT;
+  if (['openai-compatible', 'openai', 'apimart', 'volcengine'].includes(protocol)) return NATIVE_IMAGE_BATCH_LIMIT;
+  return DEFAULT_NATIVE_IMAGE_BATCH_LIMIT;
+}
+
+function imageCountBatches(total, limit) {
+  const safeTotal = normalizeImageCount(total);
+  const safeLimit = Math.max(1, Math.min(MAX_EXTERNAL_IMAGE_COUNT, Math.floor(Number(limit)) || 1));
+  const batches = [];
+  for (let remaining = safeTotal; remaining > 0; remaining -= safeLimit) {
+    batches.push(Math.min(safeLimit, remaining));
+  }
+  return batches;
+}
+
+async function generateImageBatchWithProvider(provider, body = {}, options = {}) {
+  const count = requestedImageCount(body);
+  const batchLimit = imageBatchLimitForProvider(provider, body);
+  const batches = imageCountBatches(count, batchLimit);
+  const baseBody = { ...body };
+  if (baseBody.quality == null && baseBody.providerParams?.quality != null) {
+    baseBody.quality = baseBody.providerParams.quality;
+  }
+  const results = await Promise.all(batches.map((n) => generateImageWithProvider(provider, {
+    ...baseBody,
+    n,
+    providerParams: {
+      ...(baseBody.providerParams || {}),
+      n,
+    },
+  }, options)));
+  const failed = results.find((result) => !result?.ok);
+  if (failed) return failed;
+  const imageUrls = results.flatMap((result) => Array.isArray(result.imageUrls) ? result.imageUrls : []).slice(0, count);
+  if (!imageUrls.length) {
+    return {
+      ok: false,
+      code: 'empty_image',
+      providerId: provider.id,
+      protocol: provider.protocol,
+      error: '扩展图像接口没有返回图片。',
+      raw: results.map((result) => result?.raw),
+    };
+  }
+  const taskIds = results.map((result) => result?.taskId).filter(Boolean);
+  return {
+    ...results[0],
+    imageUrls,
+    taskId: taskIds.length ? taskIds.join(',') : results[0]?.taskId,
+    raw: results.length === 1 ? results[0]?.raw : results.map((result) => result?.raw),
+    batches,
+  };
 }
 
 function resolveProvider(body, currentProviders) {
@@ -194,7 +267,7 @@ async function fetchWebImageAsDataUrl(imageUrl, options = {}) {
       signal: controller.signal,
       headers: {
         Accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
-        'User-Agent': 'T8-PenguinCanvas-WebImageReverse/2.3',
+        'User-Agent': 'HakimiCanvas-WebImageReverse/2.3',
       },
     });
     if (!response.ok) throw new Error(`读取网页图片失败：HTTP ${response.status}`);
@@ -315,6 +388,41 @@ router.post('/test-provider', async (req, res) => {
   }
 });
 
+router.post('/fetch-models', async (req, res) => {
+  try {
+    const settings = settingsRouter.loadSettings({ persistMigrations: false });
+    const currentProviders = normalizeAdvancedProviders(settings.advancedProviders);
+    const provider = resolveProvider(req.body || {}, currentProviders);
+    if (!provider) {
+      return res.json({
+        success: false,
+        code: 'provider_not_found',
+        error: '未找到扩展平台配置。',
+      });
+    }
+
+    const result = await fetchModelsWithProvider(provider, {
+      timeoutMs: Number(req.body?.timeoutMs) || undefined,
+    });
+    const data = {
+      ...result,
+      provider: safeProviderForResponse(provider),
+    };
+    return res.json({
+      success: !!result.ok,
+      code: result.code,
+      error: result.ok ? undefined : result.error,
+      data,
+    });
+  } catch (e) {
+    return res.status(500).json({
+      success: false,
+      code: 'provider_models_fetch_failed',
+      error: e?.message || String(e),
+    });
+  }
+});
+
 router.post('/llm', async (req, res) => {
   try {
     const settings = settingsRouter.loadSettings({ persistMigrations: false });
@@ -355,7 +463,7 @@ router.post('/image', async (req, res) => {
         data: resolved.provider ? { provider: safeProviderForResponse(resolved.provider) } : undefined,
       });
     }
-    const result = await generateImageWithProvider(resolved.provider, req.body || {}, {
+    const result = await generateImageBatchWithProvider(resolved.provider, req.body || {}, {
       timeoutMs: generationTimeoutMs(req.body?.timeoutMs),
       baseUrl: `http://127.0.0.1:${config.PORT}`,
     });
@@ -587,3 +695,4 @@ router.post('/video', async (req, res) => {
 });
 
 module.exports = router;
+

@@ -30,7 +30,7 @@ const EXECUTABLE_NODE_TYPES = new Set<string>([
     // v1.2.10.1: RH 工具节点
     'rh-tools', 'rh-toolbox', 'fal-toolbox', 'comfyui-store',
   'grok-oauth-agent', 'codex-cli-agent',
-  'resize', 'upscale', 'grid-crop', 'grid-editor', 'remove-bg', 'combine', 'image-compare', 'drawing-board',
+  'resize', 'lut-color', 'upscale', 'grid-crop', 'grid-editor', 'remove-bg', 'combine', 'image-compare', 'drawing-board',
   'panorama-3d',
   'frame-extractor', 'frame-pair',
   'upload',
@@ -167,8 +167,16 @@ const NodeActionBar = () => {
   const rightX = nodeScreenX + nodeW * zoom;
   const topY = nodeScreenY - BAR_GAP_PX * zoom;
 
-  const selectedStatus = String(selectedData?.status || '');
-  const selectedNodeBusy = selectedStatus === 'submitting' || selectedStatus === 'polling';
+  const selectedStatus = String(selectedData?.status || selectedData?.runStatus || '').toLowerCase();
+  const selectedProgressLabel = String(selectedData?.progress || '').trim();
+  const selectedNodeBusy =
+    selectedStatus === 'generating' ||
+    selectedStatus === 'running' ||
+    selectedStatus === 'submitting' ||
+    selectedStatus === 'polling' ||
+    selectedStatus === 'streaming' ||
+    selectedStatus === 'loading' ||
+    Boolean(selectedData?.isRunning || selectedData?.isPolling || selectedData?.busy);
   const isRunning = currentRunId === selectedExe.id || runningIds.includes(selectedExe.id) || selectedNodeBusy;
 
   // === 主题派生样式 ===
@@ -243,7 +251,7 @@ const NodeActionBar = () => {
   };
   const onStop = (e: React.MouseEvent) => {
     e.stopPropagation();
-    cancelAll();
+    cancelAll([selectedExe.id]);
   };
   const onClose = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -375,11 +383,11 @@ const NodeActionBar = () => {
             onClick={onStop}
             onMouseEnter={(e) => onEnter(e, 'stop')}
             onMouseLeave={(e) => onLeave(e, 'stop')}
-            title="中止当前运行"
+            title={`中止当前运行${selectedProgressLabel ? ` (${selectedProgressLabel})` : ''}`}
             style={mkBtn('stop')}
           >
             <Square size={12} fill="currentColor" />
-            <span>STOP</span>
+            <span>STOP{selectedProgressLabel ? ` ${selectedProgressLabel}` : ''}</span>
           </button>
         ) : (
           <button

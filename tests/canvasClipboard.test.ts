@@ -5,6 +5,7 @@ import {
   offsetClipboardNodes,
   positionClipboardNodesAtAnchor,
   remapPastedGroupMemberIds,
+  sanitizeClipboardNodeData,
 } from '../src/utils/canvasClipboard.ts';
 
 test('positionClipboardNodesAtAnchor aligns the copied group top-left to the pointer anchor', () => {
@@ -98,4 +99,34 @@ test('remapPastedGroupMemberIds points pasted groups at pasted members', () => {
   const remapped = remapPastedGroupMemberIds(pastedNodes, idMap);
 
   assert.deepEqual(remapped[0].data?.memberIds, ['node-new-a', 'node-new-b']);
+});
+
+test('sanitizeClipboardNodeData resets transient generation state without dropping finished media', () => {
+  const sanitized = sanitizeClipboardNodeData({
+    prompt: 'make five images',
+    status: 'running',
+    progress: '3/5',
+    error: 'one task failed',
+    taskId: 'task-123',
+    isRunning: true,
+    isPolling: true,
+    imageUrls: ['https://cdn.example.com/ready.png'],
+    imageResultSlots: [
+      { status: 'success', url: 'https://cdn.example.com/ready.png', index: 0 },
+      { status: 'pending', index: 1 },
+      { status: 'failed', error: 'bad gateway', index: 2 },
+    ],
+  });
+
+  assert.equal(sanitized.status, 'idle');
+  assert.equal(sanitized.prompt, 'make five images');
+  assert.deepEqual(sanitized.imageUrls, ['https://cdn.example.com/ready.png']);
+  assert.deepEqual(sanitized.imageResultSlots, [
+    { status: 'success', url: 'https://cdn.example.com/ready.png', index: 0 },
+  ]);
+  assert.equal('progress' in sanitized, false);
+  assert.equal('error' in sanitized, false);
+  assert.equal('taskId' in sanitized, false);
+  assert.equal('isRunning' in sanitized, false);
+  assert.equal('isPolling' in sanitized, false);
 });

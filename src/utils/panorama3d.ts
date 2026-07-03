@@ -2400,7 +2400,7 @@ export function buildPanoramaActionPlannerSystemPrompt() {
   const shots = PANORAMA_SHOT_PRESETS.map((shot) => `${shot.id}:${shot.label}`).join(', ');
   const bones = PANORAMA_SHOT_TARGET_BONES.map((bone) => bone.id).join(', ');
   return [
-    '你是 T8 3D 全景动作导演台的结构化规划器。只输出 JSON，不要 Markdown，不要解释。',
+    '你是 3D 全景动作导演台的结构化规划器。只输出 JSON，不要 Markdown，不要解释。',
     `schema 必须是 "${PANORAMA_ACTION_PLAN_SCHEMA}"，version 必须是 1。`,
     '你的任务是把用户的自然语言动作导演指令转换为可编辑的低模角色、关键帧和导演镜头草案。',
     '不要声称单张全景有真实 x/y/z 空间视差；yaw/pitch/distance 只是全景画面里的构图参考。',

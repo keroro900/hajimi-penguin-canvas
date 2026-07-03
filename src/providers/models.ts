@@ -13,6 +13,65 @@ export type ProviderType = 'zhenzhen' | 'llm-direct' | 'runninghub';
 //  - 'mj'          : Midjourney 协议,走专属 /api/proxy/mj/* 路由(speed_map + sref/oref)
 export type ImageParamKind = 'gpt-size' | 'banana-ratio' | 'grok-image' | 'mj';
 
+export interface SidebarParameterOption {
+  value: string;
+  label: string;
+}
+
+export interface SidebarParameterControl {
+  id: string;
+  label: string;
+  valueKey: string;
+  type: 'select' | 'number' | 'boolean';
+  options?: SidebarParameterOption[];
+  defaultValue?: string | number | boolean;
+  min?: number;
+  max?: number;
+  step?: number;
+  showWhenApiModel?: string[];
+}
+
+export interface SidebarParameterGroup {
+  id: string;
+  label: string;
+  controls: SidebarParameterControl[];
+}
+
+export type ModelSelectOption = { value: string; label: string };
+
+export function parseModelList(value: unknown): string[] {
+  const rawItems = Array.isArray(value)
+    ? value
+    : String(value || '').split(/[\r\n,，;；]+/);
+  const out: string[] = [];
+  for (const raw of rawItems) {
+    const item = String(raw || '').trim();
+    if (item && !out.includes(item)) out.push(item);
+  }
+  return out;
+}
+
+export function stringifyModelList(value: unknown): string {
+  return parseModelList(value).join('\n');
+}
+
+export function withUpstreamModelOption<T extends ModelSelectOption>(
+  options: readonly T[],
+  upstreamModel: string | string[] | undefined | null,
+): T[] {
+  const base = (Array.isArray(options) ? options : []).map((option) => {
+    const matched = parseModelList(upstreamModel).find((model) => option.value === model);
+    if (matched) {
+      return { ...option, label: matched };
+    }
+    return option;
+  });
+  const additions = parseModelList(upstreamModel)
+    .filter((model) => !base.some((option) => option.value === model))
+    .map((model) => ({ value: model, label: model } as T));
+  return [...additions, ...base];
+}
+
 export interface ImageModelDef {
   id: string;             // 节点内部 id(如 'gpt-image-2')
   apiModel: string;       // 默认上游真实模型名(透传给 API)
@@ -34,6 +93,7 @@ export interface ImageModelDef {
   // 参考图最大数量
   maxReferenceImages: number;
   description?: string;
+  sidebarParameterGroups?: SidebarParameterGroup[];
 }
 
 // 主项目 gpt-image-2-web 的 aspectRatio 全集(14 种 + Auto)
@@ -107,6 +167,7 @@ export const IMAGE_MODELS: ImageModelDef[] = [
     capabilities: ['t2i', 'i2i', 'edit'],
     apiModelOptions: [
       { value: 'nano-banana-pro', label: 'nano-banana-pro' },
+      { value: 'gemini-3-pro-image-preview', label: 'gemini-3-pro-image-preview' },
       { value: 'nano-banana-pro-2k', label: 'nano-banana-pro-2k' },
       { value: 'nano-banana-pro-4k', label: 'nano-banana-pro-4k' },
       { value: 'nano-banana-pro-fal', label: 'nano-banana-pro-fal' },
@@ -394,6 +455,17 @@ export function grokVideo15NewSizeFromRatio(ratioOrSize: string): '1280x720' | '
   return '1280x720';
 }
 
+export const APISHU_VEO_OMNI_MODELS = [
+  'veo-omni-flash',
+  'veo-omni-flash-video-edit',
+] as const;
+
+export type ApishuVeoOmniModel = typeof APISHU_VEO_OMNI_MODELS[number];
+
+export function isApishuVeoOmniModel(model: string): model is ApishuVeoOmniModel {
+  return (APISHU_VEO_OMNI_MODELS as readonly string[]).includes(String(model || '').trim());
+}
+
 export interface VideoModelDef {
   id: string;                // 节点默认 model 字段(也是上游真实 model)
   label: string;             // 主选项显示名
@@ -413,10 +485,13 @@ export interface VideoModelDef {
   // 参考图
   supportImages: boolean;
   maxRefImages: number;
+  sidebarParameterGroups?: SidebarParameterGroup[];
 }
 
 // Veo 系列子模型。第一项是切到 Veo 分类时的默认具体模型。
 const VEO_MODELS = [
+  { value: 'veo-omni-flash', label: 'Veo Omni' },
+  { value: 'veo-omni-flash-video-edit', label: 'Veo Omni Edit' },
   { value: 'veo-omni-10s', label: 'veo-omni-10s' },
   { value: 'veo3', label: 'veo3' },
   { value: 'veo3-fast', label: 'veo3-fast' },
@@ -434,6 +509,28 @@ const VEO_MODELS = [
   // FAL 渠道
   { value: 'veo3.1-fal', label: 'veo3.1-fal (FAL)' },
 ];
+
+export const SEEDANCE_MODEL_OPTIONS = [
+  { value: 'doubao-seedance-2-0-fast-260128', label: 'seedance-2-0-fast' },
+  { value: 'doubao-seedance-2-0-260128', label: 'seedance-2-0' },
+  { value: 'doubao-seedance-2.0-mini', label: 'seedance-2.0-mini' },
+];
+export function resolveSeedanceVideoOverride(overrides: Record<string, unknown> | undefined, model: unknown): string {
+  const savedModel = String(model || '').trim();
+  const matched = SEEDANCE_MODEL_OPTIONS.find((item) => item.value === savedModel || item.label === savedModel);
+  const candidates: string[] = savedModel
+    ? [savedModel, matched?.value, matched?.label].filter((item): item is string => Boolean(item))
+    : [SEEDANCE_MODEL_OPTIONS[0].value];
+  for (const key of candidates) {
+    const value = parseModelList(overrides?.[key]);
+    if (value.length) return value.join('\n');
+  }
+  return '';
+}
+export const SEEDANCE_RATIO_OPTIONS = ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9', '9:21', 'adaptive'];
+export const SEEDANCE_RESOLUTION_OPTIONS = ['480p', '720p', 'native1080p', 'native4K', '1080p', '2k', '4k'];
+export const SEEDANCE_DURATION_OPTIONS = [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
+export const SEEDANCE_API_MODEL_VALUES = SEEDANCE_MODEL_OPTIONS.map((item) => item.value);
 
 export const VIDEO_MODELS: VideoModelDef[] = [
   {
@@ -501,15 +598,192 @@ export const VIDEO_MODELS: VideoModelDef[] = [
     kind: 'seedance',
     provider: 'zhenzhen',
     description: '字节 Seedance 分镜 (兼容 veo 字段)',
-    apiModelOptions: [{ value: 'seedance-2.0', label: 'seedance-2.0' }],
-    ratios: ['16:9', '9:16', '1:1'],
+    apiModelOptions: SEEDANCE_MODEL_OPTIONS,
+    ratios: SEEDANCE_RATIO_OPTIONS,
     defaultRatio: '16:9',
-    durations: [5, 10, 15],
+    durations: SEEDANCE_DURATION_OPTIONS,
     defaultDuration: 5,
+    resolutions: SEEDANCE_RESOLUTION_OPTIONS,
+    defaultResolution: '480p',
     supportImages: true,
     maxRefImages: 3,
   },
 ];
+
+const optionList = (items: Array<string | number | SidebarParameterOption>): SidebarParameterOption[] => items.map((item) => (
+  typeof item === 'object' ? item : { value: String(item), label: String(item) }
+));
+
+IMAGE_MODELS.forEach((model) => {
+  const controls: SidebarParameterControl[] = [
+    {
+      id: 'aspectRatio',
+      label: '比例',
+      valueKey: 'aspectRatio',
+      type: 'select',
+      options: optionList(model.aspectRatios),
+      defaultValue: model.defaultAspectRatio,
+    },
+  ];
+  if (model.sizes.length > 0) {
+    controls.push({
+      id: 'size',
+      label: '尺寸',
+      valueKey: 'size',
+      type: 'select',
+      options: optionList(model.sizes),
+      defaultValue: model.defaultSize,
+    });
+  }
+  controls.push(
+    {
+      id: 'imageCount',
+      label: '数量',
+      valueKey: 'imageCount',
+      type: 'number',
+      defaultValue: 1,
+      min: 1,
+      max: 4,
+      step: 1,
+    },
+    {
+      id: 'quality',
+      label: '质量',
+      valueKey: 'quality',
+      type: 'select',
+      options: optionList(['auto', 'low', 'medium', 'high']),
+      defaultValue: 'auto',
+    },
+    {
+      id: 'falSize',
+      label: 'FAL尺寸',
+      valueKey: 'falSize',
+      type: 'select',
+      options: GPT_FAL_SIZES,
+      defaultValue: 'auto',
+      showWhenApiModel: ['gpt-image-2-fal'],
+    },
+    {
+      id: 'nbResolution',
+      label: 'FAL清晰度',
+      valueKey: 'nbResolution',
+      type: 'select',
+      options: optionList(NBPRO_FAL_RESOLUTIONS),
+      defaultValue: '2K',
+      showWhenApiModel: ['nano-banana-pro-fal', 'nano-banana-2-fal'],
+    },
+    {
+      id: 'nbAspect',
+      label: 'FAL比例',
+      valueKey: 'nbAspect',
+      type: 'select',
+      options: optionList(NBPRO_FAL_RATIOS),
+      defaultValue: 'auto',
+      showWhenApiModel: ['nano-banana-pro-fal', 'nano-banana-2-fal'],
+    },
+    {
+      id: 'seed',
+      label: 'Seed',
+      valueKey: 'seed',
+      type: 'number',
+      defaultValue: -1,
+      min: -1,
+      max: 2147483647,
+      step: 1,
+    },
+    {
+      id: 'webSearch',
+      label: 'Web Search',
+      valueKey: 'webSearch',
+      type: 'boolean',
+      defaultValue: false,
+      showWhenApiModel: ['nano-banana-pro-fal', 'nano-banana-2-fal'],
+    },
+  );
+  model.sidebarParameterGroups = [{ id: 'image-node-params', label: '参数', controls }];
+});
+
+VIDEO_MODELS.forEach((model) => {
+  const controls: SidebarParameterControl[] = [
+    {
+      id: 'aspectRatio',
+      label: '比例',
+      valueKey: 'aspectRatio',
+      type: 'select',
+      options: optionList(model.ratios),
+      defaultValue: model.defaultRatio,
+    },
+  ];
+  if (model.durations?.length) {
+    controls.push({
+      id: 'duration',
+      label: '时长',
+      valueKey: 'duration',
+      type: 'select',
+      options: optionList(model.durations.map((item) => ({ value: String(item), label: `${item}s` }))),
+      defaultValue: model.defaultDuration || model.durations[0],
+    });
+  }
+  if (model.resolutions?.length) {
+    controls.push({
+      id: 'resolution',
+      label: '清晰度',
+      valueKey: 'resolution',
+      type: 'select',
+      options: optionList(model.resolutions),
+      defaultValue: model.defaultResolution || model.resolutions[0],
+    });
+  }
+  controls.push(
+    {
+      id: 'seed',
+      label: 'Seed',
+      valueKey: 'seed',
+      type: 'number',
+      defaultValue: -1,
+      min: -1,
+      max: 2147483647,
+      step: 1,
+    },
+    {
+      id: 'referenceMode',
+      label: '参考图模式',
+      valueKey: 'referenceMode',
+      type: 'select',
+      options: optionList([
+        { value: 'auto', label: '全部参考图(auto)' },
+        { value: 'first_frame', label: '首帧' },
+        { value: 'last_frame', label: '尾帧' },
+        { value: 'reference', label: '参考' },
+      ]),
+      defaultValue: 'auto',
+    },
+    {
+      id: 'generateAudio',
+      label: '生成音频',
+      valueKey: 'generateAudio',
+      type: 'boolean',
+      defaultValue: model.kind === 'seedance',
+      showWhenApiModel: SEEDANCE_API_MODEL_VALUES,
+    },
+    {
+      id: 'webSearch',
+      label: 'Web Search',
+      valueKey: 'webSearch',
+      type: 'boolean',
+      defaultValue: model.kind === 'seedance',
+      showWhenApiModel: SEEDANCE_API_MODEL_VALUES,
+    },
+    {
+      id: 'watermark',
+      label: '水印',
+      valueKey: 'watermark',
+      type: 'boolean',
+      defaultValue: false,
+    },
+  );
+  model.sidebarParameterGroups = [{ id: 'video-node-params', label: '参数', controls }];
+});
 
 // ========== 音频(Suno) ==========
 export interface AudioModelDef {

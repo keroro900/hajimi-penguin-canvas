@@ -87,6 +87,13 @@ const MaterialThumbnail = ({
   const externalFileName = material.kind !== 'text'
     ? (material.url.split(/[?#]/)[0].split('/').pop() || material.label)
     : undefined;
+  const sequenceLabel = material.kind === 'image'
+    ? `图${index + 1}`
+    : material.kind === 'video'
+      ? `视${index + 1}`
+      : material.kind === 'audio'
+        ? `音${index + 1}`
+        : `文${index + 1}`;
 
   const wrapStyle: React.CSSProperties = {
     opacity: isSorting ? 0.58 : 1,
@@ -135,6 +142,7 @@ const MaterialThumbnail = ({
       onPointerDownCapture={stopFlowPointer}
       onMouseDown={stopFlowMouse}
       title={title}
+      aria-label={sequenceLabel}
     >
       {/* 内容主体 */}
       {material.kind === 'image' ? (
@@ -199,7 +207,7 @@ const MaterialThumbnail = ({
           ...(isPixel ? { borderRight: '1.5px solid #1a1a1a', borderBottom: '1.5px solid #1a1a1a' } : {}),
         }}
       >
-        {index + 1}
+        {sequenceLabel}
       </div>
 
       {/* 来源角标 - 右上 */}

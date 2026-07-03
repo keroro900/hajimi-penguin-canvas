@@ -1,7 +1,6 @@
 import React, { memo, useEffect, useMemo, useRef, useState } from 'react';
 import type { NodeProps } from '@xyflow/react';
 import { Handle, Position, useReactFlow } from '@xyflow/react';
-import { FilesetResolver, PoseLandmarker } from '@mediapipe/tasks-vision';
 import {
   Copy,
   Download,
@@ -29,6 +28,7 @@ import { useCanvasStore } from '../../stores/canvas';
 import { logBus } from '../../stores/logs';
 import { uploadDataUrl, uploadFileBlob } from '../../services/imageOps';
 import { placeSingleNode } from '../../utils/nodePlacement';
+import { detectPosePeopleFromImage } from '../../utils/directorPoseEstimation';
 import { useUpstreamMaterials } from './useUpstreamMaterials';
 
 type Lang = 'en' | 'zh';
@@ -146,9 +146,6 @@ const FOOT_MIN_DISTANCE = 12;
 const FOOT_MAX_DISTANCE = 34;
 const MAX_POSE_FAVORITES = 16;
 const MAX_POSE_PEOPLE = 5;
-const MEDIAPIPE_WASM_BASE = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm';
-const MEDIAPIPE_POSE_MODEL =
-  'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task';
 
 const DEFAULT_HAND_CONTROLS: HandControls = {
   left: { shape: 'open', direction: 'front' },
@@ -2197,141 +2194,6 @@ function downloadJson(filename: string, payload: unknown) {
   URL.revokeObjectURL(url);
 }
 
-let poseLandmarkerPromise: Promise<PoseLandmarker> | null = null;
-
-function loadHtmlImage(src: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    const start = (withCrossOrigin: boolean) => {
-      const image = new Image();
-      if (withCrossOrigin) image.crossOrigin = 'anonymous';
-      image.onload = () => {
-        if (settled) return;
-        settled = true;
-        resolve(image);
-      };
-      image.onerror = () => {
-        if (settled) return;
-        if (withCrossOrigin) {
-          start(false);
-          return;
-        }
-        settled = true;
-        reject(new Error('图片载入失败，无法识别姿态'));
-      };
-      image.src = src;
-    };
-    start(true);
-  });
-}
-
-async function getPoseLandmarker(): Promise<PoseLandmarker> {
-  if (!poseLandmarkerPromise) {
-    poseLandmarkerPromise = (async () => {
-      const vision = await FilesetResolver.forVisionTasks(MEDIAPIPE_WASM_BASE);
-      return PoseLandmarker.createFromOptions(vision, {
-        baseOptions: {
-          modelAssetPath: MEDIAPIPE_POSE_MODEL,
-        },
-        runningMode: 'IMAGE',
-        numPoses: MAX_POSE_PEOPLE,
-      });
-    })();
-  }
-  return poseLandmarkerPromise;
-}
-
-function mediaPipePoint(landmarks: any[], index: number): PosePoint | null {
-  const p = landmarks[index];
-  if (!p || typeof p.x !== 'number' || typeof p.y !== 'number') return null;
-  return { x: clamp(p.x * VIEW_W, 0, VIEW_W), y: clamp(p.y * VIEW_H, 0, VIEW_H) };
-}
-
-function averagePoint(a: PosePoint, b: PosePoint): PosePoint {
-  return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-}
-
-function averageAvailablePoints(points: Array<PosePoint | null>): PosePoint | null {
-  const valid = points.filter((point): point is PosePoint => !!point);
-  if (valid.length === 0) return null;
-  return {
-    x: valid.reduce((sum, point) => sum + point.x, 0) / valid.length,
-    y: valid.reduce((sum, point) => sum + point.y, 0) / valid.length,
-  };
-}
-
-function attachHeadToNeck(rawHead: PosePoint, neck: PosePoint, pelvis: PosePoint, lShoulder: PosePoint, rShoulder: PosePoint): PosePoint {
-  const neckDistance = distance(neck, rawHead);
-  const shoulderWidth = distance(lShoulder, rShoulder);
-  const torsoLength = distance(neck, pelvis);
-  const maxHeadDistance = clamp(Math.max(shoulderWidth * 0.9, torsoLength * 0.34), 30, 92);
-  if (neckDistance <= maxHeadDistance) return rawHead;
-  const dir = unit(neck, rawHead);
-  return {
-    x: neck.x + dir.x * maxHeadDistance,
-    y: neck.y + dir.y * maxHeadDistance,
-  };
-}
-
-function mediaPipeLandmarksToPosePoints(landmarks: any[]): PosePoints | null {
-  const rawHead = averageAvailablePoints([
-    mediaPipePoint(landmarks, 0),
-    mediaPipePoint(landmarks, 2),
-    mediaPipePoint(landmarks, 5),
-    mediaPipePoint(landmarks, 7),
-    mediaPipePoint(landmarks, 8),
-  ]);
-  const lShoulder = mediaPipePoint(landmarks, 11);
-  const rShoulder = mediaPipePoint(landmarks, 12);
-  const lElbow = mediaPipePoint(landmarks, 13);
-  const rElbow = mediaPipePoint(landmarks, 14);
-  const lWrist = mediaPipePoint(landmarks, 15);
-  const rWrist = mediaPipePoint(landmarks, 16);
-  const lHip = mediaPipePoint(landmarks, 23);
-  const rHip = mediaPipePoint(landmarks, 24);
-  const lKnee = mediaPipePoint(landmarks, 25);
-  const rKnee = mediaPipePoint(landmarks, 26);
-  const lAnkle = mediaPipePoint(landmarks, 27);
-  const rAnkle = mediaPipePoint(landmarks, 28);
-  const lFoot = mediaPipePoint(landmarks, 31) || lAnkle;
-  const rFoot = mediaPipePoint(landmarks, 32) || rAnkle;
-  if (!rawHead || !lShoulder || !rShoulder || !lHip || !rHip) return null;
-  const neck = averagePoint(lShoulder, rShoulder);
-  const pelvis = averagePoint(lHip, rHip);
-  const chest = at(neck, pelvis, 0.42);
-  const head = attachHeadToNeck(rawHead, neck, pelvis, lShoulder, rShoulder);
-  return constrainFootPoints({
-    head,
-    neck,
-    chest,
-    pelvis,
-    lShoulder,
-    rShoulder,
-    lElbow: lElbow || at(lShoulder, lWrist || lShoulder, 0.55),
-    rElbow: rElbow || at(rShoulder, rWrist || rShoulder, 0.55),
-    lWrist: lWrist || lShoulder,
-    rWrist: rWrist || rShoulder,
-    lHip,
-    rHip,
-    lKnee: lKnee || at(lHip, lAnkle || lHip, 0.55),
-    rKnee: rKnee || at(rHip, rAnkle || rHip, 0.55),
-    lAnkle: lAnkle || lHip,
-    rAnkle: rAnkle || rHip,
-    lFoot: lFoot || lAnkle || lHip,
-    rFoot: rFoot || rAnkle || rHip,
-  });
-}
-
-async function detectPosePeopleFromImage(src: string): Promise<PosePoints[]> {
-  const [landmarker, image] = await Promise.all([getPoseLandmarker(), loadHtmlImage(src)]);
-  const result: any = landmarker.detect(image);
-  const landmarksList = Array.isArray(result?.landmarks) ? result.landmarks : [];
-  return landmarksList
-    .map((landmarks: any[]) => mediaPipeLandmarksToPosePoints(landmarks))
-    .filter((person: PosePoints | null): person is PosePoints => !!person)
-    .slice(0, MAX_POSE_PEOPLE);
-}
-
 function posePointKeypoints(points: PosePoints, keys: JointKey[]): number[] {
   return keys.flatMap((key) => [Math.round(points[key].x), Math.round(points[key].y), 1]);
 }
@@ -3100,7 +2962,7 @@ const PoseMasterNode = (props: NodeProps) => {
     try {
       if (options?.rememberReference || sourceLabel === '上游图') setRecognitionImageUrl(imageUrl);
       logBus.info(`开始识别${sourceLabel}姿态`, '姿势大师');
-      const people = await detectPosePeopleFromImage(imageUrl);
+      const people = await detectPosePeopleFromImage(imageUrl, { width: VIEW_W, height: VIEW_H }, MAX_POSE_PEOPLE) as PosePoints[];
       if (people.length === 0) {
         const message = `未从${sourceLabel}识别到人物姿态，已保留参考图；可先切回线稿图作为淡底参考手动调整`;
         setStatus(message);

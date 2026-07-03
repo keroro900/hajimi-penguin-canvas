@@ -1,11 +1,17 @@
 const express = require('express');
 const cors = require('cors');
+const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const config = require('./config');
 const { startFigmaBridgeOnAppStart } = require('./utils/figmaBridge');
+const { startHakimiCanvasCliOnAppStart } = require('./utils/hakimiCanvasCli');
+const { createCanvasRealtimeHub, attachCanvasRealtimeHub } = require('./realtime/canvasHub');
 
 const app = express();
+const server = http.createServer(app);
+const canvasRealtimeHub = createCanvasRealtimeHub({ logger: console });
+attachCanvasRealtimeHub(server, canvasRealtimeHub);
 
 // ========== 中间件 ==========
 const LOCAL_ORIGIN_RE = /^https?:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?$/;
@@ -45,7 +51,7 @@ app.use('/input', express.static(config.INPUT_DIR));
 app.get('/api/status', (_req, res) => {
   res.json({
     ok: true,
-    service: 't8-penguin-canvas-backend',
+    service: 'hajimi-canvas-backend',
     version: config.APP_VERSION,
     port: config.PORT,
     time: new Date().toISOString(),
@@ -54,6 +60,7 @@ app.get('/api/status', (_req, res) => {
 
 // ========== 业务路由 ==========
 const canvasRouter = require('./routes/canvas');
+const agentCanvasRouter = require('./routes/agentCanvas');
 const settingsRouter = require('./routes/settings');
 const proxyRouter = require('./routes/proxy');
 const filesRouter = require('./routes/files');
@@ -65,18 +72,24 @@ const figmaRouter = require('./routes/figma');
 const externalProvidersRouter = require('./routes/externalProviders');
 const grokOAuthRouter = require('./routes/grokOAuth');
 const codexCliRouter = require('./routes/codexCli');
+const hakimiMcpRouter = require('./routes/hakimiMcp');
+const { cleanupGlobalCodexSession } = require('./utils/codexSdkManager');
+const genclawRouter = require('./routes/genclaw');
 const aiWatermarkRouter = require('./routes/aiWatermark');
 const cloudUploadsRouter = require('./routes/cloudUploads');
 const parseHubRouter = require('./routes/parseHub');
 const achievementsRouter = require('./routes/achievements');
 const topazRouter = require('./routes/topaz');
+const clipRouter = require('./routes/clip');
 const animeTagsRouter = require('./routes/animeTags');
 const vibexBridgeRouter = require('./routes/vibexBridge');
+const customNodeWorkshopRouter = require('./routes/customNodeWorkshop');
 const videoOpsRouter = require('./routes/videoOps');
 const { registerLocalExtensions } = require('./extensions/localExtensions');
 const localHooks = require('./extensions/runtimeHooks');
 
 app.use('/api/canvas', canvasRouter);
+app.use('/api/agent/canvas', agentCanvasRouter);
 app.use('/api/settings', settingsRouter);
 app.use('/api/proxy', proxyRouter);
 app.use('/api/proxy/external', externalProvidersRouter);
@@ -88,13 +101,17 @@ app.use('/api/eagle', eagleRouter);
 app.use('/api/figma', figmaRouter);
 app.use('/api/grok-oauth', grokOAuthRouter);
 app.use('/api/codex-cli', codexCliRouter);
+app.use('/api/hakimi-mcp', hakimiMcpRouter);
+app.use('/api/genclaw', genclawRouter);
 app.use('/api/ai-watermark', aiWatermarkRouter);
 app.use('/api/cloud-uploads', cloudUploadsRouter);
 app.use('/api/parsehub', parseHubRouter);
 app.use('/api/achievements', achievementsRouter);
 app.use('/api/topaz', topazRouter);
+app.use('/api/clip', clipRouter);
 app.use('/api/anime-tags', animeTagsRouter);
 app.use('/api/vibex-bridge', vibexBridgeRouter);
+app.use('/api/custom-node-workshop', customNodeWorkshopRouter);
 app.use('/api/video-ops', videoOpsRouter);
 registerLocalExtensions(app, { config, express, logger: console, hooks: localHooks });
 
@@ -112,9 +129,9 @@ if (config.IS_PACKAGED && config.FRONTEND_DIST && fs.existsSync(config.FRONTEND_
 const PORT = config.PORT;
 const HOST = config.HOST;
 
-app.listen(PORT, HOST, () => {
+server.listen(PORT, HOST, () => {
   console.log('==================================================');
-  console.log('🐧 T8-penguin-canvas 后端服务');
+  console.log('🐧 哈基米画布 后端服务');
   console.log('==================================================');
   console.log(`🚀 服务器启动成功!`);
   console.log(`   地址: http://${HOST}:${PORT}`);
@@ -122,7 +139,19 @@ app.listen(PORT, HOST, () => {
   console.log(`   数据目录: ${config.DATA_DIR}`);
   console.log(`   输出目录: ${config.OUTPUT_DIR}`);
   console.log('   Figma Bridge: 自动启动中（如需禁用可设置 T8_FIGMA_BRIDGE_AUTOSTART=0）');
+  console.log('   Hakimi Canvas CLI: 自动准备中（如需禁用可设置 T8_HAKIMI_CANVAS_CLI_AUTOSTART=0）');
   console.log('   按 Ctrl+C 停止服务器...');
   console.log('--------------------------------------------------');
+  startHakimiCanvasCliOnAppStart(console, { baseUrl: `http://${HOST}:${PORT}` });
   startFigmaBridgeOnAppStart(console);
+});
+
+process.once('SIGINT', () => {
+  cleanupGlobalCodexSession();
+  process.exit(0);
+});
+
+process.once('SIGTERM', () => {
+  cleanupGlobalCodexSession();
+  process.exit(0);
 });

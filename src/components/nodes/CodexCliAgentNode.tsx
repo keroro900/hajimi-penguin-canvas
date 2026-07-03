@@ -24,6 +24,8 @@ import {
   X,
 } from 'lucide-react';
 import { PORT_COLOR } from '../../config/portTypes';
+import { CODEX_MODEL_OPTIONS } from '../../config/codexModelOptions';
+// Shared Codex CLI options include gpt-5.5, gpt-5.4-mini, gpt-5.3-codex-spark, and gpt-5.3-codex.
 import { useRunTrigger } from '../../hooks/useRunTrigger';
 import * as api from '../../services/api';
 import {
@@ -44,12 +46,16 @@ import { taskCompletionSound } from '../../stores/taskCompletionSound';
 import { useThemeStore } from '../../stores/theme';
 import {
   countExcludedMaterials,
-  excludeMaterialId,
   filterExcludedMaterials,
   normalizeExcludedMaterialIds,
 } from '../../utils/materialExclusion';
 import { createReadableStudioPalette, readableTextOn } from '../../utils/readableStudioPalette';
 import MaterialPreviewSection from './MaterialPreviewSection';
+import {
+  pruneMaterialIdsForDisconnectedSource,
+  pruneMaterialOrderForDisconnectedSource,
+  useDisconnectUpstreamMaterial,
+} from './shared/upstreamMaterialConnections';
 import MentionPromptInput from './MentionPromptInput';
 import SmartImage from '../SmartImage';
 import { materialMentionKey, resolveMediaMentions, type MediaMention } from './mediaMentions';
@@ -137,17 +143,6 @@ const IMAGE_GENERATION_FALLBACK_PRESET: CreatorPreset = {
 };
 
 const SYSTEM_CREATOR_PRESETS: CreatorPreset[] = [];
-
-const CODEX_MODEL_OPTIONS = [
-  { value: 'default', label: '默认模型', hint: '跟随本机 Codex CLI / profile 配置' },
-  { value: 'gpt-5.5', label: 'GPT-5.5（推荐）', hint: '官方推荐：复杂编码、电脑使用、知识工作和研究流程优先。' },
-  { value: 'gpt-5.4', label: 'GPT-5.4', hint: '适合高质量创作规划、复杂推理和较长任务。' },
-  { value: 'gpt-5.4-mini', label: 'GPT-5.4 mini（快速）', hint: '官方建议用于更快、成本更低的轻量任务或子 Agent。' },
-  { value: 'gpt-5.3-codex-spark', label: 'GPT-5.3 Codex Spark（预览）', hint: '研究预览模型，适合近实时迭代；通常需要 Pro 权限。' },
-  { value: 'gpt-5.3-codex', label: 'GPT-5.3 Codex（旧版）', hint: 'Codex 旧模型；官方已提示 ChatGPT 登录下不推荐继续使用。' },
-  { value: 'gpt-5.2', label: 'GPT-5.2（旧版）', hint: 'Codex 旧模型；保留给已有 API/脚本兼容。' },
-  { value: 'custom', label: '自定义模型', hint: '手动填写任意 Codex CLI 支持的模型 ID' },
-];
 
 const CODEX_RUN_INTENT_OPTIONS: Array<{ id: Exclude<CodexRunIntent, 'auto'>; label: string; title: string }> = [
   { id: 'llm', label: 'LLM', title: '只做文字回答、读图分析和提示词整理，绝不生成图片。' },
@@ -1027,9 +1022,9 @@ function clampInteger(value: any, fallback: number, min: number, max: number) {
 const codexLoginCommand = 'codex login';
 const codexInstallCommand = 'npm install -g @openai/codex';
 const CODEX_LOGIN_FLOW_STEPS = [
-  '1. 点击“打开登录”，T8 会在 Windows 上打开一个可见的 Codex 登录窗口。',
+  '1. 点击“打开登录”，应用会在 Windows 上打开一个可见的 Codex 登录窗口。',
   '2. 按新窗口或浏览器里的 OpenAI / Codex 授权提示完成登录；如果显示验证码或链接，请按终端提示操作。',
-  '3. 登录完成后回到 T8，点击“刷新”，看到“Codex 已就绪”后即可生成。',
+  '3. 登录完成后回到画布，点击“刷新”，看到“Codex 已就绪”后即可生成。',
   '如果点击没有弹窗：点“复制登录命令”，在普通 CMD 或 PowerShell 里粘贴运行 codex login；未安装时先复制安装命令。',
 ];
 
@@ -1458,13 +1453,15 @@ const CodexCliAgentNode = ({ id, data, selected }: NodeProps) => {
   );
   const inputMaterialTotal = orderedInputTexts.length + orderedImages.length + orderedVideos.length + orderedAudios.length;
   const setMaterialOrder = useCallback((nextOrder: string[]) => update({ materialOrder: nextOrder }), [update]);
+  const disconnectUpstreamMaterial = useDisconnectUpstreamMaterial(id);
   const excludeUpstreamMaterial = useCallback((material: Material) => {
     if (material.origin !== 'upstream') return;
+    disconnectUpstreamMaterial(material);
     update({
-      excludedMaterialIds: excludeMaterialId(excludedMaterialIds, material.id),
-      materialOrder: materialOrder.filter((itemId: string) => itemId !== material.id),
+      excludedMaterialIds: pruneMaterialIdsForDisconnectedSource(excludedMaterialIds, material.sourceNodeId),
+      materialOrder: pruneMaterialOrderForDisconnectedSource(materialOrder, material.sourceNodeId),
     });
-  }, [excludedMaterialIds, materialOrder, update]);
+  }, [disconnectUpstreamMaterial, excludedMaterialIds, materialOrder, update]);
   const restoreExcludedMaterials = useCallback(() => {
     update({ excludedMaterialIds: [] });
   }, [update]);
@@ -3691,7 +3688,7 @@ const CodexCliAgentNode = ({ id, data, selected }: NodeProps) => {
               />
               {inputMaterialTotal === 0 && excludedUpstreamCount === 0 && (
                 <div className="text-[11px] leading-relaxed" style={{ color: subText }}>
-                  可从左侧连接文本、图片、视频或音频；连接后这里会显示缩略图，并可拖动排序或点 X 排除。
+                  可从左侧连接文本、图片、视频或音频；连接后这里会显示缩略图，并可拖动排序或点 X 断开来源。
                 </div>
               )}
             </section>

@@ -1,20 +1,13 @@
 {
-  "name": "t8-penguin-canvas",
+  "name": "hajimi-canvas",
   "private": false,
   "version": "2.3.8",
   "type": "module",
   "main": "electron/main.cjs",
-  "description": "T8-penguin-canvas — AI 节点画布工作流工具（Web + Electron 桌面端）",
-  "author": "T8mars",
+  "description": "哈基米画布 — AI 节点画布工作流工具（Web + Electron 桌面端）",
+  "author": "Hakimi Canvas",
   "license": "MIT",
-  "homepage": "https://github.com/T8mars/T8-penguin-canvas",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/T8mars/T8-penguin-canvas.git"
-  },
-  "bugs": {
-    "url": "https://github.com/T8mars/T8-penguin-canvas/issues"
-  },
+  "homepage": "",
   "keywords": [
     "ai",
     "canvas",
@@ -32,10 +25,14 @@
     "figma:bridge": "node tools/figma-bridge/server.cjs",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "lint": "npm run type-check && npm run public:check",
     "type-check": "tsc --noEmit",
+    "test": "node scripts/run-tests.cjs",
+    "verify": "npm run type-check && npm run test && npm run public:check",
+    "hakimi:canvas": "node tools/hakimi-canvas-cli/hakimi-canvas.mjs",
+    "hakimi:mcp": "node tools/hakimi-mcp/src/server.mjs",
     "electron:dev": "cross-env T8PC_PACKAGED=0 electron electron/main.cjs",
-    "encrypt": "cross-env ELECTRON_RUN_AS_NODE=1 electron electron/encrypt.cjs",
+    "encrypt": "node scripts/run-electron-encrypt.cjs",
     "prepack:enc": "npm run rh-toolbox:check && npm run build && npm run encrypt",
     "prepack:runtimes": "node scripts/prepare-runtime-archives.cjs",
     "dist:dir": "npm run prepack:enc && npm run prepack:runtimes && electron-builder --win --x64 --dir && node electron/_post_build.cjs",
@@ -53,6 +50,8 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
     "@mediapipe/tasks-vision": "^0.10.35",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@openai/codex-sdk": "^0.142.5",
     "@xyflow/react": "^12.10.0",
     "bytenode": "^1.5.7",
     "cors": "^2.8.5",
@@ -65,6 +64,8 @@
     "react-dom": "^19.0.0",
     "sharp": "^0.34.5",
     "three": "^0.184.0",
+    "ws": "^8.21.0",
+    "zod": "^4.4.3",
     "zustand": "^5.0.0"
   },
   "devDependencies": {
@@ -72,19 +73,20 @@
     "@types/react-dom": "^19.0.0",
     "@types/three": "^0.184.1",
     "@vitejs/plugin-react": "^4.3.0",
+    "7zip-bin": "^5.2.0",
     "autoprefixer": "^10.4.0",
-    "concurrently": "^9.0.0",
+    "concurrently": "^10.0.3",
     "cross-env": "^7.0.3",
-    "electron": "^33.4.11",
-    "electron-builder": "^25.1.8",
+    "electron": "^42.4.0",
+    "electron-builder": "^26.15.2",
     "postcss": "^8.4.0",
     "tailwindcss": "^3.4.0",
     "typescript": "^5.7.0",
     "vite": "^6.0.0"
   },
   "build": {
-    "appId": "cn.t8star.penguin-canvas",
-    "productName": "T8-PenguinCanvas",
+    "appId": "cn.hajimi.canvas",
+    "productName": "哈基米画布",
     "directories": {
       "output": "dist_electron",
       "buildResources": "electron/build-resources"
@@ -93,7 +95,11 @@
     "asar": true,
     "asarUnpack": [
       "node_modules/sharp/**/*",
-      "node_modules/@img/**/*"
+      "node_modules/@img/**/*",
+      "node_modules/ws/**/*",
+      "node_modules/@openai/codex/**/*",
+      "node_modules/@openai/codex-*/*",
+      "node_modules/@openai/codex-*/**/*"
     ],
     "files": [
       "electron/main.cjs",
@@ -132,8 +138,22 @@
     ],
     "extraResources": [
       {
-        "from": "build/backend-enc",
+        "from": "build/backend-enc-desktop",
         "to": "backend-enc",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "skills",
+        "to": "skills",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": ".agents/skills",
+        "to": ".agents/skills",
         "filter": [
           "**/*"
         ]
@@ -153,10 +173,15 @@
         ]
       },
       {
+        "from": "electron/build-resources/icon.ico",
+        "to": "icon.ico"
+      },
+      {
         "from": "shared",
         "to": "shared",
         "filter": [
-          "achievementManifest.json"
+          "achievementManifest.json",
+          "modelProtocolRegistry.json"
         ]
       },
       {
@@ -164,6 +189,13 @@
         "to": "resources/achievement-media",
         "filter": [
           "*.t8media"
+        ]
+      },
+      {
+        "from": "resources/luts",
+        "to": "resources/luts",
+        "filter": [
+          "**/*"
         ]
       },
       {
@@ -197,17 +229,18 @@
         "filter": [
           "**/*"
         ]
-      }
-    ],
-    "publish": [
+      },
       {
-        "provider": "github",
-        "owner": "T8mars",
-        "repo": "T8-penguin-canvas",
-        "releaseType": "release"
+        "from": "tools/hakimi-canvas-cli",
+        "to": "tools/hakimi-canvas-cli",
+        "filter": [
+          "hakimi-canvas.mjs",
+          "README.md"
+        ]
       }
     ],
     "win": {
+      "icon": "electron/build-resources/icon.ico",
       "target": [
         {
           "target": "nsis",
@@ -224,7 +257,7 @@
       "allowElevation": true,
       "allowToChangeInstallationDirectory": true,
       "deleteAppDataOnUninstall": false,
-      "shortcutName": "贞贞的无限画布",
+      "shortcutName": "哈基米画布",
       "createDesktopShortcut": "always",
       "createStartMenuShortcut": true
     }

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hakimi Video Workflow"
+  short_description: "Build and run video generation workflows on Hakimi canvas."
+  default_prompt: "Use Hakimi video workflow to plan, submit, place, and verify video assets on the canvas."

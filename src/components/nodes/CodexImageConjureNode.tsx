@@ -53,18 +53,24 @@ import { useUpstreamMaterials, type Material } from './useUpstreamMaterials';
 import { useOrderedMaterials } from './useOrderedMaterials';
 import {
   countExcludedMaterials,
-  excludeMaterialId,
   filterExcludedMaterials,
   normalizeExcludedMaterialIds,
 } from '../../utils/materialExclusion';
+import {
+  pruneMaterialIdsForDisconnectedSource,
+  pruneMaterialOrderForDisconnectedSource,
+  useDisconnectUpstreamMaterial,
+} from './shared/upstreamMaterialConnections';
+import { mediaDownloadFileName } from '../../utils/mediaCollection';
+import { downloadMediaUrl } from '../../utils/downloadMedia';
 
 const STORAGE_KEY = 't8.codexImageConjure.prompts.v1';
 const codexLoginCommand = 'codex login';
 const codexInstallCommand = 'npm install -g @openai/codex';
 const CODEX_LOGIN_FLOW_STEPS = [
-  '1. 点击“打开登录”，T8 会在 Windows 上打开一个可见的 Codex 登录窗口。',
+  '1. 点击“打开登录”，应用会在 Windows 上打开一个可见的 Codex 登录窗口。',
   '2. 按新窗口或浏览器里的 OpenAI / Codex 授权提示完成登录；如果显示验证码或链接，请按终端提示操作。',
-  '3. 登录完成后回到 T8，点击“刷新”，看到“Codex 已就绪”后即可生成。',
+  '3. 登录完成后回到画布，点击“刷新”，看到“Codex 已就绪”后即可生成。',
   '如果点击没有弹窗：点“复制登录命令”，在普通 CMD 或 PowerShell 里粘贴运行 codex login；未安装时先复制安装命令。',
 ];
 
@@ -259,13 +265,15 @@ const CodexImageConjureNode = ({ id, data, selected }: NodeProps) => {
     [excludedMaterialIds, upstream.texts, upstream.images],
   );
   const setMaterialOrder = useCallback((nextOrder: string[]) => update({ codexConjureMaterialOrder: nextOrder }), [update]);
+  const disconnectUpstreamMaterial = useDisconnectUpstreamMaterial(id);
   const excludeUpstreamMaterial = useCallback((material: Material) => {
     if (material.origin !== 'upstream') return;
+    disconnectUpstreamMaterial(material);
     update({
-      codexConjureExcludedMaterialIds: excludeMaterialId(excludedMaterialIds, material.id),
-      codexConjureMaterialOrder: materialOrder.filter((itemId) => itemId !== material.id),
+      codexConjureExcludedMaterialIds: pruneMaterialIdsForDisconnectedSource(excludedMaterialIds, material.sourceNodeId),
+      codexConjureMaterialOrder: pruneMaterialOrderForDisconnectedSource(materialOrder, material.sourceNodeId),
     });
-  }, [excludedMaterialIds, materialOrder, update]);
+  }, [disconnectUpstreamMaterial, excludedMaterialIds, materialOrder, update]);
   const removeGalleryMaterial = useCallback((material: Material) => {
     if (material.origin !== 'local') return;
     update({
@@ -1117,7 +1125,17 @@ const CodexImageConjureNode = ({ id, data, selected }: NodeProps) => {
               <button type="button" className="nodrag inline-flex items-center justify-center gap-1 px-2 py-2 text-xs font-bold" style={buttonStyle} onClick={createVariant}>
                 <Archive size={14} /> 变体
               </button>
-              <a className="nodrag inline-flex items-center justify-center gap-1 px-2 py-2 text-xs font-bold no-underline" style={buttonStyle} href={latestUrls[0]} download>
+              <a
+                className="nodrag inline-flex items-center justify-center gap-1 px-2 py-2 text-xs font-bold no-underline"
+                style={buttonStyle}
+                href={latestUrls[0]}
+                download={mediaDownloadFileName('image', latestUrls[0], 0)}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  void downloadMediaUrl('image', latestUrls[0], 0);
+                }}
+              >
                 <Download size={14} /> 下载
               </a>
             </div>

@@ -1,5 +1,5 @@
 // ============================================================================
-// T8-penguin-canvas Runtime Loader
+// Hakimi Canvas Runtime Loader
 //
 // 职责:
 //   1. 注册 .t8c 后缀的 require hook
@@ -10,7 +10,7 @@
 //
 // 设计参考: gpt-image-2-web 的 ZZENC1 + py_compile,但改为 Node 体系
 //   - Magic Header: T8ENC1\n
-//   - Key 派生: SHA256("T8-penguin-canvas-T8star-2026")
+//   - Key 派生: SHA256("hajimi-canvas-2026")
 //   - 算法: AES-256-CBC (16-byte 随机 IV 内嵌密文头)
 //   - 字节码格式: bytenode 标准 .jsc (V8 cached data + 8-byte length header)
 // ============================================================================
@@ -24,9 +24,17 @@ const vm = require('vm');
 const { brotliDecompressSync } = require('zlib');
 
 const MAGIC = Buffer.from('T8ENC1\n', 'utf8'); // 7 bytes
-const PASSPHRASE = 'T8-penguin-canvas-T8star-2026';
+const PASSPHRASE = 'hajimi-canvas-2026';
 const KEY = crypto.createHash('sha256').update(PASSPHRASE, 'utf8').digest(); // 32 bytes
 const IV_LEN = 16;
+
+function traceLoader(message) {
+  if (process.env.T8_TRACE_LOADER === '1') {
+    try {
+      console.error(`[t8-loader] ${message}`);
+    } catch (_) {}
+  }
+}
 
 function isEncrypted(buf) {
   return Buffer.isBuffer(buf) && buf.length > MAGIC.length && buf.slice(0, MAGIC.length).equals(MAGIC);
@@ -112,6 +120,20 @@ function canFallbackToLoaderRequire(id) {
   return Boolean(text) && !text.startsWith('.') && !path.isAbsolute(text);
 }
 
+function resolvePackagedSharedRequire(id) {
+  const text = String(id || '').replace(/\\/g, '/');
+  if (!text.startsWith('.')) return null;
+  const marker = '/shared/';
+  const markerIndex = text.indexOf(marker);
+  if (markerIndex < 0) return null;
+  const rel = text.slice(markerIndex + marker.length);
+  if (!rel || rel.includes('..')) return null;
+  const resourcesPath = process.resourcesPath || '';
+  if (!resourcesPath) return null;
+  const candidate = path.join(resourcesPath, 'shared', rel);
+  return fs.existsSync(candidate) ? candidate : null;
+}
+
 // ---------- 注册 .t8c require hook ----------
 function registerLoader() {
   if (require.extensions['.t8c']) return; // 防重复注册
@@ -119,25 +141,37 @@ function registerLoader() {
   loadBytenode();
 
   require.extensions['.t8c'] = function (fileModule, filename) {
+    traceLoader(`begin ${filename}`);
     const enc = fs.readFileSync(filename);
+    traceLoader(`read ${filename} bytes=${enc.length}`);
     const jsc = decryptBuffer(enc); // 解密成 V8 字节码缓冲
+    traceLoader(`decrypted ${filename} bytes=${jsc.length}`);
 
     // 完全复刻 bytenode 的 .jsc loader 逻辑,但关键:
     //   - fileModule 是 .t8c 模块本身(asar 内),其 require/paths 能到到 app.asar/node_modules
     //   - filename / __dirname 也是 .t8c 原始路径,保证原代码的相对 require/路径推导正确
     const script = generateScript(jsc, filename);
+    traceLoader(`generated script ${filename}`);
 
     function req(id) {
+      traceLoader(`require ${id} from ${filename}`);
       try {
-        return fileModule.require(id);
+        const value = fileModule.require(id);
+        traceLoader(`require ok ${id} from ${filename}`);
+        return value;
       } catch (e) {
         // .t8c 文件在 resources/backend-enc/ 下(asar 外),
         // 其 module.paths 无法到达 app.asar/node_modules,
         // 因此需要在获不到外部依赖时回退到 loader.cjs(在 asar 内)的 require。
         // 这使得加密后端能访问主包 node_modules 里的 express/cors/multer/sharp 等。
         if (e && e.code === 'MODULE_NOT_FOUND') {
+          const packagedShared = resolvePackagedSharedRequire(id);
+          if (packagedShared) return fileModule.require(packagedShared);
           if (!canFallbackToLoaderRequire(id)) throw e;
-          return require(id);
+          traceLoader(`require fallback ${id} from ${filename}`);
+          const value = require(id);
+          traceLoader(`require fallback ok ${id} from ${filename}`);
+          return value;
         }
         throw e;
       }
@@ -147,6 +181,8 @@ function registerLoader() {
         return Module._resolveFilename(request, fileModule, false, options);
       } catch (e) {
         if (e && e.code === 'MODULE_NOT_FOUND') {
+          const packagedShared = resolvePackagedSharedRequire(request);
+          if (packagedShared) return packagedShared;
           if (!canFallbackToLoaderRequire(request)) throw e;
           return require.resolve(request, options);
         }
@@ -163,10 +199,13 @@ function registerLoader() {
       columnOffset: 0,
       displayErrors: true,
     });
+    traceLoader(`compiled wrapper ${filename}`);
 
     const dirname = path.dirname(filename);
     const args = [fileModule.exports, req, fileModule, filename, dirname, process, global];
-    return compiledWrapper.apply(fileModule.exports, args);
+    const result = compiledWrapper.apply(fileModule.exports, args);
+    traceLoader(`applied wrapper ${filename}`);
+    return result;
   };
 
   // 让 require('./foo') 在缺少 .js/.json 时自动尝试 .t8c
@@ -175,6 +214,8 @@ function registerLoader() {
     try {
       return _origResolve.call(this, request, parent, ...rest);
     } catch (e) {
+      const packagedShared = resolvePackagedSharedRequire(request);
+      if (packagedShared) return packagedShared;
       try {
         return _origResolve.call(this, request + '.t8c', parent, ...rest);
       } catch (_) {

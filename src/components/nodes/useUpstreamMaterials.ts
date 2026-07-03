@@ -36,6 +36,8 @@ export interface Material {
   sourceNodeId: string;
   origin: 'upstream' | 'local';
   label?: string;
+  mentionKey?: string;
+  mentionToken?: string;
   rhNodeId?: string;
   sourceNodeSerialId?: number;
 }
@@ -49,7 +51,7 @@ export interface UpstreamMaterials {
 
 const VIDEO_RE = /\.(mp4|webm|mov|m4v|mkv)(\?|$)/i;
 const AUDIO_RE = /\.(mp3|wav|ogg|m4a|flac|aac)(\?|$)/i;
-const IMAGE_RE = /\.(png|jpe?g|webp|gif|bmp|avif|tiff?)(\?|$)/i;
+const IMAGE_RE = /\.(png|jpe?g|webp|gif|bmp|avif|tiff?|svg)(\?|$)/i;
 
 type MediaBuckets = Pick<UpstreamMaterials, 'images' | 'videos' | 'audios'>;
 type MentionableKind = Exclude<MaterialKind, 'text'>;
@@ -78,6 +80,7 @@ function pushMediaMaterial(
   if (seen.has(dedupeKey)) return;
   seen.add(dedupeKey);
   const arr = actualKind === 'image' ? buckets.images : actualKind === 'video' ? buckets.videos : buckets.audios;
+  const stableSlotKey = `${actualKind}:${sourceId}:${key.replace(/:/g, ':')}`;
   arr.push({
     id: `${sourceId}::${key}:${dedupeKey}`,
     kind: actualKind,
@@ -85,6 +88,7 @@ function pushMediaMaterial(
     sourceNodeId: sourceId,
     origin: 'upstream',
     label: label || fileNameFromUrl(url).slice(0, 28),
+    mentionKey: stableSlotKey,
   });
 }
 
@@ -104,7 +108,7 @@ function pushMediaArray(
   });
 }
 
-function collectMentionableMediaFromNodeData(sourceId: string, data: any, type?: string): Material[] {
+export function collectMentionableMediaFromNodeData(sourceId: string, data: any, type?: string): Material[] {
   const buckets: MediaBuckets = { images: [], videos: [], audios: [] };
   const seen = new Set<string>();
   if (!data) return [];
@@ -247,8 +251,9 @@ export function useUpstreamMaterials(nodeId: string): UpstreamMaterials {
       const s = v.trim();
       if (!s) return;
       const dedupeKey = keyOverride || `${kind}:${s}`;
-      if (seen.has(dedupeKey)) return;
-      seen.add(dedupeKey);
+      const seenKey = `${sourceId}::${dedupeKey}`;
+      if (seen.has(seenKey)) return;
+      seen.add(seenKey);
       arr.push({
         id: `${sourceId}::${dedupeKey}`,
         kind,
@@ -256,6 +261,7 @@ export function useUpstreamMaterials(nodeId: string): UpstreamMaterials {
         sourceNodeId: sourceId,
         origin: 'upstream',
         label: labelOverride || (s.split('/').pop() || s).slice(0, 28),
+        mentionKey: `${kind}:${sourceId}:${dedupeKey}`,
       });
     };
 
@@ -322,26 +328,26 @@ export function useUpstreamMaterials(nodeId: string): UpstreamMaterials {
       if (isFramePair) {
         const wantFirst = handles.has('first') || (handles.has(null) && !handles.has('last'));
         const wantLast = handles.has('last') || (handles.has(null) && !handles.has('first'));
-        if (wantFirst) pushUrl(sid, 'image', ud.firstFrameUrl, images);
-        if (wantLast) pushUrl(sid, 'image', ud.lastFrameUrl, images);
+        if (wantFirst) pushUrl(sid, 'image', ud.firstFrameUrl, images, 'firstFrameUrl');
+        if (wantLast) pushUrl(sid, 'image', ud.lastFrameUrl, images, 'lastFrameUrl');
         continue;
       }
 
       // 图像: 单 + 多
-      pushUrl(sid, 'image', ud.imageUrl, images);
-      pushUrl(sid, 'image', ud.resultUrl, images, undefined, '目标框图像');
+      pushUrl(sid, 'image', ud.imageUrl, images, 'imageUrl');
+      pushUrl(sid, 'image', ud.resultUrl, images, 'resultUrl', '目标框图像');
       const arrFields = ['imageUrls', 'urls', 'generatedImages', 'resultUrls'];
       for (const f of arrFields) {
         const v = ud[f];
         if (Array.isArray(v)) {
-          for (const u of v) pushUrl(sid, 'image', u, images);
+          v.forEach((u, index) => pushUrl(sid, 'image', u, images, `${f}:${index}`));
         }
       }
 
       // 视频: 单 + 多 (v1.2.8.2: videoUrls 数组 — LoopNode 聚合多视频产物)
-      pushUrl(sid, 'video', ud.videoUrl, videos);
+      pushUrl(sid, 'video', ud.videoUrl, videos, 'videoUrl');
       if (Array.isArray(ud.videoUrls)) {
-        for (const u of ud.videoUrls) pushUrl(sid, 'video', u, videos);
+        ud.videoUrls.forEach((u: unknown, index: number) => pushUrl(sid, 'video', u, videos, `videoUrls:${index}`));
       }
 
       // === v1.2.9.14: Suno 双端口语义 (与 FramePair 同模式) ===
@@ -355,19 +361,19 @@ export function useUpstreamMaterials(nodeId: string): UpstreamMaterials {
       if (isSuno) {
         const wantA0 = handles.has('audio-0') || (handles.has(null) && !handles.has('audio-1'));
         const wantA1 = handles.has('audio-1') || (handles.has(null) && !handles.has('audio-0'));
-        if (wantA0) pushUrl(sid, 'audio', ud.audioUrl, audios);
-        if (wantA1) pushUrl(sid, 'audio', ud.audioUrl_1, audios);
+        if (wantA0) pushUrl(sid, 'audio', ud.audioUrl, audios, 'audioUrl');
+        if (wantA1) pushUrl(sid, 'audio', ud.audioUrl_1, audios, 'audioUrl_1');
         if (Array.isArray(ud.audioUrls)) {
-          for (const u of ud.audioUrls) pushUrl(sid, 'audio', u, audios);
+          ud.audioUrls.forEach((u: unknown, index: number) => pushUrl(sid, 'audio', u, audios, `audioUrls:${index}`));
         }
         continue;
       }
 
       // 音频 (audioUrl 主轨, audioUrl_1 副轨——AudioNode 双输出口, audioUrls 数组 — LoopNode 聚合)
-      pushUrl(sid, 'audio', ud.audioUrl, audios);
-      pushUrl(sid, 'audio', ud.audioUrl_1, audios);
+      pushUrl(sid, 'audio', ud.audioUrl, audios, 'audioUrl');
+      pushUrl(sid, 'audio', ud.audioUrl_1, audios, 'audioUrl_1');
       if (Array.isArray(ud.audioUrls)) {
-        for (const u of ud.audioUrls) pushUrl(sid, 'audio', u, audios);
+        ud.audioUrls.forEach((u: unknown, index: number) => pushUrl(sid, 'audio', u, audios, `audioUrls:${index}`));
       }
     }
 

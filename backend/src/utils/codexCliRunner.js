@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
+const zlib = require('zlib');
 const { spawn } = require('child_process');
 const config = require('../config');
 
@@ -65,10 +66,44 @@ function pathEnvValue(env = process.env) {
   return String(env.PATH || env.Path || env.path || '');
 }
 
+function pathEnvKey(env = process.env) {
+  if (Object.prototype.hasOwnProperty.call(env, 'PATH')) return 'PATH';
+  if (Object.prototype.hasOwnProperty.call(env, 'Path')) return 'Path';
+  if (Object.prototype.hasOwnProperty.call(env, 'path')) return 'path';
+  return 'PATH';
+}
+
 function uniquePush(list, value) {
   const text = String(value || '').trim();
   if (!text || list.includes(text)) return;
   list.push(text);
+}
+
+function buildCodexProcessEnv(options = {}) {
+  const baseEnv = options.baseEnv || process.env;
+  const env = { ...baseEnv, ...(options.env || {}) };
+  const platform = options.platform || process.platform;
+
+  if (platform === 'win32') {
+    const fallbackHome = String(options.homedir || os.homedir() || env.USERPROFILE || env.HOME || '').trim();
+    const userProfile = String(env.USERPROFILE || fallbackHome).trim();
+    if (userProfile) {
+      env.USERPROFILE = userProfile;
+      if (!String(env.HOME || '').trim()) env.HOME = userProfile;
+      if (!String(env.APPDATA || '').trim()) env.APPDATA = path.join(userProfile, 'AppData', 'Roaming');
+      if (!String(env.LOCALAPPDATA || '').trim()) env.LOCALAPPDATA = path.join(userProfile, 'AppData', 'Local');
+    }
+
+    const pathKey = pathEnvKey(env);
+    const nextPath = [];
+    if (env.APPDATA) uniquePush(nextPath, path.join(env.APPDATA, 'npm'));
+    if (env.USERPROFILE) uniquePush(nextPath, path.join(env.USERPROFILE, 'AppData', 'Roaming', 'npm'));
+    pathEnvValue(env).split(path.delimiter).forEach((dir) => uniquePush(nextPath, dir));
+    env[pathKey] = nextPath.join(path.delimiter);
+    if (pathKey !== 'PATH') env.PATH = env[pathKey];
+  }
+
+  return env;
 }
 
 function isWindowsAppsPath(value) {
@@ -149,7 +184,7 @@ function resolveCodexExecutable(options = {}) {
 }
 
 function spawnCodexProcess(args, options = {}) {
-  const env = { ...process.env, ...(options.env || {}) };
+  const env = buildCodexProcessEnv(options);
   const resolved = resolveCodexExecutable({
     executablePath: options.executablePath,
     env,
@@ -188,7 +223,7 @@ function runCodexCommand(args, options = {}) {
     } catch (error) {
       const resolved = resolveCodexExecutable({
         executablePath: options.executablePath,
-        env: { ...process.env, ...(options.env || {}) },
+        env: buildCodexProcessEnv(options),
         platform: options.platform,
       });
       done({
@@ -246,9 +281,21 @@ function runCodexCommand(args, options = {}) {
 
 function codexUnavailableMessage(result, fallback = '') {
   const message = String(fallback || result?.message || result?.stderr || result?.stdout || '').trim();
+  const configMessage = codexConfigErrorMessage(message);
+  if (configMessage) return configMessage;
   const windowsApps = result?.resolved?.fromWindowsApps || isWindowsAppsPath(result?.executable) || /WindowsApps|spawn EPERM/i.test(message);
   const detail = windowsApps ? CODEX_WINDOWS_APPS_MESSAGE : message;
   return `${CODEX_DISABLED_MESSAGE} ${detail || ''}`.trim();
+}
+
+function codexConfigErrorMessage(message = '') {
+  const text = String(message || '');
+  if (!/Error loading configuration|unknown variant/i.test(text)) return '';
+  if (/service_tier|expected `fast` or `flex`|expected 'fast' or 'flex'|unknown variant `default`|unknown variant 'default'/i.test(text)) {
+    const file = text.match(/[A-Z]:\\[^\r\n:]+config\.toml/i)?.[0] || '~/.codex/config.toml';
+    return `${CODEX_DISABLED_MESSAGE} Codex 配置文件 ${file} 里 service_tier 不能是 "default"；Codex CLI 0.130.0 只接受 "fast" 或 "flex"，也可以删除这一行使用默认行为。`;
+  }
+  return `${CODEX_DISABLED_MESSAGE} Codex 配置文件读取失败：${text}`;
 }
 
 function parseCodexFeatureList(raw) {
@@ -325,7 +372,7 @@ function writeCodexLoginCmdScript(invocation) {
     'echo ------------------------------------------------------------',
     'echo 1. 如果浏览器打开 OpenAI/Codex 授权页，请在浏览器完成登录。',
     'echo 2. 如果终端显示验证码或确认链接，请按终端提示完成授权。',
-    'echo 3. 登录完成后回到 T8 画布，点击 Codex 节点里的“刷新”。',
+    'echo 3. 登录完成后回到画布，点击 Codex 节点里的“刷新”。',
     'echo.',
     `echo 即将执行: ${escapeCmdEchoText(commandLine)}`,
     'echo.',
@@ -333,7 +380,7 @@ function writeCodexLoginCmdScript(invocation) {
     'set T8_CODEX_LOGIN_EXIT=%ERRORLEVEL%',
     'echo.',
     'if "%T8_CODEX_LOGIN_EXIT%"=="0" (',
-    '  echo Codex 登录命令已结束。请回到 T8 画布点击“刷新”。',
+    '  echo Codex 登录命令已结束。请回到画布点击“刷新”。',
     ') else (',
     '  echo Codex 登录命令返回错误码 %T8_CODEX_LOGIN_EXIT%。',
     '  echo 如果这里没有打开浏览器，请复制节点里的 codex login 命令，在普通 CMD 或 PowerShell 中手动运行。',
@@ -410,88 +457,6 @@ function normalizeAvailableFeatureNames(value) {
   return names;
 }
 
-function pushSupportedFeature(args, featureName, availableFeatureNames) {
-  if (!availableFeatureNames.has(featureName)) return false;
-  args.push('--enable', featureName);
-  return true;
-}
-
-function normalizeCliArgs(value) {
-  return Array.isArray(value)
-    ? value.map((item) => String(item || '').trim()).filter(Boolean)
-    : String(value || '').match(/(?:[^\s"]+|"[^"]*")+/g)?.map((item) => item.replace(/^"|"$/g, '')) || [];
-}
-
-function stripUnsupportedCodexEnableArgs(args, availableFeatureNames) {
-  const allowed = availableFeatureNames instanceof Set
-    ? availableFeatureNames
-    : normalizeAvailableFeatureNames(availableFeatureNames);
-  const out = [];
-  const list = Array.isArray(args) ? args : normalizeCliArgs(args);
-  for (let i = 0; i < list.length; i += 1) {
-    const item = String(list[i] || '').trim();
-    if (!item) continue;
-    if (item === '--enable' || item === '--enable-feature') {
-      const featureName = String(list[i + 1] || '').trim();
-      if (featureName && allowed.has(featureName)) {
-        out.push(item, featureName);
-      }
-      i += 1;
-      continue;
-    }
-    const inline = item.match(/^(--enable(?:-feature)?)=(.+)$/);
-    if (inline) {
-      const featureName = inline[2].trim();
-      if (featureName && allowed.has(featureName)) out.push(item);
-      continue;
-    }
-    out.push(item);
-  }
-  return out;
-}
-
-function isUnknownFeatureFlagError(message) {
-  return /Unknown feature flag|unrecognized feature|unsupported feature|unexpected argument.*--enable/i.test(String(message || ''));
-}
-
-function buildCodexExecArgs(options = {}) {
-  const args = ['exec', '--json'];
-  const model = String(options.model || '').trim();
-  const profile = String(options.profile || '').trim();
-  const sandbox = String(options.sandbox || 'workspace-write').trim();
-  const approvalPolicy = String(options.approvalPolicy || options.askForApproval || 'never').trim();
-  const reasoningEffort = String(options.reasoningEffort || '').trim();
-  const availableFeatureNames = normalizeAvailableFeatureNames(
-    options.availableFeatures || options.featureNames || options.features,
-  );
-  const extraArgs = stripUnsupportedCodexEnableArgs(normalizeCliArgs(options.extraArgs), availableFeatureNames);
-
-  if (model) args.push('--model', model);
-  if (profile) args.push('--profile', profile);
-  if (sandbox) args.push('--sandbox', sandbox);
-  if (approvalPolicy) args.push('-c', `approval_policy="${approvalPolicy.replace(/"/g, '\\"')}"`);
-  if (reasoningEffort) args.push('-c', `model_reasoning_effort="${reasoningEffort.replace(/"/g, '\\"')}"`);
-  if (options.webSearch || options.search) pushSupportedFeature(args, 'web_search', availableFeatureNames);
-  if (options.includePlanTool || options.plan) pushSupportedFeature(args, 'plan_tool', availableFeatureNames);
-  if (options.imageGeneration || options.generateImage) pushSupportedFeature(args, 'image_generation', availableFeatureNames);
-  if (options.skipGitRepoCheck !== false && !extraArgs.includes('--skip-git-repo-check')) {
-    args.push('--skip-git-repo-check');
-  }
-
-  const images = Array.isArray(options.images) ? options.images : [];
-  for (const image of images) {
-    const text = String(image || '').trim();
-    if (text) args.push('-i', text);
-  }
-
-  for (const item of extraArgs) {
-    args.push(item);
-  }
-
-  args.push(options.useStdinPrompt === false ? String(options.prompt || '') : '-');
-  return args;
-}
-
 function resolveCanvasFileUrlToPath(value) {
   const text = String(value || '').trim();
   if (!text) return '';
@@ -563,11 +528,69 @@ function contentText(content) {
   return '';
 }
 
+function reasoningContentText(content) {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((item) => reasoningContentText(item))
+      .filter(Boolean)
+      .join('');
+  }
+  if (content && typeof content === 'object') {
+    return content.text || content.delta || content.summary_text || content.reasoning_text || content.content || '';
+  }
+  return '';
+}
+
 function isReasoningContent(value) {
   if (!value || typeof value !== 'object') return false;
   const type = String(value.type || value.kind || '').toLowerCase();
   const role = String(value.role || '').toLowerCase();
   return role === 'reasoning' || /reasoning|thought|thinking|scratchpad/.test(type);
+}
+
+function extractReasoningDelta(event) {
+  if (!event || typeof event !== 'object') return '';
+  const candidate = event.item || event.message || event;
+  if (!isReasoningContent(candidate) && !isReasoningContent(event) && !isReasoningContent(event.delta)) return '';
+  const text = reasoningContentText(
+    candidate.summary ||
+    candidate.content ||
+    candidate.text ||
+    event.summary ||
+    event.delta ||
+    event.text ||
+    '',
+  );
+  return String(text || '').trim();
+}
+
+function extractToolProgress(event) {
+  if (!event || typeof event !== 'object') return '';
+  const item = event.item || event.tool || event;
+  const type = String(item.type || event.type || '').toLowerCase();
+  const name = String(item.name || item.tool_name || item.server_tool_name || item.function?.name || '').trim();
+  if (!name) return '';
+  if (/tool|function|mcp/.test(type)) return `调用工具：${name}`;
+  return '';
+}
+
+function isCodexInfrastructureNoiseLine(line) {
+  const text = String(line || '').trim();
+  if (!text) return true;
+  if (/^SUCCESS:\s+The process with PID \d+(?: \(child process of PID \d+\))? has been terminated\.$/i.test(text)) return true;
+  if (/^ERROR:\s+The process "?\d+"? not found\.$/i.test(text)) return true;
+  if (/\bWARN\b\s+codex_core/i.test(text)) return true;
+  if (/\bWARN\b\s+codex_mcp::rmcp_client: failed to initialize MCP client during shutdown/i.test(text)) return true;
+  if (/\bWARN\b\s+codex_rollout::recorder: failed to send rollout shutdown command/i.test(text)) return true;
+  if (/failed to shutdown thread persistence: thread-store internal error/i.test(text)) return true;
+  if (/^Reading prompt from stdin/i.test(text)) return true;
+  return false;
+}
+
+function isCodexInfrastructureNoise(text) {
+  const lines = String(text || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  return lines.length > 0 && lines.every(isCodexInfrastructureNoiseLine);
 }
 
 function extractTextDelta(event) {
@@ -578,7 +601,9 @@ function extractTextDelta(event) {
   if (typeof event.output_text_delta === 'string') return event.output_text_delta;
   if (event.type === 'response.output_text.delta' && typeof event.delta === 'string') return event.delta;
   if (event.type === 'message.delta' && typeof event.text === 'string') return event.text;
-  if (event.type === 'raw' && typeof event.text === 'string') return event.text + '\n';
+  if (event.type === 'raw' && typeof event.text === 'string') {
+    return isCodexInfrastructureNoise(event.text) ? '' : event.text + '\n';
+  }
   const choice = event.choices && event.choices[0];
   if (choice?.delta?.content) return String(choice.delta.content);
   if (choice?.text) return String(choice.text);
@@ -596,10 +621,7 @@ function shouldForwardCodexStderr(message) {
   if (!text) return false;
   const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   if (lines.length === 0) return false;
-  return lines.some((line) => (
-    !/\bWARN\b\s+codex_core/i.test(line)
-    && !/^Reading prompt from stdin/i.test(line)
-  ));
+  return lines.some((line) => !isCodexInfrastructureNoiseLine(line));
 }
 
 function shouldForwardCodexProgress(message, event = {}) {
@@ -788,6 +810,140 @@ function skillBodyFromMarkdown(raw) {
   return text.trim();
 }
 
+function cleanMarkdownInline(value) {
+  return String(value || '')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/\*([^*]+)\*/g, '$1')
+    .trim();
+}
+
+function normalizeSkillDirection(raw, index = 0) {
+  if (!raw || typeof raw !== 'object') return null;
+  const label = cleanMarkdownInline(raw.label || raw.title || raw.name);
+  if (!label) return null;
+  const id = safeSegment(raw.id || raw.key || label, `direction-${index + 1}`).toLowerCase();
+  const hint = cleanMarkdownInline(raw.hint || raw.description || raw.text || '');
+  return {
+    id,
+    label: label.slice(0, 24),
+    hint: hint.slice(0, 90),
+  };
+}
+
+function normalizeSkillQuestion(raw, index = 0) {
+  if (!raw || typeof raw !== 'object') return null;
+  const label = cleanMarkdownInline(raw.label || raw.question || raw.title || raw.name);
+  if (!label) return null;
+  const id = safeSegment(raw.id || raw.key || label, `question-${index + 1}`).toLowerCase();
+  const options = Array.isArray(raw.options)
+    ? raw.options.map((item) => cleanMarkdownInline(item)).filter(Boolean).slice(0, 6)
+    : [];
+  const recommended = cleanMarkdownInline(raw.recommended || raw.default || '');
+  return {
+    id,
+    label: label.slice(0, 80),
+    options,
+    recommended: recommended.slice(0, 40),
+  };
+}
+
+function normalizeSkillCanvasTemplate(raw, index = 0) {
+  if (!raw || typeof raw !== 'object') return null;
+  const label = cleanMarkdownInline(raw.label || raw.title || raw.name);
+  if (!label) return null;
+  const id = safeSegment(raw.id || raw.key || label, `template-${index + 1}`).toLowerCase();
+  const flow = cleanMarkdownInline(raw.flow || raw.template || raw.description || raw.text || '');
+  return {
+    id,
+    label: label.slice(0, 60),
+    flow: flow.slice(0, 180),
+  };
+}
+
+function normalizeSkillVerificationItem(raw, index = 0) {
+  if (!raw || typeof raw !== 'object') return null;
+  const label = cleanMarkdownInline(raw.label || raw.title || raw.name);
+  if (!label) return null;
+  const id = safeSegment(raw.id || raw.key || label, `verification-${index + 1}`).toLowerCase();
+  const hint = cleanMarkdownInline(raw.hint || raw.description || raw.text || '');
+  return {
+    id,
+    label: label.slice(0, 80),
+    hint: hint.slice(0, 140),
+  };
+}
+
+function sectionTitleMatches(title, kind) {
+  const text = String(title || '').trim();
+  if (kind === 'directions') return /^(sidebar\s+directions?|侧栏方向|技能方向)$/i.test(text);
+  if (kind === 'questions') return /^(sidebar\s+questions?|侧栏问题|可问问题|ask\s+questions?)$/i.test(text);
+  if (kind === 'templates') return /^(sidebar\s+canvas\s+templates?|sidebar\s+templates?|画布模板|侧栏画布模板)$/i.test(text);
+  if (kind === 'verification') return /^(sidebar\s+verification|sidebar\s+verification\s+items?|验证项|侧栏验证)$/i.test(text);
+  return false;
+}
+
+function parseSkillSection(raw, kind, normalizeItem, limit = 8) {
+  const text = String(raw || '');
+  const lines = text.split(/\r?\n/);
+  const out = [];
+  let inSection = false;
+  for (const line of lines) {
+    const heading = /^(#{2,6})\s+(.+?)\s*$/.exec(line);
+    if (heading) {
+      const title = heading[2].trim();
+      if (sectionTitleMatches(title, kind)) {
+        inSection = true;
+        continue;
+      }
+      if (inSection && heading[1].length <= 2) break;
+    }
+    if (!inSection) continue;
+    const bullet = /^\s*[-*]\s+(.+?)\s*$/.exec(line);
+    if (!bullet) continue;
+    const parts = bullet[1].split('|').map((part) => cleanMarkdownInline(part));
+    if (parts.length >= 2) {
+      let item = null;
+      if (kind === 'directions') {
+        item = normalizeItem({ id: parts[0], label: parts[1], hint: parts.slice(2).join(' | ') }, out.length);
+      } else if (kind === 'questions') {
+        const options = parts[2]
+          ? parts[2].split(/\s*\/\s*|\s*,\s*|\s*，\s*/).map((part) => cleanMarkdownInline(part)).filter(Boolean)
+          : [];
+        item = normalizeItem({ id: parts[0], label: parts[1], options, recommended: parts[3] || '' }, out.length);
+      } else if (kind === 'templates') {
+        item = normalizeItem({ id: parts[0], label: parts[1], flow: parts.slice(2).join(' | ') }, out.length);
+      } else if (kind === 'verification') {
+        item = normalizeItem({ id: parts[0], label: parts[1], hint: parts.slice(2).join(' | ') }, out.length);
+      }
+      if (item) out.push(item);
+      continue;
+    }
+    const colon = /^([^:：]+)[:：]\s*(.+)$/.exec(cleanMarkdownInline(bullet[1]));
+    const item = colon
+      ? normalizeItem({ label: colon[1], hint: colon[2], text: colon[2], flow: colon[2] }, out.length)
+      : normalizeItem({ label: bullet[1] }, out.length);
+    if (item) out.push(item);
+  }
+  return out.slice(0, limit);
+}
+
+function parseSkillDirections(raw) {
+  return parseSkillSection(raw, 'directions', normalizeSkillDirection, 8);
+}
+
+function parseSkillQuestions(raw) {
+  return parseSkillSection(raw, 'questions', normalizeSkillQuestion, 8);
+}
+
+function parseSkillCanvasTemplates(raw) {
+  return parseSkillSection(raw, 'templates', normalizeSkillCanvasTemplate, 8);
+}
+
+function parseSkillVerification(raw) {
+  return parseSkillSection(raw, 'verification', normalizeSkillVerificationItem, 12);
+}
+
 function collectPluginSkillRoots(codexHome) {
   const bases = [
     path.join(codexHome, 'plugins', 'cache'),
@@ -825,9 +981,24 @@ function defaultSkillRoots(workspaceDir, env = process.env) {
   uniquePush(roots, path.join(envHome, 'skills', '.system'));
   for (const root of collectPluginSkillRoots(envHome)) uniquePush(roots, root);
   uniquePush(roots, path.join(home, '.agents', 'skills'));
+  uniquePush(roots, path.join(config.BASE_DIR, 'skills'));
   uniquePush(roots, path.join(config.BASE_DIR, '.agents', 'skills'));
   if (workspaceDir) uniquePush(roots, path.join(workspaceDir, '.agents', 'skills'));
   return roots;
+}
+
+function isProjectSkillRoot(root, workspaceDir) {
+  const resolved = path.resolve(root);
+  const workspaceRoot = workspaceDir ? path.resolve(workspaceDir) : '';
+  const bundledRoot = path.resolve(config.BASE_DIR, 'skills');
+  const localAgentRoot = path.resolve(config.BASE_DIR, '.agents', 'skills');
+  return Boolean(
+    (workspaceRoot && (resolved === workspaceRoot || resolved.startsWith(workspaceRoot + path.sep))) ||
+    resolved === bundledRoot ||
+    resolved.startsWith(bundledRoot + path.sep) ||
+    resolved === localAgentRoot ||
+    resolved.startsWith(localAgentRoot + path.sep),
+  );
 }
 
 function listCodexSkills(options = {}) {
@@ -841,9 +1012,7 @@ function listCodexSkills(options = {}) {
 
   for (const root of roots) {
     if (!root || !fs.existsSync(root)) continue;
-    const scope = workspaceDir && path.resolve(root).startsWith(path.resolve(workspaceDir))
-      ? 'project'
-      : 'global';
+    const scope = isProjectSkillRoot(root, workspaceDir) ? 'project' : 'global';
     const entries = fs.readdirSync(root, { withFileTypes: true });
     for (const entry of entries) {
       if (!entry.isDirectory()) continue;
@@ -860,6 +1029,10 @@ function listCodexSkills(options = {}) {
         name,
         description: String(summary.description || '').replace(/\s+/g, ' ').slice(0, 240),
         category: String(summary.category || '').trim(),
+        directions: parseSkillDirections(raw),
+        questions: parseSkillQuestions(raw),
+        templates: parseSkillCanvasTemplates(raw),
+        verification: parseSkillVerification(raw),
         body: scope === 'project' ? skillBodyFromMarkdown(raw) : undefined,
         scope,
         path: skillPath,
@@ -914,6 +1087,10 @@ function createProjectSkill(options = {}) {
     title,
     description,
     category,
+    directions: parseSkillDirections(content),
+    questions: parseSkillQuestions(content),
+    templates: parseSkillCanvasTemplates(content),
+    verification: parseSkillVerification(content),
     body: body || [
       '## 用途',
       description,
@@ -947,6 +1124,231 @@ function updateProjectSkill(options = {}) {
   return skill;
 }
 
+function parseZipEntries(buffer) {
+  const data = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer || []);
+  const entries = [];
+  let offset = 0;
+  while (offset + 30 <= data.length) {
+    const signature = data.readUInt32LE(offset);
+    if (signature !== 0x04034b50) break;
+    const flags = data.readUInt16LE(offset + 6);
+    const method = data.readUInt16LE(offset + 8);
+    const compressedSize = data.readUInt32LE(offset + 18);
+    const fileNameLength = data.readUInt16LE(offset + 26);
+    const extraLength = data.readUInt16LE(offset + 28);
+    const nameStart = offset + 30;
+    const nameEnd = nameStart + fileNameLength;
+    const dataStart = nameEnd + extraLength;
+    const dataEnd = dataStart + compressedSize;
+    if (flags & 0x08) throw new Error('暂不支持带 data descriptor 的 zip Skill 包');
+    if (nameEnd > data.length || dataEnd > data.length) throw new Error('zip Skill 包结构不完整');
+    const rawName = data.slice(nameStart, nameEnd).toString('utf8').replace(/\\/g, '/');
+    const payload = data.slice(dataStart, dataEnd);
+    let content;
+    if (method === 0) {
+      content = payload;
+    } else if (method === 8) {
+      content = zlib.inflateRawSync(payload);
+    } else {
+      throw new Error(`暂不支持 zip 压缩方式：${method}`);
+    }
+    entries.push({ path: rawName, content });
+    offset = dataEnd;
+  }
+  return entries;
+}
+
+function normalizeArchiveEntries(entries) {
+  const files = entries
+    .map((entry) => ({
+      path: normalizeSkillFilePath(entry.path),
+      content: entry.content,
+    }))
+    .filter((entry) => entry.path && !entry.path.endsWith('/'));
+  if (files.some((entry) => entry.path === 'SKILL.md')) return files;
+  const roots = new Set(files.map((entry) => entry.path.split('/')[0]).filter(Boolean));
+  if (roots.size === 1) {
+    const [root] = [...roots];
+    const stripped = files.map((entry) => ({
+      ...entry,
+      path: entry.path.startsWith(`${root}/`) ? entry.path.slice(root.length + 1) : entry.path,
+    }));
+    if (stripped.some((entry) => entry.path === 'SKILL.md')) return stripped;
+  }
+  return files;
+}
+
+function skillNameFromArchive(filename, skillContent, fallback = 'imported-skill') {
+  const front = parseFrontmatter(String(skillContent || ''));
+  const fileBase = String(filename || '').replace(/\.[^.]+$/, '');
+  return safeSegment(front.name || fileBase || fallback, fallback);
+}
+
+function importProjectSkillArchive(options = {}) {
+  const workspaceDir = path.resolve(options.workspaceDir || createCodexWorkspace(options).dir);
+  const archiveBuffer = Buffer.isBuffer(options.archive)
+    ? options.archive
+    : Buffer.from(String(options.archiveBase64 || ''), 'base64');
+  if (!archiveBuffer.length) throw new Error('Skill zip 内容为空');
+  const entries = normalizeArchiveEntries(parseZipEntries(archiveBuffer));
+  const skillEntry = entries.find((entry) => entry.path === 'SKILL.md');
+  if (!skillEntry) throw new Error('Skill zip 必须包含 SKILL.md');
+  const name = safeSegment(options.name || skillNameFromArchive(options.filename, skillEntry.content), 'imported-skill');
+  const { dir, skillPath } = projectSkillDir(workspaceDir, name);
+  if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
+  ensureDir(dir);
+  for (const entry of entries) {
+    const destination = assertInside(dir, path.join(dir, entry.path));
+    ensureDir(path.dirname(destination));
+    fs.writeFileSync(destination, entry.content);
+  }
+  const raw = fs.readFileSync(skillPath, 'utf8');
+  const front = parseFrontmatter(raw);
+  const summary = skillSummaryFromMarkdown(raw);
+  return {
+    id: `project:${name}`,
+    name,
+    title: String(front.title || summary.title || name),
+    description: String(summary.description || front.description || '').replace(/\s+/g, ' ').slice(0, 240),
+    category: String(summary.category || front.category || 'imported').trim(),
+    directions: parseSkillDirections(raw),
+    questions: parseSkillQuestions(raw),
+    templates: parseSkillCanvasTemplates(raw),
+    verification: parseSkillVerification(raw),
+    body: skillBodyFromMarkdown(raw),
+    scope: 'project',
+    path: skillPath,
+  };
+}
+
+function hasSkillSection(raw, title) {
+  return new RegExp(`^##\\s+${title}\\s*$`, 'im').test(String(raw || ''));
+}
+
+function sidebarAdaptationLines(raw) {
+  const text = String(raw || '');
+  const lower = text.toLowerCase();
+  const isApparel = /apparel|clothing|garment|fashion|print|童装|服装|印花|版型/.test(lower);
+  const isVideo = /video|storyboard|motion|shot|视频|分镜|镜头/.test(lower);
+  const isImage = /image|visual|prompt|生图|图像|提示词/.test(lower);
+  const directions = isApparel
+    ? [
+      '- `source-analysis` | 素材分析 | 先识别印花、服装、受众和限制。',
+      '- `variant-plan` | 变体规划 | 拆出版型、配色、位置和画面变量。',
+      '- `review` | 复核优化 | 检查可售性、工艺和视觉一致性。',
+    ]
+    : isVideo
+      ? [
+        '- `storyboard` | 分镜规划 | 整理关键帧、镜头和节奏。',
+        '- `motion` | 运动设计 | 定义运镜、动作和时长。',
+        '- `verify-video` | 视频复核 | 检查视频节点参数、结果和 lineage。',
+      ]
+      : isImage
+        ? [
+          '- `prompt-node` | 生图节点 | 把提示词和参考图写入 image 节点。',
+          '- `variant-nodes` | 变体节点 | 一版一变量，方便比较和重跑。',
+          '- `quality-check` | 结果质检 | 核对图片 URL、模型和提示词来源。',
+        ]
+        : [
+          '- `plan` | 按技能规划 | 根据当前 skill 拆解任务。',
+          '- `execute` | 按技能执行 | 把动作落到当前画布。',
+          '- `review` | 按技能复盘 | 检查结果并给出下一步。',
+        ];
+  return [
+    '',
+    '<!-- T8 Sidebar Adaptation: generated by Codex sidebar. Edit freely. -->',
+    !hasSkillSection(text, 'Sidebar Directions') ? ['## Sidebar Directions', '', ...directions].join('\n') : '',
+    !hasSkillSection(text, 'Sidebar Questions') ? [
+      '## Sidebar Questions',
+      '',
+      '- `goal` | 这次最重要的目标是什么？ | 商业好卖 / 品牌感 / 快速出图 / 用户自定 | 用户自定',
+      '- `count` | 需要几个变体？ | 2 个 / 4 个 / 6 个 / 先问用户 | 4 个',
+      '- `run-now` | 是否直接触发生成？ | 先规划 / 直接生成 / 生成前确认 | 生成前确认',
+    ].join('\n') : '',
+    !hasSkillSection(text, 'Sidebar Canvas Templates') ? [
+      '## Sidebar Canvas Templates',
+      '',
+      '- `canvas-workflow` | 标准画布流程 | reference assets -> planning note -> image/video nodes -> run_node -> verification',
+      '- `variant-grid` | 变体对比流程 | source material -> variant nodes -> result comparison -> review note',
+    ].join('\n') : '',
+    !hasSkillSection(text, 'Sidebar Verification') ? [
+      '## Sidebar Verification',
+      '',
+      '- `node-content` | 节点必须带内容 | 检查 prompt/model/apiModel/referenceImages/sourceUrls。',
+      '- `lineage` | 来源关系必须保留 | 检查连线、引用素材和结果回写。',
+      '- `viewport` | 结果必须可见 | 执行后 focus_viewport 到新流程区域。',
+    ].join('\n') : '',
+  ].filter(Boolean).join('\n\n');
+}
+
+function skillObjectFromRaw(raw, name, skillPath) {
+  const front = parseFrontmatter(raw);
+  const summary = skillSummaryFromMarkdown(raw);
+  return {
+    id: `project:${name}`,
+    name,
+    title: String(front.title || summary.title || name),
+    description: String(summary.description || front.description || '').replace(/\s+/g, ' ').slice(0, 240),
+    category: String(summary.category || front.category || '').trim(),
+    directions: parseSkillDirections(raw),
+    questions: parseSkillQuestions(raw),
+    templates: parseSkillCanvasTemplates(raw),
+    verification: parseSkillVerification(raw),
+    body: skillBodyFromMarkdown(raw),
+    scope: 'project',
+    path: skillPath,
+  };
+}
+
+function adaptProjectSkillForSidebar(options = {}) {
+  const workspaceDir = path.resolve(options.workspaceDir || '');
+  const { safeName, absolutePath } = resolveProjectSkillFile(workspaceDir, options.name, 'SKILL.md');
+  if (!fs.existsSync(absolutePath)) throw new Error(`项目 Skill 不存在：${safeName}`);
+  const raw = fs.readFileSync(absolutePath, 'utf8');
+  const appendix = sidebarAdaptationLines(raw);
+  const nextRaw = appendix ? `${raw.trimEnd()}\n\n${appendix}\n` : raw;
+  fs.writeFileSync(absolutePath, nextRaw, 'utf8');
+  return skillObjectFromRaw(nextRaw, safeName, absolutePath);
+}
+
+function validateProjectSkill(options = {}) {
+  const workspaceDir = path.resolve(options.workspaceDir || '');
+  const { safeName, absolutePath } = resolveProjectSkillFile(workspaceDir, options.name, 'SKILL.md');
+  if (!fs.existsSync(absolutePath)) throw new Error(`项目 Skill 不存在：${safeName}`);
+  const raw = fs.readFileSync(absolutePath, 'utf8');
+  const requiredSections = [
+    'Sidebar Directions',
+    'Sidebar Questions',
+    'Sidebar Canvas Templates',
+    'Sidebar Verification',
+  ];
+  const parsed = {
+    directions: parseSkillDirections(raw),
+    questions: parseSkillQuestions(raw),
+    templates: parseSkillCanvasTemplates(raw),
+    verification: parseSkillVerification(raw),
+  };
+  const missingSections = requiredSections.filter((section) => !hasSkillSection(raw, section));
+  const parseWarnings = [];
+  if (!parsed.directions.length) parseWarnings.push('没有解析到 Sidebar Directions，侧栏只能使用兜底方向。');
+  if (!parsed.templates.length) parseWarnings.push('没有解析到 Sidebar Canvas Templates，任务预演会使用通用画布结构。');
+  if (parsed.questions.some((item) => !Array.isArray(item.options) || item.options.length < 2)) {
+    parseWarnings.push('部分 Sidebar Questions 缺少 2 个以上选项，Ask 卡片可能只能显示默认选项。');
+  }
+  if (parsed.templates.some((item) => !String(item.flow || '').trim())) {
+    parseWarnings.push('部分 Sidebar Canvas Templates 缺少 flow，Codex 只能读取标题。');
+  }
+  return {
+    name: safeName,
+    path: absolutePath,
+    ok: missingSections.length === 0 && parseWarnings.length === 0,
+    requiredSections,
+    missingSections,
+    parseWarnings,
+    parsed,
+  };
+}
+
 function deleteProjectSkill(options = {}) {
   const workspaceDir = path.resolve(options.workspaceDir || '');
   const name = safeSegment(options.name, 'creator-skill');
@@ -959,6 +1361,170 @@ function deleteProjectSkill(options = {}) {
   };
 }
 
+function projectSkillBaseDir(workspaceDir = config.BASE_DIR) {
+  const root = path.resolve(workspaceDir || config.BASE_DIR);
+  return path.join(root, '.agents', 'skills');
+}
+
+function isInsideOrEqual(baseDir, targetPath) {
+  const base = path.resolve(baseDir || '');
+  const target = path.resolve(targetPath || '');
+  return Boolean(base && target && (target === base || target.startsWith(base + path.sep)));
+}
+
+function projectSkillLegacyBaseDir(workspaceDir = config.BASE_DIR) {
+  const root = path.resolve(workspaceDir || config.BASE_DIR);
+  return path.join(root, 'skills');
+}
+
+function projectSkillRootSet(workspaceDir = config.BASE_DIR) {
+  const root = path.resolve(workspaceDir || config.BASE_DIR);
+  return [projectSkillLegacyBaseDir(root), projectSkillBaseDir(root)];
+}
+
+function projectSkillExistsInWorkspace(workspaceDir, name) {
+  const safeName = safeSegment(name, 'skill');
+  return projectSkillRootSet(workspaceDir).some((root) => fs.existsSync(path.join(root, safeName, 'SKILL.md')));
+}
+
+function workspaceHasProjectSkills(workspaceDir) {
+  return projectSkillRootSet(workspaceDir).some((root) => {
+    if (!fs.existsSync(root)) return false;
+    try {
+      return fs.readdirSync(root, { withFileTypes: true }).some((entry) => (
+        entry.isDirectory() && fs.existsSync(path.join(root, entry.name, 'SKILL.md'))
+      ));
+    } catch {
+      return false;
+    }
+  });
+}
+
+function isManagedCodexWorkspace(workspaceDir) {
+  return isInsideOrEqual(codexWorkspaceRoot(), workspaceDir);
+}
+
+function resolveProjectSkillWorkspaceDir(workspaceDir = config.BASE_DIR, skillName = '') {
+  const requested = path.resolve(workspaceDir || config.BASE_DIR);
+  const appWorkspace = path.resolve(config.BASE_DIR);
+  const name = String(skillName || '').trim();
+  if (name) {
+    if (projectSkillExistsInWorkspace(requested, name)) return requested;
+    if (projectSkillExistsInWorkspace(appWorkspace, name)) return appWorkspace;
+  }
+  if (isManagedCodexWorkspace(requested)) return appWorkspace;
+  if (workspaceHasProjectSkills(requested)) return requested;
+  return appWorkspace;
+}
+
+function projectSkillRootsForWorkspace(workspaceDir = config.BASE_DIR) {
+  const requested = path.resolve(workspaceDir || config.BASE_DIR);
+  const skillWorkspace = resolveProjectSkillWorkspaceDir(requested);
+  const roots = [];
+  for (const root of projectSkillRootSet(skillWorkspace)) uniquePush(roots, root);
+  if (requested !== skillWorkspace) {
+    for (const root of projectSkillRootSet(requested)) uniquePush(roots, root);
+  }
+  return roots;
+}
+
+function resolveProjectSkillDir(workspaceDir, name) {
+  const workspaceRoot = path.resolve(workspaceDir || config.BASE_DIR);
+  const baseDir = projectSkillBaseDir(workspaceRoot);
+  const legacyBaseDir = projectSkillLegacyBaseDir(workspaceRoot);
+  const safeName = safeSegment(name, 'skill');
+  const writableDir = assertInside(baseDir, path.join(baseDir, safeName));
+  const legacyDir = assertInside(legacyBaseDir, path.join(legacyBaseDir, safeName));
+  const dir = fs.existsSync(writableDir) || !fs.existsSync(legacyDir) ? writableDir : legacyDir;
+  return { baseDir, safeName, dir };
+}
+
+function normalizeSkillFilePath(filePath) {
+  const clean = String(filePath || 'SKILL.md')
+    .replace(/\\/g, '/')
+    .replace(/^\/+/, '')
+    .trim() || 'SKILL.md';
+  if (clean.split('/').some((part) => part === '..')) throw new Error('Skill 文件路径越界');
+  return clean;
+}
+
+function resolveProjectSkillFile(workspaceDir, name, filePath = 'SKILL.md') {
+  const { dir, safeName } = resolveProjectSkillDir(workspaceDir, name);
+  const relativePath = normalizeSkillFilePath(filePath);
+  const absolutePath = assertInside(dir, path.join(dir, relativePath));
+  return { dir, safeName, relativePath, absolutePath };
+}
+
+function listProjectSkillFiles(options = {}) {
+  const { dir, safeName } = resolveProjectSkillDir(options.workspaceDir || config.BASE_DIR, options.name);
+  if (!fs.existsSync(dir)) throw new Error(`项目 Skill 不存在：${safeName}`);
+  const skip = new Set(['.git', 'node_modules', '.DS_Store']);
+  const visit = (currentDir, relative = '') => {
+    const children = fs.readdirSync(currentDir, { withFileTypes: true })
+      .filter((entry) => !skip.has(entry.name))
+      .sort((a, b) => {
+        if (a.isDirectory() !== b.isDirectory()) return a.isDirectory() ? -1 : 1;
+        if (a.name === 'SKILL.md') return -1;
+        if (b.name === 'SKILL.md') return 1;
+        return a.name.localeCompare(b.name);
+      })
+      .map((entry) => {
+        const nextRelative = relative ? `${relative}/${entry.name}` : entry.name;
+        const full = path.join(currentDir, entry.name);
+        if (entry.isDirectory()) {
+          return {
+            path: nextRelative,
+            name: entry.name,
+            type: 'dir',
+            children: visit(full, nextRelative),
+          };
+        }
+        return {
+          path: nextRelative,
+          name: entry.name,
+          type: 'file',
+        };
+      });
+    return children;
+  };
+  return {
+    name: safeName,
+    baseDir: dir,
+    files: visit(dir),
+  };
+}
+
+function readProjectSkillFile(options = {}) {
+  const { relativePath, absolutePath } = resolveProjectSkillFile(
+    options.workspaceDir || config.BASE_DIR,
+    options.name,
+    options.filePath || options.path || 'SKILL.md',
+  );
+  if (!fs.existsSync(absolutePath)) throw new Error(`Skill 文件不存在：${relativePath}`);
+  return {
+    path: relativePath,
+    content: fs.readFileSync(absolutePath, 'utf8'),
+  };
+}
+
+function writeProjectSkillFile(options = {}) {
+  const { relativePath, absolutePath } = resolveProjectSkillFile(
+    options.workspaceDir || config.BASE_DIR,
+    options.name,
+    options.filePath || options.path || 'SKILL.md',
+  );
+  const ext = path.extname(relativePath).toLowerCase();
+  const allowed = new Set(['.md', '.txt', '.json', '.yaml', '.yml', '.js', '.ts', '.py']);
+  if (!allowed.has(ext)) throw new Error('该 Skill 文件类型暂不允许在线编辑');
+  ensureDir(path.dirname(absolutePath));
+  fs.writeFileSync(absolutePath, String(options.content || ''), 'utf8');
+  return {
+    path: relativePath,
+    saved: true,
+    bytes: Buffer.byteLength(String(options.content || ''), 'utf8'),
+  };
+}
+
 function makeCreatorPrompt(body = {}) {
   const prompt = String(body.prompt || body.text || '').trim();
   const preset = String(body.preset || '').trim();
@@ -966,16 +1532,33 @@ function makeCreatorPrompt(body = {}) {
     ? body.selectedSkillNames.map((item) => String(item || '').trim()).filter(Boolean)
     : [];
   const selectedSkillText = selectedSkillNames.join(' ');
+  const canvasControlMode = /^canvas-/i.test(String(body.mode || ''))
+    || String(body.command || '') === 'global-codex-sidebar'
+    || Boolean(body.canvasId);
   const imageGenerationIntent = body.llmOnly === true
     ? false
-    : body.imageGeneration === true
+    : canvasControlMode
+      ? false
+      : body.imageGeneration === true
       || /(^|[\s$:/_-])(imagegen|imagen|image-generation|image_generation|generate-image|图片生成|图像生成)([\s$:/_-]|$)/i.test(selectedSkillText)
       || body.mode === 'image';
   const instructions = [];
-  instructions.push('你是 T8 画布中的 Codex 创作者 Agent，优先服务图像、视频、文案、分镜、提示词和创作质检。');
+  instructions.push('你是画布中的 Codex 创作者 Agent，优先服务图像、视频、文案、分镜、提示词和创作质检。');
   instructions.push('除非用户明确要求写代码，否则输出面向创作交付：清晰的提示词、分镜、改稿建议、可执行步骤和素材使用说明。');
   if (selectedSkillNames.length > 0) {
     instructions.push(`请优先调用这些 Skill：${selectedSkillNames.map((name) => `$${name}`).join(' ')}。`);
+  }
+  if (canvasControlMode) {
+    instructions.push([
+      '画布控制模式：你正在被 T8/Hakimi 全局侧边栏调用，目标是控制当前画布，而不是在 Codex CLI 沙箱里直接产出图片。',
+      `当前画布 ID：${body.canvasId || '未提供'}`,
+      '- 必须优先使用 Hakimi MCP 工具读取/更新画布。复杂流程推荐 hakimi_canvas_snapshot -> hakimi_canvas_diff_plan -> hakimi_canvas_apply_plan -> hakimi_canvas_verify_plan；小步修补可用 hakimi_agent_run_actions。',
+      '- 不要使用 Codex CLI 的 image_generation / imagen / imagegen；图像生成必须通过画布 image 节点和画布模型选择完成。',
+      '- 生图流程必须创建或更新 type: "image" 节点，并写入 data.prompt、data.model、data.apiModel、data.aspectRatio、data.sizeLevel、data.referenceImages、data.label、data.status。',
+      '- 如果用户要求直接真实生成，先写好 image 节点参数，再用 run_node action 触发该节点自己的生成逻辑；不要把提示词藏在空 text 节点里。',
+      '- CanvasPlan 建议包含 nodes、updates、edges、runNodeIds、focusViewport；批量提交前先用 hakimi_canvas_diff_plan 预演差异，提交后必须回读验证节点、连线、模型参数、结果 URL 和视口。',
+      '- 使用 phase/ask_user/preview_node/add_node/update_node/connect_edge/focus_viewport/run_node 让用户实时看见计划、选择、落点和执行。',
+    ].join('\n'));
   }
   if (preset) instructions.push(`当前创作预设：${preset}。`);
   if (Array.isArray(body.referenceTexts) && body.referenceTexts.length > 0) {
@@ -1015,161 +1598,6 @@ function makeCreatorPrompt(body = {}) {
 function sendSse(res, event, payload = {}) {
   if (res.writableEnded) return;
   res.write(`event: ${event}\ndata: ${JSON.stringify({ type: event, event, ...payload })}\n\n`);
-}
-
-async function runCodexExecStream(body = {}, handlers = {}) {
-  const workspace = createCodexWorkspace(body);
-  const images = resolveCodexInputImages(body.images, workspace);
-  const prompt = makeCreatorPrompt({ ...body, images });
-  const availableFeatures = await listCodexFeatures({
-    executablePath: body.executablePath,
-    timeoutMs: 8000,
-  }).catch(() => []);
-  const availableFeatureNames = normalizeAvailableFeatureNames(availableFeatures);
-  if ((body.webSearch || body.search) && !availableFeatureNames.has('web_search')) {
-    handlers.onProgress?.('当前 Codex CLI 未提供 web_search feature，已跳过 Web Search CLI 开关。', { type: 'feature.skipped', feature: 'web_search' });
-  }
-  if ((body.imageGeneration || body.generateImage) && !availableFeatureNames.has('image_generation')) {
-    handlers.onProgress?.('当前 Codex CLI 未提供 image_generation feature，已要求 Codex 明确退回提示词方案。', { type: 'feature.skipped', feature: 'image_generation' });
-  }
-  const args = buildCodexExecArgs({
-    ...body,
-    prompt,
-    images,
-    includePlanTool: body.includePlanTool === true,
-    imageGeneration: body.imageGeneration === true || body.generateImage === true,
-    availableFeatures,
-  });
-  const startedAt = Date.now();
-
-  const executeAttempt = (attemptArgs) => new Promise((resolve, reject) => {
-    if (handlers.signal?.aborted) {
-      reject(new Error('Codex 任务已停止'));
-      return;
-    }
-
-    let child;
-    let settled = false;
-    let fullText = '';
-    let stderrText = '';
-    let stdoutBuffer = '';
-
-    const settle = (fn, value) => {
-      if (settled) return;
-      settled = true;
-      if (handlers.signal && onAbort) handlers.signal.removeEventListener('abort', onAbort);
-      fn(value);
-    };
-
-    const onAbort = () => {
-      try { child?.kill(); } catch { /* ignore */ }
-      settle(reject, new Error('Codex 任务已停止'));
-    };
-
-    try {
-      child = spawnCodexProcess(attemptArgs, {
-        executablePath: body.executablePath,
-        cwd: workspace.dir,
-        env: {
-          T8_CODEX_WORKSPACE: workspace.dir,
-          T8_CODEX_OUTPUT_DIR: workspace.outputDir,
-        },
-      });
-    } catch (error) {
-      settle(reject, new Error(`${CODEX_DISABLED_MESSAGE} ${error.message || error}`));
-      return;
-    }
-
-    if (handlers.signal) handlers.signal.addEventListener('abort', onAbort, { once: true });
-
-    if (child.__codexResolved?.fromWindowsApps) {
-      handlers.onProgress?.('检测到 WindowsApps Codex 入口，建议使用 npm 安装的 codex.cmd 或在节点设置中填写真实路径。', { type: 'executable.warning' });
-    }
-
-    if (child.stdin) child.stdin.end(prompt);
-
-    child.on('error', (error) => {
-      settle(reject, new Error(`${CODEX_DISABLED_MESSAGE} ${error.message || error}`));
-    });
-
-    child.stdout?.on('data', (chunk) => {
-      stdoutBuffer += chunk.toString('utf8');
-      let index = stdoutBuffer.indexOf('\n');
-      while (index >= 0) {
-        const line = stdoutBuffer.slice(0, index);
-        stdoutBuffer = stdoutBuffer.slice(index + 1);
-        const event = parseCodexJsonLine(line);
-        if (event) {
-          handlers.onRawEvent?.(event);
-          const delta = extractTextDelta(event);
-          if (delta) {
-            fullText += delta;
-            handlers.onDelta?.(delta, event);
-          }
-          const progressMessage = event?.type && !delta ? String(event.type) : '';
-          if (shouldForwardCodexProgress(progressMessage, event)) handlers.onProgress?.(progressMessage, event);
-        }
-        index = stdoutBuffer.indexOf('\n');
-      }
-    });
-
-    child.stderr?.on('data', (chunk) => {
-      stderrText += chunk.toString('utf8');
-      const message = chunk.toString('utf8').trim();
-      if (shouldForwardCodexStderr(message)) handlers.onProgress?.(message, { type: 'stderr', message });
-    });
-
-    child.on('close', (code) => {
-      if (handlers.signal?.aborted) {
-        settle(reject, new Error('Codex 任务已停止'));
-        return;
-      }
-      if (stdoutBuffer.trim()) {
-        const event = parseCodexJsonLine(stdoutBuffer);
-        const delta = extractTextDelta(event);
-        if (delta) {
-          fullText += delta;
-          handlers.onDelta?.(delta, event);
-        }
-      }
-      if (code !== 0) {
-        const partialArtifacts = collectCodexRunArtifacts(fullText, workspace, startedAt);
-        const error = new Error(stderrText.trim() || `Codex CLI 退出码 ${code}`);
-        error.partialText = fullText.trim();
-        error.artifacts = partialArtifacts;
-        error.workspace = workspace.dir;
-        error.executable = child.__codexResolved?.executable;
-        error.elapsedMs = Date.now() - startedAt;
-        settle(reject, error);
-        return;
-      }
-      const artifacts = collectCodexRunArtifacts(fullText, workspace, startedAt);
-      settle(resolve, {
-        text: fullText.trim(),
-        reply: fullText.trim(),
-        artifacts,
-        workspace: workspace.dir,
-        executable: child.__codexResolved?.executable,
-        elapsedMs: Date.now() - startedAt,
-        status: 'completed',
-        progress: 100,
-      });
-    });
-  });
-
-  try {
-    return await executeAttempt(args);
-  } catch (error) {
-    if (handlers.signal?.aborted) throw error;
-    if (isUnknownFeatureFlagError(error?.message || '')) {
-      const retryArgs = stripUnsupportedCodexEnableArgs(args, new Set());
-      if (retryArgs.join('\u0000') !== args.join('\u0000')) {
-        handlers.onProgress?.('当前 Codex CLI 不支持某个 feature flag，已移除 --enable 参数重试一次。', { type: 'feature.retry' });
-        return await executeAttempt(retryArgs);
-      }
-    }
-    throw error;
-  }
 }
 
 async function probeCodexStatus(options = {}) {
@@ -1228,10 +1656,13 @@ async function probeCodexStatus(options = {}) {
 module.exports = {
   CODEX_DISABLED_MESSAGE,
   CODEX_WINDOWS_APPS_MESSAGE,
-  buildCodexExecArgs,
+  codexUnavailableMessageForTests: codexUnavailableMessage,
+  codexConfigErrorMessageForTests: codexConfigErrorMessage,
   parseCodexFeatureListForTests: parseCodexFeatureList,
   parseCodexJsonLine,
   extractTextDelta,
+  extractReasoningDeltaForTests: extractReasoningDelta,
+  extractToolProgressForTests: extractToolProgress,
   shouldForwardCodexStderrForTests: shouldForwardCodexStderr,
   shouldForwardCodexProgressForTests: shouldForwardCodexProgress,
   extractArtifactsFromText,
@@ -1239,18 +1670,30 @@ module.exports = {
   normalizeArtifactUrlForTests: normalizeArtifactUrl,
   resolveCodexInputImagesForTests: resolveCodexInputImages,
   resolveCodexExecutable,
+  buildCodexProcessEnv,
+  buildCodexProcessEnvForTests: buildCodexProcessEnv,
   buildCodexLoginStartInvocation,
   startCodexLogin,
   listCodexSkills,
+  parseSkillDirectionsForTests: parseSkillDirections,
+  parseSkillQuestionsForTests: parseSkillQuestions,
+  parseSkillCanvasTemplatesForTests: parseSkillCanvasTemplates,
+  parseSkillVerificationForTests: parseSkillVerification,
   createProjectSkill,
+  importProjectSkillArchive,
+  adaptProjectSkillForSidebar,
+  validateProjectSkill,
   updateProjectSkill,
   deleteProjectSkill,
+  projectSkillBaseDir,
+  projectSkillRootsForWorkspace,
+  resolveProjectSkillWorkspaceDir,
+  listProjectSkillFiles,
+  readProjectSkillFile,
+  writeProjectSkillFile,
   createCodexWorkspace,
   listCodexFeatures,
   makeCreatorPrompt,
-  runCodexExecStream,
   probeCodexStatus,
   sendSse,
-  stripUnsupportedCodexEnableArgsForTests: stripUnsupportedCodexEnableArgs,
-  isUnknownFeatureFlagErrorForTests: isUnknownFeatureFlagError,
 };

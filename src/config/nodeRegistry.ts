@@ -50,6 +50,7 @@ export const NODE_REGISTRY: NodeMeta[] = [
   // ========== Codex CLI Agent ==========
   { type: 'codex-cli-agent', label: 'Codex CLI Agent', category: 'codex', description: '面向创作者的 Codex CLI 工作台：流式对话、图像生成提示词、Skill 调用、产物库和版本树', icon: 'TerminalSquare', color: 'sky' },
   { type: 'codex-image-conjure', label: 'Codex 生图工作台', category: 'codex', description: '基于 Codex CLI imagegen 的专用生图工作台：提示词模板、片段、参考图和公共图库', icon: 'ImagePlus', color: 'sky' },
+  { type: 'genclaw', label: 'GenClaw 白盒生图', category: 'codex', description: '参考 GenClaw 范式：构思、代码草图、渲染、成片审稿一体化白盒生图流程', icon: 'WandSparkles', color: 'sky' },
 
   // ========== Inspiration 灵感之源 ==========
   { type: 'artist-style-master', label: '艺术风格大师', category: 'inspiration', description: '移植 qiaomu 艺术家风格库：按画家、中文名、流派和标签检索，输出风格提示词或参考图', icon: 'Palette', color: 'amber' },
@@ -81,11 +82,14 @@ export const NODE_REGISTRY: NodeMeta[] = [
   { type: 'pick-from-set', label: '从合集获取', category: 'utility', description: '从上游多素材中按序号取出单一素材，kind 可在节点内切换', icon: 'Filter', color: 'orange' },
   { type: 'text-split', label: '文本分割', category: 'utility', description: '将长提示词/分镜按段落、行、智能分镜、正则、自定义分隔符或字数切成多段文本，支持收藏与循环器链路', icon: 'SplitSquareVertical', color: 'orange' },
   { type: 'resize', label: '尺寸调整', category: 'utility', description: '图像尺寸调整', icon: 'Maximize2', color: 'orange' },
+  { type: 'lut-color', label: 'LUT调色', category: 'utility', description: '套用内置或导入的 .cube LUT，对上游图像做电影感调色', icon: 'Palette', color: 'orange' },
   { type: 'combine', label: '合并', category: 'utility', description: '图像合并', icon: 'Combine', color: 'orange' },
   { type: 'remove-bg', label: '抠图', category: 'utility', description: '去除背景', icon: 'Eraser', color: 'orange', hidden: true },
   { type: 'upscale', label: '放大', category: 'utility', description: '图像放大', icon: 'ZoomIn', color: 'orange', hidden: true },
   { type: 'grid-crop', label: '宫格剪裁', category: 'utility', description: '网格切图', icon: 'Grid3x3', color: 'orange' },
   { type: 'grid-editor', label: '宫格编辑', category: 'utility', description: '多图分镜宫格拼接与顺序拆分', icon: 'LayoutGrid', color: 'orange' },
+  { type: 'clip-studio', label: '剪辑台', category: 'utility', description: '收集上游图片 / 视频 / 音频素材，按顺序导出 MP4 成片', icon: 'Scissors', color: 'orange' },
+  { type: 'sketch-renderer', label: '代码草图渲染器', category: 'utility', description: '把 SVG/HTML 代码草图渲染为图片素材，可复用给白盒生图流程', icon: 'FileCode2', color: 'orange' },
 
   // ========== Auxiliary 辅助节点(6) ==========
   // 其中 2 个暂时隐藏: edit / video-output
@@ -104,10 +108,12 @@ export const NODE_REGISTRY: NodeMeta[] = [
   { type: 'pose-master', label: '姿势大师', category: 'toolbox', description: '人体线稿姿态编辑器：支持多人姿势、抓取移动、OpenPose/COCO 预览输出、keypoints JSON 与中英文 prompt', icon: 'PersonStanding', color: 'pink' },
   { type: 'aggregate-parser', label: '聚合解析', category: 'toolbox', description: '基于 ParseHub 的轻量自媒体聚合解析：输入短链/分享码/分享文案，合规确认后默认保存到输出目录；远端地址解析作为高级模式保留', icon: 'Link2', color: 'pink' },
   { type: 'batch-processor', label: '批量素材处理', category: 'toolbox', description: '批量导入文件或文件夹，在节点内完成命名、去黑边、抠图、扩图、高清放大和进度反馈，不自动铺满画布输出节点', icon: 'Files', color: 'pink' },
+  { type: 'apparel-pack', label: '服装封包生成', category: 'toolbox', description: '一键展开服装套图、服装参考和灵感规划工作流，保留模特/服装锚点一致性', icon: 'PackageOpen', color: 'pink' },
   { type: 'topaz-image-upscale', label: 'Topaz图像高清化', category: 'toolbox', description: '调用本机 Topaz Gigapixel AI / Gigapixel 8，对上游图像做本地高清放大；需要用户已安装并登录软件', icon: 'Image', color: 'pink' },
   { type: 'topaz-video-upscale', label: 'Topaz视频高清化', category: 'toolbox', description: '调用本机 Topaz Video AI 自带 ffmpeg，对上游视频做放大与补帧；需要用户已安装并登录软件', icon: 'Video', color: 'pink' },
 
   // ========== 3D 节点 ==========
+  { type: 'director-studio', label: '导演台', category: '3d', description: '独立 3D 导演台：人偶动作、机位、灯光、网格、截图与录制视频', icon: 'Clapperboard', color: 'sky' },
   { type: 'panorama-3d', label: '3D全景', category: '3d', description: 'Three.js 360 全景预览与取景导出，内置 GPT Image 2 文生/图生 21:9 全景贴图生成', icon: 'Globe2', color: 'sky' },
 ];
 

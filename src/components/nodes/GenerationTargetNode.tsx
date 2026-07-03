@@ -132,7 +132,7 @@ const GenerationTargetNode = ({ id, data, selected }: NodeProps) => {
         </div>
         <div className="min-w-0 flex-1">
           <input
-            className="t8-generation-target-title nodrag"
+            className="t8-generation-target-title t8-input nodrag"
             value={String(d.title || '生成目标框')}
             onChange={(event) => update({ title: event.target.value })}
             title="目标框标题"
@@ -180,7 +180,7 @@ const GenerationTargetNode = ({ id, data, selected }: NodeProps) => {
       </div>
 
       <textarea
-        className="t8-generation-target-prompt nodrag nowheel"
+        className="t8-generation-target-prompt t8-textarea nodrag nowheel"
         value={String(d.prompt ?? '')}
         placeholder={upstreamPrompt ? '已读取上游提示词，也可在这里覆盖...' : '输入提示词，或连接文本节点...'}
         onChange={(event) => update({ prompt: event.target.value })}
@@ -189,7 +189,7 @@ const GenerationTargetNode = ({ id, data, selected }: NodeProps) => {
       <div className="t8-generation-target-meta">
         <label>
           比例
-          <select className="nodrag" value={aspectRatio} onChange={(event) => update({ aspectRatio: event.target.value })}>
+          <select className="t8-generation-target-select t8-select nodrag" value={aspectRatio} onChange={(event) => update({ aspectRatio: event.target.value })}>
             <option value="1:1">1:1</option>
             <option value="3:4">3:4</option>
             <option value="4:3">4:3</option>
@@ -199,7 +199,7 @@ const GenerationTargetNode = ({ id, data, selected }: NodeProps) => {
         </label>
         <label>
           尺寸
-          <select className="nodrag" value={sizeLevel} onChange={(event) => update({ sizeLevel: event.target.value })}>
+          <select className="t8-generation-target-select t8-select nodrag" value={sizeLevel} onChange={(event) => update({ sizeLevel: event.target.value })}>
             <option value="1K">1K</option>
             <option value="2K">2K</option>
             <option value="4K">4K</option>
@@ -209,13 +209,12 @@ const GenerationTargetNode = ({ id, data, selected }: NodeProps) => {
 
       {d.error ? <div className="t8-generation-target-error">{String(d.error)}</div> : null}
       {upstreamImages.length > 0 ? <div className="t8-generation-target-hint">参考图 {upstreamImages.length} 张</div> : null}
-
       <div className="t8-generation-target-actions">
-        <button type="button" className="nodrag" disabled={isBusy} onClick={() => void run('replace')}>
+        <button type="button" className="t8-generation-target-action t8-btn t8-btn-primary nodrag" disabled={isBusy} onClick={() => void run('replace')}>
           {busyMode === 'replace' ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
           <span>替换到框内</span>
         </button>
-        <button type="button" className="nodrag" disabled={isBusy} onClick={() => void run('keep-version')}>
+        <button type="button" className="t8-generation-target-action t8-btn nodrag" disabled={isBusy} onClick={() => void run('keep-version')}>
           {busyMode === 'keep-version' ? <Loader2 size={14} className="animate-spin" /> : <ImagePlus size={14} />}
           <span>保留版本</span>
         </button>

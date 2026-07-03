@@ -169,6 +169,15 @@ async function testProvider(provider, options = {}) {
   };
 }
 
+async function fetchModels(provider, options = {}) {
+  const result = await openaiCompatible.fetchModels(chatProvider(provider), options);
+  return {
+    ...result,
+    providerId: provider.id,
+    protocol: 'modelscope',
+  };
+}
+
 async function generateChat(provider, input = {}, options = {}) {
   const result = await openaiCompatible.generateChat(
     chatProvider(provider),
@@ -321,6 +330,7 @@ async function generateImage(provider, input = {}, options = {}) {
 }
 
 module.exports = {
+  fetchModels,
   generateChat,
   generateImage,
   testProvider,

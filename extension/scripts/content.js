@@ -159,7 +159,7 @@
           action: 't8WebImage.sendToCanvas',
           payload: buildCanvasSendPayload(state, mode),
         });
-        setStatus(modal, response.ok ? '已发送到 T8 画布。' : `发送失败：${response.error || '未知错误'}`, !response.ok);
+        setStatus(modal, response.ok ? '已发送到当前画布。' : `发送失败：${response.error || '未知错误'}`, !response.ok);
       });
     });
 
@@ -235,7 +235,7 @@
       setStatus(modal, state.imageUrls.length ? '提示词和图像已生成，可发送回画布。' : '提示词已生成，可发送回画布。');
     } catch (error) {
       if (runId !== activeRunId) return;
-      setStatus(modal, error?.message || '反推失败，请确认 T8 后端已启动。', true);
+      setStatus(modal, error?.message || '反推失败，请确认本地后端已启动。', true);
       updateButtons(modal, state);
     }
   }
@@ -273,7 +273,7 @@
       renderResults(modal, state, backendBase);
       setStatus(modal, '已按当前提示词生成新图，可发送回画布。');
     } catch (error) {
-      setStatus(modal, error?.message || '生成图片失败，请确认 T8 后端已启动。', true);
+      setStatus(modal, error?.message || '生成图片失败，请确认本地后端已启动。', true);
     } finally {
       state.generating = false;
       updateButtons(modal, state);

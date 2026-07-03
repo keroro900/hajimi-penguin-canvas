@@ -36,6 +36,7 @@ test('director storyboard node is registered as a visible Seedance orchestration
   assert.match(types, /\|\s*'director-storyboard'/);
   assert.match(canvas, /const DirectorStoryboardNode = lazyCanvasNode\(\(\) => import\('\.\/nodes\/DirectorStoryboardNode'\), 'DirectorStoryboardNode'\)/);
   assert.match(canvas, /'director-storyboard': DirectorStoryboardNode/);
+  assert.match(canvas, /nodeTypes\['director-storyboard'\]\s*=\s*withNodeSerialBadge\(DirectorStoryboardNode\)/);
   assert.match(canvas, /'director-storyboard':\s*\{/);
   assert.match(canvas, /directorBridgePanelEnabled:\s*false/);
   assert.match(canvas, /bridgeEnabled:\s*false/);
@@ -322,6 +323,15 @@ test('director storyboard active shot can override global model ratio and resolu
   assert.match(node, /applyInputReuseToActiveShot/);
   assert.match(node, /buildDirectorStoryboardShotInputPatch/);
   assert.match(node, /应用到当前分镜/);
+});
+
+test('director storyboard keeps existing Seedance model choices without adding apishu model ids', () => {
+  const node = read('../src/components/nodes/DirectorStoryboardNode.tsx');
+
+  assert.match(node, /doubao-seedance-2-0-fast-260128/);
+  assert.match(node, /doubao-seedance-2-0-260128/);
+  assert.doesNotMatch(node, /video-standard-720p-fast/);
+  assert.doesNotMatch(node, /video-standard-720p/);
 });
 
 test('buildDirectorShotSeedancePayload compiles media mentions and first/last frame references', () => {
@@ -659,7 +669,7 @@ test('director storyboard bridge generation is per-pair and refresh can recover 
   assert.match(node, /const refreshStoryboardOutputs = async \(options: \{ bridgeId\?: string \} = \{\}\) =>/);
   assert.match(node, /const targetJobId = targetBridgeId \? `bridge-\$\{targetBridgeId\}` : ''/);
   assert.match(node, /syncBridgeResultFromState\(bridge, job\)/);
-  assert.match(node, /querySeedance\(result\.taskId\)/);
+  assert.match(node, /querySeedance\(result\.taskId,\s*job\.payload\.model\)/);
   assert.match(node, /filter\(\(\[, result\]\) => result\?\.taskId && !result\.videoUrl\)/);
   assert.match(node, /patchBridge\(bridgeIdFromJob, \{ status: 'success', videoUrl: query\.videoUrl/);
   assert.match(node, /activeBridgeResult\.taskId[\s\S]*activeBridge\.taskId[\s\S]*activeBridgeResult\.videoUrl[\s\S]*activeBridge\.videoUrl/);

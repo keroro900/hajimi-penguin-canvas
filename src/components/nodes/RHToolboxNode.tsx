@@ -1,4 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { flushSync } from 'react-dom';
 import { Handle, Position, useUpdateNodeInternals, type NodeProps } from '@xyflow/react';
 import {
   AlertCircle,
@@ -9,6 +10,7 @@ import {
   Music,
   Pencil,
   Play,
+  RefreshCcw,
   Search,
   Sparkles,
   Square,
@@ -47,7 +49,6 @@ import {
 } from '../../utils/rhToolbox';
 import {
   countExcludedMaterials,
-  excludeMaterialId,
   filterExcludedMaterials,
   normalizeExcludedMaterialIds,
 } from '../../utils/materialExclusion';
@@ -56,11 +57,21 @@ import { useOrderedMaterials } from './useOrderedMaterials';
 import { useUpdateNodeData } from './useUpdateNodeData';
 import { useUpstreamMaterials, type Material } from './useUpstreamMaterials';
 import MaterialPreviewSection from './MaterialPreviewSection';
+import {
+  pruneMaterialIdsForDisconnectedSource,
+  pruneMaterialOrderForDisconnectedSource,
+  useDisconnectUpstreamMaterial,
+} from './shared/upstreamMaterialConnections';
 import MentionPromptInput from './MentionPromptInput';
 import { resolveMediaMentions, type MediaMention } from './mediaMentions';
 import LoopingVideo from '../LoopingVideo';
 import SmartImage from '../SmartImage';
 import ResizableCorners from './ResizableCorners';
+import SmartNodeComposer from './shared/SmartNodeComposer';
+import SmartNodeShell from './shared/SmartNodeShell';
+import { useNodeGeometrySync } from './shared/useNodeGeometrySync';
+import { useOutsideClose } from './shared/useOutsideClose';
+import { useSmartNodePanelToggle } from './shared/useSmartNodePanelToggle';
 
 const handleStyle: CSSProperties = {
   width: 12,
@@ -126,6 +137,9 @@ function acceptForInputKind(kind: RhToolboxInputMapping['kind']): string {
 const RHToolboxNode = ({ id, data, selected }: NodeProps) => {
   const update = useUpdateNodeData(id);
   const updateNodeInternals = useUpdateNodeInternals();
+  const smartNodeRef = useRef<HTMLDivElement | null>(null);
+  const [smartPanelOpenLocal, setSmartPanelOpenLocal] = useState(false);
+  const [smartCardDragging, setSmartCardDragging] = useState(false);
   const { theme, style: themeStyle } = useThemeStore();
   const isDark = theme === 'dark';
   const isLight = theme === 'light';
@@ -217,6 +231,10 @@ const RHToolboxNode = ({ id, data, selected }: NodeProps) => {
 
   const initialSize = (d?.size && typeof d.size.w === 'number') ? d.size : { w: 360, h: 460 };
   const [size, setSize] = useState<{ w: number; h: number }>(initialSize);
+  const rhToolboxNodeUiVariant: 'smart-card' | 'classic' = d?.uiVariant === 'classic' ? 'classic' : 'smart-card';
+  const useSmartCardRhToolboxNode = rhToolboxNodeUiVariant === 'smart-card';
+  const syncRhToolboxNodeGeometry = useNodeGeometrySync(id, updateNodeInternals);
+  const smartPanelOpen = smartPanelOpenLocal && !smartCardDragging;
 
   useEffect(() => {
     let disposed = false;
@@ -439,7 +457,57 @@ const RHToolboxNode = ({ id, data, selected }: NodeProps) => {
     overflow: 'visible',
   };
 
+  const smartStatusLabel =
+    status === 'submitting'
+      ? '提交中'
+      : status === 'polling'
+        ? '运行中'
+        : status === 'success'
+          ? '已完成'
+          : status === 'error'
+            ? '失败'
+            : '待命';
+  const smartInputCount = (activeTool?.inputSchema || []).length;
+  const smartParamCount = (activeTool?.userParams || []).length;
+  const smartUpstreamCount = orderedTexts.length + orderedImages.length + orderedVideos.length + orderedAudios.length;
+  const smartOutputCount = imageUrls.length + videoUrls.length + audioUrls.length + (outputText ? 1 : 0);
+  const smartToolSummary = activeTool
+    ? activeTool.capabilities.map(capabilityLabel).join(' / ') || `WebApp ${activeTool.webappId}`
+    : `${enabledTools.length} 个可用工具`;
+
+  useEffect(() => {
+    if (!useSmartCardRhToolboxNode) return;
+    const raf = window.requestAnimationFrame(syncRhToolboxNodeGeometry);
+    return () => window.cancelAnimationFrame(raf);
+  }, [selected, smartPanelOpen, status, smartOutputCount, activeToolId, syncRhToolboxNodeGeometry, useSmartCardRhToolboxNode]);
+
+  useOutsideClose({
+    enabled: useSmartCardRhToolboxNode && smartPanelOpenLocal,
+    refs: smartNodeRef,
+    onOutside: () => setSmartPanelOpenLocal(false),
+  });
+
+  const smartPanelToggle = useSmartNodePanelToggle({
+    open: smartPanelOpenLocal,
+    dragging: false,
+    onToggle: setSmartPanelOpenLocal,
+    onDragChange: setSmartCardDragging,
+    onDragClose: () => setSmartPanelOpenLocal(false),
+    disabled: !useSmartCardRhToolboxNode,
+  });
+
+  const switchRhToolboxNodeVariant = (variant: 'smart-card' | 'classic') => {
+    setSmartPanelOpenLocal(false);
+    smartPanelToggle.handledClickRef.current = false;
+    smartPanelToggle.suppressClickRef.current = true;
+    flushSync(() => {
+      update({ uiVariant: variant });
+    });
+    syncRhToolboxNodeGeometry();
+  };
+
   const setMaterialOrder = (newOrder: string[]) => update({ materialOrder: newOrder });
+  const disconnectUpstreamMaterial = useDisconnectUpstreamMaterial(id);
   const hasTextInputValue = (input: RhToolboxInputMapping): boolean => (
     Object.prototype.hasOwnProperty.call(textInputValues, input.key)
   );
@@ -478,6 +546,26 @@ const RHToolboxNode = ({ id, data, selected }: NodeProps) => {
       },
     });
   };
+  const renderRhToolboxInputPreview = (input: RhToolboxInputMapping, urls: string[]) => {
+    const visibleUrls = urls.filter(Boolean).slice(0, input.multiple ? 4 : 1);
+    if (visibleUrls.length === 0) return null;
+    return (
+      <div className={`t8-smart-rh-toolbox-media-preview t8-smart-rh-toolbox-media-preview--${input.kind}`}>
+        {visibleUrls.map((url, index) => {
+          if (input.kind === 'image') {
+            return <SmartImage key={`${url}-${index}`} src={url} alt={input.label || input.key} thumbSize={360} />;
+          }
+          if (input.kind === 'video') {
+            return <LoopingVideo key={`${url}-${index}`} src={url} controls />;
+          }
+          if (input.kind === 'audio') {
+            return <audio key={`${url}-${index}`} src={url} controls />;
+          }
+          return null;
+        })}
+      </div>
+    );
+  };
   const removeLocalMaterial = (m: Material) => {
     if (m.origin !== 'local') return;
     const input = activeMediaInputs.find((candidate) => m.id.includes(`rh-local:${candidate.key}:`));
@@ -507,9 +595,10 @@ const RHToolboxNode = ({ id, data, selected }: NodeProps) => {
   };
   const handleExcludeUpstreamMaterial = (m: Material) => {
     if (m.origin !== 'upstream') return;
+    disconnectUpstreamMaterial(m);
     update({
-      excludedMaterialIds: excludeMaterialId(excludedMaterialIds, m.id),
-      materialOrder: materialOrder.filter((itemId) => itemId !== m.id),
+      excludedMaterialIds: pruneMaterialIdsForDisconnectedSource(excludedMaterialIds, m.sourceNodeId),
+      materialOrder: pruneMaterialOrderForDisconnectedSource(materialOrder, m.sourceNodeId),
     });
   };
   const handleRestoreExcludedMaterials = () => update({ excludedMaterialIds: [] });
@@ -1094,7 +1183,9 @@ const RHToolboxNode = ({ id, data, selected }: NodeProps) => {
               {activeMediaInputs.map((input) => {
                 const localUrls = (localInputValues[input.key] || []).filter(Boolean);
                 const Icon = input.kind === 'image' ? ImageIcon : input.kind === 'video' ? VideoIcon : Music;
-                const upstreamCount = input.kind === 'image' ? orderedImages.length : input.kind === 'video' ? orderedVideos.length : orderedAudios.length;
+                const upstreamMaterials = input.kind === 'image' ? orderedImages : input.kind === 'video' ? orderedVideos : orderedAudios;
+                const upstreamCount = upstreamMaterials.length;
+                const previewUrls = localUrls.length > 0 ? localUrls : upstreamMaterials.map((material) => material.url);
                 return (
                   <div key={input.key} className="rounded-md p-2 space-y-1.5" style={{ background: bg, border: `1px solid ${border}` }}>
                     <div className="flex items-center gap-1.5 text-[10px]" style={{ color: subText }}>
@@ -1144,6 +1235,7 @@ const RHToolboxNode = ({ id, data, selected }: NodeProps) => {
                         </button>
                       )}
                     </div>
+                    {renderRhToolboxInputPreview(input, previewUrls)}
                   </div>
                 );
               })}
@@ -1224,6 +1316,90 @@ const RHToolboxNode = ({ id, data, selected }: NodeProps) => {
     );
   };
 
+  if (useSmartCardRhToolboxNode) {
+    return (
+      <SmartNodeShell
+        rootRef={smartNodeRef}
+        className="t8-smart-rh-toolbox-node relative overflow-visible"
+        rootProps={{
+          onPointerDown: smartPanelToggle.onPointerDown,
+          onPointerMove: smartPanelToggle.onPointerMove,
+          onPointerUp: smartPanelToggle.onPointerUp,
+          onPointerCancel: smartPanelToggle.onPointerCancel,
+          onClick: smartPanelToggle.onClick,
+        }}
+      >
+        <div
+          className={`t8-node t8-smart-node-card t8-smart-rh-toolbox-card transition-all ${selected ? 't8-smart-node-card--selected' : ''} ${
+            smartPanelOpen ? 't8-smart-rh-toolbox-card--open' : ''
+          }`}
+        >
+          <Handle type="target" position={Position.Left} className="t8-smart-node-port !border-0" style={{ top: '50%' }} />
+          <Handle type="source" position={Position.Right} className="t8-smart-node-port !border-0" style={{ top: '50%' }} />
+          <div className="t8-smart-rh-toolbox-card__top">
+            <div className="t8-smart-node-icon">
+              <Wrench size={15} />
+            </div>
+            <div className="t8-smart-rh-toolbox-card__title">
+              <div className="t8-smart-node-title">{activeTool?.title || 'RH工具箱'}</div>
+              <div className="t8-smart-node-subtitle">{smartToolSummary}</div>
+            </div>
+            <div className={`t8-smart-rh-toolbox-status t8-smart-node-status--${status}`}>
+              {isBusy && <Loader2 size={10} className="animate-spin" />}
+              <span>{smartStatusLabel}</span>
+            </div>
+          </div>
+          <div className="t8-smart-rh-toolbox-card__metrics">
+            <span>输入 {smartInputCount}</span>
+            <span>参数 {smartParamCount}</span>
+            <span>输出 {smartOutputCount}</span>
+          </div>
+          <div className="t8-smart-rh-toolbox-card__foot">
+            上游 {smartUpstreamCount} · 工具 {enabledTools.length}
+          </div>
+        </div>
+
+        {smartPanelOpen && (
+          <SmartNodeComposer
+            portal
+            anchorRef={smartNodeRef}
+            className="t8-smart-rh-toolbox-composer"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div className="t8-smart-ref-strip">
+              <div className="t8-smart-node-meta t8-smart-node-meta--composer">
+                <span>{activeTool?.title || 'RH工具箱'}</span>
+                <span>{smartStatusLabel}</span>
+                <span>工具 {enabledTools.length}</span>
+              </div>
+              <div className="t8-smart-ref-spacer" />
+              <button
+                type="button"
+                className="nodrag nopan t8-btn t8-smart-classic-switch"
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  switchRhToolboxNodeVariant('classic');
+                }}
+                title="切换到经典版节点"
+                aria-label="切换到经典版节点"
+              >
+                <RefreshCcw size={13} />
+              </button>
+            </div>
+            <div className="t8-smart-rh-toolbox-panel">
+              {activeToolId ? renderRunner() : renderLauncher()}
+            </div>
+          </SmartNodeComposer>
+        )}
+      </SmartNodeShell>
+    );
+  }
+
   return (
     <div className="relative flex flex-col" style={rootStyle}>
       <Handle type="target" position={Position.Left} className="!border-0" style={{ ...handleStyle, background: PORT_COLOR.any, left: -6 }} />
@@ -1237,6 +1413,23 @@ const RHToolboxNode = ({ id, data, selected }: NodeProps) => {
         onResizeEnd={onResize}
       />
       <div className="flex-1 flex flex-col min-h-0 overflow-hidden" style={{ borderRadius: isPixel ? 6 : 12 }}>
+        <button
+          type="button"
+          className="nodrag nopan t8-btn t8-rh-toolbox-classic-switch"
+          onPointerDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          }}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            switchRhToolboxNodeVariant('smart-card');
+          }}
+          title="切回卡片版节点"
+          aria-label="切回卡片版节点"
+        >
+          <RefreshCcw size={13} />
+        </button>
         {renderHeader()}
         {activeToolId ? renderRunner() : renderLauncher()}
       </div>

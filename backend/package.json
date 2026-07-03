@@ -1,7 +1,7 @@
 {
-  "name": "t8-penguin-canvas-backend",
+  "name": "hajimi-canvas-backend",
   "version": "1.0.0",
-  "description": "T8-penguin-canvas Node.js 精简后端",
+  "description": "哈基米画布 Node.js 精简后端",
   "main": "src/server.js",
   "type": "commonjs",
   "scripts": {
@@ -9,9 +9,11 @@
     "dev": "node src/server.js"
   },
   "dependencies": {
+    "@openai/codex-sdk": "^0.142.5",
     "cors": "^2.8.5",
     "express": "^4.21.0",
     "multer": "^2.0.2",
-    "sharp": "^0.34.5"
+    "sharp": "^0.34.5",
+    "ws": "^8.21.0"
   }
 }

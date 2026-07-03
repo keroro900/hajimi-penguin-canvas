@@ -497,19 +497,61 @@ test('batch processor remove-bg has a visible local effect on simple solid backg
   }
 });
 
-test('batch processor roadmap records no canvas output and common batch operations', () => {
-  const roadmap = read('roadmap.md');
+test('batch processor release metadata records no canvas output and common batch operations', () => {
+  const features = read('features.json');
+  const release235 = read('release-notes/v2.3.5.md');
+  const release236 = read('release-notes/v2.3.6.md');
 
-  assert.match(roadmap, /批量素材处理/);
-  assert.match(roadmap, /完成后不自动生成输出素材节点/);
-  assert.match(roadmap, /节点内显示进度、完成反馈和失败报告/);
-  assert.match(roadmap, /原名字/);
-  assert.match(roadmap, /改名字/);
-  assert.match(roadmap, /去除上下黑边/);
-  assert.match(roadmap, /批量抠图/);
-  assert.match(roadmap, /批量扩图/);
-  assert.match(roadmap, /批量高清放大/);
-  assert.match(roadmap, /R512 批量素材处理 RH 能力层升级/);
-  assert.match(roadmap, /并发队列/);
-  assert.match(roadmap, /RH 4K/);
+  assert.match(features, /批量素材处理/);
+  assert.match(features, /不自动生成 (?:OutputNode|输出素材节点)/);
+  assert.match(features, /节点内显示进度、完成反馈和失败报告/);
+  assert.match(features, /原名字/);
+  assert.match(features, /改名字/);
+  assert.match(features, /去除上下黑边/);
+  assert.match(features, /批量抠图/);
+  assert.match(features, /批量扩图|扩图/);
+  assert.match(features, /高清放大/);
+  assert.match(features, /R512/);
+  assert.match(release235, /RH 能力层/);
+  assert.match(release235, /失败重试/);
+  assert.match(release236, /并发执行/);
+  assert.match(release236, /等待、处理中、完成和失败状态/);
+});
+
+test('canvas batch run ignores stale lastDone events from previous runs', () => {
+  const canvas = read('src/components/Canvas.tsx');
+
+  assert.match(canvas, /const runStartTs = Date\.now\(\);/);
+  assert.match(
+    canvas,
+    /state\.lastDone\s*&&\s*state\.lastDone\.id === id\s*&&\s*state\.lastDone\.ts >= runStartTs/,
+  );
+  assert.ok(
+    canvas.indexOf('const runStartTs = Date.now();') < canvas.indexOf("triggerRunMany(batch, 'batch')"),
+    'batch run should capture the start timestamp before triggering a batch',
+  );
+});
+
+test('canvas group and batch runs skip passive upload source nodes', () => {
+  const canvas = read('src/components/Canvas.tsx');
+  const actionBar = read('src/components/NodeActionBar.tsx');
+
+  assert.match(canvas, /const BATCH_EXECUTABLE_NODE_TYPES = new Set<string>/);
+  assert.match(canvas, /BATCH_PASSIVE_SOURCE_NODE_TYPES/);
+  assert.match(canvas, /createGroupExecutionPlan/);
+  assert.match(canvas, /runStagesByOrder\(stages\)/);
+  assert.match(canvas, /expandGroupRunIds\(ids,\s*nodes\)/);
+  assert.match(canvas, /groupExecutableCount\(ids,\s*nodes,\s*edges\)/);
+  assert.match(canvas, /topologicalSort\(nodes,\s*edges,\s*BATCH_EXECUTABLE_NODE_TYPES\)/);
+  assert.match(canvas, /triggerRunMany\(batch,\s*'batch'\)/);
+  assert.match(canvas, /executableTypes:\s*BATCH_EXECUTABLE_NODE_TYPES/);
+  assert.doesNotMatch(canvas, /const order = topologicalSort\(subNodes,\s*subEdges,\s*EXECUTABLE_NODE_TYPES\)/);
+  assert.doesNotMatch(canvas, /triggerRun\(id,\s*'batch'\)/);
+  assert.match(actionBar, /'upload'/);
+
+  const batchSetBlock = canvas.slice(
+    canvas.indexOf('const BATCH_EXECUTABLE_NODE_TYPES = new Set<string>'),
+    canvas.indexOf('// 网格吸附步长'),
+  );
+  assert.match(batchSetBlock, /BATCH_PASSIVE_SOURCE_NODE_TYPES\.has\(type\)/);
 });

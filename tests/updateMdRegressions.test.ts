@@ -223,10 +223,17 @@ test('LLM node defaults to the second built-in model', () => {
   assert.match(features, /gemini-3\.5-flash 默认/);
 });
 
-test('topbar canvas tutorial panel replaces RH ApiKey shortcut in latest apps', () => {
+test('topbar keeps update-safe app controls without personal tutorial or referral shortcuts', () => {
   const app = read('../src/App.tsx');
   const features = read('../features.json');
 
+  assert.match(app, /AppUpdaterButton/);
+  assert.match(app, /ThemeTemplateManager/);
+  assert.match(app, /ResourceLibraryDrawer/);
+  assert.doesNotMatch(app, /inviteCode=/);
+  assert.doesNotMatch(app, /invite=T8STAR/);
+  assert.doesNotMatch(app, /获取 RH ApiKey/);
+  assert.doesNotMatch(app, /enterprise-api\/consumerApi/);
   assert.match(app, /CANVAS_TUTORIALS/);
   assert.match(app, /画布教程/);
   assert.match(app, /基础功能教程第一弹1\.2\.3版/);
@@ -255,7 +262,11 @@ test('topbar canvas tutorial panel replaces RH ApiKey shortcut in latest apps', 
   assert.match(app, /批量素材节点完善扩图/);
   assert.match(app, /BV1mj7h6CEYx/);
   assert.match(app, /wCOoTtuxQPM/);
-  assert.ok(app.indexOf('画布教程') < app.indexOf('最新应用'));
+  const tutorialIndex = app.indexOf('画布教程');
+  const latestAppIndex = app.indexOf('最新应用');
+  if (latestAppIndex >= 0) {
+    assert.ok(tutorialIndex >= 0 && tutorialIndex < latestAppIndex);
+  }
   assert.doesNotMatch(app, /获取 RH ApiKey/);
   assert.doesNotMatch(app, /enterprise-api\/consumerApi/);
   assert.match(features, /canvasTutorialTopbarPanel/);

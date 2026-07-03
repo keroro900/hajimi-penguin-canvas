@@ -23,8 +23,9 @@ test('upload image nodes expose stable image fields for downstream reference gen
 
   assert.equal(uploadData.imageUrl, '/files/input/ref-a.png');
   assert.deepEqual(uploadData.imageUrls, ['/files/input/ref-a.png']);
-  assert.match(upstream, /pushUrl\(sid,\s*'image',\s*ud\.imageUrl,\s*images\)/);
-  assert.match(upstream, /const arrFields = \['imageUrls', 'urls', 'generatedImages'\]/);
+  assert.match(upstream, /pushUrl\(sid,\s*'image',\s*ud\.imageUrl,\s*images,\s*'imageUrl'\)/);
+  assert.match(upstream, /for \(const field of \['imageUrls', 'urls', 'generatedImages', 'directImageUrls', 'resultUrls'\] as const\)/);
+  assert.match(upstream, /const arrFields = \['imageUrls', 'urls', 'generatedImages', 'resultUrls'\]/);
   assert.match(imageNode, /const allRefs = upstreamImages\.slice\(0,\s*maxRefs\)/);
   assert.match(imageNode, /images:\s*allRefs/);
 });

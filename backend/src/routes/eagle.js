@@ -208,7 +208,7 @@ router.post('/import', express.json({ limit: '4mb' }), async (req, res) => {
 
     const tags = Array.isArray(req.body?.tags)
       ? req.body.tags.map((x) => safeText(x)).filter(Boolean).slice(0, 30)
-      : ['T8', '贞贞画布'];
+      : ['画布', '素材'];
     const folderId = safeText(req.body?.folderId, '');
     const imported = [];
     const skipped = [];

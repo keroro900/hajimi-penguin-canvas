@@ -12,6 +12,15 @@ function extractCssVar(css: string, name: string) {
   return match[1].toLowerCase();
 }
 
+function assertIncludesInOrder(source: string, fragments: string[]) {
+  let cursor = 0;
+  for (const fragment of fragments) {
+    const next = source.indexOf(fragment, cursor);
+    assert.notEqual(next, -1, `missing ordered fragment: ${fragment}`);
+    cursor = next + fragment.length;
+  }
+}
+
 test('Tetris theme is registered as a strong built-in visual style', () => {
   const types = read('../src/theme/types.ts');
   const defaults = read('../src/theme/defaultTemplates.ts');
@@ -711,9 +720,23 @@ test('Farm Story theme mounts canvas chrome, sidebar icons, cuts, minimap, and t
   assert.match(panel, /const \[farmActivityRewardStreakActionReceipt, setFarmActivityRewardStreakActionReceipt\] = useState\(''\)/);
   assert.match(panel, /const farmActivityRewardStreakActionReceiptTimerRef = useRef<number \| null>\(null\)/);
   assert.match(panel, /if \(farmActivityRewardStreakActionReceiptTimerRef\.current !== null\) \{[\s\S]*window\.clearTimeout\(farmActivityRewardStreakActionReceiptTimerRef\.current\);[\s\S]*farmActivityRewardStreakActionReceiptTimerRef\.current = null;[\s\S]*\}/);
-  assert.match(panel, /const handleFarmActivityRewardStreakAction = \(\) => \{[\s\S]*if \(!farmActivityRewardStreakGoal \|\| farmMiniQuickActionBusy\) \{[\s\S]*handleOpenFarmActivity\('action'\);[\s\S]*return;[\s\S]*\}[\s\S]*handleFarmFocusAction\(farmActivityRewardStreakGoal\);[\s\S]*handleOpenFarmActivity\('action'\);[\s\S]*\}/);
+  assertIncludesInOrder(panel, [
+    'const handleFarmActivityRewardStreakAction = () => {',
+    'if (!farmActivityRewardStreakGoal || farmMiniQuickActionBusy) {',
+    "handleOpenFarmActivity('action');",
+    'return;',
+    'handleFarmFocusAction(farmActivityRewardStreakGoal);',
+    "handleOpenFarmActivity('action');",
+  ]);
   assert.match(panel, /setFarmActivityRewardStreakActionReceipt\(`建议已执行：\$\{farmActivityRewardStreakGoal\.actionLabel\}`\)/);
-  assert.match(panel, /const handleFarmActivityChestClaimNextAction = \(\) => \{[\s\S]*if \(!farmActivityRewardStreakGoal \|\| farmMiniQuickActionBusy\) \{[\s\S]*handleOpenFarmActivity\('action'\);[\s\S]*return;[\s\S]*\}[\s\S]*setFarmActivityChestClaimNextReceipt\(`续连击已确认：\$\{farmActivityRewardStreakGoal\.actionLabel\}`\)[\s\S]*handleFarmActivityRewardStreakAction\(\);[\s\S]*\}/);
+  assertIncludesInOrder(panel, [
+    'const handleFarmActivityChestClaimNextAction = () => {',
+    'if (!farmActivityRewardStreakGoal || farmMiniQuickActionBusy) {',
+    "handleOpenFarmActivity('action');",
+    'return;',
+    'setFarmActivityChestClaimNextReceipt(`续连击已确认：${farmActivityRewardStreakGoal.actionLabel}`)',
+    'handleFarmActivityRewardStreakAction();',
+  ]);
   assert.match(panel, /const farmRewardDetailOpened = Boolean\(farmRewardDetailPulseId\)/);
   assert.match(panel, /const farmActivityStreakMeterRef = useRef<HTMLDivElement \| null>\(null\)/);
   assert.match(panel, /const farmActivityCompletionRef = useRef<HTMLElement \| null>\(null\)/);
@@ -978,7 +1001,17 @@ test('Farm Story theme mounts canvas chrome, sidebar icons, cuts, minimap, and t
   assert.match(panel, /farmActivityDigest\.rewardStreakLabel &&[\s\S]*<button[\s\S]*type="button"[\s\S]*className="t8-farm-story-panel__mini-activity-streak"[\s\S]*data-farm-mini-status-item="activity-streak"[\s\S]*data-farm-mini-status-clickable="true"[\s\S]*data-farm-mini-activity-streak-opened=\{farmActivityStreakOpened \? 'true' : undefined\}[\s\S]*data-farm-mini-activity-reward-streak=\{farmActivityDigest\.rewardStreak\}[\s\S]*data-farm-mini-activity-reward-streak-tier=\{farmActivityDigest\.rewardStreakTier \|\| undefined\}[\s\S]*title=\{farmActivityStreakOpened \? `已定位今日连击 \$\{farmActivityDigest\.rewardStreakLabel\}` : farmMiniActivityStreakTitle\}[\s\S]*handleOpenFarmActivity\('streak'\)[\s\S]*<Sparkles size=\{10\} \/>[\s\S]*\{farmActivityDigest\.rewardStreakLabel\}/);
   assert.match(panel, /farmActivityDigest\.rewardStreakMilestoneLabel &&[\s\S]*<button[\s\S]*type="button"[\s\S]*className="t8-farm-story-panel__mini-activity-streak-milestone"[\s\S]*data-farm-mini-status-item="activity-streak-milestone"[\s\S]*data-farm-mini-status-clickable="true"[\s\S]*data-farm-mini-activity-streak-milestone-opened=\{farmActivityMilestoneOpened \? 'true' : undefined\}[\s\S]*data-farm-mini-activity-reward-streak-tier=\{farmActivityDigest\.rewardStreakTier \|\| undefined\}[\s\S]*title=\{farmActivityMilestoneOpened \? `已定位连击里程碑 \$\{farmActivityDigest\.rewardStreakMilestoneLabel\}` : `查看连击里程碑：\$\{farmActivityDigest\.rewardStreakMilestoneLabel\}`\}[\s\S]*aria-label=\{farmActivityMilestoneOpened \? `已展开牧场面板并定位连击里程碑，\$\{farmActivityDigest\.rewardStreakMilestoneLabel\}` : `展开牧场面板查看连击里程碑，\$\{farmActivityDigest\.rewardStreakMilestoneLabel\}`\}[\s\S]*handleOpenFarmActivity\('milestone'\)[\s\S]*<Sparkles size=\{10\} \/>[\s\S]*\{farmActivityDigest\.rewardStreakMilestoneLabel\}/);
   assert.match(panel, /farmActivityDigest\.rewardStreakMilestonePercent !== undefined && farmActivityDigest\.rewardStreakMilestoneProgressLabel &&[\s\S]*<button[\s\S]*type="button"[\s\S]*className="t8-farm-story-panel__mini-streak-meter"[\s\S]*data-farm-mini-status-item="activity-streak-meter"[\s\S]*data-farm-mini-status-clickable="true"[\s\S]*data-farm-mini-activity-streak-meter-opened=\{farmActivityFocusTarget === 'streak-meter' \? 'true' : undefined\}[\s\S]*data-farm-mini-activity-reward-streak-tier=\{farmActivityDigest\.rewardStreakTier \|\| undefined\}[\s\S]*data-farm-mini-activity-reward-streak-progress=\{farmActivityDigest\.rewardStreakMilestoneProgressLabel\}[\s\S]*data-farm-mini-activity-reward-streak-complete=\{farmActivityDigest\.rewardStreakMilestonePercent === 100 \? 'true' : undefined\}[\s\S]*title=\{farmActivityFocusTarget === 'streak-meter' \? `已定位连击进度 \$\{farmActivityDigest\.rewardStreakMilestoneProgressLabel\} · \$\{farmActivityDigest\.rewardStreakMilestoneLabel \|\| '保持正反馈'\}` : `查看连击进度：\$\{farmActivityDigest\.rewardStreakMilestoneProgressLabel\} · \$\{farmActivityDigest\.rewardStreakMilestoneLabel \|\| '保持正反馈'\}`\}[\s\S]*aria-label=\{farmActivityFocusTarget === 'streak-meter' \? `已展开牧场面板并定位连击进度，\$\{farmActivityDigest\.rewardStreakMilestoneProgressLabel\}` : `展开牧场面板查看连击进度，\$\{farmActivityDigest\.rewardStreakMilestoneProgressLabel\}`\}[\s\S]*handleOpenFarmActivity\('streak-meter'\)[\s\S]*width: `\$\{farmActivityDigest\.rewardStreakMilestonePercent\}%`[\s\S]*\{farmActivityDigest\.rewardStreakMilestoneProgressLabel\}[\s\S]*farmActivityDigest\.rewardStreakMilestonePercent === 100 && \([\s\S]*<strong data-farm-mini-activity-reward-streak-complete="true">已点亮<\/strong>/);
-  assert.match(panel, /farmActivityDigest\.rewardStreakMilestoneCompletionLabel &&[\s\S]*<button[\s\S]*type="button"[\s\S]*className="t8-farm-story-panel__mini-activity-streak-completion"[\s\S]*data-farm-mini-status-item="activity-streak-completion"[\s\S]*data-farm-mini-status-clickable="true"[\s\S]*data-farm-mini-activity-streak-completion-opened=\{farmActivityFocusTarget === 'completion' \? 'true' : undefined\}[\s\S]*data-farm-mini-activity-reward-streak-tier=\{farmActivityDigest\.rewardStreakTier \|\| undefined\}[\s\S]*title=\{farmActivityFocusTarget === 'completion' \? `已定位连击完成：\$\{farmActivityDigest\.rewardStreakMilestoneCompletionLabel\}` : `查看连击完成：\$\{farmActivityDigest\.rewardStreakMilestoneCompletionLabel\}`\}[\s\S]*aria-label=\{farmActivityFocusTarget === 'completion' \? `已展开牧场面板并定位连击完成，\$\{farmActivityDigest\.rewardStreakMilestoneCompletionLabel\}` : `展开牧场面板查看连击完成，\$\{farmActivityDigest\.rewardStreakMilestoneCompletionLabel\}`\}[\s\S]*handleOpenFarmActivity\('completion'\)[\s\S]*<Sparkles size=\{10\} \/>[\s\S]*奖励已亮/);
+  assertIncludesInOrder(panel, [
+    'farmActivityDigest.rewardStreakMilestoneCompletionLabel &&',
+    'className="t8-farm-story-panel__mini-activity-streak-completion"',
+    'data-farm-mini-status-item="activity-streak-completion"',
+    'data-farm-mini-status-clickable="true"',
+    "data-farm-mini-activity-streak-completion-opened={farmActivityFocusTarget === 'completion' ? 'true' : undefined}",
+    'data-farm-mini-activity-reward-streak-tier={farmActivityDigest.rewardStreakTier || undefined}',
+    "handleOpenFarmActivity('completion')",
+    '<Sparkles size={10} />',
+    '奖励已亮',
+  ]);
   assert.match(panel, /data-farm-mini-status-item="activity-streak-completion"[\s\S]*handleOpenFarmActivity\('completion'\)/);
   assert.match(panel, /data-farm-mini-status-item="activity-streak-chest"[\s\S]*handleFarmActivityChestAction\(\)/);
   assert.match(panel, /const \[farmRewardDetailPulseId, setFarmRewardDetailPulseId\] = useState\(''\)/);
@@ -987,7 +1020,17 @@ test('Farm Story theme mounts canvas chrome, sidebar icons, cuts, minimap, and t
   assert.match(panel, /const farmRewardDetailScrollFrameRef = useRef<number \| null>\(null\)/);
   assert.match(panel, /if \(farmRewardDetailScrollFrameRef\.current !== null\) \{[\s\S]*window\.cancelAnimationFrame\(farmRewardDetailScrollFrameRef\.current\);[\s\S]*farmRewardDetailScrollFrameRef\.current = null;[\s\S]*\}/);
   assert.match(panel, /const handleOpenFarmRewardDetail = \(\) => \{[\s\S]*setOpen\(true\);[\s\S]*setFarmRewardDetailPulseId\(`reward-detail-\$\{Date\.now\(\)\}`\);[\s\S]*farmRewardDetailPulseTimerRef\.current = window\.setTimeout\(\(\) => \{[\s\S]*setFarmRewardDetailPulseId\(''\);[\s\S]*farmRewardDetailPulseTimerRef\.current = null;[\s\S]*\}, 1400\);[\s\S]*farmRewardDetailScrollFrameRef\.current = window\.requestAnimationFrame\(\(\) => \{[\s\S]*const rewardItemsElement = farmRewardItemsRef\.current;[\s\S]*const prefersReducedRewardMotion = window\.matchMedia\?\.\('\(prefers-reduced-motion: reduce\)'\)\.matches;[\s\S]*const rewardScrollBehavior: ScrollBehavior = prefersReducedRewardMotion \? 'auto' : 'smooth';[\s\S]*rewardItemsElement\?\.scrollIntoView\(\{ block: 'nearest', behavior: rewardScrollBehavior \}\);[\s\S]*rewardItemsElement\?\.focus\(\{ preventScroll: true \}\);[\s\S]*farmRewardDetailScrollFrameRef\.current = null;[\s\S]*\}\);[\s\S]*\}/);
-  assert.match(panel, /farmActivityDigest\.rewardStreakMilestoneRewardItems\?\.length &&[\s\S]*<button[\s\S]*type="button"[\s\S]*className="t8-farm-story-panel__mini-activity-streak-reward"[\s\S]*data-farm-mini-status-item="activity-streak-reward"[\s\S]*data-farm-mini-status-clickable="true"[\s\S]*data-farm-mini-activity-reward-opened=\{farmRewardDetailOpened \? 'true' : undefined\}[\s\S]*data-farm-mini-activity-reward-streak-tier=\{farmActivityDigest\.rewardStreakTier \|\| undefined\}[\s\S]*data-farm-mini-activity-reward-streak-items=\{farmActivityDigest\.rewardStreakMilestoneRewardItems\.join\(' '\)\}[\s\S]*title=\{`\$\{farmRewardDetailOpened \? '已展开奖励印章' : '展开查看连击奖励印章'\}：\$\{farmActivityDigest\.rewardStreakMilestoneRewardItems\.join\('、'\)\}`\}[\s\S]*aria-label=\{`\$\{farmRewardDetailOpened \? '已展开牧场面板并定位连击奖励印章' : '展开牧场面板查看连击奖励印章'\}：\$\{farmActivityDigest\.rewardStreakMilestoneRewardItems\.join\('、'\)\}`\}[\s\S]*onClick=\{\(event\) => \{[\s\S]*event\.stopPropagation\(\);[\s\S]*handleOpenFarmRewardDetail\(\);[\s\S]*\}\}[\s\S]*\{farmRewardDetailOpened \? '已展开' : farmMiniActivityRewardStampLabel\}/);
+  assertIncludesInOrder(panel, [
+    'farmActivityDigest.rewardStreakMilestoneRewardItems?.length &&',
+    'className="t8-farm-story-panel__mini-activity-streak-reward"',
+    'data-farm-mini-status-item="activity-streak-reward"',
+    'data-farm-mini-status-clickable="true"',
+    "data-farm-mini-activity-reward-opened={farmRewardDetailOpened ? 'true' : undefined}",
+    'data-farm-mini-activity-reward-streak-tier={farmActivityDigest.rewardStreakTier || undefined}',
+    "data-farm-mini-activity-reward-streak-items={farmActivityDigest.rewardStreakMilestoneRewardItems.join(' ')}",
+    'handleOpenFarmRewardDetail();',
+    "{farmRewardDetailOpened ? '已展开' : farmMiniActivityRewardStampLabel}",
+  ]);
   assert.match(panel, /farmMiniQuickActionActivityFeedbackLabel &&[\s\S]*className="t8-farm-story-panel__mini-activity-feedback"[\s\S]*data-farm-mini-status-item="activity-feedback"[\s\S]*data-farm-mini-activity-feedback-result=\{farmMiniQuickActionFeedback\?\.label \|\| undefined\}[\s\S]*今日成果：\$\{farmMiniQuickActionActivityFeedbackLabel\}[\s\S]*aria-hidden="true"[\s\S]*<Sparkles size=\{10\} \/>[\s\S]*\{farmMiniQuickActionActivityFeedbackLabel\}/);
   assert.match(panel, /farmActivityDigest\.rewardStreakActionLabel &&[\s\S]*<button[\s\S]*type="button"[\s\S]*className="t8-farm-story-panel__mini-activity-action"[\s\S]*data-farm-mini-status-item="activity-action"[\s\S]*data-farm-mini-status-clickable="true"[\s\S]*data-farm-mini-activity-streak-action-opened=\{farmActivityFocusTarget === 'action' \? 'true' : undefined\}[\s\S]*data-farm-mini-activity-streak-action=\{farmActivityDigest\.rewardStreakActionKind\}[\s\S]*data-farm-mini-activity-streak-action-short-label=\{farmActivityDigest\.rewardStreakActionShortLabel \|\| undefined\}[\s\S]*data-farm-mini-reward-pocket-followup-action=\{farmActivityChestClaimNextReceiptRewardPocketFollowupLabel \? 'true' : undefined\}[\s\S]*data-farm-mini-reward-pocket-followup-action-label=\{farmActivityChestClaimNextReceiptRewardPocketFollowupLabel \|\| undefined\}[\s\S]*data-farm-mini-reward-pocket-followup-action-receipt=\{farmActivityRewardStreakActionReceiptFollowupLabel \|\| undefined\}[\s\S]*handleFarmActivityRewardStreakAction\(\)[\s\S]*<Sparkles size=\{10\} \/>[\s\S]*\{farmMiniActivityStreakActionLabel\}/);
   assert.match(panel, /title=\{farmActivityRewardStreakActionReceiptFollowupLabel[\s\S]*\? `奖励已收纳，\$\{farmActivityRewardStreakActionReceiptFollowupLabel\}`[\s\S]*: farmActivityChestClaimNextReceiptRewardPocketFollowupLabel[\s\S]*\? `收纳后继续：\$\{farmActivityChestClaimNextReceiptRewardPocketFollowupLabel\}`/);
@@ -1553,13 +1596,48 @@ test('Farm Story theme mounts canvas chrome, sidebar icons, cuts, minimap, and t
   assert.match(panel, /farmActivityDigest\.rewardStreakMilestoneRewardLabel && \([\s\S]*<small data-farm-activity-reward-streak-reward="true">\{farmActivityDigest\.rewardStreakMilestoneRewardLabel\}<\/small>[\s\S]*\)/);
   assert.match(panel, /farmActivityDigest\.rewardStreakMilestoneRewardItems\?\.length && \([\s\S]*ref=\{farmRewardItemsRef\}[\s\S]*className="t8-farm-story-panel__activity-streak-reward-items"[\s\S]*data-farm-activity-reward-streak-items="true"[\s\S]*data-farm-activity-reward-streak-scroll-target="true"[\s\S]*data-farm-activity-reward-streak-items-focus=\{farmRewardDetailPulseId \? 'true' : undefined\}[\s\S]*data-farm-activity-reward-streak-items-pulse=\{farmRewardDetailPulseId \|\| undefined\}[\s\S]*tabIndex=\{-1\}[\s\S]*title=\{`连击奖励印章：\$\{farmActivityDigest\.rewardStreakMilestoneRewardItems\.join\('、'\)\}`\}[\s\S]*aria-label=\{`连击奖励印章：\$\{farmActivityDigest\.rewardStreakMilestoneRewardItems\.join\('、'\)\}`\}[\s\S]*role="status"[\s\S]*aria-live="polite"[\s\S]*farmActivityDigest\.rewardStreakMilestoneRewardItems\.map\(\(item\) => \([\s\S]*<b key=\{item\}>\{item\}<\/b>/);
   assert.match(panel, /data-farm-activity-reward-streak-items-claimed=\{farmRewardDetailOpened \? 'true' : undefined\}/);
-  assert.match(panel, /farmActivityDigest\.rewardStreakActionLabel && \([\s\S]*<small[\s\S]*ref=\{farmActivityActionRef\}[\s\S]*data-farm-activity-reward-streak-action="true"[\s\S]*data-farm-activity-reward-streak-action-focus=\{farmActivityFocusTarget === 'action' \? 'true' : undefined\}[\s\S]*data-farm-activity-reward-streak-action-pulse=\{farmActivityFocusTarget === 'action' \? farmActivityDetailPulseId \|\| undefined : undefined\}[\s\S]*tabIndex=\{-1\}[\s\S]*\{farmActivityDigest\.rewardStreakActionLabel\}[\s\S]*<\/small>[\s\S]*\)/);
-  assert.match(panel, /farmActivityRewardStreakGoal && \([\s\S]*<button[\s\S]*type="button"[\s\S]*data-farm-activity-reward-streak-action-cta="true"[\s\S]*data-farm-activity-reward-streak-action-cta-kind=\{farmActivityDigest\.rewardStreakActionKind \|\| undefined\}[\s\S]*disabled=\{farmMiniQuickActionBusy\}[\s\S]*handleFarmActivityRewardStreakAction\(\)[\s\S]*\{farmMiniQuickActionBusy \? farmMiniQuickActionFeedback\?\.label \|\| '已执行建议' : farmActivityRewardStreakGoal\.actionLabel\}/);
-  assert.match(panel, /farmActivityRewardStreakActionReceipt && \([\s\S]*className="t8-farm-story-panel__activity-action-receipt"[\s\S]*data-farm-activity-reward-streak-action-receipt="true"[\s\S]*data-farm-activity-reward-streak-action-receipt-kind=\{farmActivityDigest\.rewardStreakActionKind \|\| undefined\}[\s\S]*role="status"[\s\S]*aria-live="polite"[\s\S]*<Sparkles size=\{9\} \/>[\s\S]*建议已执行[\s\S]*<b>\{farmActivityRewardStreakActionReceipt\}<\/b>/);
+  assertIncludesInOrder(panel, [
+    'farmActivityDigest.rewardStreakActionLabel && (',
+    '<small',
+    'ref={farmActivityActionRef}',
+    'data-farm-activity-reward-streak-action="true"',
+    'tabIndex={-1}',
+    '{farmActivityDigest.rewardStreakActionLabel}',
+    '</small>',
+  ]);
+  assertIncludesInOrder(panel, [
+    'farmActivityRewardStreakGoal && (',
+    '<button',
+    'type="button"',
+    'data-farm-activity-reward-streak-action-cta="true"',
+    'data-farm-activity-reward-streak-action-cta-kind={farmActivityDigest.rewardStreakActionKind || undefined}',
+    'disabled={farmMiniQuickActionBusy}',
+    'handleFarmActivityRewardStreakAction()',
+    "{farmMiniQuickActionBusy ? farmMiniQuickActionFeedback?.label || '已执行建议' : farmActivityRewardStreakGoal.actionLabel}",
+  ]);
+  assertIncludesInOrder(panel, [
+    'farmActivityRewardStreakActionReceipt && (',
+    'className="t8-farm-story-panel__activity-action-receipt"',
+    'data-farm-activity-reward-streak-action-receipt="true"',
+    'data-farm-activity-reward-streak-action-receipt-kind={farmActivityDigest.rewardStreakActionKind || undefined}',
+    'role="status"',
+    'aria-live="polite"',
+    '<Sparkles size={9} />',
+    '建议已执行',
+    '<b>{farmActivityRewardStreakActionReceipt}</b>',
+  ]);
   assert.match(panel, /data-farm-mini-activity-streak-action-receipt=\{farmActivityRewardStreakActionReceipt \|\| undefined\}/);
   assert.match(panel, /const \[farmActivityRewardStreakActionReceiptFollowup, setFarmActivityRewardStreakActionReceiptFollowup\] = useState\(''\)/);
   assert.match(panel, /const farmActivityRewardStreakActionReceiptFollowupLabel = farmActivityRewardStreakActionReceiptFollowup[\s\S]*\? farmActivityRewardStreakActionReceiptFollowup\.startsWith\('继续'\)[\s\S]*\? `已接上\$\{farmActivityRewardStreakActionReceiptFollowup\.replace\(\/\^继续\/, ''\)\}`[\s\S]*: `已接上\$\{farmActivityRewardStreakActionReceiptFollowup\}`[\s\S]*: ''/);
-  assert.match(panel, /const farmActivityRewardStreakActionReceiptEchoLabel = farmActivityRewardStreakActionReceiptFollowup[\s\S]*\? farmActivityRewardStreakActionReceiptFollowup\.startsWith\('继续'\)[\s\S]*\? `刚刚接上\$\{farmActivityRewardStreakActionReceiptFollowup\.replace\(\/\^继续\/, ''\)\}`[\s\S]*: farmActivityRewardStreakActionReceiptFollowup\.startsWith\('回到'\)[\s\S]*\? `刚刚接上\$\{farmActivityRewardStreakActionReceiptFollowup\.replace\(\/\^回到\/, ''\)\}`[\s\S]*: `刚刚接上\$\{farmActivityRewardStreakActionReceiptFollowup\}`[\s\S]*: ''/);
+  assertIncludesInOrder(panel, [
+    'const farmActivityRewardStreakActionReceiptEchoLabel = farmActivityRewardStreakActionReceiptFollowup',
+    "? farmActivityRewardStreakActionReceiptFollowup.startsWith('继续')",
+    "? `刚刚接上${farmActivityRewardStreakActionReceiptFollowup.replace(/^继续/, '')}`",
+    ": farmActivityRewardStreakActionReceiptFollowup.startsWith('回到')",
+    "? `刚刚接上${farmActivityRewardStreakActionReceiptFollowup.replace(/^回到/, '')}`",
+    ': `刚刚接上${farmActivityRewardStreakActionReceiptFollowup}`',
+    ": '';",
+  ]);
   assert.match(panel, /const rewardPocketActionFollowup = farmActivityChestClaimNextReceiptRewardPocketFollowupLabel;[\s\S]*setFarmActivityRewardStreakActionReceiptFollowup\(rewardPocketActionFollowup\);[\s\S]*setFarmActivityRewardStreakActionReceiptFollowup\(''\)/);
   assert.match(panel, /data-farm-mini-activity-followup-receipt=\{farmActivityRewardStreakActionReceiptEchoLabel \|\| undefined\}/);
   assert.match(panel, /data-farm-mini-followup-resource-targets=\{farmActivityRewardStreakActionReceiptEchoLabel && farmActivityRewardStreakActionResourceTargets\.length \? farmActivityRewardStreakActionResourceTargets\.join\(' '\) : undefined\}/);
@@ -1568,22 +1646,76 @@ test('Farm Story theme mounts canvas chrome, sidebar icons, cuts, minimap, and t
   assert.match(panel, /const farmActivityRewardStreakActionReceiptNextTarget = farmActivityRewardStreakGoal\?\.action \? farmFocusActionNextTarget\(farmActivityRewardStreakGoal\.action\) : undefined/);
   assert.match(panel, /const farmActivityRewardStreakActionRouteTarget = farmActivityRewardStreakActionReceiptRouteTarget/);
   assert.match(panel, /const farmActivityRewardStreakActionRouteLabel = farmActivityRewardStreakActionReceiptRouteLabel/);
-  assert.match(panel, /const handleFarmActivityRewardStreakRouteHintAction = \(\) => \{[\s\S]*if \(!farmActivityRewardStreakActionRouteTarget \|\| !farmActivityRewardStreakActionRouteLabel\) return[\s\S]*flashFarmActivityRewardStreakRouteHint\('已指路'\)[\s\S]*routeTarget: farmActivityRewardStreakActionRouteTarget[\s\S]*routeLabel: farmActivityRewardStreakActionRouteLabel[\s\S]*routeTitle: farmActivityRewardStreakActionReceiptNextTitle/);
+  assertIncludesInOrder(panel, [
+    'const handleFarmActivityRewardStreakRouteHintAction = () => {',
+    'if (!farmActivityRewardStreakActionRouteTarget || !farmActivityRewardStreakActionRouteLabel) return',
+    "flashFarmActivityRewardStreakRouteHint('已指路')",
+    'routeTarget: farmActivityRewardStreakActionRouteTarget',
+    'routeLabel: farmActivityRewardStreakActionRouteLabel',
+    'routeTitle: farmActivityRewardStreakActionReceiptNextTitle',
+  ]);
   assert.match(panel, /interface FarmStoryPanelCanvasHint \{[\s\S]*message: string;[\s\S]*tone: FarmCanvasFloatingFeedback\['tone'\];[\s\S]*\}/);
   assert.match(panel, /onFollowupCanvasHint\?: \(hint: FarmStoryPanelCanvasHint\) => void/);
-  assert.match(panel, /function farmFocusActionCanvasTone\(target: FarmFocusActionNextTarget \| undefined\): FarmCanvasFloatingFeedback\['tone'\] \{[\s\S]*if \(target === 'water'\) return 'water';[\s\S]*if \(target === 'harvest' \|\| target === 'reward' \|\| target === 'social'\) return 'reward';[\s\S]*if \(target === 'build' \|\| target === 'scarecrow' \|\| target === 'decor'\) return 'build';[\s\S]*if \(target === 'cleanup'\) return 'warning';[\s\S]*return 'success';[\s\S]*\}/);
+  assertIncludesInOrder(panel, [
+    "function farmFocusActionCanvasTone(target: FarmFocusActionNextTarget | undefined): FarmCanvasFloatingFeedback['tone'] {",
+    "if (target === 'water') return 'water';",
+    "if (target === 'harvest' || target === 'reward' || target === 'social') return 'reward';",
+    "if (target === 'build' || target === 'scarecrow' || target === 'decor') return 'build';",
+    "if (target === 'cleanup') return 'warning';",
+    "return 'success';",
+  ]);
   assert.match(panel, /const farmFollowupCanvasHintKeyRef = useRef\(''\)/);
   assert.match(panel, /const farmPlacementReceiptCanvasHintKeyRef = useRef\(''\)/);
   assert.match(panel, /const farmActivityRewardStreakActionReceiptNextBadgeLabel = farmActivityRewardStreakGoal\?\.action \? farmFocusActionNextBadgeLabel\(farmActivityRewardStreakGoal\.action\) : ''/);
   assert.match(panel, /const farmActivityRewardStreakActionReceiptNextCountLabel = farmActivityRewardStreakGoal\?\.action[\s\S]*\? farmFocusActionNextCountLabel\(farmActivityRewardStreakGoal\.action, \{[\s\S]*dryCount,[\s\S]*witheredCount,[\s\S]*matureCount,[\s\S]*scarecrowRiskCount,[\s\S]*readyOrderCount,[\s\S]*readyNpcVisitCount,[\s\S]*\}\)[\s\S]*: ''/);
   assert.match(panel, /const farmActivityRewardStreakActionReceiptCanvasHint = farmActivityRewardStreakActionReceiptEchoLabel && farmActivityRewardStreakActionReceiptNextHint[\s\S]*\? `\$\{farmActivityRewardStreakActionReceiptEchoLabel\} · \$\{farmActivityRewardStreakActionReceiptNextHint\.replace\('下一步：', ''\)\}\$\{farmActivityRewardStreakActionReceiptNextCountLabel \? ` · \$\{farmActivityRewardStreakActionReceiptNextCountLabel\}` : ''\}`[\s\S]*: ''/);
   assert.match(panel, /const farmActivityRewardStreakActionReceiptCanvasTone = farmFocusActionCanvasTone\(farmActivityRewardStreakActionReceiptNextTarget\)/);
-  assert.match(panel, /useEffect\(\(\) => \{[\s\S]*if \(!farmActivityRewardStreakActionReceiptCanvasHint \|\| !onFollowupCanvasHint\) \{[\s\S]*farmFollowupCanvasHintKeyRef\.current = '';[\s\S]*return;[\s\S]*\}[\s\S]*const canvasHintKey = `\$\{farmActivityRewardStreakActionReceiptCanvasHint\}\|\$\{farmActivityRewardStreakActionResourcePreview\}`;[\s\S]*if \(farmFollowupCanvasHintKeyRef\.current === canvasHintKey\) return;[\s\S]*farmFollowupCanvasHintKeyRef\.current = canvasHintKey;[\s\S]*onFollowupCanvasHint\(\{[\s\S]*message: farmActivityRewardStreakActionReceiptCanvasHint,[\s\S]*tone: farmActivityRewardStreakActionReceiptCanvasTone,[\s\S]*\}\);[\s\S]*\}, \[[\s\S]*farmActivityRewardStreakActionReceiptCanvasHint,[\s\S]*farmActivityRewardStreakActionReceiptCanvasTone,[\s\S]*farmActivityRewardStreakActionResourcePreview,[\s\S]*onFollowupCanvasHint,[\s\S]*\]\)/);
-  assert.match(panel, /useEffect\(\(\) => \{[\s\S]*if \(!farmPlacementHudReceiptNextTargetOpenedCanvasHint \|\| !onFollowupCanvasHint\) \{[\s\S]*farmPlacementReceiptCanvasHintKeyRef\.current = '';[\s\S]*return;[\s\S]*\}[\s\S]*const canvasHintKey = `\$\{farmPlacementHudReceiptKind\}:\$\{farmPlacementHudReceiptSource\}:\$\{farmPlacementHudReceiptNextTarget\}:\$\{farmPlacementHudReceiptNextTargetOpenedCanvasHint\}`;[\s\S]*if \(farmPlacementReceiptCanvasHintKeyRef\.current === canvasHintKey\) return;[\s\S]*farmPlacementReceiptCanvasHintKeyRef\.current = canvasHintKey;[\s\S]*onFollowupCanvasHint\(\{[\s\S]*message: farmPlacementHudReceiptNextTargetOpenedCanvasHint,[\s\S]*tone: farmPlacementHudReceiptNextTargetOpenedCanvasTone,[\s\S]*\}\);[\s\S]*\}, \[[\s\S]*farmPlacementHudReceiptNextTargetOpenedCanvasHint,[\s\S]*farmPlacementHudReceiptNextTargetOpenedCanvasTone,[\s\S]*onFollowupCanvasHint,[\s\S]*\]\)/);
-  assert.match(panel, /farmActivityRewardStreakActionReceiptEchoLabel && farmActivityRewardStreakActionReceiptNextHint && \([\s\S]*className="t8-farm-story-panel__mini-followup-action-card"[\s\S]*data-farm-mini-status-item="followup-action-card"[\s\S]*data-farm-mini-followup-action-card="true"[\s\S]*data-farm-mini-followup-action-route-target=\{farmActivityRewardStreakActionReceiptRouteTarget \|\| undefined\}[\s\S]*data-farm-mini-followup-action-route-label=\{farmActivityRewardStreakActionReceiptRouteLabel \|\| undefined\}[\s\S]*data-farm-mini-followup-action-target=\{farmActivityRewardStreakActionReceiptNextTarget \|\| undefined\}[\s\S]*data-farm-mini-followup-action-badge=\{farmActivityRewardStreakActionReceiptNextBadgeLabel \|\| undefined\}[\s\S]*data-farm-mini-followup-action-count=\{farmActivityRewardStreakActionReceiptNextCountLabel \|\| undefined\}[\s\S]*data-farm-mini-followup-action-resource-targets=\{farmActivityRewardStreakActionResourceTargets\.join\(' '\) \|\| undefined\}[\s\S]*data-farm-mini-followup-action-resource-preview=\{farmActivityRewardStreakActionResourcePreview \|\| undefined\}[\s\S]*routeTarget: farmActivityRewardStreakActionReceiptRouteTarget[\s\S]*routeLabel: farmActivityRewardStreakActionReceiptRouteLabel[\s\S]*handleOpenFarmActivity\('action'\)[\s\S]*data-farm-mini-followup-action-route-hint="true"[\s\S]*\{farmActivityRewardStreakActionReceiptRouteReceipt \|\| '地图找目标'\}[\s\S]*\{farmActivityRewardStreakActionReceiptNextHint\.replace\('下一步：', ''\)\}/);
+  assertIncludesInOrder(panel, [
+    'if (!farmActivityRewardStreakActionReceiptCanvasHint || !onFollowupCanvasHint) {',
+    "farmFollowupCanvasHintKeyRef.current = '';",
+    'const canvasHintKey = `${farmActivityRewardStreakActionReceiptCanvasHint}|${farmActivityRewardStreakActionResourcePreview}`;',
+    'if (farmFollowupCanvasHintKeyRef.current === canvasHintKey) return;',
+    'farmFollowupCanvasHintKeyRef.current = canvasHintKey;',
+    'message: farmActivityRewardStreakActionReceiptCanvasHint',
+    'tone: farmActivityRewardStreakActionReceiptCanvasTone',
+    'farmActivityRewardStreakActionResourcePreview',
+    'onFollowupCanvasHint',
+  ]);
+  assertIncludesInOrder(panel, [
+    'if (!farmPlacementHudReceiptNextTargetOpenedCanvasHint || !onFollowupCanvasHint) {',
+    "farmPlacementReceiptCanvasHintKeyRef.current = '';",
+    'const canvasHintKey = `${farmPlacementHudReceiptKind}:${farmPlacementHudReceiptSource}:${farmPlacementHudReceiptNextTarget}:${farmPlacementHudReceiptNextTargetOpenedCanvasHint}`;',
+    'if (farmPlacementReceiptCanvasHintKeyRef.current === canvasHintKey) return;',
+    'farmPlacementReceiptCanvasHintKeyRef.current = canvasHintKey;',
+    'message: farmPlacementHudReceiptNextTargetOpenedCanvasHint',
+    'tone: farmPlacementHudReceiptNextTargetOpenedCanvasTone',
+    'onFollowupCanvasHint',
+  ]);
+  assertIncludesInOrder(panel, [
+    'farmActivityRewardStreakActionReceiptEchoLabel && farmActivityRewardStreakActionReceiptNextHint && (',
+    'className="t8-farm-story-panel__mini-followup-action-card"',
+    'data-farm-mini-status-item="followup-action-card"',
+    'data-farm-mini-followup-action-card="true"',
+    'data-farm-mini-followup-action-route-target={farmActivityRewardStreakActionReceiptRouteTarget || undefined}',
+    'data-farm-mini-followup-action-route-label={farmActivityRewardStreakActionReceiptRouteLabel || undefined}',
+    'data-farm-mini-followup-action-target={farmActivityRewardStreakActionReceiptNextTarget || undefined}',
+    'data-farm-mini-followup-action-badge={farmActivityRewardStreakActionReceiptNextBadgeLabel || undefined}',
+    "handleOpenFarmActivity('action')",
+    'data-farm-mini-followup-action-route-hint="true"',
+    "{farmActivityRewardStreakActionReceiptRouteReceipt || '地图找目标'}",
+    "{farmActivityRewardStreakActionReceiptNextHint.replace('下一步：', '')}",
+  ]);
   assert.match(panel, /data-farm-mini-followup-action-canvas-hint=\{farmActivityRewardStreakActionReceiptCanvasHint \|\| undefined\}/);
   assert.match(panel, /data-farm-mini-followup-action-canvas-tone=\{farmActivityRewardStreakActionReceiptCanvasTone \|\| undefined\}/);
-  assert.match(panel, /onClick=\{\(event\) => \{[\s\S]*event\.stopPropagation\(\);[\s\S]*if \(farmActivityRewardStreakActionReceiptCanvasHint\) \{[\s\S]*onFollowupCanvasHint\?\.\(\{[\s\S]*message: `已定位：\$\{farmActivityRewardStreakActionReceiptCanvasHint\}`,[\s\S]*tone: farmActivityRewardStreakActionReceiptCanvasTone,[\s\S]*\}\);[\s\S]*\}[\s\S]*handleOpenFarmActivity\('action'\);[\s\S]*\}\}/);
+  assertIncludesInOrder(panel, [
+    'onClick={(event) => {',
+    'event.stopPropagation();',
+    'if (farmActivityRewardStreakActionReceiptCanvasHint) {',
+    'onFollowupCanvasHint?.({',
+    'message: `已定位：${farmActivityRewardStreakActionReceiptCanvasHint}`',
+    'tone: farmActivityRewardStreakActionReceiptCanvasTone',
+    "handleOpenFarmActivity('action');",
+  ]);
   assert.match(canvas, /const handleFarmFollowupCanvasHint = useCallback\(\(hint: FarmStoryPanelCanvasHint\) => \{/);
   assert.match(canvas, /setFarmCanvasFeedback\(hint\.message\)/);
   assert.match(farmFollowupCanvasHintHandler, /setFarmFollowupNotice\(\{[\s\S]*\.\.\.hint,[\s\S]*id: noticeId,[\s\S]*createdAt: Date\.now\(\),[\s\S]*\}\)/);
@@ -1616,8 +1748,27 @@ test('Farm Story theme mounts canvas chrome, sidebar icons, cuts, minimap, and t
   assert.match(panel, /if \(farmActivityChestClaimNextReceiptTimerRef\.current !== null\) \{[\s\S]*window\.clearTimeout\(farmActivityChestClaimNextReceiptTimerRef\.current\);[\s\S]*farmActivityChestClaimNextReceiptTimerRef\.current = null;[\s\S]*\}/);
   assert.match(panel, /if \(farmActivityChestChargeReceiptTimerRef\.current !== null\) \{[\s\S]*window\.clearTimeout\(farmActivityChestChargeReceiptTimerRef\.current\);[\s\S]*farmActivityChestChargeReceiptTimerRef\.current = null;[\s\S]*\}/);
   assert.match(panel, /const farmActivityChestClaimed = Boolean\(farmActivityChestClaimPulseId\)/);
-  assert.match(panel, /const handleFarmActivityChestAction = \(\) => \{[\s\S]*if \(farmActivityDigest\.rewardStreakChestState !== 'ready'\) \{[\s\S]*handleOpenFarmActivity\('chest'\);[\s\S]*return;[\s\S]*\}[\s\S]*setFarmActivityChestClaimPulseId\(`activity-chest-claim-\$\{Date\.now\(\)\}`\)[\s\S]*handleOpenFarmActivity\('chest'\);[\s\S]*\}/);
-  assert.match(panel, /farmActivityDigest\.rewardStreakChestLabel &&[\s\S]*className="t8-farm-story-panel__mini-activity-streak-chest"[\s\S]*data-farm-mini-status-item="activity-streak-chest"[\s\S]*data-farm-mini-status-clickable="true"[\s\S]*data-farm-mini-activity-streak-chest-opened=\{farmActivityFocusTarget === 'chest' \? 'true' : undefined\}[\s\S]*data-farm-mini-activity-streak-chest-state=\{farmActivityDigest\.rewardStreakChestState \|\| undefined\}[\s\S]*data-farm-mini-activity-streak-chest-progress=\{farmActivityDigest\.rewardStreakChestProgressLabel \|\| undefined\}[\s\S]*data-farm-mini-activity-streak-chest-remaining-label=\{farmActivityDigest\.rewardStreakChestRemainingLabel \|\| undefined\}[\s\S]*data-farm-mini-activity-streak-chest-claimed=\{farmActivityChestClaimed \? 'true' : undefined\}[\s\S]*data-farm-mini-activity-streak-chest-cta=\{farmActivityDigest\.rewardStreakChestCtaLabel \|\| undefined\}[\s\S]*title=\{farmActivityChestClaimed[\s\S]*开箱已入袋[\s\S]*farmActivityDigest\.rewardStreakChestState === 'ready'[\s\S]*handleFarmActivityChestAction\(\)[\s\S]*<Package size=\{10\} \/>[\s\S]*\{farmActivityChestClaimed \? '已入袋' : farmMiniActivityStreakChestLabel\}/);
+  assertIncludesInOrder(panel, [
+    'const handleFarmActivityChestAction = () => {',
+    "if (farmActivityDigest.rewardStreakChestState !== 'ready') {",
+    "handleOpenFarmActivity('chest');",
+    'return;',
+    'setFarmActivityChestClaimPulseId(`activity-chest-claim-${Date.now()}`)',
+    "handleOpenFarmActivity('chest');",
+  ]);
+  assertIncludesInOrder(panel, [
+    'farmActivityDigest.rewardStreakChestLabel &&',
+    'className="t8-farm-story-panel__mini-activity-streak-chest"',
+    'data-farm-mini-status-item="activity-streak-chest"',
+    'data-farm-mini-status-clickable="true"',
+    "data-farm-mini-activity-streak-chest-opened={farmActivityFocusTarget === 'chest' ? 'true' : undefined}",
+    'data-farm-mini-activity-streak-chest-state={farmActivityDigest.rewardStreakChestState || undefined}',
+    'data-farm-mini-activity-streak-chest-progress={farmActivityDigest.rewardStreakChestProgressLabel || undefined}',
+    'data-farm-mini-activity-streak-chest-remaining-label={farmActivityDigest.rewardStreakChestRemainingLabel || undefined}',
+    "data-farm-mini-activity-streak-chest-claimed={farmActivityChestClaimed ? 'true' : undefined}",
+    '<Package size={10} />',
+    "{farmActivityChestClaimed ? '已入袋' : farmMiniActivityStreakChestLabel}",
+  ]);
   assert.match(panel, /data-farm-mini-activity-streak-chest-claim-next-action=\{farmActivityChestClaimed && farmActivityRewardStreakGoal \? 'true' : undefined\}/);
   assert.match(panel, /data-farm-mini-activity-streak-chest-claim-next-action-kind=\{farmActivityChestClaimed \? farmActivityDigest\.rewardStreakActionKind \|\| undefined : undefined\}/);
   assert.match(panel, /data-farm-mini-activity-streak-chest-claim-next-action-route-target=\{farmActivityChestClaimed \? farmActivityRewardStreakActionRouteTarget \|\| undefined : undefined\}/);
@@ -1642,8 +1793,26 @@ test('Farm Story theme mounts canvas chrome, sidebar icons, cuts, minimap, and t
   assert.match(panel, /const farmActivityChestClaimNextReceiptRewardPocketLabel = farmActivityChestClaimNextReceiptRewardShortItems\.length \? '已入袋' : ''/);
   assert.match(panel, /const farmActivityChestClaimNextReceiptRewardPocketTitle = farmActivityChestClaimNextReceiptRewardPocketLabel[\s\S]*\? `本次点亮奖励已入袋：\$\{farmActivityChestClaimNextReceiptRewardItems\.join\('、'\)\}`[\s\S]*: ''/);
   assert.match(panel, /type FarmMiniRewardPocketTarget = 'beauty' \| 'ready-order' \| 'activity-streak-reward'/);
-  assert.match(panel, /const farmActivityChestClaimNextReceiptRewardPocketTargets = farmActivityChestClaimNextReceiptRewardItems\.reduce<Array<FarmMiniRewardPocketTarget>>\(\(targets, item\) =>[\s\S]*item\.includes\('美化'\)[\s\S]*target = 'beauty'[\s\S]*item\.includes\('订单'\)[\s\S]*target = 'ready-order'[\s\S]*item\.includes\('手账'\)[\s\S]*target = 'activity-streak-reward'[\s\S]*targets\.push\(target\)[\s\S]*\}, \[\]\)/);
-  assert.match(panel, /const farmActivityChestClaimNextReceiptRewardPocketTargetsLabel = farmActivityChestClaimNextReceiptRewardPocketTargets\.length[\s\S]*\? `入袋点亮：\$\{farmActivityChestClaimNextReceiptRewardPocketTargets\.map\(\(target\) =>[\s\S]*target === 'beauty' \? '漂亮度'[\s\S]*: target === 'ready-order' \? '订单'[\s\S]*: '奖励印章'[\s\S]*\)\.join\('、'\)\}`[\s\S]*: ''/);
+  assertIncludesInOrder(panel, [
+    'const farmActivityChestClaimNextReceiptRewardPocketTargets = farmActivityChestClaimNextReceiptRewardItems.reduce<Array<FarmMiniRewardPocketTarget>>((targets, item) =>',
+    "item.includes('美化')",
+    "target = 'beauty'",
+    "item.includes('订单')",
+    "target = 'ready-order'",
+    "item.includes('手账')",
+    "target = 'activity-streak-reward'",
+    'targets.push(target)',
+    '}, [])',
+  ]);
+  assertIncludesInOrder(panel, [
+    'const farmActivityChestClaimNextReceiptRewardPocketTargetsLabel = farmActivityChestClaimNextReceiptRewardPocketTargets.length',
+    '? `入袋点亮：${farmActivityChestClaimNextReceiptRewardPocketTargets.map((target) =>',
+    "target === 'beauty' ? '漂亮度'",
+    ": target === 'ready-order' ? '订单'",
+    ": '奖励印章'",
+    ").join('、')}`",
+    ": '';",
+  ]);
   assert.match(panel, /const farmActivityChestClaimNextReceiptRewardPocketTargetsShortLabel = farmActivityChestClaimNextReceiptRewardPocketTargets\.length[\s\S]*\? `点亮\$\{farmActivityChestClaimNextReceiptRewardPocketTargets\.length\}处`[\s\S]*: ''/);
   assert.match(panel, /const farmActivityChestClaimNextReceiptRewardPocketAnyTargetOpened = Boolean\([\s\S]*farmActivityChestClaimNextReceipt[\s\S]*farmActivityChestClaimNextReceiptRewardPocketTargets\.includes\('beauty'\) && farmBeautyDetailOpened[\s\S]*farmActivityChestClaimNextReceiptRewardPocketTargets\.includes\('ready-order'\) && farmOrderLocateOpened[\s\S]*farmActivityChestClaimNextReceiptRewardPocketTargets\.includes\('activity-streak-reward'\) && farmRewardDetailOpened[\s\S]*\)/);
   assert.match(panel, /const farmActivityChestClaimNextReceiptRewardPocketFollowupLabel = farmActivityChestClaimNextReceiptRewardPocketAnyTargetOpened[\s\S]*\? farmActivityRewardStreakGoal\?\.actionLabel[\s\S]*\? `继续\$\{farmActivityRewardStreakGoal\.actionLabel\}`[\s\S]*: farmActivityChestClaimNextReceiptNextShortLabel[\s\S]*\? `回到\$\{farmActivityChestClaimNextReceiptNextShortLabel\}`[\s\S]*: ''[\s\S]*: ''/);
@@ -1708,7 +1877,16 @@ test('Farm Story theme mounts canvas chrome, sidebar icons, cuts, minimap, and t
   assert.match(panel, /farmActivityDigest\.rewardStreakChestRemainingLabel && \([\s\S]*data-farm-activity-reward-streak-chest-remaining-label="true"[\s\S]*data-farm-activity-reward-streak-chest-remaining=\{farmActivityDigest\.rewardStreakChestRemaining \?\? undefined\}[\s\S]*\{farmActivityDigest\.rewardStreakChestRemainingLabel\}/);
   assert.match(panel, /farmActivityDigest\.rewardStreakChestTrailItems\?\.length && \([\s\S]*className="t8-farm-story-panel__activity-streak-chest-trail"[\s\S]*data-farm-activity-reward-streak-chest-trail="true"[\s\S]*data-farm-activity-reward-streak-chest-trail-reward=\{farmActivityDigest\.rewardStreakChestTrailRewardLabel \|\| undefined\}[\s\S]*role="list"[\s\S]*farmActivityDigest\.rewardStreakChestTrailItems\.map\(\(item\) => \([\s\S]*data-farm-activity-reward-streak-chest-trail-item=\{item\.tier\}[\s\S]*data-farm-activity-reward-streak-chest-trail-state=\{item\.state\}[\s\S]*data-farm-activity-reward-streak-chest-trail-reward=\{item\.shortRewardLabel\}[\s\S]*\{item\.label\}[\s\S]*\{item\.progressLabel\}[\s\S]*data-farm-activity-reward-streak-chest-trail-reward-label="true"[\s\S]*\{item\.shortRewardLabel\}/);
   assert.match(panel, /farmActivityDigest\.rewardStreakChestActiveHint && \([\s\S]*className="t8-farm-story-panel__activity-streak-chest-active"[\s\S]*data-farm-activity-reward-streak-chest-active="true"[\s\S]*data-farm-activity-reward-streak-chest-active-stage=\{farmActivityDigest\.rewardStreakChestActiveTrailLabel \|\| undefined\}[\s\S]*data-farm-activity-reward-streak-chest-active-reward=\{farmActivityDigest\.rewardStreakChestActiveRewardLabel \|\| undefined\}[\s\S]*data-farm-activity-reward-streak-chest-next-reward=\{farmActivityDigest\.rewardStreakChestNextRewardLabel \|\| undefined\}[\s\S]*\{farmActivityDigest\.rewardStreakChestActiveHint\}/);
-  assert.match(panel, /const handleFarmActivityChestChargeAction = \(\) => \{[\s\S]*if \(!farmActivityRewardStreakGoal \|\| farmMiniQuickActionBusy\) \{[\s\S]*handleOpenFarmActivity\('chest'\);[\s\S]*return;[\s\S]*\}[\s\S]*setFarmActivityRewardStreakActionReceipt\(`宝箱蓄能：\$\{farmActivityRewardStreakGoal\.actionLabel\}`\)[\s\S]*setFarmActivityChestChargeReceipt\(`蓄能已确认：\$\{farmActivityRewardStreakGoal\.actionLabel\}`\)[\s\S]*handleFarmFocusAction\(farmActivityRewardStreakGoal\);[\s\S]*handleOpenFarmActivity\('chest'\);[\s\S]*\}/);
+  assertIncludesInOrder(panel, [
+    'const handleFarmActivityChestChargeAction = () => {',
+    'if (!farmActivityRewardStreakGoal || farmMiniQuickActionBusy) {',
+    "handleOpenFarmActivity('chest');",
+    'return;',
+    'setFarmActivityRewardStreakActionReceipt(`宝箱蓄能：${farmActivityRewardStreakGoal.actionLabel}`)',
+    'setFarmActivityChestChargeReceipt(`蓄能已确认：${farmActivityRewardStreakGoal.actionLabel}`)',
+    'handleFarmFocusAction(farmActivityRewardStreakGoal);',
+    "handleOpenFarmActivity('chest');",
+  ]);
   assert.match(panel, /farmActivityDigest\.rewardStreakChestState === 'warming' && farmActivityDigest\.rewardStreakChestChargeLabel && \([\s\S]*data-farm-activity-reward-streak-chest-charge-cta="true"[\s\S]*data-farm-activity-reward-streak-chest-charge-reward=\{farmActivityDigest\.rewardStreakChestActiveRewardLabel \|\| undefined\}[\s\S]*data-farm-activity-reward-streak-chest-charge-next=\{farmActivityDigest\.rewardStreakChestNextRewardLabel \|\| undefined\}[\s\S]*disabled=\{!farmActivityRewardStreakGoal \|\| farmMiniQuickActionBusy\}[\s\S]*handleFarmActivityChestChargeAction\(\)[\s\S]*\{farmMiniQuickActionBusy \? farmMiniQuickActionFeedback\?\.label \|\| '蓄能中' : farmActivityDigest\.rewardStreakChestChargeLabel\}[\s\S]*data-farm-activity-reward-streak-chest-charge-reward-label="true"[\s\S]*\{farmActivityDigest\.rewardStreakChestActiveRewardLabel\.replace\('当前奖励：', '冲 '\)\}/);
   assert.match(panel, /farmActivityChestChargeReceipt && \([\s\S]*data-farm-activity-reward-streak-chest-charge-receipt="true"[\s\S]*data-farm-activity-reward-streak-chest-charge-receipt-reward=\{farmActivityDigest\.rewardStreakChestActiveRewardLabel \|\| undefined\}[\s\S]*data-farm-activity-reward-streak-chest-charge-receipt-next=\{farmActivityDigest\.rewardStreakChestNextRewardLabel \|\| undefined\}[\s\S]*role="status"[\s\S]*aria-live="polite"[\s\S]*<Sparkles size=\{9\} \/>[\s\S]*\{farmActivityChestChargeReceipt\}[\s\S]*data-farm-activity-reward-streak-chest-charge-receipt-progress="true"[\s\S]*\{farmActivityDigest\.rewardStreakChestMeterLabel\}[\s\S]*data-farm-activity-reward-streak-chest-charge-receipt-remaining="true"[\s\S]*\{farmActivityDigest\.rewardStreakChestRemainingLabel\}[\s\S]*data-farm-activity-reward-streak-chest-charge-receipt-reward-label="true"[\s\S]*\{farmActivityDigest\.rewardStreakChestActiveRewardLabel\.replace\('当前奖励：', '冲 '\)\}[\s\S]*data-farm-activity-reward-streak-chest-charge-receipt-next-label="true"[\s\S]*\{farmActivityDigest\.rewardStreakChestNextRewardLabel\.replace\('下一段：', '下段 '\)\.replace\('下一轮：', '下轮 '\)\}/);
   assert.match(panel, /farmActivityChestChargeReceipt && farmActivityRewardStreakGoal && \([\s\S]*data-farm-activity-reward-streak-chest-charge-receipt-next-action="true"[\s\S]*disabled=\{farmMiniQuickActionBusy\}[\s\S]*handleFarmActivityChestChargeAction\(\)[\s\S]*\{farmMiniQuickActionBusy \? farmMiniQuickActionFeedback\?\.label \|\| '稍后继续' : `继续\$\{farmActivityRewardStreakGoal\.actionLabel\}`\}/);

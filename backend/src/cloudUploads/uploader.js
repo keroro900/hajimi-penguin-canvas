@@ -281,7 +281,7 @@ function buildObjectKey(target, filePath, payload = {}) {
   const yyyy = String(now.getFullYear());
   const mm = String(now.getMonth() + 1).padStart(2, '0');
   const dd = String(now.getDate()).padStart(2, '0');
-  const prefixTemplate = String(target.prefix || 't8-canvas/{kind}/{yyyy-mm}').trim();
+  const prefixTemplate = String(target.prefix || 'hajimi/{kind}/{yyyy-mm}').trim();
   const prefix = prefixTemplate
     .replace(/\{kind\}/g, kind)
     .replace(/\{yyyy-mm\}/g, `${yyyy}-${mm}`)
@@ -586,7 +586,7 @@ function classifyCloudUploadError(target, error) {
         ...base,
         code: 'endpoint',
         message: `${name} 地址或目录不可访问：请确认 WebDAV 地址和网盘目录。`,
-        hint: 'Endpoint 应填写 WebDAV 根地址，例如 http://127.0.0.1:5244/dav/百度网盘；目录可填 /T8PenguinCanvas。先在浏览器或 WebDAV 客户端确认地址可访问。',
+        hint: 'Endpoint 应填写 WebDAV 根地址，例如 http://127.0.0.1:5244/dav/百度网盘；目录可填 /hajimi。先在浏览器或 WebDAV 客户端确认地址可访问。',
       };
     }
     if (statusCode === 409 || /conflict|parent|父目录/.test(lower)) {

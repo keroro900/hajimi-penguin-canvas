@@ -523,7 +523,7 @@ export default function Sidebar({ onAddNode }: SidebarProps) {
 
   return (
     <div
-      className={`t8-sidebar w-64 flex flex-col border-r overflow-hidden ${
+      className={`t8-sidebar w-64 h-full min-h-0 flex flex-col border-r overflow-hidden ${
         isPixel
           ? 'px-panel'
           : isDark
@@ -538,24 +538,34 @@ export default function Sidebar({ onAddNode }: SidebarProps) {
         }`}
       >
         <div
-          className={`flex items-center gap-1 px-2 py-2 ${
+          className={`flex items-center gap-2 px-2 py-2 ${
             isPixel ? '' : isDark ? 'text-white/70' : 'text-zinc-700'
           }`}
         >
-          <button
-            onClick={() => setCanvasPanelOpen((v) => !v)}
-            className={`flex items-center gap-1 flex-1 text-left text-[11px] font-semibold uppercase tracking-wider ${
-              isPixel
-                ? 'px-group-title'
-                : isDark
-                  ? 'hover:text-white'
-                  : 'hover:text-zinc-900'
+          <div
+            className={`flex min-w-0 flex-1 items-center gap-1 text-[11px] font-semibold uppercase tracking-wider ${
+              isPixel ? 'px-group-title' : ''
             }`}
           >
-            {canvasPanelOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
             <FolderOpen size={12} />
-            <span>画布</span>
+            <span className="truncate">画布</span>
             <span className="opacity-60 ml-1 normal-case">{canvases.length}</span>
+          </div>
+          <button
+            onClick={() => setCanvasPanelOpen((v) => !v)}
+            className={
+              isPixel
+                ? 'px-btn px-btn--icon px-btn--ghost'
+                : `p-1 rounded-md ${
+                    isDark
+                      ? 'hover:bg-white/10 text-white/70 hover:text-white'
+                      : 'hover:bg-black/10 text-zinc-700 hover:text-zinc-900'
+                  }`
+            }
+            title={canvasPanelOpen ? '收起画布列表' : '展开画布列表'}
+            aria-label={canvasPanelOpen ? '收起画布列表' : '展开画布列表'}
+          >
+            {canvasPanelOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
           </button>
           <button
             onClick={handleCreateCanvas}
@@ -761,7 +771,7 @@ export default function Sidebar({ onAddNode }: SidebarProps) {
       </div>
 
       {/* 节点分组列表 */}
-      <div className="flex-1 overflow-y-auto p-2 space-y-1 scrollbar-hide">
+      <div className="flex-1 min-h-0 overflow-y-auto p-2 space-y-1 scrollbar-hide">
         {Object.entries(NODE_GROUPS).map(([key, group]) => {
           const visible = filterNodes(group.nodes);
           if (visible.length === 0) return null;
@@ -799,9 +809,9 @@ export default function Sidebar({ onAddNode }: SidebarProps) {
         }`}
       >
         {isPixel ? (
-          <span className="px-chip px-chip--muted">T8 · v{__APP_VERSION__}</span>
+          <span className="px-chip px-chip--muted">v{__APP_VERSION__}</span>
         ) : (
-          <>T8-penguin-canvas · v{__APP_VERSION__}</>
+          <>版本 v{__APP_VERSION__}</>
         )}
       </div>
     </div>

@@ -133,11 +133,13 @@ export const NODE_PORTS: Record<string, NodePorts> = {
   // 文本分割: 长文本/上游文本 → 多段 textSegments, 下游按多文本集合消费
   'text-split': { inputs: ['text'], outputs: ['text'] },
   resize: { inputs: ['image'], outputs: ['image'] },
+  'lut-color': { inputs: ['image'], outputs: ['image'] },
   combine: { inputs: ['image'], outputs: ['image'] },
   'remove-bg': { inputs: ['image'], outputs: ['image'] },
   upscale: { inputs: ['image'], outputs: ['image'] },
   'grid-crop': { inputs: ['image'], outputs: ['image'] },
   'grid-editor': { inputs: ['image'], outputs: ['image'] },
+  'clip-studio': { inputs: ['text', 'image', 'video', 'audio'], outputs: ['video'] },
 
   // ========== Auxiliary ==========
   edit: { inputs: ['text', 'image'], outputs: ['image'] },
@@ -165,6 +167,7 @@ export const NODE_PORTS: Record<string, NodePorts> = {
   'topaz-video-upscale': { inputs: ['video'], outputs: ['video'] },
 
   // ========== 3D ==========
+  'director-studio': { inputs: ['text', 'image', 'model3d'], outputs: ['text', 'image', 'video'] },
   'panorama-3d': { inputs: ['image'], outputs: ['image'] },
 
   // ========== 上传素材节点 (NEW) ==========
@@ -185,6 +188,10 @@ export const NODE_PORTS: Record<string, NodePorts> = {
   groupBox: { inputs: [], outputs: ['any'] },
   // Codex 专用生图工作台：只接文本/图像参考，只输出图像和最终文本。
   'codex-image-conjure': { inputs: ['text', 'image'], outputs: ['image', 'text'] },
+  // GenClaw 白盒生图：文本/图像进，草图渲染图与审稿文本出。
+  'genclaw': { inputs: ['text', 'image'], outputs: ['image', 'text'] },
+  // 代码草图渲染器：只接代码文本，输出渲染图和清洗后的代码文本。
+  'sketch-renderer': { inputs: ['text'], outputs: ['image', 'text'] },
 };
 
 /**

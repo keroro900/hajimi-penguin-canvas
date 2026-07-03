@@ -6,7 +6,7 @@
  * 2) 分类：列出分类，支持新增、重命名、删除（删除会把分类下应用归零为未分类）
  *
  * 仅作为浮层渲染，由 RHToolsNode 在用户点击「编辑」时打开。
- * 自动填名：通过 fetchRhAppInfo(webappId) 从 T8 后端 /api/proxy/runninghub/app-info 拉取。
+ * 自动填名：通过 fetchRhAppInfo(webappId) 从本地后端 /api/proxy/runninghub/app-info 拉取。
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Download, Upload } from 'lucide-react';

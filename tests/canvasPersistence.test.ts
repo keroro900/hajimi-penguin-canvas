@@ -14,4 +14,8 @@ test('canvas route uses resilient JSON persistence for crash recovery', () => {
   assert.match(source, /atomicWriteJson\(getCanvasFile\(id\)/);
   assert.match(source, /atomicWriteJson\(file,\s*persisted\)/);
   assert.match(source, /const data = readJsonFile\(file\)/);
+  assert.match(source, /function replaceFileWithRetry/);
+  assert.match(source, /EPERM|EBUSY|EACCES/);
+  assert.match(source, /fs\.copyFileSync\(tmp,\s*file\)/);
+  assert.match(source, /replaceFileWithRetry\(tmp,\s*file\)/);
 });

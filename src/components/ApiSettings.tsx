@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ChevronDown, ChevronRight, CloudUpload, Download, ExternalLink, Eye, EyeOff, FileUp, Info, KeyRound, Loader2, Lock, Plus, Save, Settings2, TestTube2, Trash2, X, FolderOpen, ServerCog, Volume2 } from 'lucide-react';
-import { useApiKeysStore, FIXED_ZHENZHEN_BASE, RH_BASE } from '../stores/apiKeys';
+import { useApiKeysStore, DEFAULT_ZHENZHEN_BASE, RH_BASE, HAKIMI_MCP_DEFAULT_BACKEND_URL } from '../stores/apiKeys';
 import { taskCompletionSound as taskCompletionSoundController } from '../stores/taskCompletionSound';
 import { useThemeStore } from '../stores/theme';
 import type { AdvancedProviderConfig, AdvancedProviderProtocol, ApiSettings, CloudUploadProvider, CloudUploadTargetConfig } from '../types/canvas';
-import { getRawSettings, resetTaskCompletionSound, testAdvancedProvider, testCloudUploadTarget, uploadTaskCompletionSound } from '../services/api';
+import { fetchAdvancedProviderModels, fetchZhenzhenModels, getRawSettings, resetTaskCompletionSound, testAdvancedProvider, testCloudUploadTarget, uploadTaskCompletionSound } from '../services/api';
 import { playTaskCompletionSound } from '../utils/taskCompletionSound';
 import { UI_FONT_PRESETS, resolveUiFontStack } from '../utils/uiFont';
+import MODEL_PROTOCOL_REGISTRY from '../../shared/modelProtocolRegistry.json' with { type: 'json' };
+import { parseModelList, stringifyModelList } from '../providers/models';
 import {
   advancedProviderSummary as summarizeAdvancedProviderForm,
   normalizeModelscopeLoraStrength,
@@ -57,10 +59,146 @@ interface KeySpec {
 }
 
 const COMMON_KEYS: KeySpec[] = [
-  { field: 'zhenzhenApiKey', label: '贞贞工坊 API Key', desc: '· 通用后备 · 用于图像/视频/音频生成', bullet: 'bg-amber-400' },
+  { field: 'zhenzhenApiKey', label: '通用服务 API Key', desc: '· 通用后备 · 用于图像/视频/音频生成', bullet: 'bg-amber-400' },
   { field: 'rhApiKey', label: 'RunningHub API Key', desc: '· RunningHub 节点与 RH 钱包应用节点共用', bullet: 'bg-cyan-400' },
   { field: 'llmApiKey', label: 'LLM 独立 API Key', desc: '· 额度隔离 · 用于 LLM/Vision', bullet: 'bg-emerald-400' },
 ];
+
+const COMMON_KEY_BASE_URL_FIELDS: Partial<Record<KeyField, keyof ApiSettings>> = {
+  zhenzhenApiKey: 'zhenzhenBaseUrl',
+  rhApiKey: 'rhBaseUrl',
+  llmApiKey: 'llmBaseUrl',
+};
+
+const COMMON_KEY_BASE_URL_PLACEHOLDERS: Partial<Record<KeyField, string>> = {
+  zhenzhenApiKey: 'https://api.example.com',
+  rhApiKey: RH_BASE,
+  llmApiKey: 'https://api.example.com/v1',
+};
+
+type ModelOverrideField = { id: string; label: string; placeholder: string };
+type ImageModelProtocol = 'images' | 'images-generations' | 'images-edits' | 'openai-chat' | 'gemini-native';
+type ImageProtocolOption = { value: ImageModelProtocol; label: string };
+
+const MODEL_REGISTRY_DEFAULT_SERVICE = (MODEL_PROTOCOL_REGISTRY as any).defaultService || {};
+const MODEL_REGISTRY_ADVANCED_PROVIDERS = (MODEL_PROTOCOL_REGISTRY as any).advancedProviders || {};
+
+function advancedProviderRegistryDisplay(protocol: AdvancedProviderProtocol): Record<string, any> {
+  const display = MODEL_REGISTRY_ADVANCED_PROVIDERS[protocol]?.display;
+  return display && typeof display === 'object' && !Array.isArray(display) ? display : {};
+}
+
+const IMAGE_MODEL_OVERRIDE_FIELDS = (
+  Array.isArray(MODEL_REGISTRY_DEFAULT_SERVICE.imageModelOverrides)
+    ? MODEL_REGISTRY_DEFAULT_SERVICE.imageModelOverrides
+    : []
+) as readonly ModelOverrideField[];
+
+const VIDEO_MODEL_OVERRIDE_FIELDS = (
+  Array.isArray(MODEL_REGISTRY_DEFAULT_SERVICE.videoModelOverrides)
+    ? MODEL_REGISTRY_DEFAULT_SERVICE.videoModelOverrides
+    : []
+) as readonly ModelOverrideField[];
+
+const IMAGE_MODEL_OVERRIDE_LABELS: Record<string, string> = Object.fromEntries(
+  IMAGE_MODEL_OVERRIDE_FIELDS.map((field) => [field.id, field.label]),
+);
+
+const IMAGE_MODEL_PROTOCOL_OPTIONS = (
+  Array.isArray(MODEL_REGISTRY_DEFAULT_SERVICE.imageProtocolOptions)
+    ? MODEL_REGISTRY_DEFAULT_SERVICE.imageProtocolOptions
+    : [{ value: 'images', label: 'Images API' }]
+) as readonly ImageProtocolOption[];
+
+const OPENAI_COMPAT_IMAGE_PROTOCOL_OPTIONS = (
+  Array.isArray(MODEL_REGISTRY_DEFAULT_SERVICE.openaiCompatibleImageProtocolOptions)
+    ? MODEL_REGISTRY_DEFAULT_SERVICE.openaiCompatibleImageProtocolOptions
+    : IMAGE_MODEL_PROTOCOL_OPTIONS.filter((option) => option.value !== 'gemini-native')
+) as readonly ImageProtocolOption[];
+
+function stringifyImageModelOverrides(value: unknown): string {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return '';
+  return Object.entries(value as Record<string, unknown>)
+    .map(([key, raw]) => [String(key || '').trim(), String(raw || '').trim()])
+    .filter(([key, model]) => key && model)
+    .map(([key, model]) => `${key}=${model}`)
+    .join('\n');
+}
+
+function parseImageModelOverrides(text: string): Record<string, string> {
+  const next: Record<string, string> = {};
+  String(text || '').split(/\r?\n/).forEach((line) => {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) return;
+    const splitIndex = trimmed.indexOf('=');
+    const key = splitIndex >= 0 ? trimmed.slice(0, splitIndex).trim() : '';
+    const model = splitIndex >= 0 ? trimmed.slice(splitIndex + 1).trim() : '';
+    if (!key || !model) return;
+    next[key] = model;
+  });
+  return next;
+}
+
+function parseImageModelOverrideInputs(values: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(values)
+      .map(([key, value]) => [key, stringifyModelList(value)])
+      .filter(([, value]) => value),
+  );
+}
+
+function normalizeImageModelProtocolInputs(values: Record<string, string>): Record<string, ImageModelProtocol> {
+  const allowed = new Set<ImageModelProtocol>(IMAGE_MODEL_PROTOCOL_OPTIONS.map((option) => option.value));
+  return Object.fromEntries(
+    Object.entries(values)
+      .map(([key, value]) => [key, String(value || '').trim() as ImageModelProtocol])
+    .filter(([, value]) => allowed.has(value as ImageModelProtocol)),
+  ) as Record<string, ImageModelProtocol>;
+}
+
+function compactModelText(value: string): string {
+  return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+
+function modelMatchesOverrideField(field: ModelOverrideField, model: string): boolean {
+  const text = String(model || '').toLowerCase();
+  const compactText = compactModelText(text);
+  const compactId = compactModelText(field.id);
+  const compactPlaceholder = compactModelText(field.placeholder);
+  if (compactId && compactText.includes(compactId)) return true;
+  if (compactPlaceholder && (compactText === compactPlaceholder || compactText.includes(compactPlaceholder))) return true;
+
+  const tokens = field.id
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((token) => token && !['image', 'video', 'model', 'pro'].includes(token));
+  return tokens.length > 0 && tokens.every((token) => text.includes(token));
+}
+
+function looksLikeFetchedModelDisplayName(value: string): boolean {
+  return /[\u4e00-\u9fff]|\s/.test(String(value || '').trim());
+}
+
+function suggestImageModelOverride(field: ModelOverrideField, models: string[]): string {
+  const normalized = models
+    .map((model) => String(model || '').trim())
+    .filter(Boolean);
+  const exact = normalized.find((model) => model === field.id || model === field.placeholder);
+  if (exact) return exact;
+  return normalized.find((model) => modelMatchesOverrideField(field, model)) || '';
+}
+
+function reconcileFetchedModelOverride(field: ModelOverrideField, current: string, models: string[]): string {
+  const value = String(current || '').trim();
+  const normalized = models
+    .map((model) => String(model || '').trim())
+    .filter(Boolean);
+  if (!value) return suggestImageModelOverride(field, normalized);
+  const selected = parseModelList(value);
+  if (selected.length > 0 && selected.every((model) => normalized.includes(model))) return stringifyModelList(selected);
+  if (!looksLikeFetchedModelDisplayName(value)) return value;
+  return suggestImageModelOverride(field, normalized);
+}
 
 const CLASSIFIED_KEYS: KeySpec[] = [
   { field: 'gptImageApiKey', label: 'gpt-image 系列', desc: 'GPT2 / gpt-image-1 等图像任务专用', bullet: 'bg-pink-400' },
@@ -84,6 +222,7 @@ const PATH_FIELDS = [
   'resourceLibraryPath',
   'themeTemplatePath',
   'eagleApiBase',
+  'hakimiMcpBackendUrl',
 ] as const;
 
 const SETTINGS_BACKUP_SCHEMA = 't8-penguin-canvas-settings';
@@ -91,12 +230,39 @@ const SETTINGS_BACKUP_VERSION = 1;
 
 const ADVANCED_PROVIDER_LABELS: Record<AdvancedProviderProtocol, string> = {
   'openai-compatible': 'OpenAI 兼容',
+  openai: 'OpenAI 官方',
+  apimart: 'API Mart',
+  gemini: 'Gemini',
   modelscope: 'ModelScope',
   volcengine: '火山引擎',
   agnes: 'Agnes AI',
   comfyui: 'ComfyUI',
   'jimeng-cli': '即梦 CLI',
 };
+
+const BUILT_IN_ADVANCED_PROVIDER_IDS = new Set([
+  'openai-compatible',
+  'openai',
+  'apimart',
+  'gemini',
+  'modelscope',
+  'volcengine',
+  'comfyui',
+  'jimeng-cli',
+]);
+
+const CUSTOM_ADVANCED_PROVIDER_PREFIX = 'custom-api-';
+
+const CUSTOM_ADVANCED_PROVIDER_PROTOCOL_OPTIONS: AdvancedProviderProtocol[] = [
+  'openai-compatible',
+  'openai',
+  'apimart',
+  'gemini',
+  'modelscope',
+  'volcengine',
+  'comfyui',
+  'jimeng-cli',
+];
 
 const ADVANCED_PROVIDER_GUIDES: Record<AdvancedProviderProtocol, {
   subtitle: string;
@@ -109,12 +275,39 @@ const ADVANCED_PROVIDER_GUIDES: Record<AdvancedProviderProtocol, {
 }> = {
   'openai-compatible': {
     subtitle: '接入兼容 OpenAI 格式的图像 / 视频 / LLM 服务',
-    description: '适合接入你自己的中转站、One API、New API 或其他兼容 /v1/chat/completions、/v1/images/generations、/v1/videos/generations 的服务。',
+    description: '适合接入你自己的中转站、One API、New API 或其他兼容 OpenAI 标准图像 / 视频 / LLM 接口的服务；后端会按节点类型自动选择接口路径。',
     nodeScopes: ['图像节点', '视频节点', 'LLM 节点'],
     connectionHint: 'Base URL 填到 /v1 这一层，例如 https://api.example.com/v1；Key 留空会保留后端已保存的密钥。',
     modelHint: '每行一个模型名。只填你确实要在节点里选择的模型，空白时会使用内置兜底示例。',
     baseUrlPlaceholder: 'https://api.example.com/v1',
     keyLabel: 'API Key / Token',
+  },
+  openai: {
+    subtitle: '接入 OpenAI 官方接口',
+    description: '后端会按 OpenAI 官方协议自动选择 chat、image、video 路径；这里只需要填写 Base URL、Key 和模型名。',
+    nodeScopes: ['图像节点', '视频节点', 'LLM 节点'],
+    connectionHint: 'Base URL 通常为 https://api.openai.com/v1；后端会自动拼接标准接口路径。',
+    modelHint: '每行一个模型名。后端按节点类型自动调用聊天、图像或视频接口。',
+    baseUrlPlaceholder: 'https://api.openai.com/v1',
+    keyLabel: 'OpenAI API Key',
+  },
+  apimart: {
+    subtitle: '接入 API Mart / 中转聚合接口',
+    description: '适合接入兼容 OpenAI 路径的中转平台；后端按协议自动选择标准路径，用户无需填写 endpoint。',
+    nodeScopes: ['图像节点', '视频节点', 'LLM 节点'],
+    connectionHint: 'Base URL 填平台给出的 API 根地址，通常到 /v1 这一层。',
+    modelHint: '每行一个平台支持的模型名。',
+    baseUrlPlaceholder: 'https://api.example.com/v1',
+    keyLabel: 'API Key / Token',
+  },
+  gemini: {
+    subtitle: '接入 Google Gemini / Veo 风格接口',
+    description: '后端会自动使用 Gemini generateContent 协议，不需要填写 /models/...:generateContent 路径。',
+    nodeScopes: ['图像节点', 'LLM 节点'],
+    connectionHint: 'Base URL 通常为 https://generativelanguage.googleapis.com/v1beta；Key 填 Google AI Studio API Key。',
+    modelHint: '聊天或图像模型按 Gemini 模型名填写，例如 gemini-2.5-flash。',
+    baseUrlPlaceholder: 'https://generativelanguage.googleapis.com/v1beta',
+    keyLabel: 'Gemini API Key',
   },
   modelscope: {
     subtitle: '接入 ModelScope 的异步图像任务与兼容聊天接口',
@@ -130,7 +323,7 @@ const ADVANCED_PROVIDER_GUIDES: Record<AdvancedProviderProtocol, {
     description: '适合用火山引擎做 Seedream 图像、Seedance 视频或方舟聊天模型。生成调用使用方舟 Ark API Key，不使用 Access Key ID / Secret Access Key；使用 Seedance2.0 前需要先在火山方舟控制台开通对应模型服务。',
     nodeScopes: ['图像节点', '视频节点', 'LLM 节点'],
     connectionHint: 'Base URL 填火山方舟 API 地址；Seedream / Seedance / LLM 生成必须填方舟 Ark API Key。Access Key ID / Secret Access Key 是另一类凭证，请放到下方火山 AK/SK 高级项。',
-    modelHint: '图像、视频、聊天模型分别按火山控制台里的模型接入点填写，每行一个。Seedance2.0 / Seedance2.0 Fast 如果未在方舟控制台开通，提交会返回 ModelNotOpen / HTTP 404。',
+    modelHint: advancedProviderRegistryDisplay('volcengine').modelHint || '图像、视频、聊天模型分别按火山控制台里的模型接入点填写，每行一个。',
     baseUrlPlaceholder: 'https://ark.cn-beijing.volces.com/api/v3',
     keyLabel: '方舟 Ark API Key（生成用，不是 AK/SK）',
   },
@@ -156,7 +349,7 @@ const ADVANCED_PROVIDER_GUIDES: Record<AdvancedProviderProtocol, {
     description: '适合已经在本机配置好即梦 CLI 的用户。它不走 API Key，而是调用本地命令并轮询任务结果。',
     nodeScopes: ['图像节点', '视频节点', 'SD2.0 节点'],
     connectionHint: '填写 dreamina 可执行文件路径；如果 CLI 装在 WSL 里，再打开 WSL 并填写发行版名称。',
-    modelHint: '模型名按 CLI 支持的命令参数填写；图像可填 seedream-4.7，视频可填 seedance2.0fast_vip、seedance2.0_vip、seedance2.0fast、seedance2.0。每行一个。',
+    modelHint: advancedProviderRegistryDisplay('jimeng-cli').modelHint || '模型名按 CLI 支持的命令参数填写，每行一个。',
   },
 };
 
@@ -168,6 +361,72 @@ const MODELSCOPE_TOKEN_URLS = {
 const AGNES_API_KEY_URL = 'https://platform.agnes-ai.com/settings/apiKeys';
 
 const JIMENG_CLI_INSTALL_COMMAND = 'curl -s https://jimeng.jianying.com/cli | bash';
+
+function isCustomAdvancedProvider(provider: AdvancedProviderConfig | null | undefined): boolean {
+  return !!provider?.id && !BUILT_IN_ADVANCED_PROVIDER_IDS.has(provider.id);
+}
+
+function createCustomAdvancedProvider(existing: AdvancedProviderConfig[] = []): AdvancedProviderConfig {
+  const usedIds = new Set(existing.map((provider) => provider.id));
+  let index = existing.filter((provider) => isCustomAdvancedProvider(provider)).length + 1;
+  let id = `${CUSTOM_ADVANCED_PROVIDER_PREFIX}${index}`;
+  while (usedIds.has(id)) {
+    index += 1;
+    id = `${CUSTOM_ADVANCED_PROVIDER_PREFIX}${index}`;
+  }
+  return {
+    id,
+    label: `自定义 OpenAI 兼容 ${index}`,
+    protocol: 'openai-compatible',
+    baseUrl: '',
+    enabled: true,
+    apiKey: '',
+    imageModels: [],
+    videoModels: [],
+    chatModels: [],
+    defaults: {},
+  };
+}
+
+function customAdvancedProviderProtocolPatch(protocol: AdvancedProviderProtocol): Partial<AdvancedProviderConfig> {
+  const guide = ADVANCED_PROVIDER_GUIDES[protocol];
+  const baseUrl = guide?.baseUrlPlaceholder || '';
+  const patch: Partial<AdvancedProviderConfig> = {
+    protocol,
+    baseUrl: protocol === 'jimeng-cli' ? '' : baseUrl,
+    apiKey: '',
+    imageModels: [],
+    videoModels: [],
+    chatModels: [],
+    defaults: {},
+    allowRemote: false,
+    modelscopeConfig: undefined,
+    volcengineConfig: undefined,
+    comfyuiConfig: undefined,
+    jimengConfig: undefined,
+  };
+  if (protocol === 'modelscope') {
+    patch.modelscopeConfig = { loras: [] };
+  }
+  if (protocol === 'volcengine') {
+    patch.volcengineConfig = { project: 'default', region: 'cn-beijing' };
+  }
+  if (protocol === 'comfyui') {
+    patch.comfyuiConfig = {
+      instances: [baseUrl || 'http://127.0.0.1:8188'],
+      workflows: [],
+    };
+  }
+  if (protocol === 'jimeng-cli') {
+    patch.jimengConfig = {
+      executablePath: '',
+      useWsl: false,
+      wslDistro: '',
+      pollSeconds: 3600,
+    };
+  }
+  return patch;
+}
 
 const CLOUD_UPLOAD_LABELS: Record<CloudUploadProvider, string> = {
   'tencent-cos': '腾讯云 COS',
@@ -302,6 +561,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
   const isPixel = style === 'pixel';
 
   const [inputs, setInputs] = useState<Record<KeyField, string>>(emptyMap());
+  const [baseUrlInputs, setBaseUrlInputs] = useState<Record<string, string>>({});
   const [shows, setShows] = useState<Record<KeyField, boolean>>(emptyShow());
   const [clearedFields, setClearedFields] = useState<Partial<Record<KeyField, boolean>>>({});
   const [saved, setSaved] = useState(false);
@@ -315,6 +575,15 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
   const [themeTemplatePathInput, setThemeTemplatePathInput] = useState<string>('');
   // 本地 Eagle API 地址
   const [eagleApiBaseInput, setEagleApiBaseInput] = useState<string>('');
+  const [hakimiMcpBackendUrlInput, setHakimiMcpBackendUrlInput] = useState<string>(HAKIMI_MCP_DEFAULT_BACKEND_URL);
+  const [zhenzhenImageModelOverridesInput, setZhenzhenImageModelOverridesInput] = useState<Record<string, string>>({});
+  const [zhenzhenVideoModelOverridesInput, setZhenzhenVideoModelOverridesInput] = useState<Record<string, string>>({});
+  const [zhenzhenImageModelProtocolsInput, setZhenzhenImageModelProtocolsInput] = useState<Record<string, string>>({});
+  const [modelOverridesOpen, setModelOverridesOpen] = useState(false);
+  const [modelOverrideTab, setModelOverrideTab] = useState<'image' | 'video'>('image');
+  const [zhenzhenFetchedModels, setZhenzhenFetchedModels] = useState<string[]>([]);
+  const [zhenzhenModelFetchStatus, setZhenzhenModelFetchStatus] = useState<{ loading?: boolean; ok?: boolean; message?: string }>({});
+  const [uiFontSettingsOpen, setUiFontSettingsOpen] = useState(false);
   // 分类独立 Key 区块折叠状态（新手友好：默认折叠，点击展开）
   const [classifiedOpen, setClassifiedOpen] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -323,6 +592,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
   const [advancedSecretShows, setAdvancedSecretShows] = useState<Record<string, boolean>>({});
   const [advancedDirty, setAdvancedDirty] = useState(false);
   const [advancedTestStatus, setAdvancedTestStatus] = useState<Record<string, { loading?: boolean; ok?: boolean; message?: string }>>({});
+  const [advancedModelFetchStatus, setAdvancedModelFetchStatus] = useState<Record<string, { loading?: boolean; ok?: boolean; message?: string }>>({});
   const [advancedComfyDrafts, setAdvancedComfyDrafts] = useState<Record<string, { workflowJson?: string; fields?: string; excludeRules?: string }>>({});
   const [cloudUploadOpen, setCloudUploadOpen] = useState(false);
   const [cloudUploadTargetsInput, setCloudUploadTargetsInput] = useState<CloudUploadTargetConfig[]>([]);
@@ -347,6 +617,11 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
   useEffect(() => {
     if (open) {
       setInputs(emptyMap());
+      setBaseUrlInputs({
+        zhenzhenBaseUrl: (settings as any)?.zhenzhenBaseUrl || DEFAULT_ZHENZHEN_BASE,
+        rhBaseUrl: (settings as any)?.rhBaseUrl || RH_BASE,
+        llmBaseUrl: (settings as any)?.llmBaseUrl || (settings as any)?.zhenzhenBaseUrl || DEFAULT_ZHENZHEN_BASE,
+      });
       setShows(emptyShow());
       setClearedFields({});
       revealedRef.current = {};
@@ -362,6 +637,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
       setAdvancedSecretShows({});
       setAdvancedDirty(false);
       setAdvancedTestStatus({});
+      setAdvancedModelFetchStatus({});
       setAdvancedComfyDrafts({});
       setCloudUploadOpen(false);
       const cloudTargets = Array.isArray((settings as any)?.cloudUploadTargets)
@@ -381,6 +657,15 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
       setResourceLibraryPathInput((settings as any)?.resourceLibraryPath || '');
       setThemeTemplatePathInput((settings as any)?.themeTemplatePath || '');
       setEagleApiBaseInput((settings as any)?.eagleApiBase || '');
+      setHakimiMcpBackendUrlInput((settings as any)?.hakimiMcpBackendUrl || HAKIMI_MCP_DEFAULT_BACKEND_URL);
+      setZhenzhenImageModelOverridesInput((settings as any)?.zhenzhenImageModelOverrides || {});
+      setZhenzhenVideoModelOverridesInput((settings as any)?.zhenzhenVideoModelOverrides || {});
+      setZhenzhenImageModelProtocolsInput((settings as any)?.zhenzhenImageModelProtocols || {});
+      setModelOverridesOpen(false);
+      setModelOverrideTab('image');
+      setUiFontSettingsOpen(false);
+      setZhenzhenFetchedModels([]);
+      setZhenzhenModelFetchStatus({});
     }
   }, [customUiFont, open, settings]);
 
@@ -422,6 +707,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
     resourceLibraryPath: resourceLibraryPathInput.trim(),
     themeTemplatePath: themeTemplatePathInput.trim(),
     eagleApiBase: eagleApiBaseInput.trim(),
+    hakimiMcpBackendUrl: hakimiMcpBackendUrlInput.trim(),
     ...(advancedDirty ? { advancedProviders: advancedProvidersInput } : {}),
     ...(cloudUploadDirty ? { cloudUploadTargets: cloudUploadTargetsInput } : {}),
   });
@@ -491,9 +777,6 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
         ...Object.fromEntries(
           Object.entries(editable).filter(([, value]) => typeof value === 'string' && value.trim())
         ),
-        zhenzhenBaseUrl: FIXED_ZHENZHEN_BASE,
-        llmBaseUrl: FIXED_ZHENZHEN_BASE,
-        rhBaseUrl: RH_BASE,
       };
       const payload = {
         schema: SETTINGS_BACKUP_SCHEMA,
@@ -528,6 +811,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
     if (typeof patch.resourceLibraryPath === 'string') setResourceLibraryPathInput(patch.resourceLibraryPath);
     if (typeof patch.themeTemplatePath === 'string') setThemeTemplatePathInput(patch.themeTemplatePath);
     if (typeof patch.eagleApiBase === 'string') setEagleApiBaseInput(patch.eagleApiBase);
+    if (typeof patch.hakimiMcpBackendUrl === 'string') setHakimiMcpBackendUrlInput(patch.hakimiMcpBackendUrl);
     if (Array.isArray(patch.advancedProviders)) {
       setAdvancedProvidersInput(patch.advancedProviders);
       setActiveAdvancedProviderId(patch.advancedProviders[0]?.id || '');
@@ -650,6 +934,33 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
     if (newEagleApiBase && newEagleApiBase !== oldEagleApiBase) {
       (patch as any).eagleApiBase = newEagleApiBase;
     }
+    const newHakimiMcpBackendUrl = (hakimiMcpBackendUrlInput || '').trim();
+    const oldHakimiMcpBackendUrl = (settings as any)?.hakimiMcpBackendUrl || HAKIMI_MCP_DEFAULT_BACKEND_URL;
+    if (newHakimiMcpBackendUrl !== oldHakimiMcpBackendUrl) {
+      (patch as any).hakimiMcpBackendUrl = newHakimiMcpBackendUrl;
+    }
+    const nextModelOverrides = parseImageModelOverrideInputs(zhenzhenImageModelOverridesInput);
+    const oldModelOverridesText = stringifyImageModelOverrides((settings as any)?.zhenzhenImageModelOverrides);
+    if (stringifyImageModelOverrides(nextModelOverrides) !== oldModelOverridesText) {
+      (patch as any).zhenzhenImageModelOverrides = nextModelOverrides;
+    }
+    const nextVideoModelOverrides = parseImageModelOverrideInputs(zhenzhenVideoModelOverridesInput);
+    const oldVideoModelOverridesText = stringifyImageModelOverrides((settings as any)?.zhenzhenVideoModelOverrides);
+    if (stringifyImageModelOverrides(nextVideoModelOverrides) !== oldVideoModelOverridesText) {
+      (patch as any).zhenzhenVideoModelOverrides = nextVideoModelOverrides;
+    }
+    const nextModelProtocols = normalizeImageModelProtocolInputs(zhenzhenImageModelProtocolsInput);
+    const oldModelProtocols = normalizeImageModelProtocolInputs((settings as any)?.zhenzhenImageModelProtocols || {});
+    if (JSON.stringify(nextModelProtocols) !== JSON.stringify(oldModelProtocols)) {
+      (patch as any).zhenzhenImageModelProtocols = nextModelProtocols;
+    }
+    for (const field of ['zhenzhenBaseUrl', 'rhBaseUrl', 'llmBaseUrl'] as const) {
+      const next = String(baseUrlInputs[field] || '').trim();
+      const old = String((settings as any)?.[field] || '').trim();
+      if (next && next !== old) {
+        (patch as any)[field] = next;
+      }
+    }
     if (advancedDirty) {
       (patch as any).advancedProviders = advancedProvidersInput;
     }
@@ -699,11 +1010,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
     : 't8-api-settings-action-btn flex items-center gap-1 text-[11px] px-2 py-1 rounded-md transition border';
 
   const openExternal = (url: string) => {
-    try {
-      window.open(url, '_blank', 'noopener,noreferrer');
-    } catch {
-      // 志忘
-    }
+    window.open(url, '_blank', 'noopener,noreferrer');
   };
 
   const isTaskCompletionSoundFile = (file: File): boolean => {
@@ -773,24 +1080,12 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
 
   // 每个字段费应的「获取 APIKey」按钮配置
   const renderGetKeyButtons = (field: KeyField) => {
-    if (field === 'zhenzhenApiKey') {
-      return (
-        <button
-          type="button"
-          onClick={() => openExternal('https://ai.t8star.org/register?aff=dP7j')}
-          className={linkBtnCls}
-          title="前往贞贞工坊注册获取 APIKEY"
-        >
-          <ExternalLink size={11} /> 获取 APIKey
-        </button>
-      );
-    }
     if (field === 'rhApiKey') {
       return (
         <>
           <button
             type="button"
-            onClick={() => openExternal('https://www.runninghub.cn/user-center/1819214514410942465/webapp?inviteCode=rh-v1121')}
+            onClick={() => openExternal('https://www.runninghub.cn/')}
             className={linkBtnCls}
             title="国内用户·前往 runninghub.cn 获取 APIKEY"
           >
@@ -798,7 +1093,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
           </button>
           <button
             type="button"
-            onClick={() => openExternal('https://www.runninghub.ai/user-center/1819214514410942465/webapp?inviteCode=rh-v1121')}
+            onClick={() => openExternal('https://www.runninghub.ai/')}
             className={linkBtnAltCls}
             title="国外用户·前往 runninghub.ai 获取 APIKEY"
           >
@@ -829,6 +1124,44 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
     setAdvancedDirty(true);
   };
 
+  const handleAddAdvancedProvider = () => {
+    setAdvancedProvidersInput((prev) => {
+      const provider = createCustomAdvancedProvider(prev);
+      setActiveAdvancedProviderId(provider.id);
+      return [...prev, provider];
+    });
+    setAdvancedOpen(true);
+    setAdvancedDirty(true);
+  };
+
+  const handleRemoveAdvancedProvider = (id: string) => {
+    setAdvancedProvidersInput((prev) => {
+      const target = prev.find((provider) => provider.id === id);
+      if (!isCustomAdvancedProvider(target)) return prev;
+      const next = prev.filter((provider) => provider.id !== id);
+      const activeIndex = prev.findIndex((provider) => provider.id === id);
+      const fallback = next[Math.max(0, Math.min(activeIndex, next.length - 1))] || null;
+      setActiveAdvancedProviderId(fallback?.id || '');
+      return next;
+    });
+    setAdvancedDirty(true);
+  };
+
+  const handleChangeCustomAdvancedProviderProtocol = (provider: AdvancedProviderConfig, protocol: AdvancedProviderProtocol) => {
+    if (!isCustomAdvancedProvider(provider)) return;
+    updateAdvancedProvider(provider.id, customAdvancedProviderProtocolPatch(protocol));
+    setAdvancedTestStatus((prev) => {
+      const next = { ...prev };
+      delete next[provider.id];
+      return next;
+    });
+    setAdvancedModelFetchStatus((prev) => {
+      const next = { ...prev };
+      delete next[provider.id];
+      return next;
+    });
+  };
+
   const updateAdvancedProviderNested = (
     id: string,
     key: 'modelscopeConfig' | 'volcengineConfig' | 'comfyuiConfig' | 'jimengConfig',
@@ -840,6 +1173,97 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
         : provider
     )));
     setAdvancedDirty(true);
+  };
+
+  const mergeModelLists = (current?: string[], incoming?: string[]) => {
+    const out: string[] = [];
+    for (const value of [...(Array.isArray(current) ? current : []), ...(Array.isArray(incoming) ? incoming : [])]) {
+      const item = String(value || '').trim();
+      if (item && !out.includes(item)) out.push(item);
+    }
+    return out;
+  };
+
+  const handleFetchZhenzhenModels = async () => {
+    setZhenzhenModelFetchStatus({ loading: true });
+    try {
+      const result = await fetchZhenzhenModels({
+        baseUrl: String(baseUrlInputs.zhenzhenBaseUrl || '').trim(),
+        apiKey: inputs.zhenzhenApiKey.trim(),
+        timeoutMs: 30000,
+      });
+      if (!result.ok) {
+        setZhenzhenModelFetchStatus({ ok: false, message: result.error || '拉取模型失败' });
+        return;
+      }
+      const models = mergeModelLists([], result.all || [
+        ...(result.imageModels || []),
+        ...(result.videoModels || []),
+        ...(result.chatModels || []),
+      ]);
+      setZhenzhenFetchedModels(models);
+      if (models.length > 0) {
+        setZhenzhenImageModelOverridesInput((prev) => {
+          const next = { ...prev };
+          for (const field of IMAGE_MODEL_OVERRIDE_FIELDS) {
+            next[field.id] = reconcileFetchedModelOverride(field, next[field.id] || '', models);
+          }
+          return next;
+        });
+        setZhenzhenVideoModelOverridesInput((prev) => {
+          const next = { ...prev };
+          for (const field of VIDEO_MODEL_OVERRIDE_FIELDS) {
+            next[field.id] = reconcileFetchedModelOverride(field as any, next[field.id] || '', models);
+          }
+          return next;
+        });
+      }
+      setZhenzhenModelFetchStatus({
+        ok: models.length > 0,
+        message: models.length > 0
+          ? `已拉取 ${models.length} 个模型；请选择要映射到各预设的上游模型。`
+          : (result.message || '模型列表接口可达，但没有解析到模型。'),
+      });
+    } catch (e: any) {
+      setZhenzhenModelFetchStatus({ ok: false, message: e?.message || '拉取模型失败' });
+    }
+  };
+
+  const handleFetchAdvancedProviderModels = async (provider: AdvancedProviderConfig) => {
+    setAdvancedModelFetchStatus((prev) => ({ ...prev, [provider.id]: { loading: true } }));
+    try {
+      const result = await fetchAdvancedProviderModels({ provider, timeoutMs: 30000 });
+      if (!result.ok) {
+        setAdvancedModelFetchStatus((prev) => ({
+          ...prev,
+          [provider.id]: { ok: false, message: result.error || '拉取模型失败' },
+        }));
+        return;
+      }
+      const imageModels = Array.isArray(result.imageModels) ? result.imageModels : [];
+      const videoModels = Array.isArray(result.videoModels) ? result.videoModels : [];
+      const chatModels = Array.isArray(result.chatModels) ? result.chatModels : [];
+      const total = imageModels.length + videoModels.length + chatModels.length;
+      updateAdvancedProvider(provider.id, {
+        imageModels: mergeModelLists(provider.imageModels, imageModels),
+        videoModels: mergeModelLists(provider.videoModels, videoModels),
+        chatModels: mergeModelLists(provider.chatModels, chatModels),
+      });
+      setAdvancedModelFetchStatus((prev) => ({
+        ...prev,
+        [provider.id]: {
+          ok: total > 0,
+          message: total > 0
+            ? `已添加 ${total} 个模型：图像 ${imageModels.length} / 视频 ${videoModels.length} / 聊天 ${chatModels.length}。保存后节点可选择。`
+            : (result.message || '模型列表接口可达，但没有解析到模型。'),
+        },
+      }));
+    } catch (e: any) {
+      setAdvancedModelFetchStatus((prev) => ({
+        ...prev,
+        [provider.id]: { ok: false, message: e?.message || '拉取模型失败' },
+      }));
+    }
   };
 
   const handleTestAdvancedProvider = async (provider: AdvancedProviderConfig) => {
@@ -996,7 +1420,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
           labelClassName={labelCls}
           hintClassName={hintCls}
           title="1. 基础信息"
-          note="显示名称会出现在素材右键菜单中；路径前缀支持 {kind}、{yyyy-mm}、{date}，例如 t8-canvas/{kind}/{yyyy-mm}。"
+          note="显示名称会出现在素材右键菜单中；路径前缀支持 {kind}、{yyyy-mm}、{date}，例如 hajimi/{kind}/{yyyy-mm}。"
         >
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
             <label className="space-y-1">
@@ -1014,7 +1438,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
                 value={target.prefix || ''}
                 onChange={(e) => updateCloudTarget(target.id, { prefix: e.target.value })}
                 className={fieldInputCls}
-                placeholder="t8-canvas/{kind}/{yyyy-mm}"
+                placeholder="hajimi/{kind}/{yyyy-mm}"
               />
             </label>
             <label className="space-y-1 lg:col-span-2">
@@ -1222,7 +1646,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
                   value={target.baiduNetdisk?.folder || ''}
                   onChange={(e) => updateCloudTargetNested(target.id, 'baiduNetdisk', { folder: e.target.value })}
                   className={fieldInputCls}
-                  placeholder="/T8PenguinCanvas"
+                  placeholder="/hajimi"
                 />
               </label>
             </div>
@@ -1275,7 +1699,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
                   value={target.quarkNetdisk?.folder || ''}
                   onChange={(e) => updateCloudTargetNested(target.id, 'quarkNetdisk', { folder: e.target.value })}
                   className={fieldInputCls}
-                  placeholder="/T8PenguinCanvas"
+                  placeholder="/hajimi"
                 />
               </label>
             </div>
@@ -1295,6 +1719,9 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
     const isJimeng = provider.protocol === 'jimeng-cli';
     const isVolc = provider.protocol === 'volcengine';
     const isModelScope = provider.protocol === 'modelscope';
+    const isCustomProvider = isCustomAdvancedProvider(provider);
+    const registryDisplay = advancedProviderRegistryDisplay(provider.protocol);
+    const supportsOpenAiImageProtocol = ['openai-compatible', 'openai', 'apimart'].includes(provider.protocol);
     const isAgnes = provider.protocol === 'agnes';
     const sectionCls = isPixel
       ? 't8-api-settings-provider-panel border p-3 space-y-4 min-w-0'
@@ -1585,6 +2012,21 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
             <TestTube2 size={12} />
             {advancedTestStatus[provider.id]?.loading ? '测试中...' : '测试连接'}
           </button>
+          {isCustomProvider && (
+            <button
+              type="button"
+              onClick={() => handleRemoveAdvancedProvider(provider.id)}
+              className={
+                isPixel
+                  ? 't8-api-settings-secondary-btn px-btn text-[11px] px-2 py-1 shrink-0 text-red-400'
+                  : 't8-api-settings-secondary-btn px-2 py-1 text-[11px] rounded border shrink-0 inline-flex items-center gap-1 text-red-400'
+              }
+              title="删除自定义平台"
+            >
+              <Trash2 size={12} />
+              删除自定义平台
+            </button>
+          )}
         </div>
 
         {advancedTestStatus[provider.id]?.message && (
@@ -1622,6 +2064,22 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
           note="显示名称只影响下拉菜单里的名字；关闭“在节点中显示”后，这个平台不会出现在图像 / 视频 / LLM 节点的高级来源里。"
         >
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            {isCustomProvider && (
+              <label className="space-y-1">
+                <span className={`text-[11px] ${labelCls}`}>协议类型</span>
+                <select
+                  value={provider.protocol}
+                  onChange={(e) => handleChangeCustomAdvancedProviderProtocol(provider, e.target.value as AdvancedProviderProtocol)}
+                  className={fieldInputCls}
+                >
+                  {CUSTOM_ADVANCED_PROVIDER_PROTOCOL_OPTIONS.map((protocol) => (
+                    <option key={protocol} value={protocol}>
+                      {ADVANCED_PROVIDER_LABELS[protocol] || protocol}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             <label className="space-y-1">
               <span className={`text-[11px] ${labelCls}`}>显示名称</span>
               <input
@@ -1640,6 +2098,28 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
                   className={fieldInputCls}
                   placeholder={guide?.baseUrlPlaceholder || 'https://api.example.com/v1'}
                 />
+              </label>
+            )}
+            {supportsOpenAiImageProtocol && (
+              <label className="space-y-1">
+                <span className={`text-[11px] ${labelCls}`}>图像协议</span>
+                <select
+                  value={String(provider.defaults?.imageProtocol || 'images')}
+                  onChange={(e) => updateAdvancedProvider(provider.id, {
+                    defaults: {
+                      ...(provider.defaults || {}),
+                      imageProtocol: e.target.value as 'images' | 'openai-chat',
+                    },
+                  })}
+                  className={fieldInputCls}
+                  title="控制图像节点使用该扩展平台时调用 images/generations 还是 chat/completions"
+                >
+                  {OPENAI_COMPAT_IMAGE_PROTOCOL_OPTIONS.map((option) => (
+                    <option key={`${provider.id}:image-protocol:${option.value}`} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
               </label>
             )}
           </div>
@@ -1692,7 +2172,11 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
                 <div className="mt-2 rounded-lg border border-amber-500/40 bg-amber-400/15 px-3 py-2">
                   <div className="font-bold">Seedance2.0 开通提醒</div>
                   <p>
-                    使用 doubao-seedance-2-0-260128 或 doubao-seedance-2-0-fast-260128 前，
+                    使用 {(
+                      Array.isArray(registryDisplay.seedanceOpenReminderModels)
+                        ? registryDisplay.seedanceOpenReminderModels
+                        : []
+                    ).join(' 或 ') || 'Seedance2.0'} 前，
                     需要先在火山方舟控制台开通对应模型服务；未开通时上游会返回 ModelNotOpen / HTTP 404。
                   </p>
                 </div>
@@ -2154,6 +2638,40 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
             title="3. 节点里可选的模型"
             note={guide?.modelHint}
           >
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => handleFetchAdvancedProviderModels(provider)}
+                disabled={!!advancedModelFetchStatus[provider.id]?.loading}
+                className={
+                  isPixel
+                    ? 't8-api-settings-secondary-btn px-btn text-[11px] px-2 py-1 inline-flex items-center gap-1'
+                    : 't8-api-settings-secondary-btn rounded border px-2 py-1 text-[11px] inline-flex items-center gap-1'
+                }
+                title="从该平台的模型列表接口拉取模型，并合并到下方模型列表"
+              >
+                {advancedModelFetchStatus[provider.id]?.loading ? (
+                  <Loader2 size={12} className="animate-spin" />
+                ) : (
+                  <Download size={12} />
+                )}
+                {advancedModelFetchStatus[provider.id]?.loading ? '拉取中...' : '拉取并添加模型'}
+              </button>
+              <span className={`text-[11px] ${hintCls}`}>
+                会自动分类到图像 / 视频 / 聊天模型；保存后在对应节点的高级来源里可选。
+              </span>
+            </div>
+            {advancedModelFetchStatus[provider.id]?.message && (
+              <div
+                className={
+                  advancedModelFetchStatus[provider.id]?.ok
+                    ? 'text-[11px] text-emerald-500'
+                    : 'text-[11px] text-red-400'
+                }
+              >
+                {advancedModelFetchStatus[provider.id]?.message}
+              </div>
+            )}
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-3">
               <label className="space-y-1 min-w-0">
                 <span className={`text-[11px] ${labelCls}`}>图像模型（一行一个）</span>
@@ -2164,7 +2682,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
                   editorKind="lines"
                   mono
                   className={textareaCls}
-                  placeholder={isJimeng ? '例如 seedream-4.7' : '例如 gpt-image-1'}
+                  placeholder={isJimeng ? (registryDisplay.imageModelPlaceholder || '例如 image-model') : '例如 gpt-image-1'}
                 />
               </label>
               <label className="space-y-1 min-w-0">
@@ -2176,7 +2694,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
                   editorKind="lines"
                   mono
                   className={textareaCls}
-                  placeholder={isJimeng ? '例如 seedance2.0fast_vip / seedance2.0' : '例如 video-model-name'}
+                  placeholder={isJimeng ? (registryDisplay.videoModelPlaceholder || '例如 video-model-name') : '例如 video-model-name'}
                 />
               </label>
               <label className="space-y-1 min-w-0">
@@ -2334,9 +2852,11 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
   };
 
   // 渲染单个 Key 表项
-  const renderKey = (spec: KeySpec, opts: { fallbackHint?: boolean; baseUrlNote?: string }) => {
+  const renderKey = (spec: KeySpec, opts: { fallbackHint?: boolean } = {}) => {
     const f = spec.field;
     const rawVal = (settings as any)[f] as string | undefined;
+    const baseUrlField = COMMON_KEY_BASE_URL_FIELDS[f];
+    const baseUrlValue = baseUrlField ? String(baseUrlInputs[baseUrlField] || '') : '';
     const hasSaved = !!rawVal;
     const maskedDisplay = toMaskedDisplay(rawVal);
     const pendingClear = !!clearedFields[f];
@@ -2394,13 +2914,35 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
             </button>
           )}
         </div>
-        {(opts.baseUrlNote || renderGetKeyButtons(spec.field)) && (
+        {baseUrlField && (
+          <label className="block space-y-1">
+            <span className={`text-[11px] ${hintCls}`}>Base URL</span>
+            <div className="flex items-center gap-2">
+              <input
+                type="url"
+                value={baseUrlValue}
+                onChange={(e) => setBaseUrlInputs((prev) => ({ ...prev, [baseUrlField]: e.target.value }))}
+                placeholder={COMMON_KEY_BASE_URL_PLACEHOLDERS[f] || 'https://api.example.com'}
+                className={inputCls}
+                autoComplete="off"
+              />
+              {f === 'zhenzhenApiKey' && (
+                <button
+                  type="button"
+                  onClick={() => setModelOverridesOpen(true)}
+                  className={isPixel ? 't8-api-settings-secondary-btn px-btn text-[11px] px-2 py-1 shrink-0' : 't8-api-settings-secondary-btn px-2 py-1 text-[11px] rounded border shrink-0'}
+                  aria-label="打开默认服务模型覆盖"
+                  data-legacy-aria-label="打开默认服务图像模型覆盖"
+                  title="配置默认服务模型覆盖"
+                >
+                  模型覆盖
+                </button>
+              )}
+            </div>
+          </label>
+        )}
+        {renderGetKeyButtons(spec.field) && (
           <div className={`flex items-center gap-2 flex-wrap text-[11px] ${hintCls}`}>
-            {opts.baseUrlNote && (
-              <span className="flex items-center gap-1.5">
-                <Lock size={11} /> {opts.baseUrlNote}
-              </span>
-            )}
             {renderGetKeyButtons(spec.field)}
           </div>
         )}
@@ -2420,8 +2962,8 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
       <div
         className={
           isPixel
-            ? `t8-api-settings-modal w-full ${advancedOpen || cloudUploadOpen ? 'max-w-4xl' : 'max-w-2xl'} mx-4 px-card overflow-hidden flex flex-col max-h-[90vh]`
-            : `t8-api-settings-modal w-full ${advancedOpen || cloudUploadOpen ? 'max-w-4xl' : 'max-w-2xl'} mx-4 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] border`
+            ? `relative t8-api-settings-modal w-full ${advancedOpen || cloudUploadOpen ? 'max-w-4xl' : 'max-w-2xl'} mx-4 px-card overflow-hidden flex flex-col max-h-[90vh]`
+            : `relative t8-api-settings-modal w-full ${advancedOpen || cloudUploadOpen ? 'max-w-4xl' : 'max-w-2xl'} mx-4 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] border`
         }
       >
         {/* 头部 */}
@@ -2457,75 +2999,94 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
 
         {/* 表单 */}
         <div className="t8-api-settings-body p-5 space-y-5 overflow-y-auto">
-          <div className="t8-api-settings-divider pb-1" data-ui-font-settings="true">
-            <label className={`text-sm font-medium flex items-center gap-2 flex-wrap ${labelCls}`}>
+          <div
+            className="t8-api-settings-divider pb-1"
+            data-ui-font-settings="true"
+            data-ui-font-settings-open={uiFontSettingsOpen}
+          >
+            <button
+              type="button"
+              onClick={() => setUiFontSettingsOpen((open) => !open)}
+              aria-expanded={uiFontSettingsOpen}
+              data-open={uiFontSettingsOpen}
+              className={
+                isPixel
+                  ? 't8-api-settings-toggle w-full flex items-center gap-2 px-3 py-2 px-btn'
+                  : 't8-api-settings-toggle w-full flex items-center gap-2 px-3 py-2 rounded-lg border transition'
+              }
+            >
               <Settings2 size={14} className="t8-api-settings-icon" />
-              界面字体
-              <span className={`text-[11px] font-normal ${hintCls}`}>· 缩小画布时提升中文小字号清晰度，立即生效</span>
-            </label>
-            <div className={`t8-api-settings-section mt-2 p-3 space-y-3 border ${isPixel ? '' : 'rounded-lg'}`}>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {UI_FONT_PRESETS.map((preset) => (
-                  <button
-                    key={preset.id}
-                    type="button"
-                    data-ui-font-preset={preset.id}
-                    data-active={uiFontPreset === preset.id}
-                    onClick={() => setUiFontPreset(preset.id)}
-                    className={
-                      isPixel
-                        ? 't8-ui-font-option px-btn !block w-full text-left p-2'
-                        : 't8-ui-font-option w-full text-left p-2 rounded-md border transition'
-                    }
-                  >
-                    <span className="block text-xs font-black">{preset.label}</span>
-                    <span className={`mt-1 block text-[10px] leading-snug ${hintCls}`}>{preset.description}</span>
-                  </button>
-                ))}
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_auto] gap-2 items-end">
-                <label className={`block min-w-0 ${labelCls}`}>
-                  <span className="block text-[11px] font-bold mb-1">自定义字体栈</span>
-                  <input
-                    type="text"
-                    value={customUiFontDraft}
-                    onChange={(e) => setCustomUiFontDraft(e.target.value)}
-                    onBlur={commitCustomUiFont}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        commitCustomUiFont();
-                        (e.currentTarget as HTMLInputElement).blur();
+              <span className={`text-sm font-medium ${labelCls}`}>界面字体</span>
+              <span className={`min-w-0 flex-1 truncate text-left text-[11px] font-normal ${hintCls}`}>
+                缩小画布时提升中文小字号清晰度，立即生效
+              </span>
+              {uiFontSettingsOpen ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+            </button>
+            {uiFontSettingsOpen && (
+              <div className={`t8-api-settings-section mt-2 p-3 space-y-3 border ${isPixel ? '' : 'rounded-lg'}`}>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {UI_FONT_PRESETS.map((preset) => (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      data-ui-font-preset={preset.id}
+                      data-active={uiFontPreset === preset.id}
+                      onClick={() => setUiFontPreset(preset.id)}
+                      className={
+                        isPixel
+                          ? 't8-ui-font-option px-btn !block w-full text-left p-2'
+                          : 't8-ui-font-option w-full text-left p-2 rounded-md border transition'
                       }
+                    >
+                      <span className="block text-xs font-black">{preset.label}</span>
+                      <span className={`mt-1 block text-[10px] leading-snug ${hintCls}`}>{preset.description}</span>
+                    </button>
+                  ))}
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_auto] gap-2 items-end">
+                  <label className={`block min-w-0 ${labelCls}`}>
+                    <span className="block text-[11px] font-bold mb-1">自定义字体栈</span>
+                    <input
+                      type="text"
+                      value={customUiFontDraft}
+                      onChange={(e) => setCustomUiFontDraft(e.target.value)}
+                      onBlur={commitCustomUiFont}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          commitCustomUiFont();
+                          (e.currentTarget as HTMLInputElement).blur();
+                        }
+                      }}
+                      placeholder={'"霞鹜文楷", "Microsoft YaHei UI", sans-serif'}
+                      className={`${inputCls} w-full`}
+                      autoComplete="off"
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      resetUiFontPreference();
+                      setCustomUiFontDraft('');
                     }}
-                    placeholder={'"霞鹜文楷", "Microsoft YaHei UI", sans-serif'}
-                    className={`${inputCls} w-full`}
-                    autoComplete="off"
-                  />
-                </label>
-                <button
-                  type="button"
-                  onClick={() => {
-                    resetUiFontPreference();
-                    setCustomUiFontDraft('');
-                  }}
-                  className={isPixel ? 't8-api-settings-secondary-btn px-btn px-3 py-2' : 't8-api-settings-secondary-btn px-3 py-2 rounded-md border text-xs'}
+                    className={isPixel ? 't8-api-settings-secondary-btn px-btn px-3 py-2' : 't8-api-settings-secondary-btn px-3 py-2 rounded-md border text-xs'}
+                  >
+                    恢复推荐
+                  </button>
+                </div>
+                <div
+                  className={`t8-ui-font-preview border p-3 text-xs leading-relaxed ${isPixel ? '' : 'rounded-lg'}`}
+                  data-ui-font-preview="true"
+                  style={{ fontFamily: activeUiFontStack }}
                 >
-                  恢复推荐
-                </button>
+                  <span className="block text-[11px] font-bold">界面字体预览</span>
+                  <span>无限画布 · 节点文字 12px / 14px / 16px · 缩小时看边缘是否清楚</span>
+                </div>
               </div>
-              <div
-                className={`t8-ui-font-preview border p-3 text-xs leading-relaxed ${isPixel ? '' : 'rounded-lg'}`}
-                data-ui-font-preview="true"
-                style={{ fontFamily: activeUiFontStack }}
-              >
-                <span className="block text-[11px] font-bold">界面字体预览</span>
-                <span>贞贞无限画布 · 节点文字 12px / 14px / 16px · 缩小时看边缘是否清楚</span>
-              </div>
-            </div>
+            )}
           </div>
 
           {/* 三套通用 Key */}
-          {renderKey(COMMON_KEYS[0], { baseUrlNote: `Base URL 锁定: ${FIXED_ZHENZHEN_BASE}` })}
+          {renderKey(COMMON_KEYS[0])}
           <LocalSettingsAddonSlot
             open={open}
             isPixel={isPixel}
@@ -2533,8 +3094,8 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
             settings={settings as any}
             onSaved={load}
           />
-          {renderKey(COMMON_KEYS[1], { baseUrlNote: `Base URL: ${RH_BASE}` })}
-          {renderKey(COMMON_KEYS[2], { baseUrlNote: `Base URL 锁定: ${FIXED_ZHENZHEN_BASE} (与贞贞同地址, Key 独立)` })}
+          {renderKey(COMMON_KEYS[1])}
+          {renderKey(COMMON_KEYS[2])}
 
           {/* 分类独立 Key（默认折叠，点击展开 —— 新手友好） */}
           <div className="t8-api-settings-divider pt-3 border-t">
@@ -2573,13 +3134,13 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
             })()}
             {!classifiedOpen && (
               <div className={`text-[11px] mt-2 ${hintCls}`}>
-                不必担心：<b>未填项会自动 fallback 到贞贞工坊通用 Key</b>，新手可直接保存忽略此区块。
+                不必担心：<b>未填项会自动 fallback 到通用服务 Key</b>，新手可直接保存忽略此区块。
               </div>
             )}
             {classifiedOpen && (
               <div className="mt-3">
                 <div className={`text-[11px] ${hintCls} mb-3`}>
-                  为不同模型系列单独配置 Key；<b>未填则自动 fallback 到贞贞工坊通用 Key</b>。后端会根据调用的模型名/路由自动选择。
+                  为不同模型系列单独配置 Key；<b>未填则自动 fallback 到通用服务 Key</b>。后端会根据调用的模型名/路由自动选择。
                 </div>
                 <div className="space-y-4">
                   {CLASSIFIED_KEYS.map((spec) => renderKey(spec, { fallbackHint: true }))}
@@ -2609,7 +3170,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
                   className="t8-api-settings-badge px-1.5 py-0.5 text-[10px] rounded border"
                   data-tone={advancedSummary.enabledCount > 0 ? 'success' : 'muted'}
                 >
-                  已启用 {advancedSummary.enabledCount}/{advancedProvidersInput.length || 0}
+                  已启用 {advancedSummary.enabledCount}/{advancedProvidersInput.length || Object.keys(ADVANCED_PROVIDER_LABELS).length}
                 </span>
                 <span className={`text-[10px] ${hintCls}`}>密钥 {advancedSummary.configuredKeyCount}</span>
               </span>
@@ -2620,13 +3181,13 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
             </button>
             {!advancedOpen && (
               <div className={`text-[11px] mt-2 ${hintCls}`}>
-                未配置或未启用时不会影响贞贞工坊、RunningHub、LLM 独立 Key 等主流程。
+                未配置或未启用时不会影响通用服务、RunningHub、LLM 独立 Key 等主流程。
               </div>
             )}
             {advancedOpen && (
               <div className="mt-3 space-y-3">
                 <div className={`text-[11px] leading-relaxed ${hintCls}`}>
-                  这里不是必填项。它只用于 ModelScope、火山引擎、Agnes AI、ComfyUI、即梦 CLI 和 OpenAI 兼容接口；平台开启后，还需要在具体节点的“高级来源”里选择它才会生效。
+                  这里不是必填项。它只用于 OpenAI 官方、API Mart、Gemini、ModelScope、火山引擎、Agnes AI、ComfyUI、即梦 CLI 和 OpenAI 兼容接口；平台开启后，还需要在具体节点的“高级来源”里选择它才会生效。
                   当前状态：已启用 {advancedSummary.enabledCount} 个，已配置密钥 {advancedSummary.configuredKeyCount} 个，ComfyUI {advancedSummary.comfyuiConfigured ? '已填写地址' : '未填写地址'}，即梦 CLI {advancedSummary.jimengConfigured ? '已填写路径' : '未填写路径'}。
                 </div>
                 {advancedProvidersInput.length === 0 ? (
@@ -2634,6 +3195,18 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
                 ) : (
                   <div className="grid grid-cols-1 lg:grid-cols-[250px_minmax(0,1fr)] gap-3 items-start">
                     <div className={`space-y-2 min-w-0 ${isPixel ? '' : 'lg:sticky lg:top-0'}`}>
+                      <button
+                        type="button"
+                        onClick={handleAddAdvancedProvider}
+                        className={
+                          isPixel
+                            ? 't8-api-settings-secondary-btn w-full px-btn text-[11px] px-2 py-2 inline-flex items-center justify-center gap-1'
+                            : 't8-api-settings-secondary-btn w-full rounded-md border px-2 py-2 text-[11px] inline-flex items-center justify-center gap-1'
+                        }
+                        title="添加自定义平台，默认使用 OpenAI 兼容协议"
+                      >
+                        <Plus size={13} /> 添加自定义平台
+                      </button>
                       {advancedProvidersInput.map((provider) => (
                         <button
                           key={provider.id}
@@ -2649,13 +3222,16 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
                         >
                           <div className="flex items-center gap-2 min-w-0 w-full">
                             <span className={`w-2 h-2 rounded-full shrink-0 ${provider.enabled ? 'bg-emerald-400' : 'bg-zinc-400'}`} />
-                            <span className="font-bold min-w-0 truncate">{ADVANCED_PROVIDER_LABELS[provider.protocol] || provider.label || provider.id}</span>
+                            <span className="font-bold min-w-0 truncate">{provider.label || ADVANCED_PROVIDER_LABELS[provider.protocol] || provider.id}</span>
                             <span className={`ml-auto text-[10px] shrink-0 ${provider.enabled ? 'text-emerald-500' : hintCls}`}>
                               {provider.enabled ? '已启用' : '未启用'}
                             </span>
                           </div>
-                          <div className={`mt-1 text-[10px] leading-snug ${hintCls}`}>
-                            {ADVANCED_PROVIDER_GUIDES[provider.protocol]?.nodeScopes.join(' / ') || provider.protocol}
+                          <div className={`mt-1 flex items-center gap-1.5 min-w-0 text-[10px] leading-snug ${hintCls}`}>
+                            <span className="truncate">{ADVANCED_PROVIDER_GUIDES[provider.protocol]?.nodeScopes.join(' / ') || provider.protocol}</span>
+                            {isCustomAdvancedProvider(provider) && (
+                              <span className="shrink-0">自定义</span>
+                            )}
                           </div>
                         </button>
                       ))}
@@ -2856,7 +3432,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
                 type="text"
                 value={fileSavePathInput}
                 onChange={(e) => setFileSavePathInput(e.target.value)}
-                placeholder="例：D:\\zhenzhen 或 ~/zhenzhen · 路径不存在时会自动创建"
+                placeholder="例：D:\\hajimi 或 ~/hajimi · 路径不存在时会自动创建"
                 className={inputCls}
                 autoComplete="off"
                 spellCheck={false}
@@ -2881,7 +3457,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
                 type="text"
                 value={canvasAutoSavePathInput}
                 onChange={(e) => setCanvasAutoSavePathInput(e.target.value)}
-                placeholder="例：D:\\zhenzhen 或 ~/zhenzhen · 实际保存到此路径下的 T8-penguin-canvas\\canvases"
+                placeholder="例：D:\\hajimi 或 ~/hajimi · 实际保存到此路径下的 canvases"
                 className={inputCls}
                 autoComplete="off"
                 spellCheck={false}
@@ -2889,7 +3465,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
             </div>
             <div className={`flex items-center gap-2 flex-wrap text-[11px] mt-1.5 ${hintCls}`}>
               <span className="flex items-center gap-1.5">
-                <Lock size={11} /> 默认路径由后端按平台返回：Windows 为 D:\zhenzhen，macOS/Linux 为用户目录下的 zhenzhen。
+                <Lock size={11} /> 默认路径由后端按平台返回：打包版为应用数据目录下的 hajimi，开发版为用户目录下的 hajimi。
               </span>
             </div>
           </div>
@@ -2906,7 +3482,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
                 type="text"
                 value={resourceLibraryPathInput}
                 onChange={(e) => setResourceLibraryPathInput(e.target.value)}
-                placeholder="例：D:\\zhenzhen\\resources 或 ~/zhenzhen/resources · 路径不存在时会自动创建"
+                placeholder="例：D:\\hajimi\\resources 或 ~/hajimi/resources · 路径不存在时会自动创建"
                 className={inputCls}
                 autoComplete="off"
                 spellCheck={false}
@@ -2931,7 +3507,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
                 type="text"
                 value={themeTemplatePathInput}
                 onChange={(e) => setThemeTemplatePathInput(e.target.value)}
-                placeholder="例：D:\\zhenzhen\\theme-templates 或 ~/zhenzhen/theme-templates · 路径不存在时会自动创建"
+                placeholder="例：D:\\hajimi\\theme-templates 或 ~/hajimi/theme-templates · 路径不存在时会自动创建"
                 className={inputCls}
                 autoComplete="off"
                 spellCheck={false}
@@ -2966,6 +3542,41 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
               <span className="flex items-center gap-1.5">
                 <Lock size={11} /> 后端只允许 127.0.0.1 / localhost，避免把本地素材发送到远端代理。
               </span>
+            </div>
+          </div>
+
+          {/* Hakimi MCP backend URL */}
+          <div className="t8-api-settings-divider pt-3 border-t">
+            <label className={`text-sm font-medium flex items-center gap-2 flex-wrap ${labelCls}`}>
+              <ServerCog size={14} className="t8-api-settings-icon" />
+              Hakimi MCP 后端地址
+              <span className={`text-[11px] font-normal ${hintCls}`}>· 本地 Codex 通过 MCP 控制当前画布后端</span>
+            </label>
+            <div className="flex items-center gap-2 mt-2">
+              <input
+                type="text"
+                value={hakimiMcpBackendUrlInput}
+                onChange={(e) => setHakimiMcpBackendUrlInput(e.target.value)}
+                placeholder={HAKIMI_MCP_DEFAULT_BACKEND_URL}
+                className={inputCls}
+                autoComplete="off"
+                spellCheck={false}
+              />
+            </div>
+            <div className={`space-y-2 text-[11px] mt-1.5 ${hintCls}`}>
+              <p className="flex items-start gap-1.5">
+                <Lock size={11} className="mt-0.5 shrink-0" />
+                <span>项目在服务器里时填服务器后端地址，例如 http://server-ip:18766；如果走 SSH 隧道，本地仍填 {HAKIMI_MCP_DEFAULT_BACKEND_URL}。</span>
+              </p>
+              <div className={isPixel ? 't8-api-settings-guide border p-2' : 't8-api-settings-guide rounded-md border p-2'}>
+                <div className="font-semibold mb-1">Codex MCP 配置提示</div>
+                <code className="block whitespace-pre-wrap break-all">
+                  {`HAKIMI_BACKEND_URL=${hakimiMcpBackendUrlInput.trim() || HAKIMI_MCP_DEFAULT_BACKEND_URL}\nnpm run hakimi:mcp`}
+                </code>
+                <code className="block whitespace-pre-wrap break-all mt-1">
+                  ssh -L 18766:127.0.0.1:18766 user@server
+                </code>
+              </div>
             </div>
           </div>
 
@@ -3063,6 +3674,310 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
             {!loading && !saved && '保存'}
           </button>
         </div>
+        {modelOverridesOpen && (
+          <div
+            className="absolute inset-0 z-10 flex items-center justify-center bg-black/55 p-4"
+            onMouseDown={(e) => {
+              if (e.target === e.currentTarget) setModelOverridesOpen(false);
+            }}
+          >
+            <div
+              className={isPixel ? 'w-full max-w-2xl max-h-[82vh] px-card overflow-hidden flex flex-col' : 'w-full max-w-2xl max-h-[82vh] rounded-xl border border-white/10 bg-zinc-950 shadow-2xl overflow-hidden flex flex-col'}
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              <div className={isPixel ? 'flex items-start gap-3 p-4 border-b border-[var(--px-ink)]' : 'flex items-start gap-3 border-b border-white/10 p-4'}>
+                <Settings2 size={18} className="t8-api-settings-icon mt-0.5 shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <div className={`text-sm font-black ${labelCls}`}>默认服务模型覆盖</div>
+                  <div className={`mt-1 max-w-[58ch] text-[11px] leading-relaxed ${hintCls}`}>
+                    只影响默认服务通道；图片模型即原默认服务图像模型覆盖，视频模型用于把节点预设映射到你的中转站上游模型。留空表示使用内置默认。
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setModelOverridesOpen(false)}
+                  className={eyeBtnCls}
+                  aria-label="关闭默认服务模型覆盖"
+                  title="关闭"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto p-4 space-y-3">
+                <div className={isPixel ? 'px-card p-3 space-y-2' : 'rounded-lg border border-white/10 bg-white/[0.04] p-3 space-y-2'}>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className={`text-[11px] font-bold ${labelCls}`}>从当前通用服务同步模型</div>
+                      <div className={`mt-1 truncate text-[11px] ${hintCls}`} title={String(baseUrlInputs.zhenzhenBaseUrl || '未填写 Base URL')}>
+                        {String(baseUrlInputs.zhenzhenBaseUrl || '未填写 Base URL')}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleFetchZhenzhenModels}
+                      disabled={!!zhenzhenModelFetchStatus.loading}
+                      className={isPixel ? 't8-api-settings-secondary-btn px-btn text-xs px-3 py-2 inline-flex items-center gap-2 shrink-0 disabled:opacity-60' : 't8-api-settings-secondary-btn rounded-md border px-3 py-2 text-xs inline-flex items-center gap-2 shrink-0 disabled:opacity-60'}
+                      title="使用当前通用服务 Base URL 和 API Key 拉取模型列表"
+                    >
+                      {zhenzhenModelFetchStatus.loading ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
+                      拉取模型
+                    </button>
+                  </div>
+                  {zhenzhenModelFetchStatus.message && (
+                    <div className={`rounded-md px-2 py-1 text-[11px] ${zhenzhenModelFetchStatus.ok ? 'bg-emerald-500/10 text-emerald-300' : 'bg-amber-500/10 text-amber-300'}`}>
+                      {zhenzhenModelFetchStatus.message}
+                    </div>
+                  )}
+                </div>
+                <div
+                  className={isPixel ? 'grid grid-cols-2 gap-1 px-card p-1' : 'grid grid-cols-2 gap-1 rounded-lg border border-white/10 bg-white/[0.04] p-1'}
+                  role="tablist"
+                  aria-label="默认服务模型覆盖类型"
+                >
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={modelOverrideTab === 'image'}
+                    data-active={modelOverrideTab === 'image'}
+                    onClick={() => setModelOverrideTab('image')}
+                    className={isPixel ? 't8-api-settings-toggle px-btn px-3 py-2 text-xs' : 't8-api-settings-toggle rounded-md px-3 py-2 text-xs font-bold transition'}
+                  >
+                    图片模型
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={modelOverrideTab === 'video'}
+                    data-active={modelOverrideTab === 'video'}
+                    onClick={() => setModelOverrideTab('video')}
+                    className={isPixel ? 't8-api-settings-toggle px-btn px-3 py-2 text-xs' : 't8-api-settings-toggle rounded-md px-3 py-2 text-xs font-bold transition'}
+                  >
+                    视频模型
+                  </button>
+                </div>
+                <div className={isPixel ? 'px-card overflow-hidden' : 'overflow-hidden rounded-lg border border-white/10'}>
+                  {modelOverrideTab === 'image' ? (
+                    <>
+                      <div className={`hidden sm:grid grid-cols-[minmax(0,140px)_minmax(0,1fr)_minmax(0,150px)] gap-3 px-3 py-2 text-[10px] font-bold uppercase tracking-normal ${hintCls} ${isPixel ? '' : 'bg-white/[0.03]'}`}>
+                        <span>预设</span>
+                        <span>提交给上游的模型</span>
+                        <span>协议</span>
+                      </div>
+                      {IMAGE_MODEL_OVERRIDE_FIELDS.map((field) => {
+                        const selectedModels = parseModelList(zhenzhenImageModelOverridesInput[field.id] || '');
+                        const modelChoices = mergeModelLists(selectedModels, zhenzhenFetchedModels);
+                        return (
+                          <div
+                            key={field.id}
+                            className={isPixel
+                              ? 'grid gap-2 p-3 sm:grid-cols-[minmax(0,140px)_minmax(0,1fr)_minmax(0,150px)] sm:items-center border-t border-[var(--px-ink)] first:border-t-0'
+                              : 'grid gap-2 border-t border-white/10 p-3 first:border-t-0 sm:grid-cols-[minmax(0,140px)_minmax(0,1fr)_minmax(0,150px)] sm:items-center'}
+                          >
+                            <span className="min-w-0">
+                              <span className={`block truncate text-xs font-bold ${labelCls}`}>{field.label}</span>
+                              <span className={`mt-0.5 block truncate text-[10px] ${hintCls}`}>内置键：{field.id}</span>
+                            </span>
+                            <span className="min-w-0">
+                              {zhenzhenFetchedModels.length > 0 ? (
+                                <div className={isPixel ? 'space-y-2' : 'space-y-2 rounded-lg border border-white/10 bg-black/20 p-2'}>
+                                  <div className="flex min-h-[26px] flex-wrap items-center gap-1.5">
+                                    {selectedModels.length > 0 ? selectedModels.map((model) => (
+                                      <button
+                                        key={`${field.id}:chip:${model}`}
+                                        type="button"
+                                        onClick={() => {
+                                          const next = selectedModels.filter((item) => item !== model);
+                                          setZhenzhenImageModelOverridesInput((prev) => ({ ...prev, [field.id]: stringifyModelList(next) }));
+                                        }}
+                                        className="max-w-full truncate rounded-md border border-cyan-400/30 bg-cyan-400/10 px-2 py-1 text-left text-[11px] font-medium text-cyan-100 hover:border-cyan-300/60 hover:bg-cyan-400/20"
+                                        title={`移除 ${model}`}
+                                      >
+                                        {model}
+                                      </button>
+                                    )) : (
+                                      <span className={`px-1 text-[11px] ${hintCls}`}>使用内置默认：{field.placeholder}</span>
+                                    )}
+                                    {selectedModels.length > 0 && (
+                                      <button
+                                        type="button"
+                                        onClick={() => setZhenzhenImageModelOverridesInput((prev) => ({ ...prev, [field.id]: '' }))}
+                                        className="rounded-md px-2 py-1 text-[11px] text-white/55 hover:bg-white/10 hover:text-white"
+                                      >
+                                        清空
+                                      </button>
+                                    )}
+                                  </div>
+                                  <div className="max-h-36 overflow-auto rounded-md border border-white/10 bg-zinc-950/40 p-1">
+                                    {modelChoices.map((model) => {
+                                      const checked = selectedModels.includes(model);
+                                      return (
+                                        <label
+                                          key={`${field.id}:${model}`}
+                                          className={`flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs transition ${checked ? 'bg-cyan-400/15 text-cyan-50' : 'text-white/80 hover:bg-white/8 hover:text-white'}`}
+                                        >
+                                          <input
+                                            type="checkbox"
+                                            checked={checked}
+                                            onChange={(e) => {
+                                              const next = e.currentTarget.checked
+                                                ? mergeModelLists(selectedModels, [model])
+                                                : selectedModels.filter((item) => item !== model);
+                                              setZhenzhenImageModelOverridesInput((prev) => ({ ...prev, [field.id]: stringifyModelList(next) }));
+                                            }}
+                                            className="h-3.5 w-3.5 accent-cyan-400"
+                                          />
+                                          <span className="min-w-0 flex-1 truncate">{model}</span>
+                                        </label>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              ) : (
+                                <textarea
+                                  value={zhenzhenImageModelOverridesInput[field.id] || ''}
+                                  onChange={(e) => setZhenzhenImageModelOverridesInput((prev) => ({ ...prev, [field.id]: e.target.value }))}
+                                  placeholder={field.placeholder}
+                                  className={`${inputCls} min-h-[64px] w-full resize-y`}
+                                  autoComplete="off"
+                                  spellCheck={false}
+                                />
+                              )}
+                            </span>
+                            <span className="min-w-0">
+                              <select
+                                value={zhenzhenImageModelProtocolsInput[field.id] || 'images'}
+                                onChange={(e) => setZhenzhenImageModelProtocolsInput((prev) => ({ ...prev, [field.id]: e.target.value }))}
+                                className={`${inputCls} w-full`}
+                                title="选择这个预设提交给默认服务时使用的协议"
+                              >
+                                {IMAGE_MODEL_PROTOCOL_OPTIONS.map((option) => (
+                                  <option key={`${field.id}:${option.value}`} value={option.value}>{option.label}</option>
+                                ))}
+                              </select>
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </>
+                  ) : (
+                    <>
+                      <div className={`hidden sm:grid grid-cols-[minmax(0,160px)_minmax(0,1fr)] gap-3 px-3 py-2 text-[10px] font-bold uppercase tracking-normal ${hintCls} ${isPixel ? '' : 'bg-white/[0.03]'}`}>
+                        <span>预设</span>
+                        <span>提交给上游的模型</span>
+                      </div>
+                      {VIDEO_MODEL_OVERRIDE_FIELDS.map((field) => {
+                        const selectedVideoModels = parseModelList(zhenzhenVideoModelOverridesInput[field.id] || '');
+                        const modelChoices = mergeModelLists(selectedVideoModels, zhenzhenFetchedModels);
+                        return (
+                          <div
+                            key={field.id}
+                            className={isPixel
+                              ? 'grid gap-2 p-3 sm:grid-cols-[minmax(0,160px)_minmax(0,1fr)] sm:items-center border-t border-[var(--px-ink)] first:border-t-0'
+                              : 'grid gap-2 border-t border-white/10 p-3 first:border-t-0 sm:grid-cols-[minmax(0,160px)_minmax(0,1fr)] sm:items-center'}
+                          >
+                            <span className="min-w-0">
+                              <span className={`block truncate text-xs font-bold ${labelCls}`}>{field.label}</span>
+                              <span className={`mt-0.5 block truncate text-[10px] ${hintCls}`}>内置键：{field.id}</span>
+                            </span>
+                            <span className="min-w-0">
+                              {zhenzhenFetchedModels.length > 0 ? (
+                                <div className={isPixel ? 'space-y-2' : 'space-y-2 rounded-lg border border-white/10 bg-black/20 p-2'}>
+                                  <div className="flex min-h-[26px] flex-wrap items-center gap-1.5">
+                                    {selectedVideoModels.length > 0 ? selectedVideoModels.map((model) => (
+                                      <button
+                                        key={`${field.id}:video-chip:${model}`}
+                                        type="button"
+                                        onClick={() => {
+                                          const next = selectedVideoModels.filter((item) => item !== model);
+                                          setZhenzhenVideoModelOverridesInput((prev) => ({ ...prev, [field.id]: stringifyModelList(next) }));
+                                        }}
+                                        className="max-w-full truncate rounded-md border border-sky-400/30 bg-sky-400/10 px-2 py-1 text-left text-[11px] font-medium text-sky-100 hover:border-sky-300/60 hover:bg-sky-400/20"
+                                        title={`移除 ${model}`}
+                                      >
+                                        {model}
+                                      </button>
+                                    )) : (
+                                      <span className={`px-1 text-[11px] ${hintCls}`}>使用内置默认：{field.placeholder}</span>
+                                    )}
+                                    {selectedVideoModels.length > 0 && (
+                                      <button
+                                        type="button"
+                                        onClick={() => setZhenzhenVideoModelOverridesInput((prev) => ({ ...prev, [field.id]: '' }))}
+                                        className="rounded-md px-2 py-1 text-[11px] text-white/55 hover:bg-white/10 hover:text-white"
+                                      >
+                                        清空
+                                      </button>
+                                    )}
+                                  </div>
+                                  <div className="max-h-36 overflow-auto rounded-md border border-white/10 bg-zinc-950/40 p-1">
+                                    {modelChoices.map((model) => {
+                                      const checked = selectedVideoModels.includes(model);
+                                      return (
+                                        <label
+                                          key={`${field.id}:${model}`}
+                                          className={`flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs transition ${checked ? 'bg-sky-400/15 text-sky-50' : 'text-white/80 hover:bg-white/8 hover:text-white'}`}
+                                        >
+                                          <input
+                                            type="checkbox"
+                                            checked={checked}
+                                            onChange={(e) => {
+                                              const next = e.currentTarget.checked
+                                                ? mergeModelLists(selectedVideoModels, [model])
+                                                : selectedVideoModels.filter((item) => item !== model);
+                                              setZhenzhenVideoModelOverridesInput((prev) => ({ ...prev, [field.id]: stringifyModelList(next) }));
+                                            }}
+                                            className="h-3.5 w-3.5 accent-sky-400"
+                                          />
+                                          <span className="min-w-0 flex-1 truncate">{model}</span>
+                                        </label>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              ) : (
+                                <textarea
+                                  value={zhenzhenVideoModelOverridesInput[field.id] || ''}
+                                  onChange={(e) => setZhenzhenVideoModelOverridesInput((prev) => ({ ...prev, [field.id]: e.target.value }))}
+                                  placeholder={field.placeholder}
+                                  className={`${inputCls} min-h-[64px] w-full resize-y`}
+                                  autoComplete="off"
+                                  spellCheck={false}
+                                />
+                              )}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </>
+                  )}
+                </div>
+              </div>
+              <div className={isPixel ? 'sticky bottom-0 flex justify-end gap-2 border-t border-[var(--px-ink)] p-4' : 'sticky bottom-0 flex justify-end gap-2 border-t border-white/10 bg-zinc-950/95 p-4 backdrop-blur'}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (modelOverrideTab === 'image') {
+                      setZhenzhenImageModelOverridesInput({});
+                      setZhenzhenImageModelProtocolsInput({});
+                    } else {
+                      setZhenzhenVideoModelOverridesInput({});
+                    }
+                  }}
+                  className={isPixel ? 't8-api-settings-secondary-btn px-btn px-3 py-2 text-xs' : 't8-api-settings-secondary-btn rounded border px-3 py-2 text-xs'}
+                >
+                  清空当前页
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setModelOverridesOpen(false)}
+                  className={isPixel ? 't8-api-settings-primary-btn px-btn px-btn--mint px-3 py-2 text-xs' : 't8-api-settings-primary-btn rounded-md px-3 py-2 text-xs'}
+                >
+                  应用到表单
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

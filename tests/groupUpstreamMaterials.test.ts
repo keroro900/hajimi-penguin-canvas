@@ -11,6 +11,16 @@ const text = (id: string, url: string, sourceNodeId = 'group-a') => ({
   label: url,
 });
 
+const image = (id: string, url: string, sourceNodeId = 'image-a', mentionKey?: string) => ({
+  id,
+  kind: 'image',
+  url,
+  sourceNodeId,
+  origin: 'upstream',
+  label: url,
+  mentionKey,
+});
+
 test('group output text field echoes are shown once in downstream image nodes', () => {
   const buckets = dedupeUpstreamMaterialBuckets({
     texts: [
@@ -47,5 +57,41 @@ test('manual ordered text entries keep duplicate content when they are not field
       'material-set-a::material-set:material-set-a:text:0',
       'material-set-a::material-set:material-set-a:text:1',
     ],
+  );
+});
+
+test('single image echoed through scalar and array fields is shown once downstream', () => {
+  const buckets = dedupeUpstreamMaterialBuckets({
+    texts: [],
+    images: [
+      image('image-a::imageUrl', '/files/input/ref-a.png', 'image-a', 'image:image-a:imageUrl'),
+      image('image-a::imageUrls:0', '/files/input/ref-a.png', 'image-a', 'image:image-a:imageUrls:0'),
+      image('image-a::imageUrls:1', '/files/input/ref-b.png', 'image-a', 'image:image-a:imageUrls:1'),
+    ],
+    videos: [],
+    audios: [],
+  });
+
+  assert.deepEqual(
+    buckets.images.map((item) => item.id),
+    ['image-a::imageUrl', 'image-a::imageUrls:1'],
+  );
+  assert.equal((buckets.images[0] as any).mentionKey, 'image:image-a:imageUrl');
+});
+
+test('same scalar field from different upstream nodes keeps both media items', () => {
+  const buckets = dedupeUpstreamMaterialBuckets({
+    texts: [],
+    images: [
+      image('image-a::imageUrl', '/files/input/a.png', 'image-a', 'image:image-a:imageUrl'),
+      image('image-b::imageUrl', '/files/input/b.png', 'image-b', 'image:image-b:imageUrl'),
+    ],
+    videos: [],
+    audios: [],
+  });
+
+  assert.deepEqual(
+    buckets.images.map((item) => item.id),
+    ['image-a::imageUrl', 'image-b::imageUrl'],
   );
 });

@@ -5,6 +5,13 @@ const os = require('os');
 const { spawn, spawnSync } = require('child_process');
 const config = require('../config');
 const { mediaRefToAbsoluteUrl, resolveMediaRef, mimeFromPath } = require('./mediaResolver');
+const MODEL_PROTOCOL_REGISTRY = require('../../../shared/modelProtocolRegistry.json');
+
+const JIMENG_REGISTRY = MODEL_PROTOCOL_REGISTRY.advancedProviders['jimeng-cli'] || {};
+const DEFAULT_JIMENG_IMAGE_MODELS = Array.isArray(JIMENG_REGISTRY.imageModels) ? [...JIMENG_REGISTRY.imageModels] : [];
+const DEFAULT_JIMENG_VIDEO_MODELS = Array.isArray(JIMENG_REGISTRY.videoModels) ? [...JIMENG_REGISTRY.videoModels] : [];
+const DEFAULT_JIMENG_IMAGE_MODEL = String(JIMENG_REGISTRY.defaults?.imageModel || DEFAULT_JIMENG_IMAGE_MODELS[0] || '');
+const DEFAULT_JIMENG_VIDEO_MODEL = String(JIMENG_REGISTRY.defaults?.videoModel || DEFAULT_JIMENG_VIDEO_MODELS[0] || '');
 
 function cleanExecutablePath(provider) {
   return String(provider?.jimengConfig?.executablePath || '').trim();
@@ -659,7 +666,7 @@ async function resolveLocalMediaList(values, kind, provider, options = {}) {
 async function generateImage(provider, input = {}, options = {}) {
   const prompt = String(input.prompt || '').trim();
   if (!prompt) return { ok: false, code: 'missing_prompt', providerId: provider.id, protocol: 'jimeng-cli', error: '请输入图像提示词。' };
-  const model = selectedModel(input.providerModel || input.model, provider.imageModels, 'jimeng-image-2k');
+  const model = selectedModel(input.providerModel || input.model, provider.imageModels, DEFAULT_JIMENG_IMAGE_MODEL);
   const refs = Array.isArray(input.images) ? input.images : [];
   const args = [];
   const tempPaths = [];
@@ -687,7 +694,7 @@ async function generateImage(provider, input = {}, options = {}) {
 async function generateVideo(provider, input = {}, options = {}) {
   const prompt = String(input.prompt || '').trim();
   if (!prompt) return { ok: false, code: 'missing_prompt', providerId: provider.id, protocol: 'jimeng-cli', error: '请输入视频提示词。' };
-  const model = selectedModel(input.providerModel || input.model, provider.videoModels, 'seedance2.0fast_vip');
+  const model = selectedModel(input.providerModel || input.model, provider.videoModels, DEFAULT_JIMENG_VIDEO_MODEL);
   const refs = Array.isArray(input.images) ? input.images : [];
   const videos = Array.isArray(input.videos) ? input.videos : [];
   const audios = Array.isArray(input.audios) ? input.audios : [];
@@ -777,7 +784,34 @@ async function testProvider(provider, options = {}) {
   };
 }
 
+async function fetchModels(provider) {
+  const imageModels = Array.isArray(provider?.imageModels) && provider.imageModels.length
+    ? provider.imageModels
+    : DEFAULT_JIMENG_IMAGE_MODELS;
+  const videoModels = Array.isArray(provider?.videoModels) && provider.videoModels.length
+    ? provider.videoModels
+    : DEFAULT_JIMENG_VIDEO_MODELS;
+  return {
+    ok: true,
+    code: 'models_fetched',
+    providerId: provider.id,
+    protocol: 'jimeng-cli',
+    total: imageModels.length + videoModels.length,
+    modelCount: imageModels.length + videoModels.length,
+    imageModels,
+    videoModels,
+    chatModels: [],
+    all: [...imageModels, ...videoModels],
+    message: '已读取即梦 CLI 默认模型。',
+  };
+}
+
 module.exports = {
+  DEFAULT_JIMENG_IMAGE_MODEL,
+  DEFAULT_JIMENG_IMAGE_MODELS,
+  DEFAULT_JIMENG_VIDEO_MODEL,
+  DEFAULT_JIMENG_VIDEO_MODELS,
+  fetchModels,
   generateImage,
   generateVideo,
   testProvider,

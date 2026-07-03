@@ -50,10 +50,12 @@ export default function TerminalPanel() {
 
   if (!open) return null;
 
+  const terminalLayerCls = 't8-terminal-panel absolute left-3 right-3 bottom-3 z-[10070] select-none pointer-events-auto';
+
   // ============ 像素/糖果风 ============
   if (isPixel) {
     return (
-      <div className="absolute left-3 right-3 bottom-3 z-30 select-none pointer-events-auto">
+      <div className={terminalLayerCls}>
         <div
           className="px-card overflow-hidden flex flex-col"
           style={{ height: 'min(48vh, 420px)' }}
@@ -161,7 +163,7 @@ export default function TerminalPanel() {
   const textMuted = isDark ? 'text-zinc-400' : 'text-zinc-500';
   const textNormal = isDark ? 'text-zinc-100' : 'text-zinc-800';
   return (
-    <div className="absolute left-3 right-3 bottom-3 z-30 select-none pointer-events-auto">
+    <div className={terminalLayerCls}>
       <div
         className={`flex flex-col rounded-lg shadow-2xl backdrop-blur border ${baseBg} overflow-hidden`}
         style={{ height: 'min(48vh, 420px)' }}

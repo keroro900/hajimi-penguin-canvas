@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hakimi Canvas OS"
+  short_description: "Route Hakimi canvas and generation workflows."
+  default_prompt: "Use Hakimi Canvas OS to pick the right workflow module, control the canvas visibly, and verify the result."

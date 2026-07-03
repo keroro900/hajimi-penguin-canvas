@@ -2,6 +2,7 @@
 'use strict';
 
 const { spawnSync } = require('child_process');
+const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
@@ -57,9 +58,38 @@ function normalizeGitPath(p) {
   return p.replace(/\\/g, '/').replace(/^\/+/, '');
 }
 
-function main() {
-  const files = stagedFiles();
+function hasGitMetadata() {
+  return fs.existsSync(path.join(ROOT, '.git'));
+}
+
+function scanDeniedPathPresence() {
   const failures = [];
+  for (const entry of deniedPaths) {
+    const normalized = normalizeGitPath(entry).replace(/\/+$/, '');
+    const absolute = path.join(ROOT, normalized);
+    if (fs.existsSync(absolute)) {
+      failures.push(`blocked path exists in source archive: ${normalized}`);
+    }
+  }
+  return failures;
+}
+
+function main() {
+  const failures = [];
+
+  if (!hasGitMetadata()) {
+    failures.push(...scanDeniedPathPresence());
+    if (failures.length) {
+      console.error('[public-check] failed');
+      for (const item of failures) console.error(`- ${item}`);
+      process.exit(1);
+    }
+    console.log('[public-check] no git metadata; staged diff scan skipped');
+    console.log('[public-check] ok');
+    return;
+  }
+
+  const files = stagedFiles();
 
   for (const file of files) {
     const normalized = normalizeGitPath(file);

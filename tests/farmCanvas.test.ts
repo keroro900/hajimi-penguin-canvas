@@ -69,6 +69,15 @@ import {
 
 const require = createRequire(import.meta.url);
 
+function assertIncludesInOrder(source, parts, message = 'expected source fragments to appear in order') {
+  let cursor = 0;
+  for (const part of parts) {
+    const index = source.indexOf(part, cursor);
+    assert.notEqual(index, -1, `${message}: missing "${part}"`);
+    cursor = index + part.length;
+  }
+}
+
 function growTurnips(count = 3) {
   let state = createFarmState();
   for (let i = 0; i < count; i += 1) {
@@ -1732,7 +1741,10 @@ test('farm canvas types are wired into CanvasData, Canvas persistence, import, a
   const utils = readFileSync(new URL('../src/utils/farmCanvas.ts', import.meta.url), 'utf8');
   const canvas = readFileSync(new URL('../src/components/Canvas.tsx', import.meta.url), 'utf8');
   const route = readFileSync(new URL('../backend/src/routes/canvas.js', import.meta.url), 'utf8');
-  const roadmap = readFileSync(new URL('../roadmap.md', import.meta.url), 'utf8');
+  const roadmapUrl = new URL('../roadmap.md', import.meta.url);
+  const farmRoadmap = fs.existsSync(roadmapUrl)
+    ? readFileSync(roadmapUrl, 'utf8')
+    : readFileSync(new URL('../features.json', import.meta.url), 'utf8');
 
   assert.match(types, /export interface FarmCanvasState/);
   assert.match(utils, /export const FARM_SEASON_DAYS = 28/);
@@ -1845,13 +1857,13 @@ test('farm canvas types are wired into CanvasData, Canvas persistence, import, a
   assert.match(canvas, /import \{[\s\S]*FARM_BUILDING_DEFINITIONS[\s\S]*FARM_DECOR_DEFINITIONS[\s\S]*createFarmState[\s\S]*sanitizeFarmCanvasState[\s\S]*type FarmToolAction[\s\S]*\} from '\.\.\/utils\/farmCanvas'/);
   assert.match(canvas, /farmCanvas,\s*setFarmCanvas/);
   assert.match(canvas, /const nextFarmCanvas = pendingSave\?\.farmCanvas \|\| sanitizeFarmCanvasState\(data\.farmCanvas\)/);
-  assert.match(canvas, /snapshot = JSON\.stringify\(\{ nodes: persistNodes, edges: persistEdges, creativeDesk, farmCanvas, nextNodeSerialId \}\)/);
+  assert.match(canvas, /snapshot = JSON\.stringify\(\{ nodes: persistNodes, edges: persistEdges, creativeDesk, nextNodeSerialId, farmCanvas \}\)/);
   assert.match(canvas, new RegExp('pay' + 'load = \\{ nodes: persistNodes, edges: persistEdges, viewport: getViewport\\(\\), nextNodeSerialId, creativeDesk, farmCanvas \\}'));
   assert.match(canvas, /farmCanvas: sanitizeFarmCanvasState\(data\.farmCanvas\)/);
   assert.match(canvas, /setFarmCanvas\(sanitizeFarmCanvasState\(source\.farmCanvas\)\)/);
   assert.match(canvas, /const message = next\.lastDailySummary\?\.message \|\| '新的一天开始了，已浇水的作物继续成长。'/);
   assert.match(canvas, /setFarmCanvasFeedback\(message\)/);
-  assert.match(roadmap, /Phase 3：全画布牧场对象层/);
+  assert.match(farmRoadmap, /Phase 3：全画布牧场对象层|全画布种植\/建造\/装饰养成层/);
 });
 
 test('farm render layer is mounted with ReactFlow coordinates and event exclusion', () => {
@@ -2483,7 +2495,7 @@ test('farm render layer is mounted with ReactFlow coordinates and event exclusio
   assert.match(panel, /setFarmPanelSectionOpen\(activeFarmPanelSectionItem\.id, false\)/);
   assert.match(css, /Farm panel split detail rail v1/);
   assert.ok(css.includes('.t8-farm-story-panel__panel:not([data-farm-section-build-open="true"]) .t8-farm-story-panel__detail-rail > .t8-farm-story-panel__palette,'));
-  assert.ok(css.includes('.t8-farm-story-panel__panel:not([data-farm-section-actions-open="true"]) .t8-farm-story-panel__detail-rail > .t8-farm-story-panel__footer {\n  display: none;\n}'));
+  assert.match(css, /\.t8-farm-story-panel__panel:not\(\[data-farm-section-actions-open="true"\]\) \.t8-farm-story-panel__detail-rail > \.t8-farm-story-panel__footer \{\s*display:\s*none;\s*\}/);
   assert.match(css, /\.t8-farm-story-panel__panel\[data-farm-panel-layout="split-detail"\] \{[\s\S]*width:\s*var\(--farm-control-panel-width\)[\s\S]*display:\s*flex[\s\S]*overflow-x:\s*hidden[\s\S]*scrollbar-gutter:\s*stable/);
   assert.match(css, /\.t8-farm-story-panel__panel\[data-farm-panel-layout="split-detail"\] > \.t8-farm-story-panel__detail-rail \{[\s\S]*position:\s*fixed[\s\S]*right:\s*calc\(18px \+ var\(--farm-control-panel-width\) \+ 12px\)[\s\S]*height:\s*var\(--farm-panel-detail-height, auto\)[\s\S]*overflow:\s*auto[\s\S]*scrollbar-gutter:\s*stable/);
   assert.match(css, /\.t8-farm-story-panel__panel\[data-farm-panel-layout="split-detail"\]:not\(\[data-farm-panel-active-section\]\) > \.t8-farm-story-panel__detail-rail \{[\s\S]*display:\s*none[\s\S]*pointer-events:\s*none/);
@@ -2736,47 +2748,166 @@ test('farm render layer is mounted with ReactFlow coordinates and event exclusio
   assert.match(globalCss, /html\[data-theme-visual="farm-story"\] \.t8-topbar :where\(button, \.px-btn, \.px-chip, \.t8-topbar-status-chip, \.t8-btn\),[\s\S]*\.t8-canvas-shell\[data-theme-visual="farm-story"\] \.t8-canvas-toolbar :where\(button, \.t8-toolbar-button\) \{[\s\S]*background:[\s\S]*#ffffff[\s\S]*#f7fdf0[\s\S]*color:\s*var\(--farm-final-ink\) !important/);
   assert.match(globalCss, /html\[data-theme-visual="farm-story"\] \.t8-farm-story-panel__mini-status\[data-farm-mini-status="monitor"\]::before,[\s\S]*html\[data-theme-visual="farm-story"\] \.t8-farm-story-panel__header \{[\s\S]*background:[\s\S]*#ffffff[\s\S]*#eef9e4[\s\S]*box-shadow:[\s\S]*rgba\(62, 128, 82, 0\.08\)/);
   assert.match(globalCss, /Farm story meadow chrome v3/);
-  assert.match(globalCss, /html\[data-theme-visual="farm-story"\] \.t8-topbar :where\([\s\S]*\.px-btn--yellow,[\s\S]*\.px-btn--peach,[\s\S]*\.px-btn--pink,[\s\S]*\.px-btn--mint,[\s\S]*\.px-btn--ghost,[\s\S]*\.px-chip--yellow,[\s\S]*\.px-chip--pink,[\s\S]*\.px-chip--mint[\s\S]*\) \{[\s\S]*background:[\s\S]*var\(--farm-meadow-card\)[\s\S]*color:\s*var\(--farm-meadow-ink\) !important[\s\S]*box-shadow:[\s\S]*rgba\(49, 119, 74, 0\.07\)/);
-  assert.match(globalCss, /\.t8-canvas-shell\[data-theme-visual="farm-story"\] :where\([\s\S]*\.t8-canvas-toolbar,[\s\S]*\.t8-toolbar-panel,[\s\S]*\.t8-control-stack[\s\S]*\) \{[\s\S]*background:[\s\S]*var\(--farm-meadow-panel\)[\s\S]*border-color:\s*var\(--farm-meadow-line\) !important/);
-  assert.match(globalCss, /\.t8-canvas-shell\[data-theme-visual="farm-story"\] :where\([\s\S]*\.t8-toolbar-button,[\s\S]*\.t8-mini-icon-button,[\s\S]*\.t8-control-rail-help[\s\S]*\) \{[\s\S]*background:[\s\S]*var\(--farm-meadow-card\)[\s\S]*color:\s*var\(--farm-meadow-ink\) !important/);
-  assert.match(globalCss, /html\[data-theme-visual="farm-story"\] \.t8-farm-story-panel__header \{[\s\S]*background:[\s\S]*var\(--farm-meadow-head\)[\s\S]*border-color:\s*var\(--farm-meadow-line\) !important[\s\S]*box-shadow:[\s\S]*rgba\(49, 119, 74, 0\.08\)/);
+  assertIncludesInOrder(globalCss, [
+    'html[data-theme-visual="farm-story"] .t8-topbar :where(',
+    '.px-btn--yellow',
+    '.px-btn--peach',
+    '.px-btn--pink',
+    '.px-btn--mint',
+    '.px-btn--ghost',
+    '.px-chip--yellow',
+    '.px-chip--pink',
+    '.px-chip--mint',
+    'var(--farm-meadow-card)',
+    'color: var(--farm-meadow-ink) !important',
+    'rgba(49, 119, 74, 0.07)',
+  ], 'farm meadow chrome button styles');
+  assertIncludesInOrder(globalCss, [
+    '.t8-canvas-shell[data-theme-visual="farm-story"] :where(',
+    '.t8-canvas-toolbar',
+    '.t8-toolbar-panel',
+    '.t8-control-stack',
+    'var(--farm-meadow-panel)',
+    'border-color: var(--farm-meadow-line) !important',
+  ], 'farm meadow chrome panel styles');
+  assertIncludesInOrder(globalCss, [
+    '.t8-canvas-shell[data-theme-visual="farm-story"] :where(',
+    '.t8-toolbar-button',
+    '.t8-mini-icon-button',
+    '.t8-control-rail-help',
+    'var(--farm-meadow-card)',
+    'color: var(--farm-meadow-ink) !important',
+  ], 'farm meadow chrome control styles');
+  assertIncludesInOrder(globalCss, [
+    'html[data-theme-visual="farm-story"] .t8-farm-story-panel__header {',
+    'var(--farm-meadow-head)',
+    'border-color: var(--farm-meadow-line) !important',
+    'rgba(49, 119, 74, 0.08)',
+  ], 'farm meadow chrome header styles');
   assert.match(globalCss, /Farm story spring chrome v4/);
   assert.match(globalCss, /html\[data-theme-visual="farm-story"\] \{[\s\S]*--farm-spring-air:\s*#fdfff8[\s\S]*--farm-spring-water:\s*#e7faf5[\s\S]*--farm-spring-ink:\s*#173f2d/);
   assert.match(globalCss, /html\[data-theme-visual="farm-story"\] :where\(\.t8-topbar, \[data-topbar\], \.t8-app-shell \.t8-topbar\) \{[\s\S]*linear-gradient\(90deg, var\(--farm-spring-water\) 0%, var\(--farm-spring-air\) 42%, var\(--farm-spring-mint\) 100%\) !important[\s\S]*rgba\(46, 126, 80, 0\.08\)/);
-  assert.match(globalCss, /html\[data-theme-visual="farm-story"\] :where\(\.t8-topbar, \[data-topbar\]\) :where\([\s\S]*\.px-btn--yellow,[\s\S]*\.px-btn--peach,[\s\S]*\.px-btn--pink,[\s\S]*\.px-btn--mint,[\s\S]*\.px-btn--sky,[\s\S]*\.px-btn--violet,[\s\S]*\.px-btn--ghost,[\s\S]*\.px-chip--yellow,[\s\S]*\.px-chip--pink,[\s\S]*\.px-chip--mint[\s\S]*\) \{[\s\S]*background:[\s\S]*var\(--farm-spring-card\)[\s\S]*color:\s*var\(--farm-spring-ink\) !important/);
-  assert.match(globalCss, /\.t8-canvas-shell\[data-theme-visual="farm-story"\] :where\([\s\S]*\.t8-canvas-toolbar,[\s\S]*\.t8-toolbar-panel,[\s\S]*\.t8-control-stack[\s\S]*\) \{[\s\S]*background:[\s\S]*var\(--farm-spring-panel\)[\s\S]*border-color:\s*var\(--farm-spring-line\) !important/);
-  assert.match(globalCss, /html\[data-theme-visual="farm-story"\] :where\(\.t8-farm-story-panel__header, \.t8-farm-story-panel__mini-status\[data-farm-mini-status="monitor"\]::before\) \{[\s\S]*background:[\s\S]*var\(--farm-spring-head\)[\s\S]*color:\s*var\(--farm-spring-ink\) !important/);
-  assert.match(globalCss, /html\[data-theme-visual="farm-story"\] \.t8-sidebar :where\(\.px-group-title, \[class\*="group-title"\], \.t8-sidebar-node, \.px-chip\) \{[\s\S]*background:[\s\S]*var\(--farm-spring-card\)/);
-  assert.match(globalCss, /html\[data-theme-visual="farm-story"\] \.t8-sidebar :where\(\.px-group-title, \[class\*="group-title"\], \.t8-sidebar-node, \.px-chip\) \{[\s\S]*border-color:\s*var\(--farm-spring-line\) !important/);
+  assertIncludesInOrder(globalCss, [
+    'html[data-theme-visual="farm-story"] :where(.t8-topbar, [data-topbar]) :where(',
+    '.px-btn--yellow',
+    '.px-btn--peach',
+    '.px-btn--pink',
+    '.px-btn--mint',
+    '.px-btn--sky',
+    '.px-btn--violet',
+    '.px-btn--ghost',
+    '.px-chip--yellow',
+    '.px-chip--pink',
+    '.px-chip--mint',
+    'var(--farm-spring-card)',
+    'color: var(--farm-spring-ink) !important',
+  ], 'farm spring chrome button styles');
+  assertIncludesInOrder(globalCss, [
+    '.t8-canvas-shell[data-theme-visual="farm-story"] :where(',
+    '.t8-canvas-toolbar',
+    '.t8-toolbar-panel',
+    '.t8-control-stack',
+    'var(--farm-spring-panel)',
+    'border-color: var(--farm-spring-line) !important',
+  ], 'farm spring chrome panel styles');
+  assertIncludesInOrder(globalCss, [
+    'html[data-theme-visual="farm-story"] :where(.t8-farm-story-panel__header, .t8-farm-story-panel__mini-status[data-farm-mini-status="monitor"]::before)',
+    'var(--farm-spring-head)',
+    'color: var(--farm-spring-ink) !important',
+  ], 'farm spring chrome header styles');
+  assertIncludesInOrder(globalCss, [
+    'html[data-theme-visual="farm-story"] .t8-sidebar :where(.px-group-title, [class*="group-title"], .t8-sidebar-node, .px-chip)',
+    'var(--farm-spring-card)',
+    'border-color: var(--farm-spring-line) !important',
+  ], 'farm spring chrome sidebar styles');
   assert.match(globalCss, /Farm story fresh meadow final guard/);
-  assert.match(globalCss, /\[data-theme-visual="farm-story"\] \{[\s\S]*--farm-fresh-meadow-air:\s*#fbfff8[\s\S]*--farm-fresh-meadow-water:\s*#e8fbf5[\s\S]*--farm-fresh-meadow-ink:\s*#153f2e/);
-  assert.match(globalCss, /\[data-theme-visual="farm-story"\] :where\(\.t8-topbar, \[data-topbar\], \.t8-app-shell \.t8-topbar\) \{[\s\S]*linear-gradient\(90deg, var\(--farm-fresh-meadow-water\) 0%, var\(--farm-fresh-meadow-air\) 46%, var\(--farm-fresh-meadow-mint\) 100%\) !important[\s\S]*rgba\(45, 118, 78, 0\.07\)/);
-  assert.match(globalCss, /\[data-theme-visual="farm-story"\] :where\(\.t8-topbar, \[data-topbar\]\) :where\([\s\S]*\.px-btn--yellow,[\s\S]*\.px-btn--peach,[\s\S]*\.px-btn--pink,[\s\S]*\.px-chip--yellow,[\s\S]*\.px-chip--mint[\s\S]*\) \{[\s\S]*background:[\s\S]*var\(--farm-fresh-meadow-card\)[\s\S]*color:\s*var\(--farm-fresh-meadow-ink\) !important[\s\S]*rgba\(45, 118, 78, 0\.055\)/);
-  assert.match(globalCss, /\[data-theme-visual="farm-story"\] :where\(\.t8-farm-story-panel__header, \.t8-farm-story-panel__mini-status\[data-farm-mini-status="monitor"\]::before\) \{[\s\S]*background:[\s\S]*var\(--farm-fresh-meadow-head\)[\s\S]*color:\s*var\(--farm-fresh-meadow-ink\) !important/);
-  assert.match(globalCss, /\[data-theme-visual="farm-story"\] :where\(\.t8-farm-story-panel__mini-status\[data-farm-mini-status="monitor"\], \.t8-farm-story-panel__quick-actions, \.t8-farm-story-panel__section-switchboard\) \{[\s\S]*background:[\s\S]*var\(--farm-fresh-meadow-panel\)[\s\S]*border-color:\s*var\(--farm-fresh-meadow-line\) !important/);
+  assertIncludesInOrder(globalCss, [
+    'Farm story fresh meadow final guard',
+    '--farm-fresh-meadow-air: #fbfff8',
+    '--farm-fresh-meadow-water: #e8fbf5',
+    '--farm-fresh-meadow-ink: #153f2e',
+    'linear-gradient(90deg, var(--farm-fresh-meadow-water) 0%, var(--farm-fresh-meadow-air) 46%, var(--farm-fresh-meadow-mint) 100%) !important',
+    'rgba(45, 118, 78, 0.07)',
+    'var(--farm-fresh-meadow-card)',
+    'color: var(--farm-fresh-meadow-ink) !important',
+    'rgba(45, 118, 78, 0.055)',
+    'var(--farm-fresh-meadow-head)',
+    'var(--farm-fresh-meadow-panel)',
+    'border-color: var(--farm-fresh-meadow-line) !important',
+  ], 'farm fresh meadow final guard');
   assert.match(globalCss, /Farm story fresh orchard chrome final guard/);
-  assert.match(globalCss, /\[data-theme-visual="farm-story"\] \{[\s\S]*--farm-fresh-orchard-air:\s*#fdfff8[\s\S]*--farm-fresh-orchard-water:\s*#e9fbf6[\s\S]*--farm-fresh-orchard-ink:\s*#123d2b[\s\S]*--farm-wood:\s*#9dcf90[\s\S]*--farm-paper:\s*var\(--farm-fresh-orchard-air\)/);
-  assert.match(globalCss, /\[data-theme-visual="farm-story"\] :where\(\.t8-topbar, \[data-topbar\], \.t8-app-shell \.t8-topbar\) \{[\s\S]*linear-gradient\(90deg, var\(--farm-fresh-orchard-water\) 0%, var\(--farm-fresh-orchard-air\) 48%, var\(--farm-fresh-orchard-mint\) 100%\) !important[\s\S]*rgba\(39, 121, 77, 0\.06\)/);
-  assert.match(globalCss, /\[data-theme-visual="farm-story"\] :where\(\.t8-topbar, \[data-topbar\]\) :where\([\s\S]*\.px-btn--yellow,[\s\S]*\.px-chip--yellow,[\s\S]*\[class\*="bg-amber-"\],[\s\S]*\[class\*="border-amber-"\],[\s\S]*\[class\*="text-amber-"\][\s\S]*\),[\s\S]*\[data-theme-visual="farm-story"\] :where\([\s\S]*\.t8-canvas-toolbar,[\s\S]*\.t8-toolbar-panel,[\s\S]*\.t8-control-stack[\s\S]*\) :where\([\s\S]*\.t8-toolbar-button,[\s\S]*\.react-flow__controls-button[\s\S]*\) \{[\s\S]*background:[\s\S]*var\(--farm-fresh-orchard-card\)[\s\S]*color:\s*var\(--farm-fresh-orchard-ink\) !important/);
-  assert.match(globalCss, /\[data-theme-visual="farm-story"\] :where\(\.t8-farm-story-panel__header, \.t8-farm-story-panel__mini-status\[data-farm-mini-status="monitor"\]::before\) \{[\s\S]*background:[\s\S]*var\(--farm-fresh-orchard-head\)[\s\S]*color:\s*var\(--farm-fresh-orchard-ink\) !important/);
-  assert.match(globalCss, /\[data-theme-visual="farm-story"\] :where\(\.t8-topbar, \[data-topbar\], \.t8-canvas-toolbar, \.t8-toolbar-panel, \.t8-control-stack\) :where\(button, a, \[role="button"\], \.px-chip, \.t8-topbar-status-chip, \.t8-toolbar-button\) :where\(span, b, strong, small, em, i, svg\) \{[\s\S]*-webkit-text-fill-color:\s*currentColor !important[\s\S]*opacity:\s*1 !important/);
+  assertIncludesInOrder(globalCss, [
+    'Farm story fresh orchard chrome final guard',
+    '--farm-fresh-orchard-air: #fdfff8',
+    '--farm-fresh-orchard-water: #e9fbf6',
+    '--farm-fresh-orchard-ink: #123d2b',
+    '--farm-wood: #9dcf90',
+    '--farm-paper: var(--farm-fresh-orchard-air)',
+    'linear-gradient(90deg, var(--farm-fresh-orchard-water) 0%, var(--farm-fresh-orchard-air) 48%, var(--farm-fresh-orchard-mint) 100%) !important',
+    'rgba(39, 121, 77, 0.06)',
+    'var(--farm-fresh-orchard-card)',
+    'color: var(--farm-fresh-orchard-ink) !important',
+    'var(--farm-fresh-orchard-head)',
+    '-webkit-text-fill-color: currentColor !important',
+    'opacity: 1 !important',
+  ], 'farm fresh orchard chrome guard');
   assert.match(globalCss, /Farm story dew garden chrome v5/);
-  assert.match(globalCss, /\[data-theme-visual="farm-story"\] \{[\s\S]*--farm-dew-air:\s*#fbfffb[\s\S]*--farm-dew-water:\s*#e5fbfb[\s\S]*--farm-dew-ink:\s*#173b31[\s\S]*--farm-wood:\s*#b8dcc8[\s\S]*--farm-wheat:\s*#edf8dc/);
-  assert.match(globalCss, /\[data-theme-visual="farm-story"\] :where\(\.t8-topbar, \[data-topbar\], \.t8-app-shell \.t8-topbar, \.t8-canvas-toolbar, \.t8-toolbar-panel, \.t8-control-stack\) \{[\s\S]*background:[\s\S]*var\(--farm-dew-water\)[\s\S]*var\(--farm-dew-air\)[\s\S]*var\(--farm-dew-mint\)[\s\S]*box-shadow:[\s\S]*var\(--farm-dew-shadow\)/);
-  assert.match(globalCss, /\[data-theme-visual="farm-story"\] :where\(\.t8-topbar, \[data-topbar\], \.t8-canvas-toolbar, \.t8-toolbar-panel, \.t8-control-stack\) :where\([\s\S]*\.px-btn--yellow,[\s\S]*\.px-chip--yellow,[\s\S]*\[class\*="bg-yellow-"\],[\s\S]*\[class\*="bg-amber-"\],[\s\S]*\[class\*="text-yellow-"\],[\s\S]*\[class\*="text-amber-"\][\s\S]*\) \{[\s\S]*background:[\s\S]*var\(--farm-dew-card\)[\s\S]*color:\s*var\(--farm-dew-ink\) !important/);
-  assert.match(globalCss, /\[data-theme-visual="farm-story"\] :where\(\.t8-farm-story-panel__header, \.t8-farm-story-panel__mini-status\[data-farm-mini-status="monitor"\]::before, \.t8-sidebar :where\(\.px-group-title, \[class\*="group-title"\]\)\) \{[\s\S]*background:[\s\S]*var\(--farm-dew-head\)[\s\S]*color:\s*var\(--farm-dew-ink\) !important[\s\S]*text-shadow:\s*none !important/);
-  assert.match(globalCss, /\[data-theme-visual="farm-story"\] :where\(\.t8-topbar, \[data-topbar\], \.t8-canvas-toolbar, \.t8-toolbar-panel, \.t8-control-stack, \.t8-farm-story-panel__header\) :where\(button, a, \[role="button"\], \.px-btn, \.px-chip, \.t8-toolbar-button, \.t8-topbar-status-chip\) \{[\s\S]*min-height:\s*28px[\s\S]*font-weight:\s*700/);
+  assertIncludesInOrder(globalCss, [
+    'Farm story dew garden chrome v5',
+    '--farm-dew-air: #fbfffb',
+    '--farm-dew-water: #e5fbfb',
+    '--farm-dew-ink: #173b31',
+    '--farm-wood: #b8dcc8',
+    '--farm-wheat: #edf8dc',
+    'var(--farm-dew-water)',
+    'var(--farm-dew-air)',
+    'var(--farm-dew-mint)',
+    'var(--farm-dew-shadow)',
+    'var(--farm-dew-card)',
+    'color: var(--farm-dew-ink) !important',
+    'var(--farm-dew-head)',
+    'text-shadow: none !important',
+    'min-height: 28px',
+    'font-weight: 700',
+  ], 'farm dew garden chrome');
   assert.match(globalCss, /Farm story botanical chrome v6/);
-  assert.match(globalCss, /html\[data-theme-visual="farm-story"\],[\s\S]*\[data-theme-visual="farm-story"\] \{[\s\S]*--farm-botanical-air:\s*#fbfff8[\s\S]*--farm-botanical-mist:\s*#eefbf6[\s\S]*--farm-botanical-ink:\s*#173d32[\s\S]*--farm-wood:\s*#b7dfc4[\s\S]*--px-yellow:\s*var\(--farm-botanical-mint\)/);
-  assert.match(globalCss, /html\[data-theme-visual="farm-story"\] :where\(\.t8-topbar, \[data-topbar\], \.t8-app-shell \.t8-topbar\),[\s\S]*\.t8-canvas-shell\[data-theme-visual="farm-story"\] :where\(\.t8-canvas-toolbar, \.t8-toolbar-panel, \.t8-control-stack\) \{[\s\S]*background:[\s\S]*var\(--farm-botanical-mist\)[\s\S]*var\(--farm-botanical-air\)[\s\S]*var\(--farm-botanical-mint\)[\s\S]*box-shadow:[\s\S]*var\(--farm-botanical-shadow\)/);
-  assert.match(globalCss, /html\[data-theme-visual="farm-story"\] :where\(\.t8-topbar, \[data-topbar\]\) :where\([\s\S]*\.px-btn--yellow,[\s\S]*\.px-chip--yellow,[\s\S]*\[class\*="bg-amber-"\],[\s\S]*\[class\*="bg-yellow-"\][\s\S]*\),[\s\S]*\.t8-canvas-shell\[data-theme-visual="farm-story"\] :where\(\.t8-canvas-toolbar, \.t8-toolbar-panel, \.t8-control-stack\) :where\([\s\S]*\.t8-farm-story-toolbar-toggle,[\s\S]*\.react-flow__controls-button[\s\S]*\) \{[\s\S]*background:[\s\S]*var\(--farm-botanical-card\)[\s\S]*color:\s*var\(--farm-botanical-ink\) !important[\s\S]*box-shadow:[\s\S]*rgba\(25, 118, 89, 0\.05\)/);
-  assert.match(globalCss, /html\[data-theme-visual="farm-story"\] :where\(\.t8-farm-story-panel__mini-status\[data-farm-mini-status="monitor"\]::before, \.t8-farm-story-panel__header\),[\s\S]*\.t8-canvas-shell\[data-theme-visual="farm-story"\] :where\(\.t8-farm-story-panel__mini-status\[data-farm-mini-status="monitor"\]::before, \.t8-farm-story-panel__header\) \{[\s\S]*background:[\s\S]*var\(--farm-botanical-head\)[\s\S]*color:\s*var\(--farm-botanical-ink\) !important[\s\S]*box-shadow:[\s\S]*rgba\(25, 118, 89, 0\.055\)/);
-  assert.match(globalCss, /html\[data-theme-visual="farm-story"\] :where\(\.t8-topbar, \[data-topbar\], \.t8-canvas-toolbar, \.t8-toolbar-panel, \.t8-control-stack, \.t8-farm-story-panel__header\) :where\([\s\S]*span,[\s\S]*small,[\s\S]*em,[\s\S]*svg[\s\S]*\) \{[\s\S]*text-shadow:\s*none !important[\s\S]*filter:\s*none !important[\s\S]*opacity:\s*1 !important/);
+  assertIncludesInOrder(globalCss, [
+    'Farm story botanical chrome v6',
+    '--farm-botanical-air: #fbfff8',
+    '--farm-botanical-mist: #eefbf6',
+    '--farm-botanical-ink: #173d32',
+    '--farm-wood: #b7dfc4',
+    '--px-yellow: var(--farm-botanical-mint)',
+    'var(--farm-botanical-mist)',
+    'var(--farm-botanical-air)',
+    'var(--farm-botanical-mint)',
+    'var(--farm-botanical-shadow)',
+    'var(--farm-botanical-card)',
+    'color: var(--farm-botanical-ink) !important',
+    'rgba(25, 118, 89, 0.05)',
+    'var(--farm-botanical-head)',
+    'rgba(25, 118, 89, 0.055)',
+    'filter: none !important',
+    'opacity: 1 !important',
+  ], 'farm botanical chrome');
   assert.match(globalCss, /Farm story pastel bloom chrome v7/);
-  assert.match(globalCss, /html\[data-theme-visual="farm-story"\],[\s\S]*\[data-theme-visual="farm-story"\] \{[\s\S]*--farm-pastel-bloom-air:\s*#fcfff9[\s\S]*--farm-pastel-bloom-water:\s*#e6fbf8[\s\S]*--farm-pastel-bloom-petal:\s*#fff4ec[\s\S]*--farm-pastel-bloom-ink:\s*#163f35[\s\S]*--farm-wood:\s*#c9ecd4[\s\S]*--px-yellow:\s*var\(--farm-pastel-bloom-mint\)/);
-  assert.match(globalCss, /html\[data-theme-visual="farm-story"\] :is\(\.t8-topbar, \[data-topbar\]\) :is\([\s\S]*\.px-btn--yellow,[\s\S]*\.px-chip--yellow,[\s\S]*\[class\*="bg-amber-"\],[\s\S]*\[class\*="bg-yellow-"\][\s\S]*\),[\s\S]*\.t8-canvas-shell\[data-theme-visual="farm-story"\] :is\(\.t8-canvas-toolbar, \.t8-toolbar-panel, \.t8-control-stack\) :is\([\s\S]*\.t8-toolbar-button,[\s\S]*\.t8-farm-story-toolbar-toggle[\s\S]*\) \{[\s\S]*background:[\s\S]*var\(--farm-pastel-bloom-card\)[\s\S]*color:\s*var\(--farm-pastel-bloom-ink\) !important[\s\S]*text-shadow:\s*none !important/);
-  assert.match(globalCss, /html\[data-theme-visual="farm-story"\] :is\(\.t8-farm-story-panel__mini-status\[data-farm-mini-status="monitor"\]::before, \.t8-farm-story-panel__header\),[\s\S]*\[data-farm-panel-night-readable="true"\] :is\(\.t8-farm-story-panel__mini-status::before, \.t8-farm-story-panel__header\) \{[\s\S]*background:[\s\S]*var\(--farm-pastel-bloom-head\)[\s\S]*color:\s*var\(--farm-pastel-bloom-ink\) !important[\s\S]*box-shadow:[\s\S]*rgba\(46, 126, 92, 0\.045\)/);
-  assert.match(globalCss, /html\[data-theme-visual="farm-story"\] :is\(\.t8-topbar, \[data-topbar\], \.t8-canvas-toolbar, \.t8-toolbar-panel, \.t8-control-stack, \.t8-farm-story-panel__header\) :is\(button, a, \[role="button"\], \.px-btn, \.px-chip, \.t8-btn, \.t8-toolbar-button, \.t8-topbar-status-chip\) :is\(span, b, strong, small, em, i, svg\) \{[\s\S]*-webkit-text-fill-color:\s*currentColor !important[\s\S]*filter:\s*none !important[\s\S]*opacity:\s*1 !important/);
+  assertIncludesInOrder(globalCss, [
+    'Farm story pastel bloom chrome v7',
+    '--farm-pastel-bloom-air: #fcfff9',
+    '--farm-pastel-bloom-water: #e6fbf8',
+    '--farm-pastel-bloom-petal: #fff4ec',
+    '--farm-pastel-bloom-ink: #163f35',
+    '--farm-wood: #c9ecd4',
+    '--px-yellow: var(--farm-pastel-bloom-mint)',
+    'var(--farm-pastel-bloom-card)',
+    'color: var(--farm-pastel-bloom-ink) !important',
+    'text-shadow: none !important',
+    'var(--farm-pastel-bloom-head)',
+    'rgba(46, 126, 92, 0.045)',
+    '-webkit-text-fill-color: currentColor !important',
+    'filter: none !important',
+    'opacity: 1 !important',
+  ], 'farm pastel bloom chrome');
   assert.match(panel, /interface FarmDailyRouteStep \{/);
   assert.match(panel, /type FarmMorningBriefAction = FarmFocusGoalAction \| \{ kind: 'open-animals' \} \| \{ kind: 'open-building' \}/);
   assert.match(panel, /interface FarmMorningBriefItem \{/);

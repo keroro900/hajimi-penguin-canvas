@@ -137,6 +137,26 @@ function volcengineErrorMessage(raw) {
   return '';
 }
 
+function defaultModelFetchPayload(provider, message = '方舟模型列表接口不可用，已使用内置 Seedream / Seedance / LLM 默认模型。', raw = undefined) {
+  const imageModels = Array.isArray(provider?.imageModels) ? provider.imageModels.filter(Boolean) : [];
+  const videoModels = Array.isArray(provider?.videoModels) ? provider.videoModels.filter(Boolean) : [];
+  const chatModels = Array.isArray(provider?.chatModels) ? provider.chatModels.filter(Boolean) : [];
+  return {
+    ok: true,
+    code: 'models_fetched_with_defaults',
+    providerId: provider.id,
+    protocol: 'volcengine',
+    total: imageModels.length + videoModels.length + chatModels.length,
+    modelCount: imageModels.length + videoModels.length + chatModels.length,
+    imageModels,
+    videoModels,
+    chatModels,
+    all: [...imageModels, ...videoModels, ...chatModels],
+    message,
+    raw,
+  };
+}
+
 async function responseJson(res) {
   const text = await res.text();
   if (!text) return {};
@@ -319,6 +339,7 @@ async function generateImage(provider, input = {}, options = {}) {
     response_format: input.response_format || 'url',
   };
   if (input.n != null) body.n = Number(input.n);
+  if (input.quality) body.quality = String(input.quality);
   try {
     const images = await resolveRefs(input.images || input.referenceImages || input.reference_images, options);
     if (images.length) body.image = images.slice(0, 10);
@@ -643,7 +664,68 @@ async function testProvider(provider, options = {}) {
   }
 }
 
+async function fetchModels(provider, options = {}) {
+  const validation = validateArkProvider(provider);
+  if (!validation.ok) return { ...validation, providerId: provider.id, protocol: 'volcengine' };
+
+  const normalized = {
+    ...provider,
+    apiKey: validation.apiKey,
+    protocol: 'volcengine',
+    baseUrl: validation.baseUrl,
+  };
+
+  try {
+    const res = await openaiCompatible.fetchWithTimeout(endpointUrl(normalized, '/models'), {
+      method: 'GET',
+      headers: { Accept: 'application/json', Authorization: `Bearer ${validation.apiKey}` },
+      timeoutMs: options.timeoutMs,
+      fetchImpl: options.fetchImpl,
+    });
+    const { raw, text } = await probeJson(res);
+    if (!res.ok || looksLikeHtmlResponse(text)) {
+      const probe = await probeTaskEndpoint(normalized, options);
+      if (probe.ok) return defaultModelFetchPayload(provider, `${probe.message} /models 不可用，已使用内置默认模型。`, { models: raw, taskProbe: probe.raw });
+      return {
+        ok: false,
+        code: 'http_error',
+        providerId: provider.id,
+        protocol: 'volcengine',
+        error: `拉取火山模型列表失败：HTTP ${res.status}${trimBodyForError(raw) ? ` ${trimBodyForError(raw)}` : ''}`,
+        raw,
+      };
+    }
+    const parsed = openaiCompatible.parseModelList(raw, normalized);
+    if (!parsed.all.length) return defaultModelFetchPayload(provider, '模型列表接口可达，但未解析到模型，已使用内置默认模型。', raw);
+    return {
+      ok: true,
+      code: 'models_fetched',
+      providerId: provider.id,
+      protocol: 'volcengine',
+      total: parsed.all.length,
+      modelCount: parsed.all.length,
+      imageModels: parsed.imageModels,
+      videoModels: parsed.videoModels,
+      chatModels: parsed.chatModels,
+      all: parsed.all,
+      message: `已拉取 ${parsed.all.length} 个火山模型。`,
+      raw,
+    };
+  } catch (e) {
+    const probe = await probeTaskEndpoint(normalized, options).catch(() => null);
+    if (probe?.ok) return defaultModelFetchPayload(provider, `${probe.message} 模型列表请求失败，已使用内置默认模型。`, { taskProbe: probe.raw });
+    return {
+      ok: false,
+      code: e?.name === 'AbortError' ? 'timeout' : 'network_error',
+      providerId: provider.id,
+      protocol: 'volcengine',
+      error: e?.name === 'AbortError' ? '拉取火山模型列表超时。' : (e?.message || '拉取火山模型列表失败。'),
+    };
+  }
+}
+
 module.exports = {
+  fetchModels,
   generateChat,
   generateImage,
   generateVideo,

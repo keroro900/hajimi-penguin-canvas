@@ -441,7 +441,9 @@ test('Fal toolbox maker is dev-only and guarded from packaged builds', () => {
 
   assert.match(registry, /import\.meta\.env\?\.DEV[\s\S]*type:\s*'fal-toolbox-maker'[\s\S]*label:\s*'FAL应用制作工具'/);
   assert.match(canvas, /const FAL_TOOLBOX_MAKER_MODULE = '\.\/nodes\/FalToolboxMakerNode'/);
-  assert.match(canvas, /lazyCanvasNode\(\(\) => import\(\/\* @vite-ignore \*\/ FAL_TOOLBOX_MAKER_MODULE\), 'FalToolboxMakerNode'\)/);
+  assert.match(canvas, /default:\s*missingPrivateToolNode\(displayName, label, description\)/);
+  assert.match(canvas, /import\.meta\.glob\('\.\/nodes\/\*MakerNode\.tsx'\)/);
+  assert.match(canvas, /privateToolNodeLoader\(FAL_TOOLBOX_MAKER_MODULE, 'FalToolboxMakerNode'/);
   assert.match(canvas, /import\.meta\.env\?\.DEV \? \{ 'fal-toolbox-maker': FalToolboxMakerNode \} : \{\}/);
   assert.match(ports, /import\.meta\.env\?\.DEV[\s\S]*'fal-toolbox-maker':\s*\{\s*inputs:\s*\[\],\s*outputs:\s*\['text'\]\s*\}/);
   assert.match(postBuild, /checkNoFalToolboxMaker/);

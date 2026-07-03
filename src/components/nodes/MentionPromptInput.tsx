@@ -16,6 +16,7 @@ import PromptExpandModal from '../PromptExpandModal';
 import PromptTemplateLibraryModal from '../PromptTemplateLibraryModal';
 import { useShortcutStore } from '../../stores/shortcuts';
 import { formatShortcutList, matchesAnyShortcut } from '../../utils/keyboardShortcuts';
+import { stripLeadingImeAsciiLeak, type ImeAsciiLeakCandidate } from '../../utils/imeComposition';
 import type { PromptTemplateKind } from '../../data/promptTemplateLibrary';
 import type { Material } from './useUpstreamMaterials';
 import {
@@ -63,11 +64,7 @@ interface PlainInputSnapshot {
   at: number;
 }
 
-interface CompositionLeakSnapshot {
-  start: number;
-  end: number;
-  data: string;
-}
+const MENTION_PROMPT_POPOVER_Z_INDEX = 10140;
 
 function assignRef<T>(ref: Ref<T> | undefined, value: T | null) {
   if (!ref) return;
@@ -250,29 +247,21 @@ function isImeKeyboardEvent(event: KeyboardEvent | null | undefined) {
   return !!native?.isComposing || native?.key === 'Process' || native?.keyCode === 229 || native?.which === 229;
 }
 
-function stripCompositionLeak(
-  text: string,
+function shiftMentionsAfterRemovedChar(
+  originalText: string,
+  fixedText: string,
   mentions: MediaMention[],
-  leak: CompositionLeakSnapshot | null,
-): { text: string; mentions: MediaMention[]; caretDelta: number; changed: boolean } {
-  if (!leak || !leak.data) return { text, mentions, caretDelta: 0, changed: false };
-  const start = Math.max(0, Math.min(text.length, leak.start));
-  const end = Math.max(start, Math.min(text.length, leak.end));
-  if (text.slice(start, end) !== leak.data) return { text, mentions, caretDelta: 0, changed: false };
-  const following = text.slice(end, end + 2);
-  if (!/[\u3400-\u9fff\uf900-\ufaff]/.test(following)) return { text, mentions, caretDelta: 0, changed: false };
-
-  const removed = end - start;
-  const nextText = `${text.slice(0, start)}${text.slice(end)}`;
-  const nextMentions = mentions
-    .filter((mention) => mention.end <= start || mention.start >= end)
-    .map((mention) => {
-      if (mention.start >= end) {
-        return { ...mention, start: mention.start - removed, end: mention.end - removed };
-      }
-      return mention;
-    });
-  return { text: nextText, mentions: nextMentions, caretDelta: -removed, changed: true };
+): MediaMention[] {
+  if (originalText.length !== fixedText.length + 1) return mentions;
+  let removedAt = 0;
+  while (removedAt < fixedText.length && originalText[removedAt] === fixedText[removedAt]) removedAt += 1;
+  return mentions
+    .filter((mention) => mention.end <= removedAt || mention.start > removedAt)
+    .map((mention) =>
+      mention.start > removedAt
+        ? { ...mention, start: mention.start - 1, end: mention.end - 1 }
+        : mention,
+    );
 }
 
 const MentionPromptInput = ({
@@ -295,7 +284,7 @@ const MentionPromptInput = ({
   const localRef = useRef<HTMLDivElement | null>(null);
   const composingRef = useRef(false);
   const lastPlainInputRef = useRef<PlainInputSnapshot | null>(null);
-  const compositionLeakRef = useRef<CompositionLeakSnapshot | null>(null);
+  const compositionLeakRef = useRef<ImeAsciiLeakCandidate | null>(null);
   const pendingCaretRef = useRef<number | null>(null);
   const expandShortcuts = useShortcutStore((s) => s.shortcuts['editor.expand-prompt']);
   const [isFocused, setIsFocused] = useState(false);
@@ -571,7 +560,7 @@ const MentionPromptInput = ({
               left: popupRect.left,
               top: popupRect.top,
               width: popupRect.width,
-              zIndex: expandable ? 10050 : 10120,
+              zIndex: MENTION_PROMPT_POPOVER_Z_INDEX,
               border: isPixel ? '2px solid var(--px-ink, #1a1410)' : '1px solid rgba(255,255,255,.18)',
               borderRadius: isPixel ? 14 : 10,
               background: isPixel
@@ -684,6 +673,9 @@ const MentionPromptInput = ({
       className={`nodrag nowheel ${
         fillHeight ? 'flex min-h-0 flex-1 flex-col' : expandable ? '' : 'flex h-full min-h-0 flex-col'
       }`}
+      onPointerDown={(event) => event.stopPropagation()}
+      onMouseDown={(event) => event.stopPropagation()}
+      onClick={(event) => event.stopPropagation()}
     >
       <div className={fillLayout ? 'relative flex min-h-0 flex-1 flex-col' : 'relative'}>
         <div
@@ -720,16 +712,23 @@ const MentionPromptInput = ({
             window.setTimeout(() => {
               if (!el) return;
               if (composingRef.current) {
-                // Some Chromium IME paths leave the component in a composing state after focus moves away.
+                // Some Chromium IME paths leave the component in a composing state after focus moves away/DOM settles.
                 composingRef.current = false;
               }
               const flushed = flushEditorToData();
               if (!flushed) return;
-              const fixed = stripCompositionLeak(flushed.text, flushed.mentions, compositionLeakRef.current);
+              const fixed = stripLeadingImeAsciiLeak({
+                beforeText: value || '',
+                afterText: flushed.text,
+                caret: flushed.caret,
+                candidate: compositionLeakRef.current,
+              });
               compositionLeakRef.current = null;
               lastPlainInputRef.current = null;
-              const text = fixed.changed ? fixed.text : flushed.text;
-              const nextMentions = fixed.changed ? fixed.mentions : flushed.mentions;
+              const text = fixed.text;
+              const nextMentions = fixed.changed
+                ? shiftMentionsAfterRemovedChar(flushed.text, text, flushed.mentions)
+                : flushed.mentions;
               const caret = Math.max(0, flushed.caret + fixed.caretDelta);
               if (fixed.changed) onChange(text, nextMentions);
               pendingCaretRef.current = caret;

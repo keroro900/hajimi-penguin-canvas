@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import {
   GROK_VIDEO_1_5_NEW_MODELS,
   VIDEO_FAL_REGISTRY,
@@ -12,6 +13,8 @@ import {
 } from '../src/providers/models.ts';
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8');
+const require = createRequire(import.meta.url);
+const proxyModule = require('../backend/src/routes/proxy.js');
 
 test('video model type order defaults to Grok Video then Veo then Sora2', () => {
   const visibleVideoModels = VIDEO_MODELS.filter((model) => model.kind !== 'seedance');
@@ -77,12 +80,15 @@ test('Grok Video 1.5 new backend path follows Comfly /v1/videos multipart protoc
   assert.match(proxyRoute, /isVeoOmniModel\(queryModel\) \|\| isGrokVideo15NewModel\(queryModel\)/);
 });
 
-test('Veo category defaults to veo-omni-10s without removing legacy Veo options', () => {
+test('Veo category defaults to Apishu Veo Omni without removing legacy Veo options', () => {
   const veo = VIDEO_MODELS.find((model) => model.kind === 'veo');
 
   assert.ok(veo);
   assert.equal(veo.label, 'Veo');
-  assert.equal(veo.apiModelOptions[0].value, 'veo-omni-10s');
+  assert.equal(veo.apiModelOptions[0].value, 'veo-omni-flash');
+  assert.equal(veo.apiModelOptions[0].label, 'Veo Omni');
+  assert.ok(veo.apiModelOptions.some((option) => option.value === 'veo-omni-flash-video-edit'));
+  assert.ok(veo.apiModelOptions.some((option) => option.value === 'veo-omni-10s'));
   assert.ok(veo.apiModelOptions.some((option) => option.value === 'veo3.1'));
   assert.ok(veo.apiModelOptions.some((option) => option.value === 'veo3.1-fal'));
 });
@@ -146,6 +152,81 @@ test('Veo Omni uses the Comfly /v1/videos multipart protocol', () => {
   assert.match(proxyRoute, /isVeoOmniModel\(queryModel\)/);
   assert.ok(videoNode.includes('payload.duration = 10'));
   assert.match(videoNode, /veo-omni-10s 需要 1 张参考图/);
+});
+
+test('Apishu Veo Omni models use JSON /v1/videos and v1 polling', () => {
+  const proxyRoute = read('../backend/src/routes/proxy.js');
+  const videoNode = read('../src/components/nodes/VideoNode.tsx');
+
+  assert.match(proxyRoute, /function isApishuVeoOmniModel\(model\)/);
+  assert.match(proxyRoute, /veo-omni-flash-video-edit/);
+  assert.match(proxyRoute, /buildApishuVeoOmniPayload/);
+  assert.match(proxyRoute, /Ingredients_images/);
+  assert.match(proxyRoute, /duration:\s*10/);
+  assert.match(proxyRoute, /apishuVideosEndpoint\(settings\)/);
+  assert.match(proxyRoute, /protocol: 'apishu-veo-omni'/);
+  assert.match(proxyRoute, /rememberedMeta\?\.protocol === 'apishu-veo-omni'/);
+  assert.match(videoNode, /isApishuVeoOmni/);
+  assert.match(videoNode, /maxApishuVeoOmniRefs/);
+  assert.match(videoNode, /payload\.duration = 10/);
+});
+
+test('Apishu Veo Omni edit converts local app video URLs to video data URIs', async () => {
+  const proxyRoute = read('../backend/src/routes/proxy.js');
+  assert.match(proxyRoute, /buildApishuVeoOmniPayload/);
+  assert.match(proxyRoute, /readLocalMediaRefBuffer/);
+
+  const payload = await proxyModule._testOnly.buildApishuVeoOmniPayload({
+    model: 'veo-omni-flash-video-edit',
+    prompt: 'replace the subject',
+    aspect_ratio: '9:16',
+    video_url: '/files/input/up_1782569239002_0u30.mp4',
+    images: ['/files/input/up_1782569249004_i6a4.jpg'],
+  });
+
+  assert.equal(payload.model, 'veo-omni-flash-video-edit');
+  assert.match(payload.video_url, /^data:video\/mp4;base64,/);
+  assert.equal(payload.Ingredients_images.length, 1);
+  assert.match(payload.Ingredients_images[0], /^data:image\/jpeg;base64,/);
+});
+
+test('Apishu video polling treats Chinese success and Video URL fields as completed', () => {
+  assert.equal(proxyModule._testOnly.normalizeVideoTaskStatus('成功'), 'SUCCESS');
+  assert.equal(proxyModule._testOnly.normalizeVideoTaskStatus('失败'), 'FAILURE');
+  assert.equal(proxyModule._testOnly.normalizeVideoTaskStatus('处理中'), 'RUNNING');
+  assert.equal(proxyModule._testOnly.extractApishuVideoUrl({
+    status: '成功',
+    'Video URL': 'https://videos.apishu.example/task.mp4',
+  }), 'https://videos.apishu.example/task.mp4');
+});
+
+test('Apishu video polling tolerates nested statuses and common output URL shapes', () => {
+  assert.equal(proxyModule._testOnly.normalizeVideoTaskStatus({ data: { task_status: '生成成功' } }), 'SUCCESS');
+  assert.equal(proxyModule._testOnly.normalizeVideoTaskStatus({ status_code: 200, output_video_url: 'https://videos.apishu.example/code.mp4' }), 'SUCCESS');
+  assert.equal(proxyModule._testOnly.normalizeVideoTaskStatus({ code: 0, data: { output: { video_url: 'https://videos.apishu.example/output.mp4' } } }), 'SUCCESS');
+  assert.equal(proxyModule._testOnly.normalizeVideoTaskStatus({ progress: 100, result: { videos: ['https://videos.apishu.example/progress.mp4'] } }), 'SUCCESS');
+  assert.equal(proxyModule._testOnly.normalizeVideoTaskStatus({ data: { state: 'IN_QUEUE' } }), 'PENDING');
+  assert.equal(proxyModule._testOnly.normalizeVideoTaskStatus({ data: { status: 'timeout' } }), 'FAILURE');
+
+  assert.equal(proxyModule._testOnly.extractApishuVideoUrl({
+    data: { output: { video_url: 'https://videos.apishu.example/output.mp4' } },
+  }), 'https://videos.apishu.example/output.mp4');
+  assert.equal(proxyModule._testOnly.extractApishuVideoUrl({
+    result: { videos: [{ url: 'https://videos.apishu.example/result-object.mp4' }] },
+  }), 'https://videos.apishu.example/result-object.mp4');
+  assert.equal(proxyModule._testOnly.extractApishuVideoUrl({
+    files: [{ file_url: 'https://videos.apishu.example/file.mp4' }],
+  }), 'https://videos.apishu.example/file.mp4');
+});
+
+test('Apishu Seedance submit exposes protocol metadata for persisted polling recovery', () => {
+  const proxyRoute = read('../backend/src/routes/proxy.js');
+
+  assert.match(proxyRoute, /data:\s*\{\s*taskId,\s*protocol:\s*'apishu-v1-videos',\s*effectiveModel,\s*requestedModel/);
+  assert.match(proxyRoute, /const looksApishuV1Task = \/\^task_/);
+  assert.match(proxyRoute, /\|\| looksApishuV1Task/);
+  assert.match(proxyRoute, /SAVE_REMOTE_VIDEO_TIMEOUT_MS/);
+  assert.match(proxyRoute, /AbortController/);
 });
 
 test('FAL routes use the common zhenzhen key instead of group tokens', () => {

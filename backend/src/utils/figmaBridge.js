@@ -143,7 +143,7 @@ async function ensureFigmaBridgeRunning(options = {}) {
       ...electronRunAsNodeEnv(),
       T8_FIGMA_BRIDGE_PORT: String(port),
       T8_FIGMA_BRIDGE_KEEP_ALIVE_ON_EXISTING: '0',
-      T8_FIGMA_BRIDGE_AUTOSTARTED_BY: 't8-penguin-canvas',
+      T8_FIGMA_BRIDGE_AUTOSTARTED_BY: 'hajimi-canvas',
     };
 
     log(logger, `[figma-bridge] auto-start ${script} on ${base}`);

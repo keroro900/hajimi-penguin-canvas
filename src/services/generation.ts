@@ -7,7 +7,12 @@ import type { AdvancedProviderConfig } from '../types/canvas';
 async function safeJsonResponse(response: Response, label: string): Promise<any> {
   const text = await response.text();
   const trimmed = text.trim();
-  if (!trimmed) return {};
+  if (!trimmed) {
+    return {
+      success: false,
+      error: `${label} 返回空响应：HTTP ${response.status}`,
+    };
+  }
   try {
     return JSON.parse(trimmed);
   } catch {
@@ -39,6 +44,9 @@ export interface GenerateImageRequest {
   size?: string;
   image?: string;
   providerParams?: Record<string, any>;
+  async?: boolean;
+  forceAsync?: boolean;
+  sync_mode?: boolean;
 }
 
 export interface GenerateImageResult {
@@ -52,7 +60,7 @@ export async function generateImage(req: GenerateImageRequest): Promise<Generate
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(req),
   });
-  const data = await r.json();
+  const data = await safeJsonResponse(r, '核心图像生成');
   if (!r.ok || !data.success) {
     throw new Error(data?.error || `HTTP ${r.status}`);
   }
@@ -68,7 +76,14 @@ export interface GenerateExternalImageRequest {
   size?: string;
   width?: number;
   height?: number;
+  // 比例 / 清晰度等级（如 '9:16' / '4K'）。后端 openaiCompatible 会写入上游 body 的
+  // aspect_ratio / image_size 字段；ratio / resolution 为同义兜底，便于不同中转识别。
+  aspect_ratio?: string;
+  ratio?: string;
+  image_size?: string;
+  resolution?: string;
   n?: number;
+  quality?: string;
   images?: string[];
   videos?: string[];
   audios?: string[];
@@ -95,7 +110,7 @@ export async function generateExternalImage(req: GenerateExternalImageRequest): 
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(req),
   });
-  const data = await r.json();
+  const data = await safeJsonResponse(r, '扩展图像生成');
   if (!r.ok || !data.success) {
     throw new Error(data?.error || `HTTP ${r.status}`);
   }
@@ -142,7 +157,7 @@ export async function generateExternalVideo(req: GenerateExternalVideoRequest): 
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(req),
   });
-  const data = await r.json();
+  const data = await safeJsonResponse(r, '图像异步提交');
   if (!r.ok || !data.success) {
     throw new Error(data?.error || `HTTP ${r.status}`);
   }
@@ -175,9 +190,14 @@ export async function submitImageAsync(req: GenerateImageRequest): Promise<Image
   const r = await fetch('/api/proxy/image/submit', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(req),
+    body: JSON.stringify({
+      ...req,
+      async: true,
+      forceAsync: true,
+      sync_mode: false,
+    }),
   });
-  const data = await r.json();
+  const data = await safeJsonResponse(r, '图像任务轮询');
   if (!r.ok || !data.success) throw new Error(data?.error || `HTTP ${r.status}`);
   return data.data;
 }
@@ -194,7 +214,7 @@ export interface ImageQueryResult {
 export async function queryImageStatus(taskId: string, apiModel?: string): Promise<ImageQueryResult> {
   const qs = apiModel ? `?model=${encodeURIComponent(apiModel)}` : '';
   const r = await fetch(`/api/proxy/image/status/${encodeURIComponent(taskId)}${qs}`);
-  const data = await r.json();
+  const data = await safeJsonResponse(r, 'FAL 图像提交');
   if (!r.ok) throw new Error(data?.error || `HTTP ${r.status}`);
   // 失败状态下 success=false 但返回 body 中仍包含 status:'failed'
   return data.data || { status: data.success ? 'pending' : 'failed', progress: '0%', error: data?.error };
@@ -259,7 +279,7 @@ export async function submitImageFal(req: FalSubmitRequest): Promise<FalSubmitRe
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(req),
   });
-  const data = await r.json();
+  const data = await safeJsonResponse(r, 'FAL 图像轮询');
   if (!r.ok || !data.success) throw new Error(data?.error || `HTTP ${r.status}`);
   return data.data;
 }
@@ -690,6 +710,7 @@ export async function queryVideoFal(params: { responseUrl?: string; endpoint?: s
 // ========================================================================
 export interface VideoSubmitRequest {
   model: string;
+  protocolModel?: string;
   prompt: string;
   // Veo / Veo3.1
   aspect_ratio?: string;
@@ -714,10 +735,20 @@ export interface VideoSubmitRequest {
    *  - seedance: base64 dataURL,最多 3 张(同 veo)
    */
   images?: string[];
+  /** Apishu Veo Omni Edit: 被编辑的源视频 URL 或 data URI。 */
+  video_url?: string;
+  videos?: string[];
   providerParams?: Record<string, any>;
 }
 
-export async function submitVideo(req: VideoSubmitRequest): Promise<{ taskId: string }> {
+export interface VideoSubmitResult {
+  taskId: string;
+  protocol?: string;
+  effectiveModel?: string;
+  requestedModel?: string;
+}
+
+export async function submitVideo(req: VideoSubmitRequest): Promise<VideoSubmitResult> {
   const r = await fetch('/api/proxy/video/submit', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -782,7 +813,14 @@ export interface SeedanceSubmitRequest {
   providerParams?: Record<string, any>;
 }
 
-export async function submitSeedance(req: SeedanceSubmitRequest): Promise<{ taskId: string }> {
+export interface SeedanceSubmitResult {
+  taskId: string;
+  protocol?: string;
+  effectiveModel?: string;
+  requestedModel?: string;
+}
+
+export async function submitSeedance(req: SeedanceSubmitRequest): Promise<SeedanceSubmitResult> {
   const r = await fetch('/api/proxy/seedance/submit', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -801,8 +839,9 @@ export interface SeedanceQueryResult {
   failReason?: string | null;
 }
 
-export async function querySeedance(taskId: string): Promise<SeedanceQueryResult> {
-  const r = await fetch(`/api/proxy/seedance/query?taskId=${encodeURIComponent(taskId)}`);
+export async function querySeedance(taskId: string, model?: string): Promise<SeedanceQueryResult> {
+  const extra = model ? `&model=${encodeURIComponent(model)}` : '';
+  const r = await fetch(`/api/proxy/seedance/query?taskId=${encodeURIComponent(taskId)}${extra}`);
   const data = await r.json();
   if (!r.ok || !data.success) throw new Error(data?.error || `HTTP ${r.status}`);
   return data.data;

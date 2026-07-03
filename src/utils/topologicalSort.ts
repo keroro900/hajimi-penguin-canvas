@@ -10,6 +10,14 @@ export function topologicalSort(
   edges: Edge[],
   executableTypes: Set<string>
 ): string[] {
+  return topologicalBatches(nodes, edges, executableTypes).flat();
+}
+
+export function topologicalBatches(
+  nodes: Node[],
+  edges: Edge[],
+  executableTypes: Set<string>
+): string[][] {
   const exeNodes = nodes.filter((n) => n.type && executableTypes.has(n.type));
   const exeIds = new Set(exeNodes.map((n) => n.id));
 
@@ -33,23 +41,28 @@ export function topologicalSort(
     if ((inDegree.get(n.id) || 0) === 0) queue.push(n.id);
   }
 
-  const result: string[] = [];
+  const result: string[][] = [];
   while (queue.length > 0) {
-    const id = queue.shift()!;
-    result.push(id);
-    for (const next of adj.get(id) || []) {
-      const d = (inDegree.get(next) || 0) - 1;
-      inDegree.set(next, d);
-      if (d === 0) queue.push(next);
+    const wave = queue.splice(0, queue.length);
+    result.push(wave);
+    for (const id of wave) {
+      for (const next of adj.get(id) || []) {
+        const d = (inDegree.get(next) || 0) - 1;
+        inDegree.set(next, d);
+        if (d === 0) queue.push(next);
+      }
     }
   }
 
-  if (result.length < exeIds.size) {
+  const sortedCount = result.reduce((sum, wave) => sum + wave.length, 0);
+  if (sortedCount < exeIds.size) {
     // 环或异常,把剩下未排序的按原始顺序补上
-    const got = new Set(result);
+    const got = new Set(result.flat());
+    const leftovers: string[] = [];
     for (const n of exeNodes) {
-      if (!got.has(n.id)) result.push(n.id);
+      if (!got.has(n.id)) leftovers.push(n.id);
     }
+    if (leftovers.length > 0) result.push(leftovers);
   }
 
   return result;

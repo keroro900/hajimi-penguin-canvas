@@ -7,6 +7,9 @@ const jimengCli = require('./jimengCli');
 
 const ADAPTERS = {
   'openai-compatible': openaiCompatible,
+  openai: openaiCompatible,
+  apimart: openaiCompatible,
+  gemini: openaiCompatible,
   modelscope,
   volcengine,
   agnes,
@@ -74,7 +77,22 @@ async function generateVideoWithProvider(provider, input = {}, options = {}) {
   return adapter.generateVideo(provider, input, options);
 }
 
+async function fetchModelsWithProvider(provider, options = {}) {
+  const adapter = getAdapterForProtocol(provider?.protocol);
+  if (!adapter?.fetchModels) {
+    return {
+      ok: false,
+      code: 'unsupported_model_fetch',
+      providerId: provider?.id || '',
+      protocol: provider?.protocol || '',
+      error: '该扩展平台暂不支持拉取模型列表。',
+    };
+  }
+  return adapter.fetchModels(provider, options);
+}
+
 module.exports = {
+  fetchModelsWithProvider,
   generateChatWithProvider,
   generateImageWithProvider,
   generateVideoWithProvider,

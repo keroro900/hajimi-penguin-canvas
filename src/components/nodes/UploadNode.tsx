@@ -1,14 +1,19 @@
-import { memo, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from 'react';
-import { Handle, Position, useReactFlow, type Node, type Edge, type NodeProps } from '@xyflow/react';
+import { memo, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from 'react';
+import { createPortal, flushSync } from 'react-dom';
+import { Handle, Position, useReactFlow, useUpdateNodeInternals, type Node, type Edge, type NodeProps } from '@xyflow/react';
 import {
   AlertCircle,
   Box,
   Download,
   Edit3,
+  Eye,
   FileImage,
   FileVideo,
+  Info,
+  Layers2,
   Music,
-  RotateCcw,
+  Plus,
+  RefreshCcw,
   Trash2,
   Upload as UploadIcon,
   X,
@@ -23,12 +28,11 @@ import { useDragMaterialStore, type MaterialPayload } from '../../stores/dragMat
 import { logBus } from '../../stores/logs';
 import ImageEditModal, { type ImageEditProduceMeta } from './ImageEditModal';
 import ResizableCorners from './ResizableCorners';
-import CollectionSplitButton from '../CollectionSplitButton';
-import ImageHoverPreview from '../ImageHoverPreview';
 import LoopingVideo from '../LoopingVideo';
 import MediaMetadataBadge from '../MediaMetadataBadge';
 import RhImageCapabilityRail from '../RhImageCapabilityRail';
 import SmartImage from '../SmartImage';
+import { readImageNaturalSize } from '../../utils/imageNaturalSize';
 import { generateImage } from '../../services/generation';
 import { decodeDuckFiles, type DuckDecodeFileItem } from '../../services/api';
 import { resolveThemeTemplate } from '../../theme/defaultTemplates';
@@ -40,6 +44,7 @@ import {
   createUploadMediaRemovalData,
   formatMediaSize,
   getMediaItemsFromData,
+  mediaDownloadFileName,
   sameMediaUrls,
   type MediaItem,
   type MediaKind,
@@ -57,6 +62,8 @@ import {
 } from '../../utils/canvasCreativeWorkflow';
 // v1.2.10.5: 节点落点防重叠
 import { placeSingleNode, placeBatchNodes, defaultSizeOf, type Rect as PlacementRect } from '../../utils/nodePlacement';
+import { useNodeGeometrySync } from './shared/useNodeGeometrySync';
+import { downloadMediaUrl } from '../../utils/downloadMedia';
 
 type UploadProduceMeta = ImageEditProduceMeta | { type: 'rh-capability'; label?: string };
 
@@ -91,7 +98,7 @@ const KIND_META: Record<
 > = {
   image: {
     label: '图像',
-    accept: 'image/*',
+    accept: 'image/*,.svg,image/svg+xml',
     icon: FileImage,
     color: PORT_COLOR.image,
     dataField: 'imageUrl',
@@ -130,8 +137,10 @@ function inferKindFromFile(file: File): UploadKind | null {
   const name = file.name || '';
   if (MODEL_3D_EXT_RE.test(name)) return 'model3d';
   const m = file.type;
+  if (/\.svg$/i.test(name)) return 'image';
   if (!m) return null;
   if (m.startsWith('model/')) return 'model3d';
+  if (m === 'image/svg+xml') return 'image';
   if (m.startsWith('image/')) return 'image';
   if (m.startsWith('video/')) return 'video';
   if (m.startsWith('audio/')) return 'audio';
@@ -140,6 +149,20 @@ function inferKindFromFile(file: File): UploadKind | null {
 
 function autoOutputNodeTypeForMedia(kind: MediaKind): 'output' | 'model-3d-preview' {
   return kind === 'model3d' ? 'model-3d-preview' : 'output';
+}
+
+function uploadMediaTitle(item: MediaItem | undefined, fallback: string): string {
+  return String(item?.name || item?.url?.split('/').pop() || fallback).trim();
+}
+
+function clampUploadRatio(value: unknown): number {
+  const ratio = Number(value);
+  if (!Number.isFinite(ratio) || ratio <= 0) return 1;
+  return Math.max(0.28, Math.min(3.6, ratio));
+}
+
+function uploadCardHeightForRatio(width: number, ratio: number): number {
+  return Math.max(160, Math.min(640, Math.round(width / clampUploadRatio(ratio))));
 }
 
 const UploadNode = ({ id, data, selected, type }: NodeProps) => {
@@ -160,12 +183,16 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
   const rhDuckUploadIds = useHiddenFeatureStore((s) => s.rhDuckUploadIds);
   const clearRhDuckUpload = useHiddenFeatureStore((s) => s.clearRhDuckUpload);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const updateNodeInternals = useUpdateNodeInternals();
+  const syncUploadNodeGeometry = useNodeGeometrySync(id, updateNodeInternals);
   const rf = useReactFlow();
 
   const [error, setError] = useState<string | null>(null);
   const [rhCapabilityBusy, setRhCapabilityBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [dragActive, setDragActive] = useState(false);
+  const [infoOpen, setInfoOpen] = useState(false);
+  const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   // 图像编辑弹窗 src URL（与 OutputNode 双击逻辑保持一致）
   const [editingUrl, setEditingUrl] = useState<string | null>(null);
 
@@ -197,6 +224,28 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
   // 节点本地尺寸 state: 默认 (260, 高度由内容撑开 — 上传后图/视频会撑高 root)
   // 拖角后由 ResizableCorners onResize 同步具体 px (保证 measured 准确 + keepAspectRatio 生效 + handleBounds 准确)
   const [size, setSize] = useState<{ w: number; h?: number }>({ w: 260 });
+  const uploadNodeUiVariant: 'smart-card' | 'classic' = d?.uiVariant === 'classic' ? 'classic' : 'smart-card';
+  const useSmartCardUploadNode = uploadNodeUiVariant === 'smart-card';
+  const smartUploadWidth = Math.max(220, Number(d?.smartUploadWidth) || size.w || 260);
+  const smartUploadRatio = clampUploadRatio(d?.smartUploadRatio || (uploadType === 'audio' ? 1.65 : uploadType === 'model3d' ? 1.45 : 1));
+  const smartUploadHeight = Math.max(
+    180,
+    Number(d?.smartUploadHeight) || (mediaItems.length > 0 ? uploadCardHeightForRatio(smartUploadWidth, smartUploadRatio) : 210),
+  );
+  const switchUploadNodeVariant = (variant: 'smart-card' | 'classic') => {
+    flushSync(() => update({ uiVariant: variant }));
+    syncUploadNodeGeometry();
+  };
+  const syncUploadMediaRatio = (width: number, height: number) => {
+    if (!useSmartCardUploadNode || mediaItems.length !== 1) return;
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return;
+    const nextRatio = Number(clampUploadRatio(width / height).toFixed(4));
+    const nextHeight = uploadCardHeightForRatio(smartUploadWidth, nextRatio);
+    if (Math.abs(nextRatio - smartUploadRatio) > 0.01 || Math.abs(nextHeight - smartUploadHeight) > 2) {
+      update({ smartUploadRatio: nextRatio, smartUploadHeight: nextHeight });
+      syncUploadNodeGeometry();
+    }
+  };
 
   // === 运行总线: 点击 RUN 后根据已上传素材生成下游 OutputNode ===
   // 设计要点:
@@ -632,77 +681,556 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
   const effectiveHandleColor = rhDuckMode ? '#ff345f' : yyhPortraitUploadMode ? '#ff4fd8' : handleColor;
   const headerLabel = lockedUploadType === 'model3d' ? '3D素材上传' : meta ? `上传${meta.label}` : '上传素材';
   const totalSize = mediaItems.reduce((sum, item) => sum + (item.size || 0), 0);
+  const firstItem = mediaItems[0];
+  const previewItem = previewIndex === null ? null : mediaItems[previewIndex] || null;
+  const compactSummary = mediaItems.length > 0
+    ? `${meta?.label || '素材'} ${mediaItems.length} 项${totalSize > 0 ? ` · ${formatMediaSize(totalSize)}` : ''}`
+    : uploading
+      ? '上传中'
+      : '拖拽或点击上传';
+  const infoRows = [
+    { label: '类型', value: meta?.label || '自动识别' },
+    { label: '数量', value: `${mediaItems.length || 0} 项` },
+    totalSize > 0 ? { label: '大小', value: formatMediaSize(totalSize) } : null,
+    firstItem ? { label: '文件', value: uploadMediaTitle(firstItem, headerLabel) } : null,
+    firstItem?.mime ? { label: '格式', value: firstItem.mime } : null,
+  ].filter(Boolean) as Array<{ label: string; value: string }>;
+
+  useEffect(() => {
+    if (!useSmartCardUploadNode) return;
+    syncUploadNodeGeometry();
+  }, [smartUploadHeight, smartUploadWidth, useSmartCardUploadNode, syncUploadNodeGeometry]);
+
+  useEffect(() => {
+    if (!useSmartCardUploadNode || uploadType !== 'image' || !firstItem?.url || mediaItems.length !== 1) return;
+    let cancelled = false;
+    readImageNaturalSize(firstItem.url, 8000).then((naturalSize) => {
+      if (cancelled || !naturalSize) return;
+      const ratio = naturalSize.width / naturalSize.height;
+      if (!Number.isFinite(ratio) || ratio <= 0) return;
+      const nextRatio = Number(clampUploadRatio(ratio).toFixed(4));
+      const nextHeight = uploadCardHeightForRatio(smartUploadWidth, nextRatio);
+      if (Math.abs(nextRatio - smartUploadRatio) > 0.01 || Math.abs(nextHeight - smartUploadHeight) > 2) {
+        update({ smartUploadRatio: nextRatio, smartUploadHeight: nextHeight });
+        syncUploadNodeGeometry();
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    firstItem?.url,
+    mediaItems.length,
+    smartUploadHeight,
+    smartUploadRatio,
+    smartUploadWidth,
+    syncUploadNodeGeometry,
+    update,
+    uploadType,
+    useSmartCardUploadNode,
+  ]);
+
+  if (!useSmartCardUploadNode) {
+    return (
+      <div
+        data-upload-node-id={id}
+        data-rh-duck-mode={rhDuckMode ? 'true' : undefined}
+        data-yyh-portrait-hidden-upload={yyhPortraitUploadMode ? 'true' : undefined}
+        className={`t8-node t8-upload-node-classic relative transition-all ${selected ? 't8-image-node-classic--selected' : ''}`}
+        style={{ width: 280 }}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragActive(true);
+        }}
+        onDragLeave={() => setDragActive(false)}
+        onDrop={handleDrop}
+      >
+        <Handle
+          type="source"
+          position={Position.Right}
+          className="t8-smart-node-port !border-0"
+          style={{ top: '50%', background: effectiveHandleColor }}
+          title={meta ? `输出 ${meta.label}` : '请先选择类型'}
+        />
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept={meta ? meta.accept : 'image/*,.svg,image/svg+xml,video/*,audio/*,.glb,.gltf,.obj,.fbx,.stl,.usdz,.zip'}
+          multiple
+          className="hidden"
+          onChange={handleFileChange}
+        />
+        <div className="t8-image-node-classic__header t8-node-header">
+          <div className="t8-smart-node-icon" style={{ color: effectiveHandleColor }}>
+            {meta ? <meta.icon size={14} /> : <UploadIcon size={14} />}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="t8-smart-node-title">{headerLabel}</div>
+            <div className="t8-smart-node-subtitle">{compactSummary}</div>
+          </div>
+          <button
+            type="button"
+            className="nodrag nopan t8-btn t8-smart-classic-switch"
+            onPointerDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              switchUploadNodeVariant('smart-card');
+            }}
+            title="切回卡片版节点"
+            aria-label="切回卡片版节点"
+          >
+            <RefreshCcw size={13} />
+          </button>
+        </div>
+        <div className="t8-upload-classic-body">
+          {mediaItems.length === 0 ? (
+            <button type="button" className="nodrag nopan t8-btn t8-upload-classic-pick" onClick={triggerPick}>
+              <UploadIcon size={14} />
+              {uploading ? '上传中...' : dragActive ? '松开以上传' : '选择素材'}
+            </button>
+          ) : (
+            <div className="t8-upload-classic-preview">
+              {uploadType === 'image' && firstItem ? (
+                <SmartImage src={firstItem.url} alt={uploadMediaTitle(firstItem, '上传图片')} thumbSize={520} className="h-full w-full object-cover" />
+              ) : uploadType === 'video' && firstItem ? (
+                <LoopingVideo src={firstItem.url} controls className="h-full w-full object-cover" />
+              ) : uploadType === 'audio' && firstItem ? (
+                <audio src={firstItem.url} controls className="nodrag nopan w-full" />
+              ) : (
+                <div className="t8-smart-upload-model-surface">
+                  <Box size={22} />
+                  <span>{uploadMediaTitle(firstItem, '3D模型')}</span>
+                </div>
+              )}
+            </div>
+          )}
+          {error && (
+            <div className="t8-smart-node-error t8-upload-classic-error">
+              <AlertCircle size={12} />
+              <span>{error}</span>
+            </div>
+          )}
+          <div className="nodrag nopan t8-upload-classic-actions">
+            <button type="button" className="t8-btn t8-smart-result-action" onClick={triggerPick}>添加</button>
+            {canEditImage && <button type="button" className="t8-btn t8-smart-result-action" onClick={openEdit}>编辑</button>}
+            {mediaItems.length > 0 && <button type="button" className="t8-btn t8-smart-result-action" onClick={handleReset}>清空</button>}
+          </div>
+        </div>
+        {editingUrl && (
+          <ImageEditModal
+            srcUrl={editingUrl}
+            onClose={() => setEditingUrl(null)}
+            onProduce={handleProduce}
+          />
+        )}
+      </div>
+    );
+  }
 
   return (
     <div
       data-upload-node-id={id}
       data-rh-duck-mode={rhDuckMode ? 'true' : undefined}
       data-yyh-portrait-hidden-upload={yyhPortraitUploadMode ? 'true' : undefined}
-      className="relative rounded-xl border-2 transition-colors flex flex-col"
-      style={{
-        background: isDark ? 'rgba(20,20,22,.92)' : 'rgba(255,255,255,.96)',
-        backdropFilter: 'blur(8px)',
-        borderColor: selected || rhDuckMode ? effectiveHandleColor : isDark ? 'rgba(255,255,255,.15)' : 'rgba(0,0,0,.1)',
-        width: size.w,
-        height: size.h, // undefined → auto, 上传后被图/视频自然撑高; 拖角后具体 px
-        minWidth: 220,
-        // 不设 overflow 避免裁掉 ResizableCorners 的 4 角 handle (中心点在节点边缘上)
-      }}
+      className="t8-smart-image-node relative overflow-visible"
+      style={{ width: smartUploadWidth }}
     >
-      {/* 四角同比例缩放 (仅选中时出现) — 主题色跟随上传类型的端口色 */}
-      <ResizableCorners
-        selected={selected}
-        minWidth={220}
-        minHeight={180}
-        accent={effectiveHandleColor}
-        onResize={(_e, p) => setSize({ w: p.width, h: p.height })}
-      />
-      {/* 选中时浮动图像操作按钮 — Edit 保持本地编辑，RH 图像能力走左侧轨道 */}
-      {selected && canEditImage && (
-        <div
-          className="nodrag nopan"
-          onMouseDown={(e) => e.stopPropagation()}
-          style={{
-            position: 'absolute',
-            top: -34,
-            left: 0,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            zIndex: 30,
+      <div
+        className={`t8-node t8-smart-node-card t8-smart-upload-card transition-all ${selected ? 't8-smart-node-card--selected' : ''} ${
+          dragActive ? 't8-smart-node-card--accepting' : ''
+        } ${infoOpen ? 't8-smart-upload-card--info-open' : ''}`}
+        style={{
+          height: smartUploadHeight,
+          minHeight: mediaItems.length > 0 ? 180 : 210,
+        }}
+      >
+        <ResizableCorners
+          selected={selected}
+          minWidth={220}
+          minHeight={180}
+          maxWidth={720}
+          maxHeight={720}
+          accent={effectiveHandleColor}
+          keepAspectRatio={false}
+          onResize={(_e, p) => {
+            const nextWidth = Math.round(p.width);
+            const nextHeight = Math.round(p.height);
+            setSize({ w: nextWidth, h: nextHeight });
+            update({
+              smartUploadWidth: nextWidth,
+              smartUploadHeight: nextHeight,
+              smartUploadRatio: Number((nextWidth / Math.max(1, nextHeight)).toFixed(4)),
+            });
+            syncUploadNodeGeometry();
           }}
-        >
-          <button
-            type="button"
-            className="nodrag nopan"
-            onClick={openEdit}
-            onMouseDown={(e) => e.stopPropagation()}
-            title="编辑图像（裁剪 / 宫格切分），等同双击预览图"
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 4,
-              padding: '4px 10px',
-              height: 26,
-              background: isDark ? 'rgba(28,28,32,0.92)' : 'rgba(255,255,255,0.95)',
-              color: effectiveHandleColor,
-              border: `1px solid ${effectiveHandleColor}66`,
-              borderRadius: isPixel ? 0 : 6,
-              boxShadow: isPixel
-                ? `2px 2px 0 ${effectiveHandleColor}`
-                : isDark
-                  ? '0 6px 24px rgba(0,0,0,0.4)'
-                  : '0 6px 24px rgba(0,0,0,0.12)',
-              cursor: 'pointer',
-              fontSize: 12,
-              fontWeight: 600,
+          onResizeEnd={(_e, p) => {
+            const nextWidth = Math.round(p.width);
+            const nextHeight = Math.round(p.height);
+            update({
+              smartUploadWidth: nextWidth,
+              smartUploadHeight: nextHeight,
+              smartUploadRatio: Number((nextWidth / Math.max(1, nextHeight)).toFixed(4)),
+            });
+            syncUploadNodeGeometry();
+          }}
+        />
+        <Handle
+          type="source"
+          position={Position.Right}
+          className="t8-smart-node-port !border-0"
+          style={{ top: '50%', background: effectiveHandleColor }}
+          title={meta ? `输出 ${meta.label}` : '请先选择类型'}
+        />
+
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept={meta ? meta.accept : `image/*,.svg,image/svg+xml,video/*,${AUDIO_UPLOAD_ACCEPT},.glb,.gltf,.obj,.fbx,.stl,.usdz,.zip`}
+          multiple
+          className="hidden"
+          onChange={handleFileChange}
+        />
+
+        <div className="t8-smart-node-body">
+          <div
+            className="t8-smart-node-preview t8-smart-upload-preview"
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDragActive(true);
             }}
+            onDragLeave={() => setDragActive(false)}
+            onDrop={handleDrop}
           >
-            <Edit3 size={12} />
-            <span>Edit</span>
-          </button>
+            {mediaItems.length === 0 ? (
+              <>
+                <div className="t8-smart-upload-empty">
+                  <span className="t8-smart-upload-empty__icon" style={{ color: effectiveHandleColor }}>
+                    <UploadIcon size={28} />
+                  </span>
+                  <div className="t8-smart-upload-empty__copy">
+                    <strong>{uploading ? '上传中...' : dragActive ? '松开以上传' : headerLabel}</strong>
+                    <span>
+                      {lockedUploadType === 'model3d'
+                        ? 'glb / gltf / obj / fbx / stl / usdz / zip'
+                        : rhDuckMode
+                          ? 'RED 模式已锁定图像'
+                          : '图像 / 视频 / 音频 / 3D模型'}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    className="nodrag nopan t8-smart-upload-empty__action"
+                    onPointerDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      triggerPick();
+                    }}
+                  >
+                    {lockedUploadType === 'model3d'
+                      ? '选择模型'
+                      : rhDuckMode
+                        ? '上传图像'
+                        : '选择素材'}
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  className="nodrag nopan t8-btn t8-smart-variant-toggle"
+                  title="切换到经典版节点"
+                  aria-label="切换到经典版节点"
+                  onPointerDown={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    switchUploadNodeVariant('classic');
+                  }}
+                >
+                  <RefreshCcw size={13} />
+                </button>
+              </>
+            ) : uploadType === 'image' ? (
+              <div className={mediaItems.length > 1 ? 't8-smart-upload-grid' : 't8-smart-result-surface'}>
+                {mediaItems.map((item, i) => (
+                  <div key={`${item.url}-${i}`} className="t8-smart-upload-tile">
+                    <SmartImage
+                      src={item.url}
+                      alt={uploadMediaTitle(item, `图像 ${i + 1}`)}
+                      className="h-full w-full object-cover"
+                      thumbSize={mediaItems.length > 1 ? 360 : 720}
+                      data-drag-source
+                      data-drag-kind="image"
+                      data-drag-url={item.url}
+                      data-drag-preview={item.url}
+                      data-drag-node-id={id}
+                      data-resource-title={item.name}
+                      draggable={false}
+                      onDragStart={(e) => e.preventDefault()}
+                      onLoad={(e) => {
+                        if (mediaItems.length !== 1) return;
+                        const img = e.currentTarget;
+                        syncUploadMediaRatio(img.naturalWidth, img.naturalHeight);
+                      }}
+                      onMouseDown={(e) =>
+                        beginMaterialDrag(e, { kind: 'image', url: item.url, sourceNodeId: id, previewUrl: item.url })
+                      }
+                      onDoubleClick={(e) => {
+                        e.stopPropagation();
+                        setPreviewIndex(i);
+                      }}
+                      title="双击预览 · Ctrl+拖拽可送到其他节点"
+                    />
+                    {mediaItems.length > 1 && <span className="t8-smart-upload-count">{i + 1}</span>}
+                    <MediaMetadataBadge kind="image" url={item.url} className="t8-smart-upload-metadata" />
+                  </div>
+                ))}
+              </div>
+            ) : uploadType === 'video' ? (
+              <div className={mediaItems.length > 1 ? 't8-smart-upload-grid' : 't8-smart-result-surface'}>
+                {mediaItems.map((item, i) => (
+                  <div key={`${item.url}-${i}`} className="t8-smart-upload-tile">
+                    <LoopingVideo
+                      src={item.url}
+                      controls={mediaItems.length === 1}
+                      className="h-full w-full object-cover"
+                      data-drag-source
+                      data-drag-kind="video"
+                      data-drag-url={item.url}
+                      data-drag-preview={item.url}
+                      data-drag-node-id={id}
+                      data-resource-title={item.name}
+                      onLoadedMetadata={(e) => {
+                        if (mediaItems.length !== 1) return;
+                        const video = e.currentTarget;
+                        syncUploadMediaRatio(video.videoWidth, video.videoHeight);
+                      }}
+                      onMouseDown={(e) =>
+                        beginMaterialDrag(e, { kind: 'video', url: item.url, sourceNodeId: id, previewUrl: item.url })
+                      }
+                    />
+                    {mediaItems.length > 1 && <span className="t8-smart-upload-count">{i + 1}</span>}
+                    <MediaMetadataBadge kind="video" url={item.url} className="t8-smart-upload-metadata" />
+                  </div>
+                ))}
+              </div>
+            ) : uploadType === 'audio' ? (
+              <div className="t8-smart-upload-audio-surface">
+                <div className="t8-smart-audio-center">
+                  <div className="t8-smart-audio-cover t8-smart-audio-cover--empty">
+                    <Music size={22} />
+                  </div>
+                  <div className="t8-smart-audio-info">
+                    <div className="t8-smart-audio-title">{uploadMediaTitle(firstItem, '上传音频')}</div>
+                    <div className="t8-smart-audio-subtitle">{compactSummary}</div>
+                  </div>
+                </div>
+                {firstItem && (
+                  <audio
+                    src={firstItem.url}
+                    controls
+                    className="t8-smart-audio-player nodrag nopan"
+                    data-drag-source
+                    data-drag-kind="audio"
+                    data-drag-url={firstItem.url}
+                    data-drag-node-id={id}
+                    data-resource-title={firstItem.name}
+                    onMouseDown={(e) =>
+                      beginMaterialDrag(e, { kind: 'audio', url: firstItem.url, sourceNodeId: id })
+                    }
+                  />
+                )}
+                {mediaItems.map((item, i) => (
+                  <MediaMetadataBadge key={`${item.url}-${i}`} kind="audio" url={item.url} className="t8-smart-upload-metadata" />
+                ))}
+              </div>
+            ) : uploadType === 'model3d' ? (
+              <div className="t8-smart-upload-model-surface">
+                <div className="t8-smart-audio-cover t8-smart-audio-cover--empty">
+                  <Box size={24} />
+                </div>
+                <div className="t8-smart-audio-info">
+                  <div className="t8-smart-audio-title">{uploadMediaTitle(firstItem, '3D模型')}</div>
+                  <div className="t8-smart-audio-subtitle">{compactSummary}</div>
+                </div>
+              </div>
+            ) : null}
+
+            {mediaItems.length > 0 && meta && (
+              <div className="t8-smart-upload-badge">
+                <meta.icon size={11} />
+                <span>{compactSummary}</span>
+              </div>
+            )}
+
+            {mediaItems.length > 0 && (
+              <div
+                className="nodrag nopan t8-smart-result-tools t8-smart-upload-tools"
+                onPointerDown={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <button
+                  type="button"
+                  className="t8-smart-result-tool"
+                  title="切换到经典版节点"
+                  aria-label="切换到经典版节点"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    switchUploadNodeVariant('classic');
+                  }}
+                >
+                  <RefreshCcw size={14} />
+                </button>
+                <button
+                  type="button"
+                  className="t8-smart-result-tool"
+                  title="预览素材"
+                  aria-label="预览素材"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setPreviewIndex(0);
+                    setInfoOpen(false);
+                  }}
+                >
+                  <Eye size={14} />
+                </button>
+                <button
+                  type="button"
+                  className="t8-smart-result-tool"
+                  data-active={infoOpen ? 'true' : 'false'}
+                  title="素材信息"
+                  aria-label="素材信息"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setInfoOpen((open) => !open);
+                  }}
+                >
+                  <Info size={14} />
+                </button>
+                {canEditImage && (
+                  <button
+                    type="button"
+                    className="t8-smart-result-tool"
+                    title="编辑图像"
+                    aria-label="编辑图像"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      openEdit(e);
+                      setInfoOpen(false);
+                    }}
+                  >
+                    <Edit3 size={14} />
+                  </button>
+                )}
+                {mediaItems.length > 1 && (
+                  <button
+                    type="button"
+                    className="t8-smart-result-tool"
+                    title="拆成独立上传节点"
+                    aria-label="拆成独立上传节点"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      splitUploadCollection();
+                      setInfoOpen(false);
+                    }}
+                  >
+                    <Layers2 size={14} />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="t8-smart-result-tool"
+                  title="继续添加"
+                  aria-label="继续添加"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    triggerPick();
+                  }}
+                >
+                  <Plus size={14} />
+                </button>
+                <button
+                  type="button"
+                  className="t8-smart-result-tool"
+                  title="清空素材"
+                  aria-label="清空素材"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleReset();
+                    setInfoOpen(false);
+                    setPreviewIndex(null);
+                  }}
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            )}
+
+            {infoOpen && (
+              <div
+                className="nodrag nopan t8-smart-result-popover t8-smart-result-popover--info"
+                onPointerDown={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="t8-smart-result-popover__title">素材信息</div>
+                <div className="t8-smart-result-info">
+                  {infoRows.map((row) => (
+                    <div key={row.label} className="t8-smart-result-info__row">
+                      <span>{row.label}</span>
+                      <strong title={row.value}>{row.value}</strong>
+                    </div>
+                  ))}
+                </div>
+                {mediaItems.length > 0 && (
+                  <div className="t8-smart-upload-info-actions">
+                    {mediaItems.map((item, i) => (
+                      <button
+                        key={`${item.url}-${i}`}
+                        type="button"
+                        className="t8-smart-result-action group-hover/upload-image:opacity-100"
+                        title={`删除素材 ${uploadMediaTitle(item, `素材 ${i + 1}`)}`}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleRemoveUploadItem(i);
+                        }}
+                      >
+                        删除素材 {i + 1}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {error && (
+              <div className="t8-smart-node-error">
+                <AlertCircle size={12} />
+                <span>{error}</span>
+              </div>
+            )}
+          </div>
         </div>
-      )}
+      </div>
+
       {(selected || rhCapabilityBusy) && canEditImage && (
         <RhImageCapabilityRail
           sourceUrls={imageSourceUrls}
@@ -714,373 +1242,89 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
           onRunningChange={setRhCapabilityBusy}
         />
       )}
-      {/* 仅有 source handle(上传节点不接收输入) */}
-      <Handle
-        type="source"
-        position={Position.Right}
-        className="!border-0"
-        style={{ background: effectiveHandleColor, width: 10, height: 10 }}
-        title={meta ? `输出 ${meta.label}` : '请先选择类型'}
-      />
 
-      {/* 头部 */}
-      <div
-        className={`flex items-center gap-2 px-3 py-2 border-b ${
-          isDark ? 'border-white/10' : 'border-black/10'
-        }`}
-      >
+      {previewItem && createPortal(
         <div
-          className="w-6 h-6 rounded flex items-center justify-center"
-          style={{
-            background: effectiveHandleColor + '33',
-            color: effectiveHandleColor,
-            boxShadow: `inset 0 0 0 1px ${effectiveHandleColor}66`,
+          className="nodrag nopan t8-smart-result-preview-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-label="上传素材预览"
+          onMouseDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setPreviewIndex(null);
           }}
         >
-          {meta ? <meta.icon size={13} /> : <UploadIcon size={13} />}
-        </div>
-        <div className={`flex-1 text-sm font-semibold ${isDark ? 'text-white' : 'text-zinc-900'}`}>
-          {headerLabel}
-        </div>
-        {meta && (
-          <button
-            onClick={handleReset}
-            title="重置类型"
-            className={`p-1 rounded ${
-              isDark ? 'hover:bg-white/10 text-white/60' : 'hover:bg-black/10 text-zinc-600'
-            }`}
-            onMouseDown={(e) => e.stopPropagation()}
-          >
-            <RotateCcw size={11} />
-          </button>
-        )}
-      </div>
-
-      {/* body 高度逻辑: root 默认 height=auto 时 body 也 auto 跟随内容 (图/视频) 自然高;
-          root 拖角后有具体 px 时, body flex-1 撑满剩余 + min-h-0 允许内容 overflow */}
-      <div className={`p-2.5 space-y-2 ${size.h ? 'flex-1 min-h-0 overflow-auto' : ''}`} onMouseDown={(e) => e.stopPropagation()}>
-        {/* 隐藏的文件输入: accept 三合一, 上传后自动按 MIME 识别 kind */}
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept={meta ? meta.accept : `image/*,video/*,${AUDIO_UPLOAD_ACCEPT},.glb,.gltf,.obj,.fbx,.stl,.usdz,.zip`}
-          multiple
-          className="hidden"
-          onChange={handleFileChange}
-        />
-
-        {/* 未上传状态: 一个大点击/拖拽区域, 自动识别类型 */}
-        {mediaItems.length === 0 && (
           <div
-            onClick={triggerPick}
-            onDragOver={(e) => {
-              e.preventDefault();
-              setDragActive(true);
+            className="t8-smart-result-preview"
+            onMouseDown={(e) => {
+              e.stopPropagation();
             }}
-            onDragLeave={() => setDragActive(false)}
-            onDrop={handleDrop}
-            className={`cursor-pointer rounded border-2 border-dashed flex flex-col items-center justify-center text-[11px] transition-colors py-6 px-3 ${
-              dragActive
-                ? 'bg-white/10'
-                : isDark
-                  ? 'border-white/15 hover:border-white/30 text-white/60'
-                  : 'border-black/15 hover:border-black/30 text-zinc-500'
-            }`}
-            style={dragActive ? { borderColor: effectiveHandleColor } : undefined}
           >
-            <UploadIcon size={22} className="mb-1.5" style={{ color: effectiveHandleColor }} />
-            <span className="font-medium">
-              {uploading ? '上传中...' : dragActive ? '松开以上传' : '点击或拖拽文件'}
-            </span>
-            <span
-              className={`text-[10px] mt-0.5 ${
-                isDark ? 'text-white/30' : 'text-zinc-400'
-              }`}
-            >
-              {lockedUploadType === 'model3d'
-                ? '支持 glb / gltf / obj / fbx / stl / usdz / zip'
-                : rhDuckMode
-                  ? 'RED 模式已锁定图像 · 清空素材后仍保持'
-                : '自动识别 图像 / 视频 / 音频 / 3D模型 · 支持同类型批量'}
-            </span>
-          </div>
-        )}
-
-        {/* 已上传:展示预览 + 文件信息 */}
-        {mediaItems.length > 0 && uploadType && meta && (
-          <div className="group/upload-section space-y-1.5">
-            <div className={`flex items-center gap-1.5 text-[10px] ${isDark ? 'text-white/50' : 'text-zinc-500'}`}>
-              <meta.icon size={11} />
-              <span className="flex-1">{meta.label} ({mediaItems.length})</span>
-              <CollectionSplitButton
-                count={mediaItems.length}
-                kindLabel={meta.label}
-                onSplit={splitUploadCollection}
-                className="opacity-100 transition sm:opacity-0 sm:group-hover/upload-section:opacity-100 sm:focus-within:opacity-100"
-              />
-            </div>
-
-            {uploadType === 'image' && (
-              <div className={mediaItems.length >= 2 ? 'grid grid-cols-2 gap-1.5' : 'space-y-1'}>
-                {mediaItems.map((item, i) => (
-                  <div key={`${item.url}-${i}`} className="group/upload-image space-y-0.5">
-                    <div className="relative">
-                      <SmartImage
-                        src={item.url}
-                        alt={item.name || `图像 ${i + 1}`}
-                        className="w-full h-auto rounded block cursor-zoom-in"
-                        thumbSize={mediaItems.length >= 2 ? 320 : 720}
-                        style={{ background: '#0008', objectFit: 'contain', maxHeight: mediaItems.length >= 2 ? 120 : 480 }}
-                        data-drag-source
-                        data-drag-kind="image"
-                        data-drag-url={item.url}
-                        data-drag-preview={item.url}
-                        data-drag-node-id={id}
-                        data-resource-title={item.name}
-                        onMouseDown={(e) =>
-                          beginMaterialDrag(e, { kind: 'image', url: item.url, sourceNodeId: id, previewUrl: item.url })
-                        }
-                        onDoubleClick={(e) => {
-                          e.stopPropagation();
-                          setEditingUrl(item.url);
-                        }}
-                        title="双击编辑（裁剪 / 宫格切分） · Ctrl+拖拽可送到其他节点"
-                      />
-                      <ImageHoverPreview
-                        src={item.url}
-                        alt={item.name || `图像 ${i + 1}`}
-                        buttonClassName="absolute right-1.5 top-1.5 z-10 h-7 w-7 p-0 opacity-0 shadow-md transition group-hover/upload-image:opacity-100 focus:opacity-100"
-                      />
-                      <button
-                        type="button"
-                        className="nodrag nopan t8-btn t8-mini-icon-button t8-material-delete-button absolute right-1.5 top-10 z-10 h-7 w-7 p-0 opacity-0 shadow-md transition group-hover/upload-image:opacity-100 focus:opacity-100"
-                        title={`删除素材 ${i + 1}`}
-                        aria-label={`删除素材 ${i + 1}`}
-                        style={{ color: 'var(--t8-danger, #ef4444)' }}
-                        onPointerDown={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                        }}
-                        onMouseDown={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                        }}
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          handleRemoveUploadItem(i);
-                        }}
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
-                    <div className={`flex items-center gap-1 text-[10px] ${isDark ? 'text-white/45' : 'text-zinc-500'}`}>
-                      <span className="truncate flex-1" title={item.name}>{item.name || `图像 ${i + 1}`}</span>
-                      <MediaMetadataBadge kind="image" url={item.url} />
-                      {item.size ? <span className="opacity-70">{formatMediaSize(item.size)}</span> : null}
-                    </div>
-                  </div>
-                ))}
+            <div className="t8-smart-result-preview__bar">
+              <div>
+                <div className="t8-smart-result-preview__title">{uploadMediaTitle(previewItem, '上传素材')}</div>
+                <div className="t8-smart-result-preview__meta">
+                  {previewItem.kind} {previewItem.size ? `· ${formatMediaSize(previewItem.size)}` : ''}
+                </div>
               </div>
-            )}
-
-            {uploadType === 'video' && (
-              <div className="space-y-1.5">
-                {mediaItems.map((item, i) => (
-                  <div key={`${item.url}-${i}`} className="space-y-0.5">
-                    <LoopingVideo
-                      src={item.url}
-                      controls
-                      className="w-full h-auto rounded block"
-                      style={{ background: '#000', objectFit: 'contain', maxHeight: mediaItems.length >= 2 ? 180 : 480 }}
-                      data-drag-source
-                      data-drag-kind="video"
-                      data-drag-url={item.url}
-                      data-drag-preview={item.url}
-                      data-drag-node-id={id}
-                      data-resource-title={item.name}
-                      onMouseDown={(e) =>
-                        beginMaterialDrag(e, { kind: 'video', url: item.url, sourceNodeId: id, previewUrl: item.url })
-                      }
-                    />
-                    <div className={`flex items-center gap-1 text-[10px] ${isDark ? 'text-white/45' : 'text-zinc-500'}`}>
-                      <span className="truncate flex-1" title={item.name}>{item.name || `视频 ${i + 1}`}</span>
-                      <MediaMetadataBadge kind="video" url={item.url} />
-                      {item.size ? <span className="opacity-70">{formatMediaSize(item.size)}</span> : null}
-                      <button
-                        type="button"
-                        className={`nodrag nopan p-0.5 rounded ${isDark ? 'hover:bg-white/10' : 'hover:bg-black/10'}`}
-                        title={`删除素材 ${i + 1}`}
-                        aria-label={`删除素材 ${i + 1}`}
-                        style={{ color: 'var(--t8-danger, #ef4444)' }}
-                        onMouseDown={(e) => e.stopPropagation()}
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          handleRemoveUploadItem(i);
-                        }}
-                      >
-                        <Trash2 size={11} />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {uploadType === 'audio' && (
-              <div className="space-y-1.5">
-                {mediaItems.map((item, i) => (
-                  <div key={`${item.url}-${i}`} className="space-y-0.5">
-                    <audio
-                      src={item.url}
-                      controls
-                      className="w-full"
-                      data-drag-source
-                      data-drag-kind="audio"
-                      data-drag-url={item.url}
-                      data-drag-node-id={id}
-                      data-resource-title={item.name}
-                      onMouseDown={(e) =>
-                        beginMaterialDrag(e, { kind: 'audio', url: item.url, sourceNodeId: id })
-                      }
-                    />
-                    <div className={`flex items-center gap-1 text-[10px] ${isDark ? 'text-white/45' : 'text-zinc-500'}`}>
-                      <span className="truncate flex-1" title={item.name}>{item.name || `音频 ${i + 1}`}</span>
-                      <MediaMetadataBadge kind="audio" url={item.url} />
-                      {item.size ? <span className="opacity-70">{formatMediaSize(item.size)}</span> : null}
-                      <button
-                        type="button"
-                        className={`nodrag nopan p-0.5 rounded ${isDark ? 'hover:bg-white/10' : 'hover:bg-black/10'}`}
-                        title={`删除素材 ${i + 1}`}
-                        aria-label={`删除素材 ${i + 1}`}
-                        style={{ color: 'var(--t8-danger, #ef4444)' }}
-                        onMouseDown={(e) => e.stopPropagation()}
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          handleRemoveUploadItem(i);
-                        }}
-                      >
-                        <Trash2 size={11} />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {uploadType === 'model3d' && (
-              <div className="space-y-1.5">
-                {mediaItems.map((item, i) => (
-                  <div
-                    key={`${item.url}-${i}`}
-                    className={`rounded border px-2 py-2 ${
-                      isDark ? 'border-white/10 bg-white/[0.04]' : 'border-black/10 bg-black/[0.03]'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <div
-                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded"
-                        style={{ color: PORT_COLOR.model3d, background: `${PORT_COLOR.model3d}22`, boxShadow: `inset 0 0 0 1px ${PORT_COLOR.model3d}66` }}
-                      >
-                        <Box size={18} />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className={`truncate text-[11px] font-semibold ${isDark ? 'text-white/80' : 'text-zinc-800'}`} title={item.name || item.url}>
-                          {item.name || `3D模型 ${i + 1}`}
-                        </div>
-                        <div className={`truncate text-[10px] ${isDark ? 'text-white/40' : 'text-zinc-500'}`} title={item.url}>
-                          {item.url}
-                        </div>
-                      </div>
-                      <a
-                        href={item.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        download
-                        className={`nodrag nopan inline-flex items-center gap-1 rounded px-1.5 py-1 text-[10px] ${
-                          isDark ? 'hover:bg-white/10 text-white/65' : 'hover:bg-black/10 text-zinc-600'
-                        }`}
-                        onMouseDown={(e) => e.stopPropagation()}
-                      >
-                        <Download size={10} /> 下载
-                      </a>
-                      <button
-                        type="button"
-                        className={`nodrag nopan inline-flex items-center justify-center rounded px-1.5 py-1 text-[10px] ${
-                          isDark ? 'hover:bg-white/10' : 'hover:bg-black/10'
-                        }`}
-                        title={`删除素材 ${i + 1}`}
-                        aria-label={`删除素材 ${i + 1}`}
-                        style={{ color: 'var(--t8-danger, #ef4444)' }}
-                        onMouseDown={(e) => e.stopPropagation()}
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          handleRemoveUploadItem(i);
-                        }}
-                      >
-                        <Trash2 size={11} />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <div
-              className={`flex items-center gap-1 text-[10px] ${
-                isDark ? 'text-white/50' : 'text-zinc-500'
-              }`}
-            >
-              <span className="truncate flex-1">
-                {mediaItems.length} 项{totalSize > 0 ? ` · ${formatMediaSize(totalSize)}` : ''}
-              </span>
               <button
-                onClick={triggerPick}
-                title="继续添加同类型文件"
-                className={`nodrag nopan p-0.5 rounded ${
-                  isDark ? 'hover:bg-white/10' : 'hover:bg-black/10'
-                }`}
-                onMouseDown={(e) => e.stopPropagation()}
+                type="button"
+                className="t8-btn t8-smart-result-preview__close"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setPreviewIndex(null);
+                }}
+                title="关闭预览"
+                aria-label="关闭预览"
               >
-                <UploadIcon size={11} />
-              </button>
-              <button
-                onClick={handleReset}
-                title="清空文件"
-                className={`nodrag nopan p-0.5 rounded ${
-                  isDark ? 'hover:bg-red-500/20 text-red-400' : 'hover:bg-red-100 text-red-600'
-                }`}
-                onMouseDown={(e) => e.stopPropagation()}
-              >
-                <X size={11} />
+                <X size={15} />
               </button>
             </div>
+            <div className="t8-smart-result-preview__body">
+              {previewItem.kind === 'image' ? (
+                <SmartImage
+                  src={previewItem.url}
+                  alt="上传图片大图预览"
+                  className="t8-smart-result-preview__image"
+                  thumbSize={1400}
+                  draggable={false}
+                  onDragStart={(e) => e.preventDefault()}
+                />
+              ) : previewItem.kind === 'video' ? (
+                <LoopingVideo src={previewItem.url} controls className="t8-smart-result-preview__image" />
+              ) : previewItem.kind === 'audio' ? (
+                <audio src={previewItem.url} controls className="w-full max-w-xl" />
+              ) : (
+                <a
+                  className="t8-btn"
+                  href={previewItem.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  download={mediaDownloadFileName(previewItem.kind, previewItem.url, 0, previewItem.mime)}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    void downloadMediaUrl(previewItem.kind, previewItem.url, 0, previewItem.mime);
+                  }}
+                >
+                  <Download size={14} /> 下载模型
+                </a>
+              )}
+            </div>
+            {infoRows.length > 0 && (
+              <div className="t8-smart-result-preview__info">
+                {infoRows.slice(0, 5).map((row) => (
+                  <span key={row.label} title={row.value}>{row.label}: {row.value}</span>
+                ))}
+              </div>
+            )}
           </div>
-        )}
+        </div>,
+        document.body,
+      )}
 
-        {/* 错误提示 */}
-        {error && (
-          <div className="flex items-start gap-1 text-[10px] text-red-300 bg-red-500/10 border border-red-500/20 rounded px-2 py-1">
-            <AlertCircle size={11} className="mt-0.5 flex-shrink-0" />
-            <span className="break-all">{error}</span>
-          </div>
-        )}
-
-        {/* 输出说明 */}
-        {meta && (
-          <div
-            className={`text-[10px] text-right ${
-              isDark ? 'text-white/30' : 'text-zinc-400'
-            }`}
-          >
-            → 输出 {meta.label} (端口色 <span style={{ color: effectiveHandleColor }}>●</span>)
-          </div>
-        )}
-      </div>
-      {/* 图像编辑弹窗：产物以独立 OutputNode 外挂到右侧 */}
       {editingUrl && (
         <ImageEditModal
           srcUrl={editingUrl}

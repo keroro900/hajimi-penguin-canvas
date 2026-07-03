@@ -18,7 +18,7 @@ const PACKAGE_JSON = require(path.join(ROOT, 'package.json'));
 const APP_VERSION = PACKAGE_JSON.version;
 const PRODUCT_NAME = PACKAGE_JSON.build && PACKAGE_JSON.build.productName
   ? PACKAGE_JSON.build.productName
-  : 'T8-PenguinCanvas';
+  : '哈基米画布';
 const UNPACKED = path.join(ROOT, 'dist_electron', 'win-unpacked');
 const RES = path.join(UNPACKED, 'resources');
 let missingCount = 0;
@@ -276,6 +276,12 @@ function checkFigmaBridgeRuntime() {
   checkFile(path.join(root, 'plugin', 'ui.html'));
 }
 
+function checkHakimiCanvasCliRuntime() {
+  const root = path.join(RES, 'tools', 'hakimi-canvas-cli');
+  checkFile(path.join(root, 'hakimi-canvas.mjs'));
+  checkFile(path.join(root, 'README.md'));
+}
+
 function checkUpdateArtifacts() {
   const distDir = path.join(ROOT, 'dist_electron');
   const installerName = `${PRODUCT_NAME}-Setup-${APP_VERSION}.exe`;
@@ -468,6 +474,7 @@ function main() {
   checkFile(path.join(RES, 'backend-enc', 'routes', 'figma.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'routes', 'grokOAuth.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'routes', 'codexCli.t8c'));
+  checkFile(path.join(RES, 'backend-enc', 'routes', 'hakimiMcp.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'routes', 'aiWatermark.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'routes', 'cloudUploads.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'routes', 'parseHub.t8c'));
@@ -496,8 +503,11 @@ function main() {
   checkFile(path.join(RES, 'backend-enc', 'utils', 'duckPayload.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'utils', 'codexCliRunner.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'utils', 'figmaBridge.t8c'));
+  checkFile(path.join(RES, 'backend-enc', 'utils', 'hakimiCanvasCli.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'utils', 'parseHubBridge.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'utils', 'runtimeArchive.t8c'));
+  checkFile(path.join(RES, 'skills', 'hakimi-canvas-control', 'SKILL.md'));
+  checkFile(path.join(RES, '.agents', 'skills', 'childrenswear-print-workflow', 'SKILL.md'));
 
   console.log('\n[2] 前端 dist:');
   checkFile(path.join(RES, 'frontend', 'index.html'));
@@ -539,19 +549,22 @@ function main() {
   console.log('\n[8] Figma bridge/plugin:');
   checkFigmaBridgeRuntime();
 
-  console.log('\n[9] RH工具箱制作器分发检查:');
+  console.log('\n[9] Hakimi Canvas CLI:');
+  checkHakimiCanvasCliRuntime();
+
+  console.log('\n[10] RH工具箱制作器分发检查:');
   checkNoRhToolboxMaker();
 
-  console.log('\n[10] RH工具箱发布清单分发检查:');
+  console.log('\n[11] RH工具箱发布清单分发检查:');
   checkRhToolboxReleaseManifest();
 
-  console.log('\n[11] FAL应用制作工具分发检查:');
+  console.log('\n[12] FAL应用制作工具分发检查:');
   checkNoFalToolboxMaker();
 
-  console.log('\n[12] GitHub 自动更新资产:');
+  console.log('\n[13] GitHub 自动更新资产:');
   checkUpdateArtifacts();
 
-  console.log('\n[13] resources/ 完整结构:');
+  console.log('\n[14] resources/ 完整结构:');
   listDir(RES);
 
   if (missingCount > 0) {

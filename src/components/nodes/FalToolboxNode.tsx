@@ -1,4 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState, type CSSProperties, type WheelEvent } from 'react';
+import { flushSync } from 'react-dom';
 import { Handle, Position, useUpdateNodeInternals, type NodeProps } from '@xyflow/react';
 import {
   AlertCircle,
@@ -8,6 +9,7 @@ import {
   Layers,
   Loader2,
   Play,
+  RefreshCcw,
   Search,
   Sparkles,
   Square,
@@ -31,7 +33,6 @@ import {
 } from '../../utils/falToolbox';
 import {
   countExcludedMaterials,
-  excludeMaterialId,
   filterExcludedMaterials,
   normalizeExcludedMaterialIds,
 } from '../../utils/materialExclusion';
@@ -41,10 +42,20 @@ import { useUpdateNodeData } from './useUpdateNodeData';
 import { useUpstreamMaterials, type Material } from './useUpstreamMaterials';
 import { resolveMediaMentions, type MediaMention } from './mediaMentions';
 import MaterialPreviewSection from './MaterialPreviewSection';
+import {
+  pruneMaterialIdsForDisconnectedSource,
+  pruneMaterialOrderForDisconnectedSource,
+  useDisconnectUpstreamMaterial,
+} from './shared/upstreamMaterialConnections';
 import MentionPromptInput from './MentionPromptInput';
 import LoopingVideo from '../LoopingVideo';
 import SmartImage from '../SmartImage';
 import ResizableCorners from './ResizableCorners';
+import SmartNodeComposer from './shared/SmartNodeComposer';
+import SmartNodeShell from './shared/SmartNodeShell';
+import { useNodeGeometrySync } from './shared/useNodeGeometrySync';
+import { useOutsideClose } from './shared/useOutsideClose';
+import { useSmartNodePanelToggle } from './shared/useSmartNodePanelToggle';
 
 const handleStyle: CSSProperties = {
   width: 12,
@@ -100,6 +111,9 @@ function mediaMentionsForKey(value: unknown): MediaMention[] {
 const FalToolboxNode = ({ id, data, selected }: NodeProps) => {
   const update = useUpdateNodeData(id);
   const updateNodeInternals = useUpdateNodeInternals();
+  const smartNodeRef = useRef<HTMLDivElement | null>(null);
+  const [smartPanelOpenLocal, setSmartPanelOpenLocal] = useState(false);
+  const [smartCardDragging, setSmartCardDragging] = useState(false);
   const { theme, style: themeStyle } = useThemeStore();
   const isDark = theme === 'dark';
   const isLight = theme === 'light';
@@ -258,8 +272,61 @@ const FalToolboxNode = ({ id, data, selected }: NodeProps) => {
     borderRadius: isPixel ? 8 : 14,
     overflow: 'visible',
   };
+  const falToolboxNodeUiVariant: 'smart-card' | 'classic' = d.uiVariant === 'classic' ? 'classic' : 'smart-card';
+  const useSmartCardFalToolboxNode = falToolboxNodeUiVariant === 'smart-card';
+  const smartPanelOpen = smartPanelOpenLocal && !smartCardDragging;
+  const syncFalToolboxNodeGeometry = useNodeGeometrySync(id, updateNodeInternals);
+  const smartStatusLabel =
+    status === 'submitting'
+      ? '提交中'
+      : status === 'polling'
+        ? '生成中'
+        : status === 'success'
+          ? '已完成'
+          : status === 'error'
+            ? '失败'
+            : activeTool
+              ? '已选工具'
+              : '待选择';
+  const smartUpstreamCount = orderedTexts.length + orderedImages.length + orderedVideos.length + orderedAudios.length;
+  const smartOutputCount = imageUrls.length + videoUrls.length + audioUrls.length + modelUrls.length + (outputText ? 1 : 0);
+  const smartToolSummary = activeTool
+    ? activeTool.capabilities.map(capabilityLabel).slice(0, 2).join(' / ')
+    : `${enabledTools.length} 个工具`;
+
+  useEffect(() => {
+    if (!useSmartCardFalToolboxNode) return;
+    const raf = window.requestAnimationFrame(syncFalToolboxNodeGeometry);
+    return () => window.cancelAnimationFrame(raf);
+  }, [selected, smartPanelOpen, status, activeToolId, syncFalToolboxNodeGeometry, useSmartCardFalToolboxNode]);
+
+  useOutsideClose({
+    enabled: useSmartCardFalToolboxNode && smartPanelOpenLocal,
+    refs: smartNodeRef,
+    onOutside: () => setSmartPanelOpenLocal(false),
+  });
+
+  const smartPanelToggle = useSmartNodePanelToggle({
+    open: smartPanelOpenLocal,
+    dragging: false,
+    onToggle: setSmartPanelOpenLocal,
+    onDragChange: setSmartCardDragging,
+    onDragClose: () => setSmartPanelOpenLocal(false),
+    disabled: !useSmartCardFalToolboxNode,
+  });
+
+  const switchFalToolboxNodeVariant = (variant: 'smart-card' | 'classic') => {
+    setSmartPanelOpenLocal(false);
+    smartPanelToggle.handledClickRef.current = false;
+    smartPanelToggle.suppressClickRef.current = true;
+    flushSync(() => {
+      update({ uiVariant: variant });
+    });
+    syncFalToolboxNodeGeometry();
+  };
 
   const setMaterialOrder = (newOrder: string[]) => update({ materialOrder: newOrder });
+  const disconnectUpstreamMaterial = useDisconnectUpstreamMaterial(id);
   const handleHorizontalWheel = (event: WheelEvent<HTMLDivElement>) => {
     event.stopPropagation();
     const el = event.currentTarget;
@@ -271,9 +338,10 @@ const FalToolboxNode = ({ id, data, selected }: NodeProps) => {
   };
   const handleExcludeUpstreamMaterial = (m: Material) => {
     if (m.origin !== 'upstream') return;
+    disconnectUpstreamMaterial(m);
     update({
-      excludedMaterialIds: excludeMaterialId(excludedMaterialIds, m.id),
-      materialOrder: materialOrder.filter((itemId) => itemId !== m.id),
+      excludedMaterialIds: pruneMaterialIdsForDisconnectedSource(excludedMaterialIds, m.sourceNodeId),
+      materialOrder: pruneMaterialOrderForDisconnectedSource(materialOrder, m.sourceNodeId),
     });
   };
   const handleRestoreExcludedMaterials = () => update({ excludedMaterialIds: [] });
@@ -917,6 +985,90 @@ const FalToolboxNode = ({ id, data, selected }: NodeProps) => {
     );
   };
 
+  if (useSmartCardFalToolboxNode) {
+    return (
+      <SmartNodeShell
+        rootRef={smartNodeRef}
+        className="t8-smart-fal-node relative overflow-visible"
+        rootProps={{
+          onPointerDown: smartPanelToggle.onPointerDown,
+          onPointerMove: smartPanelToggle.onPointerMove,
+          onPointerUp: smartPanelToggle.onPointerUp,
+          onPointerCancel: smartPanelToggle.onPointerCancel,
+          onClick: smartPanelToggle.onClick,
+        }}
+      >
+        <div
+          className={`t8-node t8-smart-node-card t8-smart-fal-card transition-all ${selected ? 't8-smart-node-card--selected' : ''} ${
+            smartPanelOpen ? 't8-smart-fal-card--open' : ''
+          }`}
+        >
+          <Handle type="target" position={Position.Left} className="t8-smart-node-port !border-0" style={{ top: '50%' }} />
+          <Handle type="source" position={Position.Right} className="t8-smart-node-port !border-0" style={{ top: '50%' }} />
+          <div className="t8-smart-fal-card__top">
+            <div className="t8-smart-node-icon">
+              <Store size={15} />
+            </div>
+            <div className="t8-smart-fal-card__title">
+              <div className="t8-smart-node-title">{activeTool?.title || 'Fal超市'}</div>
+              <div className="t8-smart-node-subtitle">{activeTool?.endpoint || smartToolSummary}</div>
+            </div>
+            <div className={`t8-smart-fal-status t8-smart-node-status--${status}`}>
+              {isBusy && <Loader2 size={10} className="animate-spin" />}
+              <span>{smartStatusLabel}</span>
+            </div>
+          </div>
+          <div className="t8-smart-fal-card__summary">
+            <span>{smartToolSummary}</span>
+          </div>
+          <div className="t8-smart-fal-card__metrics">
+            <span>上游 {smartUpstreamCount}</span>
+            <span>输出 {smartOutputCount}</span>
+            <span>收藏 {favoriteToolIds.length}</span>
+          </div>
+        </div>
+
+        {smartPanelOpen && (
+          <SmartNodeComposer
+            portal
+            anchorRef={smartNodeRef}
+            className="t8-smart-fal-composer"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div className="t8-smart-ref-strip">
+              <div className="t8-smart-node-meta t8-smart-node-meta--composer">
+                <span>{activeTool?.title || 'Fal超市'}</span>
+                <span>{smartStatusLabel}</span>
+                <span>工具 {enabledTools.length}</span>
+              </div>
+              <div className="t8-smart-ref-spacer" />
+              <button
+                type="button"
+                className="nodrag nopan t8-btn t8-smart-classic-switch"
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  switchFalToolboxNodeVariant('classic');
+                }}
+                title="切换到经典版节点"
+                aria-label="切换到经典版节点"
+              >
+                <RefreshCcw size={13} />
+              </button>
+            </div>
+            <div className="t8-smart-fal-panel">
+              {activeToolId ? renderRunner() : renderLauncher()}
+            </div>
+          </SmartNodeComposer>
+        )}
+      </SmartNodeShell>
+    );
+  }
+
   return (
     <div className="relative flex flex-col" style={rootStyle}>
       <Handle type="target" position={Position.Left} className="!border-0" style={{ ...handleStyle, background: PORT_COLOR.any, left: -6 }} />
@@ -931,6 +1083,23 @@ const FalToolboxNode = ({ id, data, selected }: NodeProps) => {
       />
       <div className="flex-1 flex flex-col min-h-0 overflow-hidden" style={{ borderRadius: isPixel ? 6 : 12 }}>
         {renderHeader()}
+        <button
+          type="button"
+          className="nodrag nopan t8-btn t8-smart-classic-switch t8-fal-classic-switch"
+          onPointerDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          }}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            switchFalToolboxNodeVariant('smart-card');
+          }}
+          title="切回卡片版节点"
+          aria-label="切回卡片版节点"
+        >
+          <RefreshCcw size={13} />
+        </button>
         {activeToolId ? renderRunner() : renderLauncher()}
       </div>
     </div>

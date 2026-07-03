@@ -145,6 +145,10 @@ test('normalizeAdvancedProviders filters invalid providers and clamps unsafe fie
       imageModels: ['gpt-image-1', 'bad\nmodel', 'x'.repeat(260), 'gpt-image-1'],
       videoModels: ['video-model'],
       chatModels: ['gpt-4o-mini'],
+      defaults: {
+        imageProtocol: 'openai-chat',
+        badDefault: 'bad\nvalue',
+      },
       unknownField: 'drop me',
     },
   ]);
@@ -155,9 +159,69 @@ test('normalizeAdvancedProviders filters invalid providers and clamps unsafe fie
   assert.equal(provider.baseUrl, 'https://api.example.com/v1');
   assert.equal(provider.label.length <= 60, true);
   assert.deepEqual(provider.imageModels, ['gpt-image-1']);
+  assert.equal(provider.defaults.imageProtocol, 'openai-chat');
+  assert.equal('badDefault' in provider.defaults, false);
   assert.equal('unknownField' in provider, false);
   assert.equal(providers.some((item: any) => item.id === '../bad'), false);
   assert.equal(providers.some((item: any) => item.id === 'remote-comfy'), false);
+});
+
+test('normalizeAdvancedProviders accepts known backend protocol aliases without endpoint overrides', () => {
+  const providers = normalizeAdvancedProviders([
+    {
+      id: 'gemini-api',
+      label: 'Gemini API',
+      protocol: 'gemini',
+      baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+      apiKey: 'gemini-secret',
+      chatModels: ['gemini-2.5-flash'],
+      imageModels: ['gemini-2.5-flash-image'],
+      videoModels: ['veo-3.1-generate-preview'],
+      defaults: {
+        chatModel: 'gemini-2.5-flash',
+        imageModel: 'gemini-2.5-flash-image',
+        videoModel: 'veo-3.1-generate-preview',
+      },
+    },
+    {
+      id: 'apimart-api',
+      protocol: 'apimart',
+      base_url: 'https://api.apimart.example/v1/',
+      api_key: 'apimart-secret',
+      image_models: ['gpt-image-1'],
+    },
+    {
+      id: 'openai-api',
+      protocol: 'openai',
+      baseUrl: 'https://api.openai.com/v1',
+      apiKey: 'openai-secret',
+      chatModels: ['gpt-4o-mini'],
+    },
+  ]);
+
+  assert.equal(providers.find((provider: any) => provider.id === 'gemini-api')?.protocol, 'gemini');
+  assert.equal(providers.find((provider: any) => provider.id === 'apimart-api')?.protocol, 'apimart');
+  assert.equal(providers.find((provider: any) => provider.id === 'apimart-api')?.baseUrl, 'https://api.apimart.example/v1');
+  assert.equal(providers.find((provider: any) => provider.id === 'openai-api')?.protocol, 'openai');
+});
+
+test('normalizeAdvancedProviders exposes known protocol aliases as default settings cards', () => {
+  const providers = normalizeAdvancedProviders(undefined);
+  const byId = new Map(providers.map((provider: any) => [provider.id, provider]));
+
+  assert.equal(byId.get('openai')?.protocol, 'openai');
+  assert.equal(byId.get('openai')?.baseUrl, 'https://api.openai.com/v1');
+  assert.deepEqual(byId.get('openai')?.imageModels, ['gpt-image-1']);
+  assert.deepEqual(byId.get('openai')?.chatModels, ['gpt-4o-mini']);
+
+  assert.equal(byId.get('apimart')?.protocol, 'apimart');
+  assert.equal(byId.get('apimart')?.baseUrl, '');
+  assert.deepEqual(byId.get('apimart')?.imageModels, ['gpt-image-1']);
+
+  assert.equal(byId.get('gemini')?.protocol, 'gemini');
+  assert.equal(byId.get('gemini')?.baseUrl, 'https://generativelanguage.googleapis.com/v1beta');
+  assert.deepEqual(byId.get('gemini')?.chatModels, ['gemini-2.5-flash']);
+  assert.deepEqual(byId.get('gemini')?.imageModels, ['gemini-2.5-flash-image']);
 });
 
 test('normalizeAdvancedProviders keeps remote ComfyUI settings only when backend env allows it', () => {

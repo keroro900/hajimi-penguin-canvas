@@ -54,6 +54,56 @@ export function fileNameFromUrl(url: string): string {
   }
 }
 
+const MEDIA_KIND_DEFAULT_EXTENSION: Record<MediaKind, string> = {
+  image: 'png',
+  video: 'mp4',
+  audio: 'mp3',
+  model3d: 'glb',
+};
+
+const MIME_EXTENSION: Record<string, string> = {
+  'image/jpeg': 'jpg',
+  'image/jpg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+  'image/gif': 'gif',
+  'image/svg+xml': 'svg',
+  'video/mp4': 'mp4',
+  'video/webm': 'webm',
+  'video/quicktime': 'mov',
+  'audio/mpeg': 'mp3',
+  'audio/mp3': 'mp3',
+  'audio/wav': 'wav',
+  'audio/wave': 'wav',
+  'audio/x-wav': 'wav',
+  'audio/ogg': 'ogg',
+  'model/gltf-binary': 'glb',
+  'model/gltf+json': 'gltf',
+};
+
+function mediaExtension(kind: MediaKind, mime?: string): string {
+  const cleanMime = typeof mime === 'string' ? mime.split(';')[0].trim().toLowerCase() : '';
+  return MIME_EXTENSION[cleanMime] || MEDIA_KIND_DEFAULT_EXTENSION[kind];
+}
+
+function hasFileExtension(name: string): boolean {
+  return /\.[A-Za-z0-9]{1,8}$/.test(name);
+}
+
+function safeDownloadBaseName(name: string): string {
+  return name.trim().replace(/[\\/:*?"<>|]+/g, '_').replace(/\s+/g, ' ').replace(/^\.+$/, '');
+}
+
+export function mediaDownloadFileName(kind: MediaKind, url: string, index = 0, mime?: string): string {
+  const extension = mediaExtension(kind, mime);
+  const fallback = `t8-output-${kind}-${index + 1}`;
+  const isOpaqueUrl = /^(blob|data):/i.test(url.trim());
+  const rawName = isOpaqueUrl ? '' : fileNameFromUrl(url);
+  const safeName = safeDownloadBaseName(rawName);
+  const baseName = safeName || fallback;
+  return hasFileExtension(baseName) ? baseName : `${baseName}.${extension}`;
+}
+
 export function formatMediaSize(size?: number): string {
   if (!Number.isFinite(size || 0) || !size) return '';
   if (size >= 1024 * 1024) return `${(size / 1024 / 1024).toFixed(1)} MB`;

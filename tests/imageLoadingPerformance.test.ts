@@ -60,13 +60,18 @@ test('initial canvas boot keeps heavy nodes behind lazy boundaries', () => {
   assert.match(app, /function InfiniteCanvasBootLoading/);
   assert.match(app, /src="\/infinite-canvas-loading\.png"/);
   assert.match(app, /<Suspense fallback=\{<InfiniteCanvasBootLoading \/>}/);
+  assert.match(app, /sidebarCollapsed/);
+  assert.match(app, /aria-label=\{sidebarCollapsed \? '显示侧边栏' : '隐藏侧边栏'\}/);
+  assert.match(app, /title=\{sidebarCollapsed \? '显示侧边栏 \(H\)' : '隐藏侧边栏 \(H\)'\}/);
+  assert.match(app, /<PanelLeftClose/);
+  assert.match(app, /<PanelLeftOpen/);
   assert.match(canvas, /function lazyCanvasNode/);
   assert.match(canvas, /const Panorama3DNode = lazyCanvasNode\(\(\) => import\('\.\/nodes\/Panorama3DNode'\)/);
   assert.match(canvas, /const ImageNode = lazyCanvasNode\(\(\) => import\('\.\/nodes\/ImageNode'\)/);
   assert.doesNotMatch(canvas, /import ImageNode from '\.\/nodes\/ImageNode'/);
 
   assert.match(canvas, /data-canvas-surface-load=\{heavyCanvasSurface \? 'heavy' : 'normal'\}/);
-  assert.doesNotMatch(canvas, /onlyRenderVisibleElements/);
+  assert.match(canvas, /onlyRenderVisibleElements=\{shouldCullOffscreenElements\}/);
   assert.match(runTrigger, /useRunBusStore/);
   assert.match(css, /Large graph rendering guard/);
   assert.match(
@@ -98,6 +103,9 @@ test('canvas video previews defer real video sources until near the viewport', (
   assert.match(loopingVideo, /preload === undefined \? props : \{ \.\.\.props, preload \}/);
   assert.match(loopingVideo, /data-full-src=\{src\}/);
   assert.match(loopingVideo, /src=\{shouldLoad \? src : undefined\}/);
+  assert.match(loopingVideo, /matches\('\.t8-viewport-moving, \.t8-node-dragging'\)/);
+  assert.match(loopingVideo, /pause\(\)/);
+  assert.match(loopingVideo, /data-video-load-state=\{shouldLoad \? 'loaded' : 'deferred'\}/);
 });
 
 test('high-traffic node previews render through SmartImage', () => {
@@ -162,4 +170,46 @@ test('decorative theme edge motion degrades while the canvas is busy', () => {
   assert.match(dragonCss, /\.t8-node-dragging/);
   assert.match(css, /prefers-reduced-motion: reduce/);
   assert.match(main, /VITE_T8_STRICT_MODE/);
+});
+
+test('autosave avoids full-canvas serialization during high-frequency movement', () => {
+  const canvas = read('../src/components/Canvas.tsx');
+
+  assert.match(canvas, /if \(isDraggingRef\.current\) return;\s*const normalized = normalizeCanvasNodeSerials/);
+  assert.match(canvas, /const snapshot = JSON\.stringify\(\{ nodes: persistNodes, edges: persistEdges, creativeDesk, nextNodeSerialId, farmCanvas \}\);/);
+  assert.match(canvas, /const pendingSave = \{\s*nodes: persistNodes,\s*edges: persistEdges,\s*creativeDesk,\s*farmCanvas,\s*snapshot,\s*nextNodeSerialId,\s*\};\s*pendingSaveByCanvasRef\.current\.set\(canvasIdForSave, pendingSave\)/);
+  assert.match(canvas, /if \(snapshot === previousSnapshot\) \{[\s\S]{0,260}return;\s*\}/);
+  assert.match(canvas, /lastSavedByCanvasRef\.current\.set\(canvasIdForSave, snapshot\)/);
+});
+
+test('large canvas pan and wheel movement shed nonessential render work', () => {
+  const canvas = read('../src/components/Canvas.tsx');
+  const css = read('../src/styles/index.css');
+
+  assert.match(canvas, /const canvasInteractionBusy = viewportMoving \|\| nodeDragging/);
+  assert.match(canvas, /const shouldCullOffscreenElements = heavyCanvasSurface \|\| canvasInteractionBusy/);
+  assert.match(canvas, /onlyRenderVisibleElements=\{shouldCullOffscreenElements\}/);
+  assert.match(canvas, /\{!canvasInteractionBusy && \(\s*<Background/);
+  assert.match(canvas, /\{!canvasInteractionBusy && \(\s*<MiniMap/);
+
+  assert.match(css, /\.t8-canvas-shell\.t8-viewport-moving \.react-flow__minimap/);
+  assert.match(css, /\.t8-canvas-shell\.t8-viewport-moving \.react-flow__background/);
+  assert.match(css, /\.t8-canvas-shell\.t8-viewport-moving \.react-flow__node:not\(\.selected\) > div/);
+  assert.match(css, /\.t8-canvas-shell\.t8-viewport-moving :where\(video, iframe\)/);
+  assert.match(css, /\.t8-canvas-shell\.t8-node-dragging :where\(video, iframe\)/);
+  assert.match(css, /box-shadow: none !important/);
+  assert.match(css, /filter: none !important/);
+}
+);
+
+test('media generation polling throttles repeated progress writes', () => {
+  const image = read('../src/components/nodes/ImageNode.tsx');
+  const video = read('../src/components/nodes/VideoNode.tsx');
+  const seedance = read('../src/components/nodes/SeedanceNode.tsx');
+  const audio = read('../src/components/nodes/AudioNode.tsx');
+
+  for (const source of [image, video, seedance, audio]) {
+    assert.match(source, /useThrottledNodeUpdate/);
+    assert.match(source, /flushProgressUpdate/);
+  }
 });

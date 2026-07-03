@@ -2,8 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
+  getUnresolvedMentionCount,
   findMediaMentionQuery,
   insertMediaMention,
+  materialMentionKey,
+  resolveMediaMentions,
   type MediaMention,
 } from '../src/components/nodes/mediaMentions.ts';
 
@@ -25,8 +28,12 @@ test('shared prompt editor components expose modal and textarea affordances', ()
 
   assert.match(modal, /data-canvas-floating-ui="prompt-expand-editor"/);
   assert.match(modal, /flex min-h-0 flex-1 flex-col p-4/);
-  assert.match(modal, /Ctrl\+Enter 完成/);
+  assert.match(modal, /Enter 完成/);
+  assert.match(modal, /Shift\+Enter 换行/);
   assert.match(modal, /Esc 取消/);
+  assert.match(modal, /event\.key === 'Enter'/);
+  assert.match(modal, /!event\.shiftKey/);
+  assert.match(modal, /nativeEvent\.isComposing/);
   assert.match(modal, /readOnly \? '当前字段为只读，可查看或复制。'/);
   assert.match(modal, /editorKind\?:\s*PromptExpandEditorKind/);
   assert.match(modal, /格式化 JSON/);
@@ -60,7 +67,8 @@ test('mention prompt input keeps media mentions in expanded editor', () => {
   assert.match(mention, /if \(composingRef\.current\) \{[\s\S]*composingRef\.current = false;/);
   assert.match(mention, /const flushEditorToData = \(\) =>/);
   assert.match(mention, /onBlur=\{\(\) => \{\s*composingRef\.current = false;\s*flushEditorToData\(\)/);
-  assert.match(mention, /zIndex:\s*expandable \? 10050 : 10120/);
+  assert.match(mention, /const MENTION_PROMPT_POPOVER_Z_INDEX = 10140/);
+  assert.match(mention, /zIndex:\s*MENTION_PROMPT_POPOVER_Z_INDEX/);
   assert.match(mention, /const fillLayout = fillHeight \|\| !expandable/);
   assert.match(mention, /height:\s*fillLayout \? '100%' : style\?\.height/);
   assert.match(mention, /minHeight:\s*fillLayout \? 0 : \(style\?\.minHeight \?\? 56\)/);
@@ -72,6 +80,21 @@ test('mention prompt input keeps media mentions in expanded editor', () => {
   assert.match(mention, /span\.replaceChildren\(content\)/);
   assert.match(mention, /expandable=\{false\}/);
   assert.match(mention, /setDraftMentions\(nextMentions\)/);
+});
+
+test('smart node outside close ignores prompt portal floating editors', () => {
+  const outsideClose = read('../src/components/nodes/shared/useOutsideClose.ts');
+  const image = read('../src/components/nodes/ImageNode.tsx');
+  const video = read('../src/components/nodes/VideoNode.tsx');
+  const seedance = read('../src/components/nodes/SeedanceNode.tsx');
+  const audio = read('../src/components/nodes/AudioNode.tsx');
+
+  assert.match(outsideClose, /DEFAULT_IGNORE_SELECTOR\s*=\s*'\[data-canvas-floating-ui\]/);
+  assert.match(outsideClose, /target instanceof HTMLElement && target\.closest\(ignoreSelector\)/);
+  assert.match(image, /useOutsideClose\(\{/);
+  assert.match(video, /useOutsideClose\(\{/);
+  assert.match(seedance, /useOutsideClose\(\{/);
+  assert.match(audio, /useOutsideClose\(\{/);
 });
 
 test('mention query ignores an existing media chip token before normal text', () => {
@@ -121,6 +144,30 @@ test('mention query can start immediately after normal prompt text', () => {
   assert.equal(result.mentions[0].end, '女人 @image1'.length);
 });
 
+test('media mentions follow the same source slot when upstream images are regenerated', () => {
+  const firstMaterial = {
+    id: 'image-node::imageUrls:0:image:/files/output/old.png',
+    kind: 'image',
+    url: '/files/output/old.png',
+    sourceNodeId: 'image-node',
+    origin: 'upstream',
+    label: '图1',
+    mentionKey: 'image:image-node:imageUrls:0',
+  } as any;
+  const nextMaterial = {
+    ...firstMaterial,
+    id: 'image-node::imageUrls:0:image:/files/output/new.png',
+    url: '/files/output/new.png',
+  };
+
+  const inserted = insertMediaMention('参考@', [], firstMaterial, [firstMaterial], '参考'.length, '参考@'.length);
+
+  assert.equal(materialMentionKey(firstMaterial), 'image:image-node:imageUrls:0');
+  assert.equal(inserted.mentions[0].materialKey, 'image:image-node:imageUrls:0');
+  assert.equal(getUnresolvedMentionCount(inserted.mentions, [nextMaterial]), 0);
+  assert.equal(resolveMediaMentions(inserted.text, inserted.mentions, [nextMaterial]), '参考 @image1 ');
+});
+
 test('text node media mentions can read downstream generation node media', () => {
   const textNode = read('../src/components/nodes/TextNode.tsx');
   const materialsHook = read('../src/components/nodes/useUpstreamMaterials.ts');
@@ -146,6 +193,8 @@ test('text node media mentions can read downstream generation node media', () =>
   assert.match(materialsHook, /localRefAudio/);
   assert.match(materialsHook, /generatedImages/);
   assert.match(materialsHook, /tracks/);
+  assert.match(materialsHook, /mentionKey/);
+  assert.match(materialsHook, /\$\{field\}:\$\{index\}/);
 
   assert.match(mediaMentions, /function tokenMatchesMentionKind/);
   assert.match(mediaMentions, /tokenMatchesMentionKind\(mention\) && text\.slice\(mention\.start,\s*mention\.end\) === mention\.token/);

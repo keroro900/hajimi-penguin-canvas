@@ -28,6 +28,71 @@ export interface ClipboardNodeBounds {
 const finiteNumber = (value: unknown, fallback = 0) =>
   typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 
+const TRANSIENT_CLIPBOARD_DATA_KEYS = [
+  'status',
+  'taskId',
+  'progress',
+  'error',
+  'isRunning',
+  'isPolling',
+  'pollingTimer',
+  'pollCount',
+  'pollStartedAt',
+  'lastPollAt',
+  'imageTaskIds',
+  'pendingTaskIds',
+  'videoTaskIds',
+  'audioTaskIds',
+  'asyncTasks',
+  'runningTasks',
+  'currentTask',
+  'currentRunId',
+  'runId',
+  'abortController',
+  'abortSignal',
+];
+
+const cloneClipboardData = (data: unknown): Record<string, any> => {
+  if (!data || typeof data !== 'object') return {};
+  try {
+    return JSON.parse(JSON.stringify(data));
+  } catch {
+    return { ...(data as Record<string, any>) };
+  }
+};
+
+const normalizeCopiedImageResultSlots = (slots: unknown) => {
+  if (!Array.isArray(slots)) return undefined;
+  const successSlots = slots
+    .map((slot, index) => {
+      const record = slot && typeof slot === 'object' ? slot as Record<string, any> : {};
+      const url = String(record.url || '').trim();
+      if (!url) return null;
+      return {
+        status: 'success',
+        url,
+        index: Number.isFinite(Number(record.index)) ? Number(record.index) : index,
+      };
+    })
+    .filter((slot): slot is { status: 'success'; url: string; index: number } => !!slot);
+  return successSlots.length > 0 ? successSlots : undefined;
+};
+
+export function sanitizeClipboardNodeData(data: unknown): Record<string, any> {
+  const next = cloneClipboardData(data);
+  for (const key of TRANSIENT_CLIPBOARD_DATA_KEYS) delete next[key];
+
+  const imageResultSlots = normalizeCopiedImageResultSlots((data as Record<string, any> | null | undefined)?.imageResultSlots);
+  if (imageResultSlots) {
+    next.imageResultSlots = imageResultSlots;
+  } else {
+    delete next.imageResultSlots;
+  }
+
+  next.status = 'idle';
+  return next;
+}
+
 const readNodeSize = (node: ClipboardPositionNode) => ({
   width: finiteNumber(node.width, finiteNumber(node.measured?.width, finiteNumber(node.data?.width, 0))),
   height: finiteNumber(node.height, finiteNumber(node.measured?.height, finiteNumber(node.data?.height, 0))),

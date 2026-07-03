@@ -39,9 +39,24 @@ test('auto output persistence snapshots generated items without changing the def
 
   assert.match(canvas, /buildPersistentOutputSnapshotData\(item\)/);
   assert.match(canvas, /const outputDataForItem = \(item:/);
-  assert.match(canvas, /return outputMaterialPersistenceEnabled\s*\?\s*\{\s*\.\.\.base,\s*\.\.\.buildPersistentOutputSnapshotData\(item\)\s*\}\s*:\s*base/);
+  assert.match(canvas, /return outputMaterialPersistenceEnabled\s*\?\s*\{\s*\.\.\.base,\s*\.\.\.buildPersistentOutputSnapshotData\(item\)\s*\}/);
   assert.match(canvas, /shouldPreserveAutoOutputMaterialNode\(nodeById\.get\(o\.id\),\s*outputMaterialPersistenceEnabled\)/);
   assert.match(canvas, /\}, \[nodes, edges, loaded, assignActiveNodeSerials, registerPlacementShelfNodes, outputMaterialPersistenceEnabled\]\)/);
+});
+
+test('new auto output nodes carry an immediate direct snapshot before edges subscribe', () => {
+  const canvas = read('../src/components/Canvas.tsx');
+
+  assert.match(canvas, /const buildImmediateOutputSnapshotData = \(item:/);
+  assert.match(canvas, /directOutputSingleSnapshot:\s*true/);
+  assert.match(canvas, /directImageUrl:\s*value/);
+  assert.match(canvas, /directVideoUrl:\s*value/);
+  assert.match(canvas, /directAudioUrl:\s*value/);
+  assert.match(canvas, /directOutputText:\s*value/);
+  assert.match(
+    canvas,
+    /return outputMaterialPersistenceEnabled\s*\?\s*\{\s*\.\.\.base,\s*\.\.\.buildPersistentOutputSnapshotData\(item\)\s*\}\s*:\s*\{\s*\.\.\.base,\s*\.\.\.buildImmediateOutputSnapshotData\(item\)\s*\}/,
+  );
 });
 
 test('persisted single auto-output snapshots still honor pickKind filtering', () => {

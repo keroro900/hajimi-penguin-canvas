@@ -761,6 +761,163 @@ export const RH_TOOLBOX_MANIFEST: RhToolboxManifest = {
         "showInAudioEditor": false
       },
       "version": 1
+    },
+    {
+      "id": "content-pack-v2-product-retouch-rh",
+      "title": "产品图精修",
+      "description": "content-pack-v2 禁用示例：产品图精修 RunningHub 模板，维护者填入 WebApp ID 后启用。",
+      "categoryId": "image-category-d5zwl",
+      "webappId": "",
+      "enabled": false,
+      "order": 910,
+      "capabilities": [
+        "content-pack-v2",
+        "image.edit"
+      ],
+      "inputSchema": [
+        {
+          "key": "source-image",
+          "label": "产品图",
+          "kind": "image",
+          "rhNodeId": "1",
+          "fieldName": "image",
+          "required": true,
+          "uploadAsset": true,
+          "order": 0
+        },
+        {
+          "key": "brief",
+          "label": "修图要求",
+          "kind": "text",
+          "rhNodeId": "2",
+          "fieldName": "text",
+          "required": false,
+          "uploadAsset": false,
+          "order": 1
+        }
+      ],
+      "outputSchema": [
+        {
+          "key": "output-image",
+          "label": "输出图",
+          "kind": "image",
+          "role": "append-output"
+        }
+      ],
+      "fixedParams": [],
+      "userParams": [],
+      "runtime": {
+        "pollIntervalMs": 5000,
+        "maxPolls": 720,
+        "fetchAppInfo": true
+      },
+      "ui": {
+        "icon": "Sparkles",
+        "showInNode": false,
+        "showInTextEditor": false
+      }
+    },
+    {
+      "id": "content-pack-v2-character-grid-rh",
+      "title": "角色一致性九宫格",
+      "description": "content-pack-v2 禁用示例：角色一致性九宫格，保留多参考图和文本 brief 映射。",
+      "categoryId": "image-category-d5zwl",
+      "webappId": "",
+      "enabled": false,
+      "order": 920,
+      "capabilities": [
+        "content-pack-v2",
+        "image.edit"
+      ],
+      "inputSchema": [
+        {
+          "key": "reference-images",
+          "label": "角色参考图",
+          "kind": "image",
+          "rhNodeId": "10",
+          "fieldName": "image",
+          "required": true,
+          "multiple": true,
+          "maxItems": 4,
+          "uploadAsset": true,
+          "order": 0
+        },
+        {
+          "key": "prompt",
+          "label": "一致性说明",
+          "kind": "text",
+          "rhNodeId": "11",
+          "fieldName": "text",
+          "required": false,
+          "uploadAsset": false,
+          "order": 1
+        }
+      ],
+      "outputSchema": [
+        {
+          "key": "output-image",
+          "label": "九宫格",
+          "kind": "image",
+          "role": "append-output"
+        }
+      ],
+      "fixedParams": [],
+      "userParams": [],
+      "runtime": {
+        "pollIntervalMs": 5000,
+        "maxPolls": 720,
+        "fetchAppInfo": true
+      },
+      "ui": {
+        "icon": "Grid2X2",
+        "showInNode": false,
+        "showInTextEditor": false
+      }
+    },
+    {
+      "id": "content-pack-v2-shortlink-library-rh",
+      "title": "短链素材入库",
+      "description": "content-pack-v2 禁用示例：短链素材入库，仅作为字段映射和输出协议参考。",
+      "categoryId": "custom-rh-tools",
+      "webappId": "",
+      "enabled": false,
+      "order": 930,
+      "capabilities": [
+        "content-pack-v2",
+        "text.prompt-enhance"
+      ],
+      "inputSchema": [
+        {
+          "key": "shortlink",
+          "label": "短链",
+          "kind": "text",
+          "rhNodeId": "20",
+          "fieldName": "text",
+          "required": true,
+          "uploadAsset": false,
+          "order": 0
+        }
+      ],
+      "outputSchema": [
+        {
+          "key": "manifest",
+          "label": "素材清单",
+          "kind": "text",
+          "role": "text-only"
+        }
+      ],
+      "fixedParams": [],
+      "userParams": [],
+      "runtime": {
+        "pollIntervalMs": 5000,
+        "maxPolls": 720,
+        "fetchAppInfo": true
+      },
+      "ui": {
+        "icon": "Link",
+        "showInNode": true,
+        "showInTextEditor": false
+      }
     }
   ]
 };

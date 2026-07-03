@@ -37,10 +37,110 @@ export async function checkBackendStatus(): Promise<boolean> {
   }
 }
 
+export async function checkCanvasStatus(): Promise<boolean> {
+  try {
+    const res = await fetch(`${BASE}/canvas`);
+    if (!res.ok) return false;
+    const data = await res.json().catch(() => null);
+    return data?.success === true && Array.isArray(data?.data);
+  } catch {
+    return false;
+  }
+}
+
+export async function checkHakimiMcpStatus(): Promise<boolean> {
+  try {
+    const res = await fetch(`${BASE}/hakimi-mcp/status`, { cache: 'no-store' });
+    if (!res.ok) return false;
+    const data = await res.json().catch(() => null);
+    return data?.ok === true && String(data?.service || '').startsWith('hakimi-mcp');
+  } catch {
+    return false;
+  }
+}
+
 // ========== 画布列表 ==========
 export async function listCanvases(): Promise<CanvasListItem[]> {
   const res = await request<{ success: boolean; data: CanvasListItem[] }>(`${BASE}/canvas`);
   return res.data || [];
+}
+
+export function createCanvasEventSource(): EventSource {
+  return new EventSource(`${BASE}/canvas/events`);
+}
+
+export async function submitAgentCanvasAnswer(runId: string, payload: {
+  canvasId?: string;
+  questionId: string;
+  value: unknown;
+  label?: string;
+}): Promise<void> {
+  await request(`${BASE}/agent/canvas/runs/${encodeURIComponent(runId)}/answers`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function submitAgentCanvasNodeResult(runId: string, payload: {
+  canvasId?: string;
+  nodeId: string;
+  ok: boolean;
+  error?: string;
+  node?: any;
+  completedAt?: number;
+}): Promise<void> {
+  await request(`${BASE}/agent/canvas/runs/${encodeURIComponent(runId)}/node-result`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getAgentCanvasSnapshot(canvasId: string): Promise<any> {
+  const res = await request<{ success: boolean; data: any }>(
+    `${BASE}/agent/canvas/snapshot/${encodeURIComponent(canvasId)}`,
+  );
+  return res.data;
+}
+
+export async function applyAgentCanvasPlan(payload: {
+  canvasId: string;
+  agentId?: string;
+  runId?: string;
+  planId?: string;
+  mode?: 'preview' | 'commit';
+  drivingMode?: 'copilot' | 'autopilot';
+  approvalPolicy?: 'ask_destructive' | 'ask_everything' | 'never';
+  plan: any;
+}): Promise<any> {
+  const res = await request<{ success: boolean; data: any }>(`${BASE}/agent/canvas/plans/apply`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+  return res.data;
+}
+
+export async function diffAgentCanvasPlan(payload: {
+  canvasId: string;
+  plan: any;
+  autoLayout?: boolean;
+}): Promise<any> {
+  const res = await request<{ success: boolean; data: any }>(`${BASE}/agent/canvas/plans/diff`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+  return res.data;
+}
+
+export async function verifyAgentCanvasPlan(payload: {
+  canvasId: string;
+  plan: any;
+  beforeSnapshot?: any;
+}): Promise<any> {
+  const res = await request<{ success: boolean; data: any }>(`${BASE}/agent/canvas/plans/verify`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+  return res.data;
 }
 
 export async function createCanvas(name?: string): Promise<CanvasListItem> {
@@ -160,6 +260,22 @@ export interface AdvancedProviderTestResult {
   provider?: AdvancedProviderConfig;
 }
 
+export interface AdvancedProviderModelsResult {
+  ok: boolean;
+  code: string;
+  providerId: string;
+  protocol: string;
+  total?: number;
+  modelCount?: number;
+  imageModels?: string[];
+  videoModels?: string[];
+  chatModels?: string[];
+  all?: string[];
+  message?: string;
+  error?: string;
+  provider?: AdvancedProviderConfig;
+}
+
 export async function testAdvancedProvider(payload: {
   providerId?: string;
   provider?: AdvancedProviderConfig;
@@ -190,6 +306,72 @@ export async function testAdvancedProvider(payload: {
     providerId: payload.providerId || payload.provider?.id || '',
     protocol: payload.provider?.protocol || '',
     error: '测试接口没有返回结果',
+  };
+}
+
+export async function fetchAdvancedProviderModels(payload: {
+  providerId?: string;
+  provider?: AdvancedProviderConfig;
+  timeoutMs?: number;
+}): Promise<AdvancedProviderModelsResult> {
+  const res = await request<{
+    success: boolean;
+    code?: string;
+    error?: string;
+    data?: AdvancedProviderModelsResult;
+  }>(`${BASE}/proxy/external/fetch-models`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+  if (!res.success && res.data) return res.data;
+  if (!res.success) {
+    return {
+      ok: false,
+      code: res.code || 'provider_models_fetch_failed',
+      providerId: payload.providerId || payload.provider?.id || '',
+      protocol: payload.provider?.protocol || '',
+      error: res.error || '拉取模型失败',
+    };
+  }
+  return res.data || {
+    ok: false,
+    code: 'empty_response',
+    providerId: payload.providerId || payload.provider?.id || '',
+    protocol: payload.provider?.protocol || '',
+    error: '模型拉取接口没有返回结果',
+  };
+}
+
+export async function fetchZhenzhenModels(payload: {
+  baseUrl?: string;
+  apiKey?: string;
+  timeoutMs?: number;
+}): Promise<AdvancedProviderModelsResult> {
+  const res = await request<{
+    success: boolean;
+    code?: string;
+    error?: string;
+    data?: AdvancedProviderModelsResult;
+  }>(`${BASE}/settings/zhenzhen-models`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+  if (!res.success && res.data) return res.data;
+  if (!res.success) {
+    return {
+      ok: false,
+      code: res.code || 'zhenzhen_models_fetch_failed',
+      providerId: 'zhenzhen-default',
+      protocol: 'openai-compatible',
+      error: res.error || '拉取模型失败',
+    };
+  }
+  return res.data || {
+    ok: false,
+    code: 'empty_response',
+    providerId: 'zhenzhen-default',
+    protocol: 'openai-compatible',
+    error: '模型拉取接口没有返回结果',
   };
 }
 

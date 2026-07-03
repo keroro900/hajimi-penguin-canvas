@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hakimi Canvas Control"
+  short_description: "Control Hakimi canvases through MCP/HTTP actions."
+  default_prompt: "Use Hakimi canvas control to read the canvas, run visible actions, and verify the result."

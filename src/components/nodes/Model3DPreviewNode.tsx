@@ -9,7 +9,8 @@ import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
 import { USDLoader } from 'three/examples/jsm/loaders/USDLoader.js';
 import { PORT_COLOR } from '../../config/portTypes';
 import { useThemeStore } from '../../stores/theme';
-import { fileNameFromUrl } from '../../utils/mediaCollection';
+import { fileNameFromUrl, mediaDownloadFileName } from '../../utils/mediaCollection';
+import { downloadMediaUrl } from '../../utils/downloadMedia';
 import ResizableCorners from './ResizableCorners';
 import { useUpdateNodeData } from './useUpdateNodeData';
 
@@ -465,8 +466,13 @@ const Model3DPreviewNode = ({ id, data, selected }: NodeProps) => {
                 href={currentUrl}
                 target="_blank"
                 rel="noreferrer"
-                download
+                download={mediaDownloadFileName('model3d', currentUrl, 0)}
                 title="下载原始模型"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  void downloadMediaUrl('model3d', currentUrl, 0);
+                }}
                 style={{ height: 28, background: surface, color: text, border: `1px solid ${border}` }}
               >
                 <Download size={12} /> 下载
@@ -487,8 +493,13 @@ const Model3DPreviewNode = ({ id, data, selected }: NodeProps) => {
                 href={currentUrl}
                 target="_blank"
                 rel="noreferrer"
-                download
+                download={mediaDownloadFileName('model3d', currentUrl, 0)}
                 onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  void downloadMediaUrl('model3d', currentUrl, 0);
+                }}
                 style={{ color: accent }}
               >
                 下载

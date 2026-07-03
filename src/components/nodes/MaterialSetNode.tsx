@@ -1,5 +1,6 @@
-import { memo, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type PointerEvent } from 'react';
-import { Handle, Position, useReactFlow, type Node, type NodeProps } from '@xyflow/react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type PointerEvent } from 'react';
+import { flushSync } from 'react-dom';
+import { Handle, Position, useReactFlow, useUpdateNodeInternals, type Node, type NodeProps } from '@xyflow/react';
 import {
   ArrowDownUp,
   Download,
@@ -11,6 +12,7 @@ import {
   PackageOpen,
   Pin,
   Plus,
+  RefreshCcw,
   RotateCcw,
   Shuffle,
   SortAsc,
@@ -29,6 +31,12 @@ import {
   fileNameFromUrl,
   type MediaItem,
 } from '../../utils/mediaCollection';
+import ResizableCorners from './ResizableCorners';
+import SmartNodeComposer from './shared/SmartNodeComposer';
+import SmartNodeShell from './shared/SmartNodeShell';
+import { useNodeGeometrySync } from './shared/useNodeGeometrySync';
+import { useOutsideClose } from './shared/useOutsideClose';
+import { useSmartNodePanelToggle } from './shared/useSmartNodePanelToggle';
 import {
   isMaterialSetKind,
   createMaterialSetBackup,
@@ -55,6 +63,8 @@ const KIND_ACCEPT: Record<Exclude<MaterialSetKind, 'text'>, string> = {
   video: 'video/*',
   audio: 'audio/*',
 };
+
+type MaterialSetNodeVariant = 'smart-card' | 'classic';
 
 function inferFileKind(file: File): Exclude<MaterialSetKind, 'text'> | null {
   if (file.type.startsWith('image/')) return 'image';
@@ -94,22 +104,33 @@ function arrayMoveLocal<T>(list: T[], from: number, to: number): T[] {
 const MaterialSetNode = ({ id, data, selected }: NodeProps) => {
   const update = useUpdateNodeData(id);
   const rf = useReactFlow();
-  const { theme, style } = useThemeStore();
-  const isDark = theme === 'dark';
-  const isPixel = style === 'pixel';
+  const updateNodeInternals = useUpdateNodeInternals();
+  const themeMode = useThemeStore((state) => state.theme);
+  const themeStyle = useThemeStore((state) => state.style);
+  const smartRootRef = useRef<HTMLDivElement | null>(null);
+  const composerRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const jsonInputRef = useRef<HTMLInputElement>(null);
   const [textDraft, setTextDraft] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [dragActive, setDragActive] = useState(false);
+  const [smartPanelOpen, setSmartPanelOpen] = useState(false);
+  const [smartDragging, setSmartDragging] = useState(false);
   const [sortDrag, setSortDrag] = useState<{ activeId: string; overId: string | null; moved: boolean } | null>(null);
   const sortDragRef = useRef<{ activeId: string; overId: string | null; moved: boolean } | null>(null);
   const sortStartRef = useRef<{ x: number; y: number; itemId: string; pointerId: number } | null>(null);
   const sortWindowCleanupRef = useRef<(() => void) | null>(null);
+  const lastAutoCollectSignatureRef = useRef('');
 
   const d = (data as any) || {};
   const kind: MaterialSetKind | null = isMaterialSetKind(d.materialSetKind) ? d.materialSetKind : null;
+  const materialSetNodeVariant: MaterialSetNodeVariant =
+    d.uiVariant === 'classic' || d.materialSetNodeVariant === 'classic' ? 'classic' : 'smart-card';
+  const useSmartCardMaterialSetNode = materialSetNodeVariant !== 'classic';
+  const smartCardWidth = Math.max(220, Number(d.smartMaterialSetWidth) || 260);
+  const smartCardHeight = Math.max(150, Number(d.smartMaterialSetHeight) || 210);
+  const syncMaterialSetGeometry = useNodeGeometrySync(id, updateNodeInternals);
   const items = useMemo(
     () => (kind ? normalizeMaterialSetItems(d.materialSetItems, kind) : []),
     [d.materialSetItems, kind],
@@ -141,6 +162,7 @@ const MaterialSetNode = ({ id, data, selected }: NodeProps) => {
 
   const clearAll = () => {
     if (items.length > 0 && !window.confirm('清空当前素材集？')) return;
+    lastAutoCollectSignatureRef.current = '';
     if (kind) commitItems(kind, []);
     else update({ materialSetKind: null, materialSetItems: [] });
   };
@@ -360,17 +382,17 @@ const MaterialSetNode = ({ id, data, selected }: NodeProps) => {
     void prepareFiles(files);
   };
 
-  const handleDrop = (e: DragEvent<HTMLDivElement>) => {
+  const handleDrop = (e: DragEvent<HTMLElement>) => {
     e.preventDefault();
     e.stopPropagation();
     setDragActive(false);
     void prepareFiles(Array.from(e.dataTransfer?.files || []));
   };
 
-  const collectUpstream = () => {
+  const collectUpstreamMaterials = useCallback((showEmptyError = true) => {
     if (!upstreamCandidate || upstreamCandidate.list.length === 0) {
-      setError('没有可收集的同类型上游素材');
-      return;
+      if (showEmptyError) setError('没有可收集的同类型上游素材');
+      return false;
     }
     const nextKind = upstreamCandidate.kind;
     const existing = kind === nextKind ? items : [];
@@ -384,12 +406,29 @@ const MaterialSetNode = ({ id, data, selected }: NodeProps) => {
       })
       .map(materialSetItemFromUpstream);
     if (appended.length === 0) {
-      setError('上游素材已在素材集中');
-      return;
+      if (showEmptyError) setError('上游素材已在素材集中');
+      return false;
     }
     commitItems(nextKind, [...existing, ...appended]);
     setError(null);
+    return true;
+  }, [items, kind, upstreamCandidate]);
+
+  const collectUpstream = () => {
+    collectUpstreamMaterials(true);
   };
+
+  const autoCollectSignature = useMemo(() => {
+    if (!upstreamCandidate || upstreamCandidate.list.length === 0) return '';
+    return `${upstreamCandidate.kind}:${upstreamCandidate.list.map((m) => `${m.sourceNodeId || 'source'}:${m.kind}:${m.url}`).join('|')}`;
+  }, [upstreamCandidate]);
+
+  // 素材集会在连线后自动收集同类型上游素材；手动按钮保留给用户重新同步或补收。
+  useEffect(() => {
+    if (!autoCollectSignature || lastAutoCollectSignatureRef.current === autoCollectSignature) return;
+    lastAutoCollectSignatureRef.current = autoCollectSignature;
+    collectUpstreamMaterials(false);
+  }, [autoCollectSignature, collectUpstreamMaterials]);
 
   const splitMaterialSet = () => {
     if (!kind || items.length <= 1) return;
@@ -437,19 +476,54 @@ const MaterialSetNode = ({ id, data, selected }: NodeProps) => {
   const accent = kind ? PORT_COLOR[kind] : PORT_COLOR.any;
   const targetTitle = '可接入文本 / 图像 / 视频 / 音频，上游同类型可收集到素材集';
   const sourceTitle = kind ? `输出${KIND_LABEL[kind]}素材集` : '请先加入素材';
+  const smartPanelToggle = useSmartNodePanelToggle({
+    open: smartPanelOpen,
+    dragging: smartDragging,
+    onToggle: (nextOpen) => {
+      setSmartPanelOpen(nextOpen);
+      syncMaterialSetGeometry();
+    },
+    onDragChange: setSmartDragging,
+    onDragClose: () => {
+      setSmartPanelOpen(false);
+      syncMaterialSetGeometry();
+    },
+    disabled: !useSmartCardMaterialSetNode,
+  });
 
-  return (
+  const switchMaterialSetVariant = useCallback((nextVariant: MaterialSetNodeVariant) => {
+    setSmartPanelOpen(false);
+    smartPanelToggle.clearPointer();
+    smartPanelToggle.handledClickRef.current = false;
+    smartPanelToggle.suppressClickRef.current = true;
+    flushSync(() => {
+      update({ uiVariant: nextVariant, materialSetNodeVariant: nextVariant });
+    });
+    syncMaterialSetGeometry();
+  }, [smartPanelToggle, syncMaterialSetGeometry, update]);
+
+  useOutsideClose({
+    enabled: useSmartCardMaterialSetNode && smartPanelOpen,
+    refs: [smartRootRef, composerRef],
+    onOutside: () => {
+      setSmartPanelOpen(false);
+      syncMaterialSetGeometry();
+    },
+  });
+
+  useEffect(() => {
+    if (!useSmartCardMaterialSetNode) return;
+    syncMaterialSetGeometry();
+  }, [items.length, kind, smartCardHeight, smartCardWidth, smartPanelOpen, syncMaterialSetGeometry, useSmartCardMaterialSetNode]);
+
+  const kindIcon = kind === 'video' ? Video : kind === 'audio' ? Music : kind === 'text' ? FileText : Images;
+  const KindIcon = kindIcon;
+  const summary = kind ? `${KIND_LABEL[kind]} · ${items.length} 项` : '连入素材后自动收集';
+
+  const renderClassicNode = () => (
     <div
-      className="relative rounded-xl border-2 transition-colors"
-      style={{
-        width: 320,
-        minHeight: 220,
-        background: isDark ? 'rgba(20,20,22,.94)' : 'rgba(255,255,255,.96)',
-        borderColor: selected ? accent : isDark ? 'rgba(255,255,255,.16)' : 'rgba(0,0,0,.12)',
-        color: isDark ? '#fff' : '#111827',
-        boxShadow: selected ? `0 0 0 1px ${accent}, 0 14px 30px ${accent}22` : undefined,
-        backdropFilter: isPixel ? undefined : 'blur(8px)',
-      }}
+      className={`t8-node t8-material-set-classic relative transition-colors ${selected ? 't8-material-set-classic--selected' : ''}`}
+      style={{ width: 320, minHeight: 220, '--t8-material-set-accent': accent } as any}
     >
       <Handle
         type="target"
@@ -466,16 +540,13 @@ const MaterialSetNode = ({ id, data, selected }: NodeProps) => {
         title={sourceTitle}
       />
 
-      <div className={`flex items-center gap-2 border-b px-3 py-2 ${isDark ? 'border-white/10' : 'border-black/10'}`}>
-        <div
-          className="flex h-7 w-7 items-center justify-center rounded"
-          style={{ background: `${accent}26`, color: accent, boxShadow: `inset 0 0 0 1px ${accent}66` }}
-        >
+      <div className="t8-material-set-classic__header t8-node-header">
+        <div className="t8-material-set-classic__icon">
           <Images size={15} />
         </div>
         <div className="min-w-0 flex-1">
-          <div className="text-sm font-semibold">素材集</div>
-          <div className={`text-[10px] ${isDark ? 'text-white/45' : 'text-zinc-500'}`}>
+          <div className="t8-material-set-classic__title">素材集</div>
+          <div className="t8-material-set-classic__subtitle">
             {kind ? `${KIND_LABEL[kind]} · ${items.length} 项` : '选择类型或收集上游素材'}
           </div>
         </div>
@@ -489,7 +560,7 @@ const MaterialSetNode = ({ id, data, selected }: NodeProps) => {
         )}
         <button
           type="button"
-          className="nodrag nopan inline-flex h-7 w-7 items-center justify-center rounded-full hover:bg-black/10"
+          className="nodrag nopan t8-btn t8-material-set-classic__icon-btn"
           title="清空素材集"
           onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => {
@@ -499,20 +570,33 @@ const MaterialSetNode = ({ id, data, selected }: NodeProps) => {
         >
           <RotateCcw size={13} />
         </button>
+        <button
+          type="button"
+          className="nodrag nopan t8-btn t8-smart-classic-switch"
+          title="切回卡片版节点"
+          aria-label="切回卡片版节点"
+          onPointerDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          }}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            switchMaterialSetVariant('smart-card');
+          }}
+        >
+          <RefreshCcw size={13} />
+        </button>
       </div>
 
-      <div className="space-y-2 p-2.5" onMouseDown={(e) => e.stopPropagation()}>
-        <div className="grid grid-cols-4 gap-1">
+      <div className="t8-material-set-classic__body" onMouseDown={(e) => e.stopPropagation()}>
+        <div className="t8-material-set-classic__kind-grid">
           {(['image', 'video', 'audio', 'text'] as MaterialSetKind[]).map((k) => (
             <button
               key={k}
               type="button"
-              className="nodrag nopan rounded border px-1 py-1 text-[11px] font-semibold"
-              style={{
-                borderColor: kind === k ? PORT_COLOR[k] : isDark ? 'rgba(255,255,255,.16)' : 'rgba(0,0,0,.14)',
-                background: kind === k ? `${PORT_COLOR[k]}30` : 'transparent',
-                color: kind === k ? PORT_COLOR[k] : undefined,
-              }}
+              className={`nodrag nopan t8-btn t8-material-set-classic__kind ${kind === k ? 'is-active' : ''}`}
+              style={{ '--t8-material-set-kind-accent': PORT_COLOR[k] } as any}
               onPointerDown={(e) => e.stopPropagation()}
               onClick={(e) => {
                 e.stopPropagation();
@@ -542,10 +626,7 @@ const MaterialSetNode = ({ id, data, selected }: NodeProps) => {
 
         {kind !== 'text' && (
           <div
-            className={`nodrag nopan flex cursor-pointer items-center justify-center gap-1.5 rounded border border-dashed px-3 py-2 text-[11px] ${
-              isDark ? 'text-white/55' : 'text-zinc-500'
-            }`}
-            style={{ borderColor: dragActive ? accent : undefined }}
+            className={`nodrag nopan t8-material-set-classic__drop ${dragActive ? 'is-active' : ''}`}
             onClick={() => fileInputRef.current?.click()}
             onDragOver={(e) => {
               e.preventDefault();
@@ -566,8 +647,7 @@ const MaterialSetNode = ({ id, data, selected }: NodeProps) => {
               onChange={(e) => setTextDraft(e.target.value)}
               rows={3}
               placeholder="每行作为一条文本素材..."
-              className="nodrag nowheel w-full resize-none rounded border bg-transparent px-2 py-1.5 text-[12px] outline-none"
-              style={{ borderColor: isDark ? 'rgba(255,255,255,.18)' : 'rgba(0,0,0,.16)' }}
+              className="nodrag nowheel t8-textarea t8-material-set-classic__textarea"
             />
             <button type="button" className="t8-btn h-8 w-full gap-1.5 text-[12px]" onClick={addText}>
               <Plus size={13} /> 添加文本
@@ -587,11 +667,11 @@ const MaterialSetNode = ({ id, data, selected }: NodeProps) => {
           </button>
         )}
 
-        <div className="space-y-1">
-          <div className="grid grid-cols-3 gap-1">
+          <div className="t8-material-set-classic__tool-stack">
+          <div className="t8-material-set-classic__action-grid">
             <button
               type="button"
-              className="nodrag nopan rounded border px-1 py-1 text-[10px] font-semibold disabled:opacity-40"
+              className="nodrag nopan t8-btn t8-material-set-classic__action"
               disabled={!kind || items.length <= 1}
               onClick={() => reorderItems('reverse')}
               title="反转当前素材顺序"
@@ -600,7 +680,7 @@ const MaterialSetNode = ({ id, data, selected }: NodeProps) => {
             </button>
             <button
               type="button"
-              className="nodrag nopan rounded border px-1 py-1 text-[10px] font-semibold disabled:opacity-40"
+              className="nodrag nopan t8-btn t8-material-set-classic__action"
               disabled={!kind || items.length <= 1}
               onClick={() => reorderItems('name')}
               title="按文件名 / 文本名排序"
@@ -609,7 +689,7 @@ const MaterialSetNode = ({ id, data, selected }: NodeProps) => {
             </button>
             <button
               type="button"
-              className="nodrag nopan rounded border px-1 py-1 text-[10px] font-semibold disabled:opacity-40"
+              className="nodrag nopan t8-btn t8-material-set-classic__action"
               disabled={!kind || items.length <= 1}
               onClick={() => reorderItems('random')}
               title="随机打乱顺序"
@@ -617,10 +697,10 @@ const MaterialSetNode = ({ id, data, selected }: NodeProps) => {
               <Shuffle size={12} className="mx-auto" />
             </button>
           </div>
-          <div className="grid grid-cols-2 gap-1">
+          <div className="t8-material-set-classic__action-grid t8-material-set-classic__action-grid--two">
             <button
               type="button"
-              className="nodrag nopan flex h-8 items-center justify-center gap-1 rounded border px-2 text-[11px] font-semibold"
+              className="nodrag nopan t8-btn t8-material-set-classic__action"
               onClick={() => jsonInputRef.current?.click()}
               title="导入 t8-material-set 素材集 JSON"
             >
@@ -629,7 +709,7 @@ const MaterialSetNode = ({ id, data, selected }: NodeProps) => {
             </button>
             <button
               type="button"
-              className="nodrag nopan flex h-8 items-center justify-center gap-1 rounded border px-2 text-[11px] font-semibold disabled:opacity-40"
+              className="nodrag nopan t8-btn t8-material-set-classic__action"
               disabled={!kind || items.length === 0}
               onClick={exportJson}
               title="导出 t8-material-set 素材集 JSON"
@@ -641,8 +721,7 @@ const MaterialSetNode = ({ id, data, selected }: NodeProps) => {
         </div>
 
         {items.length > 0 ? (
-          <div className="flex max-h-[230px] flex-wrap gap-1.5 overflow-y-auto rounded border p-2 nowheel"
-            style={{ borderColor: isDark ? 'rgba(255,255,255,.10)' : 'rgba(0,0,0,.08)' }}>
+          <div className="t8-material-set-classic__grid nowheel">
             {materials.map((material, index) => {
               const isActive = sortDrag?.activeId === material.id;
               const isOver = !!sortDrag?.moved && sortDrag.overId === material.id && !isActive;
@@ -651,26 +730,8 @@ const MaterialSetNode = ({ id, data, selected }: NodeProps) => {
                   key={material.id}
                   data-material-set-node={id}
                   data-material-set-thumb-id={material.id}
-                  className="nodrag nopan"
+                  className={`nodrag nopan t8-material-set-classic__thumb ${isActive ? 'is-active' : ''} ${isOver ? 'is-over' : ''}`}
                   title={material.label || material.url}
-                  style={{
-                    width: 58,
-                    height: 58,
-                    flex: '0 0 auto',
-                    position: 'relative',
-                    overflow: 'hidden',
-                    borderRadius: isPixel ? 0 : 7,
-                    border: isPixel ? '1.5px solid var(--px-ink, #1a1a1a)' : `1px solid ${isDark ? 'rgba(255,255,255,.18)' : 'rgba(0,0,0,.12)'}`,
-                    boxShadow: isPixel ? '1px 1px 0 var(--px-ink, #1a1a1a)' : undefined,
-                    cursor: isActive ? 'grabbing' : 'grab',
-                    opacity: isActive && sortDrag?.moved ? 0.58 : 1,
-                    outline: isOver ? `2px solid ${accent}` : 'none',
-                    outlineOffset: 2,
-                    transition: 'opacity 120ms ease, outline-color 120ms ease',
-                    touchAction: 'none',
-                    userSelect: 'none',
-                    background: isDark ? 'rgba(255,255,255,.04)' : 'rgba(0,0,0,.04)',
-                  }}
                   onPointerDownCapture={(event) => beginSortDrag(event, material.id)}
                   onPointerMoveCapture={moveSortDrag}
                   onPointerUpCapture={endSortDrag}
@@ -690,38 +751,19 @@ const MaterialSetNode = ({ id, data, selected }: NodeProps) => {
                       <Video size={20} color="#cbd5e1" />
                     </div>
                   ) : material.kind === 'audio' ? (
-                    <div className="flex h-full w-full items-center justify-center" style={{ background: isPixel ? 'var(--px-yellow, #fde047)' : isDark ? 'rgba(20,184,166,.18)' : 'rgba(20,184,166,.12)' }}>
-                      <Music size={20} color={isPixel ? '#1a1a1a' : '#5eead4'} />
+                    <div className="t8-material-set-classic__thumb-fallback">
+                      <Music size={20} />
                     </div>
                   ) : (
-                    <div
-                      className="flex h-full w-full items-start overflow-hidden px-1 py-1 text-[9px] leading-tight"
-                      style={{ background: isPixel ? 'var(--px-card, #fefce8)' : isDark ? 'rgba(99,102,241,.14)' : 'rgba(99,102,241,.10)' }}
-                    >
+                    <div className="t8-material-set-classic__thumb-text">
                       <FileText size={9} className="mr-0.5 mt-0.5 shrink-0" />
                       <span className="line-clamp-4 break-all">{material.label || material.url}</span>
                     </div>
                   )}
-                  <div
-                    className="pointer-events-none absolute left-0 top-0 flex h-[14px] min-w-[14px] items-center justify-center px-[3px] text-[9px] font-bold leading-none"
-                    style={{
-                      background: isPixel ? 'var(--px-yellow, #fde047)' : 'rgba(0,0,0,.6)',
-                      color: isPixel ? '#1a1a1a' : '#fff',
-                      borderRight: isPixel ? '1.5px solid #1a1a1a' : undefined,
-                      borderBottom: isPixel ? '1.5px solid #1a1a1a' : undefined,
-                    }}
-                  >
+                  <div className="t8-material-set-classic__thumb-index">
                     {index + 1}
                   </div>
-                  <div
-                    className="pointer-events-none absolute right-0 top-0 flex h-[14px] w-[14px] items-center justify-center"
-                    style={{
-                      background: isPixel ? 'var(--px-card, #fefce8)' : 'rgba(0,0,0,.6)',
-                      color: isPixel ? '#1a1a1a' : '#fff',
-                      borderLeft: isPixel ? '1.5px solid #1a1a1a' : undefined,
-                      borderBottom: isPixel ? '1.5px solid #1a1a1a' : undefined,
-                    }}
-                  >
+                  <div className="t8-material-set-classic__thumb-pin">
                     <Pin size={8} />
                   </div>
                   <button
@@ -741,14 +783,14 @@ const MaterialSetNode = ({ id, data, selected }: NodeProps) => {
             })}
           </div>
         ) : (
-          <div className={`flex items-center justify-center gap-1.5 rounded border border-dashed px-3 py-6 text-[11px] ${isDark ? 'text-white/35' : 'text-zinc-400'}`}>
+          <div className="t8-material-set-classic__empty">
             <PackageOpen size={14} />
             暂无素材
           </div>
         )}
 
         {error && (
-          <div className="flex items-center justify-between gap-2 rounded border border-amber-400/30 bg-amber-400/10 px-2 py-1 text-[10px] text-amber-700 dark:text-amber-200">
+          <div className="t8-smart-node-error t8-material-set-classic__error">
             <span className="min-w-0 flex-1 break-all">{error}</span>
             <button type="button" className="nodrag nopan" onClick={() => setError(null)}>
               <Trash2 size={11} />
@@ -758,6 +800,395 @@ const MaterialSetNode = ({ id, data, selected }: NodeProps) => {
       </div>
     </div>
   );
+
+  // Card normal state stays summary-first; dense collection management belongs in the composer.
+  const renderSmartCover = () => {
+    if (!kind || items.length === 0) {
+      return (
+        <div
+          className={`t8-smart-material-set-empty ${dragActive ? 't8-smart-material-set-empty--accepting' : ''}`}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDragActive(true);
+          }}
+          onDragLeave={() => setDragActive(false)}
+          onDrop={handleDrop}
+        >
+          <PackageOpen size={22} />
+          <strong>{uploading ? '上传中' : dragActive ? '松开加入' : '待收集'}</strong>
+        </div>
+      );
+    }
+
+    if (kind === 'image') {
+      const imageItems = materials.slice(0, 4);
+      return (
+        <div className={`t8-smart-material-set-cover t8-smart-material-set-cover--image t8-smart-material-set-cover--count-${Math.min(imageItems.length, 4)}`}>
+          {imageItems.map((material, index) => (
+            <SmartImage
+              key={`${material.id}-${index}`}
+              src={material.url}
+              alt={material.label || `图像 ${index + 1}`}
+              thumbSize={360}
+              className="h-full w-full object-cover"
+              draggable={false}
+            />
+          ))}
+          {items.length > 4 && <span className="t8-smart-material-set-more">+{items.length - 4}</span>}
+        </div>
+      );
+    }
+
+    if (kind === 'text') {
+      return (
+        <div className="t8-smart-material-set-cover t8-smart-material-set-cover--text">
+          {items.slice(0, 4).map((item, index) => (
+            <div key={item.id} className="t8-smart-material-set-text-line">
+              <span>{index + 1}</span>
+              <p>{valueOfMaterialSetItem(item)}</p>
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    if (kind === 'video') {
+      return (
+        <div className="t8-smart-material-set-cover t8-smart-material-set-cover--media">
+          <Video size={34} />
+          <strong>{items.length} 个视频</strong>
+          <span>{items[0]?.name || fileNameFromUrl(valueOfMaterialSetItem(items[0]))}</span>
+        </div>
+      );
+    }
+
+    return (
+      <div className="t8-smart-material-set-cover t8-smart-material-set-cover--media t8-smart-material-set-cover--audio">
+        <Music size={34} />
+        <strong>{items.length} 段音频</strong>
+        <span>{items[0]?.name || fileNameFromUrl(valueOfMaterialSetItem(items[0]))}</span>
+      </div>
+    );
+  };
+
+  // Material set management lives in the external composer so the canvas card stays clean.
+  const renderSmartComposer = () => {
+    if (!smartPanelOpen) return null;
+    return (
+      <SmartNodeComposer
+        className="t8-smart-material-set-composer"
+        style={{ left: smartCardWidth + 12, top: 0 }}
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div ref={composerRef}>
+          <div className="t8-smart-material-set-composer__header">
+            <div>
+              <div className="t8-smart-node-title">素材集配置</div>
+              <div className="t8-smart-node-subtitle">{summary}</div>
+            </div>
+            {kind && (
+              <CollectionSplitButton
+                count={items.length}
+                kindLabel={KIND_LABEL[kind]}
+                onSplit={splitMaterialSet}
+                confirmThreshold={8}
+              />
+            )}
+          </div>
+
+          <div className="t8-smart-material-set-toolbar">
+            {(['image', 'video', 'audio', 'text'] as MaterialSetKind[]).map((k) => (
+              <button
+                key={k}
+                type="button"
+                className={`t8-chip ${kind === k ? 't8-chip--active' : ''}`}
+                style={kind === k ? { borderColor: PORT_COLOR[k], color: PORT_COLOR[k] } : undefined}
+                onClick={() => switchKind(k)}
+              >
+                {KIND_LABEL[k]}
+              </button>
+            ))}
+          </div>
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            className="hidden"
+            multiple
+            accept={kind && kind !== 'text' ? KIND_ACCEPT[kind] : 'image/*,video/*,audio/*'}
+            onChange={handleFileChange}
+          />
+          <input
+            ref={jsonInputRef}
+            type="file"
+            className="hidden"
+            accept="application/json,.json"
+            onChange={importJson}
+          />
+
+          <div className="t8-smart-material-set-composer__section">
+            {kind !== 'text' && (
+              <button
+                type="button"
+                className="t8-btn t8-smart-material-set-add"
+                onClick={() => fileInputRef.current?.click()}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setDragActive(true);
+                }}
+                onDragLeave={() => setDragActive(false)}
+                onDrop={handleDrop}
+              >
+                <UploadIcon size={13} />
+                {uploading ? '上传中...' : kind ? `添加${KIND_LABEL[kind]}文件` : '添加素材'}
+              </button>
+            )}
+
+            {kind === 'text' && (
+              <div className="space-y-1.5">
+                <textarea
+                  value={textDraft}
+                  onChange={(e) => setTextDraft(e.target.value)}
+                  rows={4}
+                  placeholder="每行作为一条文本素材..."
+                  className="nodrag nowheel t8-textarea w-full resize-none text-xs"
+                />
+                <button type="button" className="t8-btn h-8 w-full gap-1.5 text-[12px]" onClick={addText}>
+                  <Plus size={13} /> 添加文本
+                </button>
+              </div>
+            )}
+
+            {upstreamCandidate && upstreamCandidate.list.length > 0 && (
+              <button
+                type="button"
+                className="t8-btn h-8 w-full gap-1.5 text-[12px]"
+                onClick={collectUpstream}
+                title="把连入素材按当前上游顺序收集到素材集"
+              >
+                <ListPlus size={13} />
+                收集上游 {KIND_LABEL[upstreamCandidate.kind]} ({upstreamCandidate.list.length})
+              </button>
+            )}
+          </div>
+
+          <div className="t8-smart-material-set-composer__section">
+            <div className="t8-smart-material-set-action-grid">
+              <button type="button" className="t8-btn" disabled={!kind || items.length <= 1} onClick={() => reorderItems('reverse')} title="反转当前素材顺序">
+                <ArrowDownUp size={12} /> 反转
+              </button>
+              <button type="button" className="t8-btn" disabled={!kind || items.length <= 1} onClick={() => reorderItems('name')} title="按文件名 / 文本名排序">
+                <SortAsc size={12} /> 名称
+              </button>
+              <button type="button" className="t8-btn" disabled={!kind || items.length <= 1} onClick={() => reorderItems('random')} title="随机打乱顺序">
+                <Shuffle size={12} /> 随机
+              </button>
+            </div>
+            <div className="t8-smart-material-set-action-grid t8-smart-material-set-action-grid--two">
+              <button type="button" className="t8-btn" onClick={() => jsonInputRef.current?.click()}>
+                <FileUp size={13} /> 导入
+              </button>
+              <button type="button" className="t8-btn" disabled={!kind || items.length === 0} onClick={exportJson}>
+                <Download size={13} /> 导出
+              </button>
+            </div>
+          </div>
+
+          <div className="t8-smart-material-set-composer__section">
+            {items.length > 0 ? (
+              <div className="t8-smart-material-set-grid nowheel">
+                {materials.map((material, index) => {
+                  const isActive = sortDrag?.activeId === material.id;
+                  const isOver = !!sortDrag?.moved && sortDrag.overId === material.id && !isActive;
+                  return (
+                    <div
+                      key={material.id}
+                      data-material-set-node={id}
+                      data-material-set-thumb-id={material.id}
+                      className={`nodrag nopan t8-smart-material-set-thumb ${isActive ? 'is-active' : ''} ${isOver ? 'is-over' : ''}`}
+                      title={material.label || material.url}
+                      onPointerDownCapture={(event) => beginSortDrag(event, material.id)}
+                      onPointerMoveCapture={moveSortDrag}
+                      onPointerUpCapture={endSortDrag}
+                      onPointerCancelCapture={cancelSortDrag}
+                      onDragStart={(event) => event.preventDefault()}
+                    >
+                      {material.kind === 'image' ? (
+                        <SmartImage
+                          src={material.url}
+                          alt={material.label || ''}
+                          draggable={false}
+                          thumbSize={220}
+                          className="h-full w-full object-cover"
+                          style={{ pointerEvents: 'none', userSelect: 'none' }}
+                        />
+                      ) : material.kind === 'video' ? (
+                        <div className="t8-smart-material-set-thumb__fallback"><Video size={20} /></div>
+                      ) : material.kind === 'audio' ? (
+                        <div className="t8-smart-material-set-thumb__fallback"><Music size={20} /></div>
+                      ) : (
+                        <div className="t8-smart-material-set-thumb__text">
+                          <FileText size={9} />
+                          <span>{material.label || material.url}</span>
+                        </div>
+                      )}
+                      <span className="t8-smart-material-set-thumb__index">{index + 1}</span>
+                      <button
+                        type="button"
+                        className="nodrag nopan t8-smart-material-set-thumb__remove"
+                        title="移除本地素材"
+                        onPointerDown={(event) => event.stopPropagation()}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          removeItem(material.id);
+                        }}
+                      >
+                        x
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="t8-smart-material-set-composer__empty">
+                <PackageOpen size={14} />
+                暂无素材
+              </div>
+            )}
+          </div>
+
+          <div className="t8-smart-material-set-composer__footer">
+            <span className="t8-smart-material-set-composer__hint">
+              {kind ? `${KIND_LABEL[kind]} · ${items.length}项` : '等待素材'}
+            </span>
+            <div className="t8-smart-material-set-footer-actions">
+              <button
+                type="button"
+                className="t8-smart-material-set-icon-action"
+                onClick={clearAll}
+                title="清空素材集"
+                aria-label="清空素材集"
+              >
+                <RotateCcw size={12} />
+              </button>
+              <button
+                type="button"
+                className="t8-smart-material-set-icon-action"
+                onClick={() => switchMaterialSetVariant('classic')}
+                title="切换到经典版节点"
+                aria-label="切换到经典版节点"
+              >
+                <RefreshCcw size={12} />
+              </button>
+            </div>
+          </div>
+
+          {error && (
+            <div className="t8-smart-node-error">
+              <span className="min-w-0 flex-1 break-all">{error}</span>
+              <button type="button" className="nodrag nopan" onClick={() => setError(null)}>
+                <Trash2 size={11} />
+              </button>
+            </div>
+          )}
+        </div>
+      </SmartNodeComposer>
+    );
+  };
+
+  const renderSmartCard = () => (
+    <SmartNodeShell
+      rootRef={smartRootRef}
+      className="t8-smart-material-set-node"
+      style={{ width: smartCardWidth }}
+      rootProps={{
+        onPointerDown: smartPanelToggle.onPointerDown,
+        onPointerMove: smartPanelToggle.onPointerMove,
+        onPointerUp: smartPanelToggle.onPointerUp,
+        onPointerCancel: smartPanelToggle.onPointerCancel,
+        onClick: smartPanelToggle.onClick,
+      }}
+      composer={renderSmartComposer()}
+    >
+      <div
+        className={`t8-node t8-smart-node-card t8-smart-material-set-card transition-all ${selected ? 't8-smart-node-card--selected' : ''} ${
+          dragActive ? 't8-smart-node-card--accepting' : ''
+        } ${smartPanelOpen ? 't8-smart-material-set-card--open' : ''}`}
+        style={{ height: smartCardHeight }}
+      >
+        <ResizableCorners
+          selected={selected}
+          minWidth={240}
+          minHeight={150}
+          maxWidth={620}
+          maxHeight={560}
+          accent={accent}
+          keepAspectRatio={false}
+          onResize={(_e, p) => {
+            update({ smartMaterialSetWidth: Math.round(p.width), smartMaterialSetHeight: Math.round(p.height) });
+            syncMaterialSetGeometry();
+          }}
+          onResizeEnd={(_e, p) => {
+            update({ smartMaterialSetWidth: Math.round(p.width), smartMaterialSetHeight: Math.round(p.height) });
+            syncMaterialSetGeometry();
+          }}
+        />
+        <Handle
+          type="target"
+          position={Position.Left}
+          className="t8-smart-node-port !border-0"
+          style={{ top: '50%', background: accent }}
+          title={targetTitle}
+        />
+        <Handle
+          type="source"
+          position={Position.Right}
+          className="t8-smart-node-port !border-0"
+          style={{ top: '50%', background: accent }}
+          title={sourceTitle}
+        />
+
+        <div className="t8-smart-material-set-head">
+          <div className="t8-smart-node-icon" style={{ color: accent }}>
+            <KindIcon size={14} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="t8-smart-node-title t8-smart-material-set-title">素材集</div>
+            <div className="t8-smart-node-subtitle">{summary}</div>
+          </div>
+          <button
+            type="button"
+            className="nodrag nopan t8-btn t8-smart-variant-toggle"
+            title="切换到经典版节点"
+            aria-label="切换到经典版节点"
+            onPointerDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              switchMaterialSetVariant('classic');
+            }}
+          >
+            <RefreshCcw size={13} />
+          </button>
+        </div>
+
+        <div className="t8-smart-node-body">
+          {renderSmartCover()}
+        </div>
+
+        <div className="t8-smart-material-set-foot">
+          <span>{kind ? KIND_LABEL[kind] : '自动'}</span>
+          <span>{items.length ? `${items.length}` : '0'}</span>
+        </div>
+      </div>
+    </SmartNodeShell>
+  );
+
+  if (!useSmartCardMaterialSetNode) return renderClassicNode();
+  return renderSmartCard();
 };
 
 export default memo(MaterialSetNode);

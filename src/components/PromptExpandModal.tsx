@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type MouseEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, CheckCircle2, Copy, ListFilter, Wand2, X } from 'lucide-react';
 
@@ -83,13 +83,21 @@ export default function PromptExpandModal({
   useEffect(() => {
     if (!open) return;
     const onKeyDown = (event: KeyboardEvent) => {
+      const nativeEvent = event as KeyboardEvent & { isComposing?: boolean };
       if (event.key === 'Escape' && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) {
         event.preventDefault();
         event.stopPropagation();
         onCancel();
         return;
       }
-      if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+      if (
+        event.key === 'Enter' &&
+        !event.shiftKey &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.altKey &&
+        !nativeEvent.isComposing
+      ) {
         event.preventDefault();
         event.stopPropagation();
         if (!readOnly) onApply();
@@ -151,15 +159,26 @@ export default function PromptExpandModal({
     setToolMessage('已整理为空行去重列表');
   };
 
+  const handleBackdropPointer = (event: MouseEvent<HTMLDivElement>) => {
+    event.stopPropagation();
+    if (event.target === event.currentTarget) onCancel();
+  };
+
   return createPortal(
     <div
       data-canvas-floating-ui="prompt-expand-editor"
       className="fixed inset-0 z-[10080] flex items-center justify-center bg-black/45 p-3"
-      onMouseDown={onCancel}
+      onPointerDown={(event) => {
+        event.stopPropagation();
+      }}
+      onMouseDown={handleBackdropPointer}
+      onClick={handleBackdropPointer}
     >
       <section
         className={`${shellClass} flex h-[min(82vh,860px)] w-[min(1080px,calc(100vw-24px))] flex-col overflow-hidden`}
+        onPointerDown={(event) => event.stopPropagation()}
         onMouseDown={(event) => event.stopPropagation()}
+        onClick={(event) => event.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-label={title || '放大编辑提示词'}
@@ -172,7 +191,7 @@ export default function PromptExpandModal({
           <div className="min-w-0">
             <div className="truncate text-sm font-bold">{title || '放大编辑提示词'}</div>
             <div className={`mt-0.5 text-[11px] ${isPixel ? 'text-[var(--px-ink)] opacity-70' : isDark ? 'text-white/45' : 'text-zinc-500'}`}>
-              {stats.chars} 字 · {stats.lines} 行 · Alt+Enter 打开 · Ctrl+Enter 完成 · Esc 取消
+              {stats.chars} 字 · {stats.lines} 行 · Enter 完成 · Shift+Enter 换行 · Esc 取消
             </div>
           </div>
           <button type="button" className={btnBase} onClick={onCancel} title="关闭">

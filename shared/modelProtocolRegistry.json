@@ -1,0 +1,174 @@
+{
+  "advancedProviders": {
+    "openai": {
+      "imageModels": ["gpt-image-1"],
+      "videoModels": [],
+      "chatModels": ["gpt-4o-mini"],
+      "defaults": {
+        "imageModel": "gpt-image-1",
+        "chatModel": "gpt-4o-mini"
+      }
+    },
+    "apimart": {
+      "imageModels": ["gpt-image-1"],
+      "videoModels": [],
+      "chatModels": ["gpt-4o-mini"],
+      "defaults": {
+        "imageModel": "gpt-image-1",
+        "chatModel": "gpt-4o-mini"
+      }
+    },
+    "gemini": {
+      "imageModels": ["gemini-2.5-flash-image"],
+      "videoModels": [],
+      "chatModels": ["gemini-2.5-flash"],
+      "defaults": {
+        "imageModel": "gemini-2.5-flash-image",
+        "chatModel": "gemini-2.5-flash"
+      }
+    },
+    "modelscope": {
+      "imageModels": [
+        "Tongyi-MAI/Z-Image-Turbo",
+        "Qwen/Qwen-Image-2512",
+        "Qwen/Qwen-Image-Edit-2511",
+        "black-forest-labs/FLUX.2-klein-9B"
+      ],
+      "videoModels": [],
+      "chatModels": [
+        "Qwen/Qwen3-235B-A22B",
+        "Qwen/Qwen3-VL-235B-A22B-Instruct",
+        "MiniMax/MiniMax-M2.7:MiniMax"
+      ],
+      "defaults": {
+        "imageModel": "Tongyi-MAI/Z-Image-Turbo",
+        "chatModel": "Qwen/Qwen3-235B-A22B"
+      }
+    },
+    "volcengine": {
+      "imageModels": ["doubao-seedream-4-0-250828"],
+      "videoModels": [
+        "doubao-seedance-2-0-260128",
+        "doubao-seedance-2-0-fast-260128",
+        "doubao-seedance-1-5-pro-251215",
+        "doubao-seedance-1-0-pro-250528",
+        "doubao-seedance-1-0-lite-t2v-250428",
+        "doubao-seedance-1-0-lite-i2v-250428"
+      ],
+      "chatModels": ["doubao-seed-1-6-250615"],
+      "defaults": {
+        "imageModel": "doubao-seedream-4-0-250828",
+        "videoModel": "doubao-seedance-2-0-fast-260128",
+        "chatModel": "doubao-seed-1-6-250615"
+      },
+      "display": {
+        "modelHint": "图像、视频、聊天模型分别按火山控制台里的模型接入点填写，每行一个。Seedance2.0 / Seedance2.0 Fast 如果未在方舟控制台开通，提交会返回 ModelNotOpen / HTTP 404。",
+        "seedanceOpenReminderModels": ["doubao-seedance-2-0-260128", "doubao-seedance-2-0-fast-260128"]
+      }
+    },
+    "agnes": {
+      "imageModels": ["agnes-image-2.1-flash", "agnes-image-2.0-flash"],
+      "videoModels": ["agnes-video-v2.0"],
+      "chatModels": ["agnes-2.0-flash"],
+      "defaults": {
+        "imageModel": "agnes-image-2.1-flash",
+        "videoModel": "agnes-video-v2.0",
+        "chatModel": "agnes-2.0-flash",
+        "responseFormat": "url"
+      }
+    },
+    "jimeng-cli": {
+      "imageModels": [
+        "seedream-4.7",
+        "seedream-4.6",
+        "seedream-4.5",
+        "seedream-5.0",
+        "jimeng-image-2k",
+        "jimeng-image-4k"
+      ],
+      "videoModels": [
+        "seedance2.0fast_vip",
+        "seedance2.0_vip",
+        "seedance2.0fast",
+        "seedance2.0",
+        "jimeng-video-720p",
+        "jimeng-video-1080p"
+      ],
+      "chatModels": [],
+      "defaults": {
+        "imageModel": "jimeng-image-2k",
+        "videoModel": "seedance2.0fast_vip"
+      },
+      "display": {
+        "modelHint": "模型名按 CLI 支持的命令参数填写；图像可填 seedream-4.7，视频可填 seedance2.0fast_vip、seedance2.0_vip、seedance2.0fast、seedance2.0。每行一个。",
+        "imageModelPlaceholder": "例如 seedream-4.7",
+        "videoModelPlaceholder": "例如 seedance2.0fast_vip / seedance2.0"
+      }
+    }
+  },
+  "defaultService": {
+    "imageModelOverrides": [
+      { "id": "gpt-image-2", "label": "GPT Image 2", "placeholder": "gpt-image-2-all" },
+      { "id": "nano-banana-2", "label": "Nano Banana 2", "placeholder": "gemini-3.1-flash-image" },
+      { "id": "nano-banana-pro", "label": "Nano Banana Pro", "placeholder": "nano-banana-pro" },
+      { "id": "grok-image", "label": "Grok Image", "placeholder": "grok-4.2-image" },
+      { "id": "midjourney", "label": "Midjourney", "placeholder": "midjourney" }
+    ],
+    "videoModelOverrides": [
+      { "id": "grok-video-3", "label": "Grok Video", "placeholder": "grok-video-3" },
+      { "id": "veo3.1", "label": "Veo", "placeholder": "veo-omni-10s" },
+      { "id": "sora-2", "label": "Sora2", "placeholder": "sora-2-zhenzhen" },
+      { "id": "seedance-2.0", "label": "Seedance 2.0（视频节点）", "placeholder": "video-standard-720p" },
+      { "id": "doubao-seedance-2-0-260128", "label": "Seedance 2.0 满血", "placeholder": "video-standard-720p" },
+      { "id": "doubao-seedance-2-0-fast-260128", "label": "Seedance 2.0 快速", "placeholder": "video-standard-720p-fast" }
+    ],
+    "imageProtocolOptions": [
+      { "value": "images", "label": "Images API" },
+      { "value": "images-generations", "label": "Images API · generations" },
+      { "value": "images-edits", "label": "Images API · edits" },
+      { "value": "openai-chat", "label": "OpenAI Chat" },
+      { "value": "gemini-native", "label": "Gemini Native" }
+    ],
+    "openaiCompatibleImageProtocolOptions": [
+      { "value": "images", "label": "Images API" },
+      { "value": "images-generations", "label": "Images API · generations" },
+      { "value": "images-edits", "label": "Images API · edits" },
+      { "value": "openai-chat", "label": "OpenAI Chat" }
+    ],
+    "imageRequestProtocols": {
+      "gpt-size": {
+        "generations": {
+          "primary": { "fields": ["size", "resolution", "image_size"] },
+          "pixelOnly": { "fields": ["size"] },
+          "levelOnly": { "fields": ["resolution", "image_size"] }
+        },
+        "edits": {
+          "primary": { "fields": ["size", "aspectRatio", "resolution", "image_size"] },
+          "pixelOnly": { "fields": ["size", "aspectRatio"] },
+          "levelOnly": { "fields": ["aspectRatio", "resolution", "image_size"] }
+        }
+      }
+    },
+    "imageAliases": {
+      "nano-banana-2": "gemini-3.1-flash-image",
+      "gemini-3.1-flash-image-preview": "gemini-3.1-flash-image",
+      "gemini-3.1-flash-image-previiew": "gemini-3.1-flash-image",
+      "gemini-3-pro-image-preview": "gemini-3-pro-image",
+      "gemini-3-pro-image-2k-preview": "gemini-3-pro-image-2k",
+      "gemini-3-pro-image-4k-preview": "gemini-3-pro-image-4k",
+      "nano-banana-pro": "nano-banana-pro",
+      "nano-banana-pro-2k": "nano-banana-pro-2k",
+      "nano-banana-pro-4k": "nano-banana-pro-4k"
+    },
+    "gptImage2VariantSizes": {
+      "gpt-image-2-2k": "2K",
+      "gpt-image-2-4k": "4K"
+    },
+    "apishuSeedanceModels": {
+      "doubao-seedance-2-0-260128": "video-standard-720p",
+      "doubao-seedance-2-0-fast-260128": "video-standard-720p-fast",
+      "video-standard-720p": "video-standard-720p",
+      "video-standard-720p-fast": "video-standard-720p-fast"
+    }
+  }
+}

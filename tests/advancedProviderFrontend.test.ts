@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
 
 import {
   advancedProviderSummary,
@@ -101,6 +104,46 @@ test('advanced provider selection preserves valid saved provider and falls back 
     provider: null,
     available: false,
   });
+});
+
+test('advanced provider selection supports multiple custom OpenAI-compatible platforms by id', () => {
+  const providers = [
+    { id: 'custom-newapi', label: 'New API', protocol: 'openai-compatible', enabled: true, imageModels: ['gemini-3.1-flash-image-preview'] },
+    { id: 'custom-oneapi', label: 'One API', protocol: 'openai-compatible', enabled: true, imageModels: ['gpt-image-1'] },
+  ] as any;
+
+  assert.deepEqual(resolveAdvancedProviderSelection(providers, 'image', {
+    providerSource: 'openai-compatible',
+    providerId: 'custom-oneapi',
+    providerModel: 'gpt-image-1',
+  }), {
+    providerSource: 'openai-compatible',
+    providerId: 'custom-oneapi',
+    providerModel: 'gpt-image-1',
+    provider: providers[1],
+    available: true,
+  });
+});
+
+test('ApiSettings exposes custom advanced provider creation, protocol selection, and removal controls', () => {
+  const registry = require('../shared/modelProtocolRegistry.json');
+  const apiSettings = fs.readFileSync(new URL('../src/components/ApiSettings.tsx', import.meta.url), 'utf8');
+
+  assert.match(apiSettings, /CUSTOM_ADVANCED_PROVIDER_PREFIX/);
+  assert.match(apiSettings, /CUSTOM_ADVANCED_PROVIDER_PROTOCOL_OPTIONS/);
+  assert.match(apiSettings, /function\s+createCustomAdvancedProvider/);
+  assert.match(apiSettings, /handleAddAdvancedProvider/);
+  assert.match(apiSettings, /handleRemoveAdvancedProvider/);
+  assert.match(apiSettings, /添加自定义平台/);
+  assert.match(apiSettings, /删除自定义平台/);
+  assert.match(apiSettings, /协议类型/);
+  assert.match(apiSettings, /OPENAI_COMPAT_IMAGE_PROTOCOL_OPTIONS/);
+  assert.match(apiSettings, /图像协议/);
+  assert.equal(
+    registry.defaultService.openaiCompatibleImageProtocolOptions.some((option: any) => option.label === 'OpenAI Chat'),
+    true,
+  );
+  assert.match(apiSettings, /isCustomAdvancedProvider/);
 });
 
 test('advancedProviderModelOptions uses explicit lists before safe provider defaults', () => {
@@ -293,13 +336,58 @@ test('SeedanceNode exposes explicit Jimeng intelligent multiframe mode only for 
   assert.match(source, /智能多帧\(multiframe\)/);
 });
 
+test('SeedanceNode keeps existing Seedance model choices without adding apishu model ids', () => {
+  const source = fs.readFileSync(new URL('../src/components/nodes/SeedanceNode.tsx', import.meta.url), 'utf8');
+
+  assert.match(source, /doubao-seedance-2-0-fast-260128/);
+  assert.match(source, /doubao-seedance-2-0-260128/);
+  assert.doesNotMatch(source, /video-standard-720p-fast/);
+  assert.doesNotMatch(source, /video-standard-720p/);
+});
+
+test('seedance proxy maps existing Seedance choices to apishu standard 720p videos only for video', () => {
+  const registry = require('../shared/modelProtocolRegistry.json');
+  const proxyModule = require('../backend/src/routes/proxy.js');
+  const proxy = fs.readFileSync(new URL('../backend/src/routes/proxy.js', import.meta.url), 'utf8');
+  const imageNode = fs.readFileSync(new URL('../src/components/nodes/ImageNode.tsx', import.meta.url), 'utf8');
+
+  assert.match(proxy, /APISHU_SEEDANCE_MODEL_MAP/);
+  assert.match(proxy, /MODEL_PROTOCOL_REGISTRY/);
+  assert.match(proxy, /defaultService\?\.apishuSeedanceModels/);
+  assert.equal(
+    proxyModule._testOnly.apishuSeedanceUpstreamModel('doubao-seedance-2-0-260128'),
+    registry.defaultService.apishuSeedanceModels['doubao-seedance-2-0-260128'],
+  );
+  assert.equal(
+    proxyModule._testOnly.apishuSeedanceUpstreamModel('doubao-seedance-2-0-fast-260128'),
+    registry.defaultService.apishuSeedanceModels['doubao-seedance-2-0-fast-260128'],
+  );
+  assert.match(proxy, /function apishuSeedanceUpstreamModel\(model\)/);
+  assert.match(proxy, /function isApishuSeedanceVideoModel\(model\)/);
+  assert.match(proxy, /buildApishuSeedancePayload/);
+  assert.match(proxy, /\/v1\/videos/);
+  assert.match(proxy, /metadata\?\.result_urls/);
+  assert.match(proxy, /metadata\?\.result_url/);
+  assert.match(proxy, /metadata\?\.url/);
+  assert.match(proxy, /isApishuSeedanceVideoModel\(model\)/);
+  assert.match(proxy, /isApishuSeedanceVideoModel\(queryModel\)/);
+  assert.match(proxy, /model:\s*apishuSeedanceUpstreamModel\(input\.model\)/);
+  assert.doesNotMatch(imageNode, /nana-banana-2/);
+  assert.doesNotMatch(imageNode, /nana-banana-pro/);
+});
+
 test('SeedanceNode exposes Zhenzhen mini model and native4K resolution', () => {
   const source = fs.readFileSync(new URL('../src/components/nodes/SeedanceNode.tsx', import.meta.url), 'utf8');
   const generation = fs.readFileSync(new URL('../src/services/generation.ts', import.meta.url), 'utf8');
+  const models = fs.readFileSync(new URL('../src/providers/models.ts', import.meta.url), 'utf8');
 
   assert.match(source, /value: 'doubao-seedance-2\.0-mini'/);
   assert.match(source, /label: 'seedance-2\.0-mini'/);
-  assert.match(source, /RESOLUTION_OPTIONS = \[[^\]]*'native4K'[^\]]*\]/);
+  assert.match(source, /SEEDANCE_RATIO_OPTIONS/);
+  assert.match(source, /SEEDANCE_RESOLUTION_OPTIONS/);
+  assert.match(source, /SEEDANCE_DURATION_OPTIONS/);
+  assert.match(models, /export const SEEDANCE_RATIO_OPTIONS = \['16:9', '9:16', '1:1', '4:3', '3:4', '21:9', '9:21', 'adaptive'\]/);
+  assert.match(models, /SEEDANCE_RESOLUTION_OPTIONS = \[[^\]]*'native4K'[^\]]*\]/);
   assert.match(generation, /doubao-seedance-2\.0-mini/);
   assert.match(generation, /native4K/);
 });

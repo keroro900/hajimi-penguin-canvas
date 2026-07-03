@@ -177,3 +177,79 @@ test('external provider test endpoint uses saved remote ComfyUI url when provide
   assert.equal(tested.data.provider.allowRemote, true);
   assert.equal(queueRequestUrl, `${remoteBaseUrl}/queue`);
 });
+
+test('external provider fetch-models endpoint groups models and masks provider secrets', async (t) => {
+  const express = require('express');
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 't8-external-models-'));
+  t.after(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  const config = require('../backend/src/config.js');
+  const oldConfig = {
+    SETTINGS_FILE: config.SETTINGS_FILE,
+    DEFAULT_LOCAL_SAVE_DIR: config.DEFAULT_LOCAL_SAVE_DIR,
+    DEFAULT_CANVAS_AUTO_SAVE_DIR: config.DEFAULT_CANVAS_AUTO_SAVE_DIR,
+    DEFAULT_RESOURCE_LIBRARY_DIR: config.DEFAULT_RESOURCE_LIBRARY_DIR,
+    DEFAULT_THEME_TEMPLATE_DIR: config.DEFAULT_THEME_TEMPLATE_DIR,
+  };
+  t.after(() => Object.assign(config, oldConfig));
+  config.SETTINGS_FILE = path.join(tmpDir, 'settings.json');
+  config.DEFAULT_LOCAL_SAVE_DIR = path.join(tmpDir, 'save');
+  config.DEFAULT_CANVAS_AUTO_SAVE_DIR = path.join(tmpDir, 'canvas');
+  config.DEFAULT_RESOURCE_LIBRARY_DIR = path.join(tmpDir, 'resources');
+  config.DEFAULT_THEME_TEMPLATE_DIR = path.join(tmpDir, 'themes');
+
+  const upstream = express();
+  upstream.use(express.json({ limit: '1mb' }));
+  upstream.get('/v1/models', (req, res) => {
+    assert.equal(req.get('authorization'), 'Bearer sk-secret-abcdef');
+    res.json({
+      data: [
+        { id: 'gpt-4o-mini' },
+        { id: 'gpt-image-1' },
+        { id: 'sora-2' },
+      ],
+    });
+  });
+  const upstreamServer = await new Promise<any>((resolve) => {
+    const s = upstream.listen(0, '127.0.0.1', () => resolve(s));
+  });
+  t.after(() => upstreamServer.close());
+
+  const settingsRouter = require('../backend/src/routes/settings.js');
+  const externalProvidersRouter = require('../backend/src/routes/externalProviders.js');
+  const app = express();
+  app.use(express.json({ limit: '1mb' }));
+  app.use('/api/settings', settingsRouter);
+  app.use('/api/proxy/external', externalProvidersRouter);
+
+  const server = await new Promise<any>((resolve) => {
+    const s = app.listen(0, '127.0.0.1', () => resolve(s));
+  });
+  t.after(() => server.close());
+
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const upstreamBase = `http://127.0.0.1:${upstreamServer.address().port}/v1`;
+  const fetched = await fetch(`${base}/api/proxy/external/fetch-models`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      provider: {
+        id: 'openai-api',
+        label: 'OpenAI API',
+        protocol: 'openai',
+        baseUrl: upstreamBase,
+        apiKey: 'sk-secret-abcdef',
+      },
+    }),
+  }).then((res) => res.json());
+
+  assert.equal(fetched.success, true);
+  assert.equal(fetched.data.total, 3);
+  assert.deepEqual(fetched.data.chatModels, ['gpt-4o-mini']);
+  assert.deepEqual(fetched.data.imageModels, ['gpt-image-1']);
+  assert.deepEqual(fetched.data.videoModels, ['sora-2']);
+  assert.equal(fetched.data.provider.apiKey, '****cdef');
+  assert.equal(JSON.stringify(fetched).includes('sk-secret-abcdef'), false);
+});

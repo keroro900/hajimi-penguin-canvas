@@ -44,7 +44,7 @@ test('VibeX integration has a dedicated bridge contract and node registration', 
   assert.match(ports, /vibex:\s*\{[\s\S]*outputs:\s*\[\s*['"]text['"],\s*['"]image['"],\s*['"]video['"],\s*['"]audio['"]\s*\]/);
 });
 
-test('Canvas exposes VibeX as a toolbar workflow, canvas node, and postMessage receiver', () => {
+test('Canvas keeps VibeX as a canvas node and postMessage receiver without topbar shortcuts', () => {
   assert.ok(exists('src/components/nodes/VibeXNode.tsx'), 'missing VibeXNode component');
   const node = read('src/components/nodes/VibeXNode.tsx');
   assert.match(node, /VIBEX_ONLINE_URL/);
@@ -71,10 +71,10 @@ test('Canvas exposes VibeX as a toolbar workflow, canvas node, and postMessage r
   assert.doesNotMatch(node, /userPost/);
 
   const toolbar = read('src/components/CanvasToolbar.tsx');
-  assert.match(toolbar, /onOpenVibeXWorkbench:\s*\(\)\s*=>\s*void/);
-  assert.match(toolbar, /onCreateVibeXNode:\s*\(\)\s*=>\s*void/);
-  assert.match(toolbar, /aria-label=['"]打开 VibeX 工作台['"]/);
-  assert.match(toolbar, /aria-label=['"]创建 VibeX 节点['"]/);
+  assert.doesNotMatch(toolbar, /onOpenVibeXWorkbench:\s*\(\)\s*=>\s*void/);
+  assert.doesNotMatch(toolbar, /onCreateVibeXNode:\s*\(\)\s*=>\s*void/);
+  assert.doesNotMatch(toolbar, /aria-label=['"]打开 VibeX 工作台['"]/);
+  assert.doesNotMatch(toolbar, /aria-label=['"]创建 VibeX 节点['"]/);
 
   const canvas = read('src/components/Canvas.tsx');
   assert.match(canvas, /lazyCanvasNode\(\(\)\s*=>\s*import\(['"]\.\/nodes\/VibeXNode['"]\)/);

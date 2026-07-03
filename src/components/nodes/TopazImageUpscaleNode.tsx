@@ -240,7 +240,7 @@ function TopazImageUpscaleNode({ id, data, selected }: { id: string; data: any; 
           <Info size={14} style={{ color: '#f59e0b' }} />
           <div className="min-w-0 flex-1">
             <div className="text-[11px] font-semibold">需要本机已安装并登录 Topaz Gigapixel AI / Gigapixel 8。</div>
-            <SmallHint>本节点只调用本地软件，不随 T8 内置 Topaz；若默认路径不对，可填写 gigapixel.exe。</SmallHint>
+            <SmallHint>本节点只调用本地软件，不内置 Topaz；若默认路径不对，可填写 gigapixel.exe。</SmallHint>
           </div>
         </div>
 

@@ -9,7 +9,7 @@ import { taskCompletionSound } from './taskCompletionSound';
  * - triggerRun(id)：单点调度 (外部应保证一次一个，等 lastDone)
  * - triggerRunMany(ids)：并发调度 (循环器专用) - 同时点亮多个节点让其同时进入 runFn
  * - markDone(id, ok)：节点完成时回调 (同时从 runningIds 移除，currentRunId 若是本节点则清空)
- * - cancelAll()：取消全部 (广播本轮 cancelTargets/cancelSeq，再清空 runningIds + currentRunId)
+ * - cancelAll(extraTargets)：取消全部 (广播本轮 cancelTargets/cancelSeq，再清空 runningIds + currentRunId)
  *
  * 向后兼容保证：现有 16 个节点仅依赖 currentRunId 逻辑不变；useRunTrigger 后续会同时检查 runningIds 是否包含自身 id。
  */
@@ -34,7 +34,7 @@ interface RunBusState {
   triggerRun: (id: string, mode?: 'single' | 'batch') => void;
   triggerRunMany: (ids: string[], mode?: 'single' | 'batch') => void;
   markDone: (id: string, ok: boolean, error?: string) => void;
-  cancelAll: () => void;
+  cancelAll: (extraTargets?: string[]) => void;
   setBatchProgress: (total: number, done: number) => void;
 }
 
@@ -88,12 +88,13 @@ export const useRunBusStore = create<RunBusState>((set) => ({
       };
     });
   },
-  cancelAll: () =>
+  cancelAll: (extraTargets = []) =>
     set((s) => {
       const targets = Array.from(
         new Set([
           ...(s.currentRunId ? [s.currentRunId] : []),
           ...s.runningIds,
+          ...extraTargets.filter(Boolean),
         ]),
       );
       return {

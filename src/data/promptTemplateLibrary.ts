@@ -45,7 +45,7 @@ export interface PromptTemplateItem {
   updatedAt?: string;
 }
 
-export const PROMPT_TEMPLATE_LIBRARY_VERSION = '2026-06-05-t8-media-prompts-quality-v3-seedance';
+export const PROMPT_TEMPLATE_LIBRARY_VERSION = '2026-06-12-content-pack-v2-t8-media-prompts-quality-v3-seedance';
 export const PROMPT_TEMPLATE_MIN_BUILTIN_PER_CATEGORY = 100;
 const CURATED_TEMPLATE_MATRIX_SIZE = 10;
 
@@ -1195,6 +1195,66 @@ const INFINITE_CANVAS_SEEDS: PromptTemplateItem[] = [
   },
 ];
 
+
+const CONTENT_PACK_V2_TEMPLATE_COUNT_PER_CATEGORY = 2;
+const CONTENT_PACK_V2_TAGS_BY_CATEGORY: Record<string, string[]> = {
+  'image-product-commercial': ['电商产品图'],
+  'image-portrait-character': ['角色一致性'],
+  'image-storyboard-grid': ['分镜脚本'],
+  'image-panorama-vr': ['3D全景'],
+  'image-reference-edit': ['LLM扩写'],
+  'video-camera-motion': ['短视频运镜'],
+  'video-product-demo': ['电商产品图'],
+  'video-music-audio': ['音频SFX'],
+  'video-image-to-video': ['图生视频'],
+};
+
+function contentPackV2TagsFor(category: PromptTemplateCategory): string[] {
+  return ['内容更新2.0', ...(CONTENT_PACK_V2_TAGS_BY_CATEGORY[category.id] || [category.labelZh])];
+}
+
+function contentPackV2PromptZh(base: PromptTemplateItem, category: PromptTemplateCategory): string {
+  const note = '内容更新2.0执行补充：优先明确输入素材、目标模型、输出用途和排障线索，适合直接放入画布食谱或节点模板。';
+  if (category.kind === 'video') {
+    return base.promptZh + '\n' + note + ' 保持主体、运镜、节奏和输出时长清晰。';
+  }
+  return note + '\n' + base.promptZh;
+}
+
+function contentPackV2PromptEn(base: PromptTemplateItem, category: PromptTemplateCategory): string {
+  const note = 'Content Pack 2.0 execution note: state input assets, target model, output use, and troubleshooting clues so this can be used directly in canvas recipes or node templates.';
+  if (category.kind === 'video') {
+    return base.promptEn + '\n' + note + ' Keep subject, camera motion, pacing, and duration clear.';
+  }
+  return note + '\n' + base.promptEn;
+}
+
+function buildContentPackV2Templates(): PromptTemplateItem[] {
+  const out: PromptTemplateItem[] = [];
+  for (const category of PROMPT_TEMPLATE_CATEGORIES) {
+    const bp = BLUEPRINTS[category.id];
+    if (!bp) continue;
+    const tags = contentPackV2TagsFor(category);
+    for (let i = 0; i < CONTENT_PACK_V2_TEMPLATE_COUNT_PER_CATEGORY; i += 1) {
+      const base = generatedTemplate(category, bp, PROMPT_TEMPLATE_MIN_BUILTIN_PER_CATEGORY + i);
+      out.push({
+        ...base,
+        id: makeId('content-pack-v2-' + base.id),
+        titleZh: '内容更新2.0 · ' + base.titleZh,
+        titleEn: 'Content Pack 2.0 · ' + base.titleEn,
+        descriptionZh: '内容更新2.0：' + base.descriptionZh,
+        descriptionEn: 'Content Pack 2.0: ' + base.descriptionEn,
+        promptZh: contentPackV2PromptZh(base, category),
+        promptEn: contentPackV2PromptEn(base, category),
+        tags: [...tags, ...base.tags],
+      });
+    }
+  }
+  return out;
+}
+
+const CONTENT_PACK_V2_TEMPLATES = buildContentPackV2Templates();
+
 let builtInCache: PromptTemplateItem[] | null = null;
 
 export function getBuiltInPromptTemplates(): PromptTemplateItem[] {
@@ -1208,7 +1268,7 @@ export function getBuiltInPromptTemplates(): PromptTemplateItem[] {
     }
   }
   const seen = new Set<string>();
-  builtInCache = [...INFINITE_CANVAS_SEEDS, ...generated].filter((item) => {
+  builtInCache = [...INFINITE_CANVAS_SEEDS, ...CONTENT_PACK_V2_TEMPLATES, ...generated].filter((item) => {
     if (seen.has(item.id)) return false;
     seen.add(item.id);
     return true;

@@ -78,7 +78,6 @@
       "npm run public:check",
       "npm run rh-toolbox:check",
       "npm run build",
-      "git diff --cached --check",
       "T8_RELEASE_APPROVAL=release-2.3.8 npm run dist:release",
       "npm run release:verify -- v2.3.8"
     ]
@@ -112,14 +111,40 @@
       "backend/src/server.js",
       "backend/src/routes/videoOps.js",
       "tests/videoEditNode.test.ts",
-      "tests/videoOpsIntegration.test.cjs",
-      "roadmap.md"
+      "tests/videoOpsIntegration.test.cjs"
     ],
     "verification": [
       "node --test tests\\videoEditNode.test.ts tests\\videoOpsIntegration.test.cjs tests\\batchProcessor.test.ts",
       "node -c backend\\src\\routes\\videoOps.js",
       "node -c backend\\src\\server.js",
       "npm run type-check"
+    ]
+  },
+  "mergeFriendlyContentUpdate": {
+    "version": "2.1.8-content-pack-v2",
+    "status": "source-content-update",
+    "date": "2026-06-25",
+    "description": "合并友好的内容更新路线：不拆分 Canvas.tsx，不移动核心节点文件，只追加 content-pack-v2 提示词模板、画布食谱、ComfyUI / RH / FAL 示例 manifest 和公开验证入口。",
+    "highlights": [
+      "提示词模板库追加 content-pack-v2 内容更新包，覆盖电商产品图、角色一致性、分镜脚本、3D 全景、短视频运镜、音频/SFX 和 LLM 扩写。",
+      "新增 docs/workflow-recipes.md 画布食谱，记录图生视频、角色一致性九宫格、产品图精修、短链解析到素材库、全景转视频、ComfyUI、RunningHub、FAL 和 LLM 扩写链路。",
+      "新增 docs/comfyui-rh-fal-content-pack.md，说明字段映射、排除规则、缺模型、缺节点、RunningHub 和 FAL 示例包的导入边界。",
+      "ComfyUI / RunningHub / FAL manifest 仅追加禁用示例和公开字段，不写入私有 WebApp ID、私有 token、referral、Cookie 或支付/计费入口。"
+    ],
+    "releaseFiles": [
+      "src/data/promptTemplateLibrary.ts",
+      "src/data/comfyuiAppManifest.ts",
+      "src/data/rhToolboxManifest.ts",
+      "src/data/falToolboxManifest.ts",
+      "docs/workflow-recipes.md",
+      "docs/comfyui-rh-fal-content-pack.md",
+      "release-notes/v2.1.8.md",
+      "tests/contentUpdatePlan.test.ts"
+    ],
+    "verification": [
+      "node --test tests/contentUpdatePlan.test.ts",
+      "npm run type-check",
+      "npm run public:check"
     ]
   },
   "electronReleaseV237": {

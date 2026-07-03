@@ -148,8 +148,8 @@ router.post('/import', express.json({ limit: '8mb' }), async (req, res) => {
       throw new Error(bridgeReady.message || 'Figma bridge 自动启动失败');
     }
     const payload = {
-      app: 't8-penguin-canvas',
-      tags: Array.isArray(req.body?.tags) ? req.body.tags.map((x) => safeText(x, '', 60)).filter(Boolean).slice(0, 20) : ['T8', '贞贞画布'],
+      app: 'hajimi-canvas',
+      tags: Array.isArray(req.body?.tags) ? req.body.tags.map((x) => safeText(x, '', 60)).filter(Boolean).slice(0, 20) : ['画布', '素材'],
       materials: materials.map(materialToBridgeItem),
     };
     let result;

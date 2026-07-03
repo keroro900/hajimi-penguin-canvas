@@ -17,7 +17,7 @@ const DEFAULT_CLOUD_UPLOAD_TARGETS = [
     label: '腾讯云 COS',
     enabled: false,
     isDefault: false,
-    prefix: 't8-canvas/{kind}/{yyyy-mm}',
+    prefix: 'hajimi/{kind}/{yyyy-mm}',
     publicBaseUrl: '',
     tencentCos: {
       bucket: '',
@@ -32,7 +32,7 @@ const DEFAULT_CLOUD_UPLOAD_TARGETS = [
     label: '阿里云 OSS',
     enabled: false,
     isDefault: false,
-    prefix: 't8-canvas/{kind}/{yyyy-mm}',
+    prefix: 'hajimi/{kind}/{yyyy-mm}',
     publicBaseUrl: '',
     aliyunOss: {
       bucket: '',
@@ -47,12 +47,12 @@ const DEFAULT_CLOUD_UPLOAD_TARGETS = [
     label: '百度网盘',
     enabled: false,
     isDefault: false,
-    prefix: 'T8PenguinCanvas/{kind}/{yyyy-mm}',
+    prefix: 'hajimi/{kind}/{yyyy-mm}',
     baiduNetdisk: {
       webdavUrl: '',
       username: '',
       password: '',
-      folder: '/T8PenguinCanvas',
+      folder: '/hajimi',
     },
   },
   {
@@ -61,12 +61,12 @@ const DEFAULT_CLOUD_UPLOAD_TARGETS = [
     label: '夸克网盘',
     enabled: false,
     isDefault: false,
-    prefix: 'T8PenguinCanvas/{kind}/{yyyy-mm}',
+    prefix: 'hajimi/{kind}/{yyyy-mm}',
     quarkNetdisk: {
       webdavUrl: '',
       username: '',
       password: '',
-      folder: '/T8PenguinCanvas',
+      folder: '/hajimi',
     },
   },
 ];
@@ -221,7 +221,7 @@ function normalizeBaiduConfig(raw, previous = {}) {
     webdavUrl: cleanWebdavUrl(value.webdavUrl || value.webdav_url || value.endpoint || value.baseUrl, previous.webdavUrl),
     username: cleanText(value.username || value.user || previous.username, 180),
     password: cleanSecret(value.password || value.token || value.accessToken || value.access_token, previous.password),
-    folder: cleanFolder(value.folder || value.rootPath || previous.folder, '/T8PenguinCanvas'),
+    folder: cleanFolder(value.folder || value.rootPath || previous.folder, '/hajimi'),
   };
 }
 
@@ -231,7 +231,7 @@ function normalizeQuarkConfig(raw, previous = {}) {
     webdavUrl: cleanWebdavUrl(value.webdavUrl || value.webdav_url || value.endpoint || value.baseUrl, previous.webdavUrl),
     username: cleanText(value.username || value.user || previous.username, 180),
     password: cleanSecret(value.password || value.token || value.cookie, previous.password),
-    folder: cleanFolder(value.folder || previous.folder, '/T8PenguinCanvas'),
+    folder: cleanFolder(value.folder || previous.folder, '/hajimi'),
   };
 }
 
@@ -248,7 +248,7 @@ function normalizeTarget(raw, previous = null, template = null) {
     label: cleanText(raw.label || raw.name || prev.label || template?.label || id, 80) || id,
     enabled: normalizeBoolean(raw.enabled, false),
     isDefault: normalizeBoolean(raw.isDefault ?? raw.default, false),
-    prefix: cleanPrefix(raw.prefix || prev.prefix || template?.prefix, template?.prefix || 't8-canvas/{kind}/{yyyy-mm}'),
+    prefix: cleanPrefix(raw.prefix || prev.prefix || template?.prefix, template?.prefix || 'hajimi/{kind}/{yyyy-mm}'),
     publicBaseUrl: cleanPublicBaseUrl(raw.publicBaseUrl || raw.public_base_url || prev.publicBaseUrl || template?.publicBaseUrl),
   };
 

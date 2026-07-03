@@ -23,12 +23,17 @@ test('app exposes a themed sidebar collapse toggle and H shortcut', () => {
   assert.match(app, /PanelLeftClose/);
 
   assert.match(css, /\.t8-main-layout\s*\{[\s\S]*--t8-sidebar-width:\s*256px/);
-  assert.match(css, /\.t8-main-layout\s*\{[\s\S]*--t8-sidebar-toggle-top:\s*62px/);
+  assert.match(css, /\.t8-main-layout\s*\{[\s\S]*--t8-sidebar-toggle-left:\s*var\(--t8-sidebar-width\)/);
+  assert.match(css, /\.t8-main-layout\s*\{[\s\S]*--t8-sidebar-toggle-top:\s*12px/);
+  assert.match(css, /\.t8-main-layout\s*\{[\s\S]*--t8-sidebar-toggle-x:\s*0/);
   assert.match(css, /\.t8-main-layout--sidebar-collapsed\s*\{[\s\S]*--t8-sidebar-toggle-left:\s*10px/);
   assert.match(css, /\.t8-main-layout--sidebar-collapsed\s*\{[\s\S]*--t8-sidebar-toggle-top:\s*10px/);
+  assert.match(css, /\.t8-main-layout--sidebar-collapsed\s*\{[\s\S]*--t8-sidebar-toggle-x:\s*0/);
   assert.match(css, /\.t8-main-layout > \.t8-canvas-shell\s*\{[\s\S]*min-width:\s*0/);
-  assert.match(css, /\.t8-sidebar-toggle\s*\{[\s\S]*left:\s*var\(--t8-sidebar-toggle-left\)/);
-  assert.match(css, /\.t8-sidebar-toggle\s*\{[\s\S]*top:\s*var\(--t8-sidebar-toggle-top\)/);
+  assert.match(css, /\.t8-sidebar-toggle\s*\{[\s\S]*position:\s*absolute\s*!important/);
+  assert.match(css, /\.t8-sidebar-toggle\s*\{[\s\S]*left:\s*var\(--t8-sidebar-toggle-left\)\s*!important/);
+  assert.match(css, /\.t8-sidebar-toggle\s*\{[\s\S]*top:\s*var\(--t8-sidebar-toggle-top\)\s*!important/);
+  assert.match(css, /\.t8-sidebar-toggle\s*\{[\s\S]*transform:\s*translate\(var\(--t8-sidebar-toggle-x\),\s*var\(--t8-sidebar-toggle-y\)\)/);
   assert.match(css, /\.t8-sidebar-toggle\s*\{[\s\S]*color:\s*var\(--t8-text-main/);
   assert.match(css, /\.t8-sidebar-toggle:hover,\s*\.t8-sidebar-toggle\.is-collapsed/);
 });

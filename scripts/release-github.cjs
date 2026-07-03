@@ -10,8 +10,8 @@ const ROOT = path.resolve(__dirname, '..');
 const pkg = require(path.join(ROOT, 'package.json'));
 const version = pkg.version;
 const tag = process.env.T8_RELEASE_TAG || `v${version}`;
-const repo = process.env.T8_RELEASE_REPO || process.env.GITHUB_REPOSITORY || 'T8mars/T8-penguin-canvas';
-const productName = pkg.build && pkg.build.productName ? pkg.build.productName : 'T8-PenguinCanvas';
+const repo = process.env.T8_RELEASE_REPO || process.env.GITHUB_REPOSITORY || '';
+const productName = pkg.build && pkg.build.productName ? pkg.build.productName : '哈基米画布';
 const distDir = path.join(ROOT, 'dist_electron');
 const installerName = `${productName}-Setup-${version}.exe`;
 const installer = path.join(distDir, installerName);
@@ -120,7 +120,7 @@ function writeFallbackNotes() {
   fs.writeFileSync(
     tmp,
     [
-      `# 贞贞的无限画布 ${tag}`,
+      `# 哈基米画布 ${tag}`,
       '',
       '- Electron 桌面端接入 GitHub Release 自动更新。',
       '- 顶栏新增检查、下载、重启安装状态入口。',
@@ -149,7 +149,7 @@ function main() {
 
   const releaseNotes = writeFallbackNotes();
   const assets = [installer, blockmap, latest];
-  const title = `贞贞的无限画布${tag}`;
+  const title = `哈基米画布${tag}`;
   const exists = releaseExists();
 
   if (exists) {

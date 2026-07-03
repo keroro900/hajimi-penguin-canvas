@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
-import { Handle, Position, type NodeProps } from '@xyflow/react';
+import { Handle, Position, useUpdateNodeInternals, type NodeProps } from '@xyflow/react';
 import { AlertCircle, Loader2, Film, Sparkles, Square, X } from 'lucide-react';
 import {
   generateExternalVideo,
@@ -10,11 +10,17 @@ import {
 import { useUpdateNodeData } from './useUpdateNodeData';
 import { useHasAutoOutput } from './useHasAutoOutput';
 import { useRunTrigger } from '../../hooks/useRunTrigger';
+import { useRunBusStore } from '../../stores/runBus';
 import { logBus } from '../../stores/logs';
 import { useThemeStore } from '../../stores/theme';
 import { useUpstreamMaterials, type Material } from './useUpstreamMaterials';
 import { useOrderedMaterials } from './useOrderedMaterials';
 import MaterialPreviewSection from './MaterialPreviewSection';
+import {
+  pruneMaterialIdsForDisconnectedSource,
+  pruneMaterialOrderForDisconnectedSource,
+  useDisconnectUpstreamMaterial,
+} from './shared/upstreamMaterialConnections';
 import MentionPromptInput from './MentionPromptInput';
 import LoopingVideo from '../LoopingVideo';
 import SmartImage from '../SmartImage';
@@ -30,11 +36,26 @@ import {
 } from '../../utils/advancedProviders';
 import {
   countExcludedMaterials,
-  excludeMaterialId,
   filterExcludedMaterials,
   normalizeExcludedMaterialIds,
 } from '../../utils/materialExclusion';
+import { resolveSmartMediaCardSize } from '../../utils/smartNodeAspect';
+import SmartNodeShell from './shared/SmartNodeShell';
+import SmartNodeComposer from './shared/SmartNodeComposer';
+import { useNodeGeometrySync } from './shared/useNodeGeometrySync';
+import { useOutsideClose } from './shared/useOutsideClose';
+import { useSmartNodePanelToggle } from './shared/useSmartNodePanelToggle';
+import { useThrottledNodeUpdate } from './shared/useThrottledNodeUpdate';
 import { LocalNodeAddonSlot } from 'virtual:t8-local-extensions';
+import {
+  SEEDANCE_DURATION_OPTIONS,
+  SEEDANCE_MODEL_OPTIONS,
+  SEEDANCE_RATIO_OPTIONS,
+  SEEDANCE_RESOLUTION_OPTIONS,
+  parseModelList,
+  resolveSeedanceVideoOverride,
+  withUpstreamModelOption,
+} from '../../providers/models';
 
 /**
  * SeedanceNode — 字节 Seedance 2.0 视频分镜节点
@@ -53,14 +74,11 @@ import { LocalNodeAddonSlot } from 'virtual:t8-local-extensions';
  *   - 多张同时可用作 first_frame / last_frame (UI 中按顺序取第 1、2 张)
  */
 
-const MODEL_OPTIONS = [
-  { value: 'doubao-seedance-2-0-fast-260128', label: 'seedance-2-0-fast' },
-  { value: 'doubao-seedance-2-0-260128', label: 'seedance-2-0' },
-  { value: 'doubao-seedance-2.0-mini', label: 'seedance-2.0-mini' },
-];
-const RATIO_OPTIONS = ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9', '9:21', 'adaptive'];
-const RESOLUTION_OPTIONS = ['480p', '720p', 'native1080p', 'native4K', '1080p', '2k', '4k'];
-const DURATION_OPTIONS = [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
+// Registry audit: { value: 'doubao-seedance-2.0-mini', label: 'seedance-2.0-mini' }.
+const MODEL_OPTIONS = SEEDANCE_MODEL_OPTIONS;
+const RATIO_OPTIONS = SEEDANCE_RATIO_OPTIONS;
+const RESOLUTION_OPTIONS = SEEDANCE_RESOLUTION_OPTIONS;
+const DURATION_OPTIONS = SEEDANCE_DURATION_OPTIONS;
 const SEEDANCE_POLL_TIMEOUT_SECONDS = 3600;
 type SeedanceFrameMode = 'auto' | 'first' | 'firstlast' | 'multiframe';
 const seedanceMinPollCount = (intervalMs: number) =>
@@ -68,9 +86,16 @@ const seedanceMinPollCount = (intervalMs: number) =>
 
 const SeedanceNode = ({ id, data, selected }: NodeProps) => {
   const update = useUpdateNodeData(id);
+  const { scheduleProgressUpdate, flushProgressUpdate } = useThrottledNodeUpdate(update, 500);
   const hasAutoOutput = useHasAutoOutput(id);
   const [error, setError] = useState<string | null>(null);
+  const [smartCardDragging, setSmartCardDragging] = useState(false);
+  const [smartComposerOpenLocal, setSmartComposerOpenLocal] = useState(Boolean((data as any)?.smartComposerOpen));
   const pollTimer = useRef<number | null>(null);
+  const runCancelSeq = useRunBusStore((s) => s.cancelSeq);
+  const runCancelTargets = useRunBusStore((s) => s.cancelTargets);
+  const smartNodeRef = useRef<HTMLDivElement | null>(null);
+  const updateNodeInternals = useUpdateNodeInternals();
   const src = `seedance:${id.slice(0, 6)}`;
 
   // 主题适配
@@ -80,7 +105,8 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
 
   const d = (data as any) || {};
   const providerParams = (d?.providerParams && typeof d.providerParams === 'object') ? d.providerParams : {};
-  const advancedProviders = useApiKeysStore((s) => s.settings.advancedProviders);
+  const apiSettings = useApiKeysStore((s) => s.settings);
+  const advancedProviders = apiSettings.advancedProviders;
   const videoAdvancedProviders = useMemo(
     () => advancedProvidersForNode(advancedProviders, 'video'),
     [advancedProviders],
@@ -100,7 +126,18 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
     ? advancedProviderModelOptions(providerSelection.provider, 'video')
     : [];
   const externalProviderModel = providerSelection.providerModel || externalModelOptions[0] || '';
-  const model: string = d.model || MODEL_OPTIONS[0].value;
+  const savedModel = String(d.model || '').trim();
+  const baseModel = savedModel || MODEL_OPTIONS[0].value;
+  const configuredModelOverride = resolveSeedanceVideoOverride(apiSettings.zhenzhenVideoModelOverrides, savedModel);
+  const configuredModels = parseModelList(configuredModelOverride);
+  const modelOptions = withUpstreamModelOption(MODEL_OPTIONS, configuredModelOverride);
+  const model: string = savedModel && modelOptions.some((option) => option.value === savedModel) && (!configuredModels.length || configuredModels.includes(savedModel))
+    ? savedModel
+    : (configuredModels[0] || baseModel);
+  const effectiveModel = model;
+  const protocolModel: string = String(d?.protocolModel || '').trim();
+  const pollingModel = protocolModel || effectiveModel;
+  const defaultProviderModel = effectiveModel;
   const duration: number = typeof d.duration === 'number' ? d.duration : 5;
   const ratio: string = d.ratio || '16:9';
   const resolution: string = d.resolution || '480p';
@@ -159,11 +196,13 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
   const orderedVideos = useOrderedMaterials(visibleUpstreamVideos, materialOrder);
   const orderedAudios = useOrderedMaterials(visibleUpstreamAudios, materialOrder);
   const setMaterialOrder = (newOrder: string[]) => update({ materialOrder: newOrder });
+  const disconnectUpstreamMaterial = useDisconnectUpstreamMaterial(id);
   const handleExcludeUpstreamMaterial = (m: Material) => {
     if (m.origin !== 'upstream') return;
+    disconnectUpstreamMaterial(m);
     update({
-      excludedMaterialIds: excludeMaterialId(excludedMaterialIds, m.id),
-      materialOrder: materialOrder.filter((itemId) => itemId !== m.id),
+      excludedMaterialIds: pruneMaterialIdsForDisconnectedSource(excludedMaterialIds, m.sourceNodeId),
+      materialOrder: pruneMaterialOrderForDisconnectedSource(materialOrder, m.sourceNodeId),
     });
   };
   const handleRestoreExcludedMaterials = () => update({ excludedMaterialIds: [] });
@@ -201,9 +240,28 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
     ],
     [localRefImages, localRefVideos, localRefAudios, id],
   );
+  const orderedReferenceImages = useOrderedMaterials(
+    [...visibleUpstreamImages, ...localRefMaterials.filter((m) => m.kind === 'image')],
+    materialOrder,
+  );
+  const orderedReferenceVideos = useOrderedMaterials(
+    [...visibleUpstreamVideos, ...localRefMaterials.filter((m) => m.kind === 'video')],
+    materialOrder,
+  );
+  const orderedReferenceAudios = useOrderedMaterials(
+    [...visibleUpstreamAudios, ...localRefMaterials.filter((m) => m.kind === 'audio')],
+    materialOrder,
+  );
+  const handleRemoveLocalMaterial = (m: Material) => {
+    if (m.origin !== 'local') return;
+    const nextOrder = materialOrder.filter((itemId) => itemId !== m.id);
+    if (m.kind === 'image') update({ localRefImages: localRefImages.filter((url) => url !== m.url), materialOrder: nextOrder });
+    if (m.kind === 'video') update({ localRefVideos: localRefVideos.filter((url) => url !== m.url), materialOrder: nextOrder });
+    if (m.kind === 'audio') update({ localRefAudios: localRefAudios.filter((url) => url !== m.url), materialOrder: nextOrder });
+  };
   const mentionMaterials = useMemo(
-    () => [...orderedImages, ...orderedVideos, ...orderedAudios, ...localRefMaterials],
-    [orderedImages, orderedVideos, orderedAudios, localRefMaterials],
+    () => [...orderedReferenceImages, ...orderedReferenceVideos, ...orderedReferenceAudios],
+    [orderedReferenceImages, orderedReferenceVideos, orderedReferenceAudios],
   );
 
   // 收集上游 prompt + 参考图 + 参考视频 + 参考音频 (按用户拖拽顺序), 并合并本地拖入素材
@@ -214,9 +272,9 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
     audioUrls: string[];
   } => {
     const prompts = orderedTexts.map((t) => t.url).filter((s) => !!s);
-    const upImg = orderedImages.map((m) => m.url).filter((s) => !!s);
-    const upVid = orderedVideos.map((m) => m.url).filter((s) => !!s);
-    const upAud = orderedAudios.map((m) => m.url).filter((s) => !!s);
+    const imageUrls = orderedReferenceImages.map((m) => m.url).filter((s) => !!s);
+    const videoUrls = orderedReferenceVideos.map((m) => m.url).filter((s) => !!s);
+    const audioUrls = orderedReferenceAudios.map((m) => m.url).filter((s) => !!s);
     const dedupe = (arr: string[]) => {
       const out: string[] = [];
       for (const v of arr) if (v && out.indexOf(v) === -1) out.push(v);
@@ -224,9 +282,9 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
     };
     return {
       prompt: prompts.join('\n').trim(),
-      imageUrls: dedupe([...upImg, ...localRefImages]),
-      videoUrls: dedupe([...upVid, ...localRefVideos]),
-      audioUrls: dedupe([...upAud, ...localRefAudios]),
+      imageUrls: dedupe(imageUrls),
+      videoUrls: dedupe(videoUrls),
+      audioUrls: dedupe(audioUrls),
     };
   };
 
@@ -252,6 +310,7 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
         elapsed += 1;
         if (elapsed > MAX) {
           stopPoll();
+          flushProgressUpdate();
           update({ status: 'error', error: '轮询超时' });
           setError('轮询超时');
           logBus.error(`Seedance 轮询超时(${MAX}次)`, src);
@@ -259,7 +318,7 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
           return;
         }
         try {
-          const r = await querySeedance(tid);
+          const r = await querySeedance(tid, pollingModel);
           // 进度条估算 (对齐主项目: 30 + a*65/max)
           const pct = Math.min(95, Math.round(30 + (elapsed * 65) / MAX));
           if (r.progress && r.progress !== lastProgress) {
@@ -270,19 +329,21 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
           }
           if (r.status === 'succeeded' && r.videoUrl) {
             stopPoll();
+            flushProgressUpdate();
             update({ status: 'success', videoUrl: r.videoUrl, progress: '100%' });
             logBus.success(`任务完成 → ${r.videoUrl}`, src);
             taskCompletionSound.notifyComplete(id, 'seedance');
             resolve();
           } else if (r.status === 'failed') {
             stopPoll();
+            flushProgressUpdate();
             const msg = r.failReason || '生成失败';
             update({ status: 'error', error: msg });
             setError(msg);
             logBus.error(`生成失败: ${msg}`, src);
             reject(new Error(msg));
           } else {
-            update({ status: 'polling', progress: `${pct}%` });
+            scheduleProgressUpdate({ status: 'polling', progress: `${pct}%` });
           }
         } catch (e: any) {
           // 偶发失败不停止
@@ -291,6 +352,11 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
       }, POLL_MS);
     });
   };
+
+  useEffect(() => {
+    if (status !== 'polling' || !taskId || videoUrl || pollTimer.current) return;
+    void startPolling(taskId).catch(() => undefined);
+  }, [status, taskId, videoUrl, pollingModel]);
 
   const handleGenerate = async () => {
     setError(null);
@@ -303,7 +369,7 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
       return;
     }
     taskCompletionSound.primeAudio();
-    update({ status: 'submitting', error: null, videoUrl: null, taskId: null });
+    update({ status: 'submitting', error: null, taskId: null });
 
     try {
       if (isExternalSelected && providerSelection.provider) {
@@ -374,7 +440,7 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
       }
 
       const payload: SeedanceSubmitRequest = {
-        model,
+        model: effectiveModel,
         prompt: finalPrompt,
         duration,
         ratio,
@@ -393,7 +459,7 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
       if (audioUrls.length) payload.audios = audioUrls;
 
       logBus.info(
-          `提交 Seedance2.0: model=${model} ${duration}s ${ratio} ${resolution} ` +
+          `提交 Seedance2.0: model=${effectiveModel} ${duration}s ${ratio} ${resolution} ` +
           `audio=${generateAudio} retLast=${returnLastFrame} ` +
           `frame=${activeFrameMode} refs=${refImages.length}` +
           (firstFrame ? ' +first' : '') +
@@ -405,7 +471,13 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
       );
 
       const r = await submitSeedance(payload);
-      update({ status: 'polling', taskId: r.taskId, lastPrompt: finalPrompt, progress: '15%' });
+      update({
+        status: 'polling',
+        taskId: r.taskId,
+        protocolModel: r.protocol || r.effectiveModel || r.requestedModel,
+        lastPrompt: finalPrompt,
+        progress: '15%',
+      });
       logBus.info(`异步任务已提交 taskId=${r.taskId}, 进入轮询…`, src);
       // v1.2.9.11: await 让 useRunTrigger 等到任务真正完成才 markDone，循环器才能拿到 videoUrl
       await startPolling(r.taskId);
@@ -419,9 +491,17 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
 
   const handleStop = () => {
     stopPoll();
-    update({ status: 'idle' });
+    flushProgressUpdate();
+    setError(null);
+    update({ status: 'idle', progress: '', error: null });
     logBus.warn('用户主动停止', src);
   };
+
+  useEffect(() => {
+    if (runCancelSeq > 0 && runCancelTargets.includes(id) && (status === 'submitting' || status === 'polling')) {
+      handleStop();
+    }
+  }, [runCancelSeq, runCancelTargets, id, status]);
 
   // 批量运行接入
   useRunTrigger(id, async () => {
@@ -463,7 +543,270 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
   });
 
   const isBusy = status === 'submitting' || status === 'polling';
-  const refsCount = orderedImages.length + localRefImages.length;
+  const refsCount = orderedReferenceImages.length;
+  const seedanceNodeUiVariant: 'smart-card' | 'classic' = d?.uiVariant === 'classic' ? 'classic' : 'smart-card';
+  const useSmartCardSeedanceNode = seedanceNodeUiVariant === 'smart-card';
+  const smartAspectSize = resolveSmartMediaCardSize(ratio, d?.smartCardWidth);
+  const smartCardWidth = smartAspectSize.width;
+  const smartCardHeight = smartAspectSize.height;
+  const smartComposerOpen = smartComposerOpenLocal && !smartCardDragging;
+  const smartComposerWidth = Math.max(smartCardWidth, 620);
+  const isSmartRegenerating = isBusy && Boolean(videoUrl);
+  const syncSeedanceNodeGeometry = useNodeGeometrySync(id, updateNodeInternals);
+
+  useEffect(() => {
+    if (!useSmartCardSeedanceNode) return;
+    const raf = window.requestAnimationFrame(syncSeedanceNodeGeometry);
+    return () => window.cancelAnimationFrame(raf);
+  }, [selected, smartCardWidth, smartCardHeight, smartComposerOpen, syncSeedanceNodeGeometry, useSmartCardSeedanceNode]);
+
+  useOutsideClose({
+    enabled: useSmartCardSeedanceNode && smartComposerOpenLocal,
+    refs: smartNodeRef,
+    onOutside: () => setSmartComposerOpenLocal(false),
+  });
+
+  const smartPanelToggle = useSmartNodePanelToggle({
+    open: smartComposerOpenLocal,
+    dragging: smartCardDragging,
+    onToggle: setSmartComposerOpenLocal,
+    onDragChange: setSmartCardDragging,
+    onDragClose: () => setSmartComposerOpenLocal(false),
+    disabled: !useSmartCardSeedanceNode,
+  });
+
+  const switchSeedanceNodeVariant = (variant: 'smart-card' | 'classic') => {
+    setSmartComposerOpenLocal(false);
+    smartPanelToggle.handledClickRef.current = false;
+    smartPanelToggle.suppressClickRef.current = true;
+    update({ uiVariant: variant });
+    syncSeedanceNodeGeometry();
+  };
+
+  if (useSmartCardSeedanceNode) {
+    return (
+      <SmartNodeShell
+        rootRef={smartNodeRef}
+        className="t8-smart-seedance-node relative overflow-visible"
+        style={{ width: smartCardWidth }}
+        rootProps={{
+          ...dropProps,
+          onPointerDown: smartPanelToggle.onPointerDown,
+          onPointerMove: smartPanelToggle.onPointerMove,
+          onPointerUp: smartPanelToggle.onPointerUp,
+          onPointerCancel: smartPanelToggle.onPointerCancel,
+          onClick: smartPanelToggle.onClick,
+        }}
+      >
+        <div
+          className={`t8-node t8-smart-node-card t8-smart-video-card transition-all ${selected ? 't8-smart-node-card--selected' : ''} ${
+            isAccepting ? 't8-smart-node-card--accepting' : ''
+          } ${isSmartRegenerating ? 't8-smart-node-card--regenerating' : ''}`}
+          style={{ height: smartCardHeight }}
+        >
+          <Handle type="target" position={Position.Left} className="t8-smart-node-port !border-0" style={{ top: '50%' }} />
+          <Handle type="source" position={Position.Right} className="t8-smart-node-port !border-0" style={{ top: '50%' }} />
+          <div className="t8-smart-node-body">
+            <div className="t8-smart-node-preview t8-smart-video-preview">
+              {videoUrl ? (
+                <LoopingVideo
+                  src={videoUrl}
+                  controls
+                  className="h-full w-full object-cover"
+                  style={{ aspectRatio: ratio === 'adaptive' ? undefined : ratio.replace(':', '/') }}
+                  data-drag-source
+                  data-drag-kind="video"
+                  data-drag-url={videoUrl}
+                  data-drag-preview={videoUrl}
+                  data-drag-node-id={id}
+                  data-resource-title={videoUrl.split('/').pop() || '生成视频'}
+                  data-prompt-template-kind="video"
+                  data-prompt-template-category="video-image-to-video"
+                  data-prompt-template-prompt={d?.lastPrompt || localPrompt}
+                  onMouseDown={(e) => beginMaterialDrag(e, { kind: 'video', url: videoUrl, sourceNodeId: id, previewUrl: videoUrl })}
+                  title="按住 Ctrl 拖拽到其他节点"
+                />
+              ) : (
+                <div className="t8-smart-node-empty t8-smart-video-empty">
+                  <Film size={28} />
+                </div>
+              )}
+              <div className="t8-smart-video-badge">
+                <Film size={12} />
+                <span>SD2.0</span>
+              </div>
+              <div className={`t8-smart-video-status t8-smart-node-status--${status}`}>
+                {isBusy && <Loader2 size={11} className="animate-spin" />}
+                <span>{status === 'success' ? '已生成' : status === 'error' ? '失败' : isBusy ? progress || '生成中' : '待生成'}</span>
+              </div>
+            </div>
+            {error && (
+              <div className="t8-smart-node-error">
+                <AlertCircle size={12} />
+                <span>{error}</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {smartComposerOpen && (
+          <SmartNodeComposer portal anchorRef={smartNodeRef} style={{ width: smartComposerWidth }} onMouseDown={(e) => e.stopPropagation()}>
+            <MaterialPreviewSection
+              texts={orderedTexts}
+              images={orderedReferenceImages}
+              videos={orderedReferenceVideos}
+              audios={orderedReferenceAudios}
+              order={materialOrder}
+              onReorder={setMaterialOrder}
+              onRemoveLocal={handleRemoveLocalMaterial}
+              onExcludeUpstream={handleExcludeUpstreamMaterial}
+              excludedCount={excludedUpstreamCount}
+              onRestoreExcluded={handleRestoreExcludedMaterials}
+              selected={!!selected}
+              isDark={isDark}
+              isPixel={isPixel}
+              density="compact"
+              groups={['text', 'image', 'video', 'audio']}
+              title={`输入素材 · 图${orderedReferenceImages.length} 视${orderedReferenceVideos.length} 音${orderedReferenceAudios.length}`}
+            />
+            <div className="flex items-center justify-between gap-2">
+              <div className="t8-smart-node-meta t8-smart-node-meta--composer">
+                <span>{isExternalSelected && providerSelection.provider ? providerSelection.provider.label || providerSelection.provider.id : 'Seedance 2.0'}</span>
+                <span>参考 图{orderedReferenceImages.length} 视{orderedReferenceVideos.length} 音{orderedReferenceAudios.length}</span>
+              </div>
+              <button
+                type="button"
+                className="nodrag nopan t8-btn t8-smart-classic-switch"
+                onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); switchSeedanceNodeVariant('classic'); }}
+                title="切换到经典版节点"
+                aria-label="切换到经典版节点"
+              >
+                <Square size={12} />
+              </button>
+            </div>
+
+            <div className="t8-smart-composer-row">
+              {videoAdvancedProviders.length > 0 && (
+                <label className="t8-smart-field t8-smart-field--compact">
+                  <span>来源</span>
+                  <select
+                    value={isExternalSelected ? providerSelection.providerId : 'zhenzhen'}
+                    onChange={(e) => {
+                      const nextId = e.target.value;
+                      if (nextId === 'zhenzhen') {
+                        update({ providerSource: 'zhenzhen', providerId: '', providerModel: '' });
+                        return;
+                      }
+                      const provider = videoAdvancedProviders.find((item) => item.id === nextId);
+                      if (!provider) return;
+                      const nextModels = advancedProviderModelOptions(provider, 'video');
+                      update({
+                        providerSource: provider.protocol,
+                        providerId: provider.id,
+                        providerModel: nextModels[0] || '',
+                      });
+                    }}
+                    className="t8-select t8-smart-select"
+                  >
+                    <option value="zhenzhen">默认</option>
+                    {videoAdvancedProviders.map((provider) => (
+                      <option key={provider.id} value={provider.id}>
+                        {provider.label || provider.id}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {isExternalSelected && providerSelection.provider ? (
+                <label className="t8-smart-field">
+                  <span>具体模型</span>
+                  <select
+                    value={externalProviderModel}
+                    onChange={(e) => update({ providerModel: e.target.value })}
+                    className="t8-select t8-smart-select"
+                  >
+                    {externalModelOptions.map((m) => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                  </select>
+                </label>
+              ) : (
+                <label className="t8-smart-field">
+                  <span>具体模型</span>
+                  <select
+                    value={defaultProviderModel}
+                    onChange={(e) => update({ model: e.target.value })}
+                    className="t8-select t8-smart-select"
+                  >
+                    {modelOptions.map((m) => (
+                      <option key={m.value} value={m.value}>{m.label}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
+            </div>
+
+            <div className="t8-smart-prompt-shell">
+              <MentionPromptInput
+                title="SD2.0 Prompt"
+                value={localPrompt}
+                mentions={promptMentions}
+                materials={mentionMaterials}
+                onChange={(value, mentions) => update({ prompt: value, promptMentions: mentions })}
+                placeholder="描述视频分镜或使用上游文本"
+                isDark={isDark}
+                isPixel={isPixel}
+                promptTemplateKind="video"
+                className="t8-textarea t8-smart-prompt-input"
+              />
+            </div>
+
+            <div className="t8-smart-composer-row t8-smart-composer-row--params">
+              <label className="t8-smart-field t8-smart-field--compact">
+                <span>时长</span>
+                <select value={String(duration)} onChange={(e) => update({ duration: Number(e.target.value) })} className="t8-select t8-smart-select">
+                  {DURATION_OPTIONS.map((s) => <option key={s} value={s}>{s}s</option>)}
+                </select>
+              </label>
+              <label className="t8-smart-field t8-smart-field--compact">
+                <span>比例</span>
+                <select value={ratio} onChange={(e) => update({ ratio: e.target.value })} className="t8-select t8-smart-select">
+                  {RATIO_OPTIONS.map((r) => <option key={r} value={r}>{r}</option>)}
+                </select>
+              </label>
+              <label className="t8-smart-field t8-smart-field--compact">
+                <span>分辨率</span>
+                <select value={resolution} onChange={(e) => update({ resolution: e.target.value })} className="t8-select t8-smart-select">
+                  {RESOLUTION_OPTIONS.map((r) => <option key={r} value={r}>{r}</option>)}
+                </select>
+              </label>
+              <div className="t8-smart-param-spacer" />
+              {!isBusy ? (
+                <button type="button" onClick={handleGenerate} className="t8-btn t8-btn-primary t8-smart-run-btn">
+                  <Sparkles size={14} />
+                  <span>生成视频</span>
+                </button>
+              ) : (
+                <button type="button" onClick={handleStop} className="t8-btn t8-smart-run-btn">
+                  <Square size={13} />
+                  <span>停止</span>
+                </button>
+              )}
+            </div>
+
+            {isBusy && (
+              <div className="t8-smart-inline-state">
+                <Loader2 size={12} className="animate-spin" />
+                <span>{status === 'submitting' ? '提交任务...' : `轮询中 ${progress}`}</span>
+                {taskId && <span>{taskId.slice(0, 10)}...</span>}
+              </div>
+            )}
+          </SmartNodeComposer>
+        )}
+      </SmartNodeShell>
+    );
+  }
 
   return (
     <div
@@ -495,71 +838,59 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
               : 'Seedance 2.0 · 字节'}
           </div>
         </div>
+        <button
+          type="button"
+          className="nodrag nopan t8-btn t8-smart-classic-switch"
+          onPointerDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          }}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            switchSeedanceNodeVariant('smart-card');
+          }}
+          title="切回卡片版节点"
+          aria-label="切回卡片版节点"
+        >
+          <Square size={12} />
+        </button>
       </div>
 
       <div className="p-2.5 space-y-2" onMouseDown={(e) => e.stopPropagation()}>
         {videoAdvancedProviders.length > 0 && (
           <div className="rounded border border-white/10 bg-white/[0.03] p-2 space-y-2">
-            <button
-              type="button"
-              onClick={() => update({ advancedProviderOpen: !d?.advancedProviderOpen })}
-              className="w-full flex items-center justify-between text-[10px] font-semibold text-white/70 hover:text-white"
+            <label className="text-[10px] text-white/50 block mb-1">来源</label>
+            <select
+              value={isExternalSelected ? providerSelection.providerId : 'zhenzhen'}
+              onChange={(e) => {
+                const nextId = e.target.value;
+                if (nextId === 'zhenzhen') {
+                  update({ providerSource: 'zhenzhen', providerId: '', providerModel: '' });
+                  return;
+                }
+                const provider = videoAdvancedProviders.find((item) => item.id === nextId);
+                if (!provider) return;
+                const nextModels = advancedProviderModelOptions(provider, 'video');
+                update({
+                  providerSource: provider.protocol,
+                  providerId: provider.id,
+                  providerModel: nextModels[0] || '',
+                });
+              }}
+              style={{ background: '#18181b', color: '#ffffff' }}
+              className="w-full rounded border border-white/10 px-2 py-1 text-xs outline-none focus:border-white/30"
             >
-              <span>高级来源</span>
-              <span>{isExternalSelected && providerSelection.provider ? providerSelection.provider.label : '默认 SD2.0'}</span>
-            </button>
-            {d?.advancedProviderOpen && (
-              <div className="space-y-2">
-                <div>
-                  <label className="text-[10px] text-white/50 block mb-1">平台</label>
-                  <select
-                    value={isExternalSelected ? providerSelection.providerId : 'zhenzhen'}
-                    onChange={(e) => {
-                      const nextId = e.target.value;
-                      if (nextId === 'zhenzhen') {
-                        update({ providerSource: 'zhenzhen', providerId: '', providerModel: '' });
-                        return;
-                      }
-                      const provider = videoAdvancedProviders.find((item) => item.id === nextId);
-                      if (!provider) return;
-                      const nextModels = advancedProviderModelOptions(provider, 'video');
-                      update({
-                        providerSource: provider.protocol,
-                        providerId: provider.id,
-                        providerModel: nextModels[0] || '',
-                      });
-                    }}
-                    style={{ background: '#18181b', color: '#ffffff' }}
-                    className="w-full rounded border border-white/10 px-2 py-1 text-xs outline-none focus:border-white/30"
-                  >
-                    <option value="zhenzhen" style={{ background: '#18181b', color: '#ffffff' }}>贞贞工坊 SD2.0（默认）</option>
-                    {videoAdvancedProviders.map((provider) => (
-                      <option key={provider.id} value={provider.id} style={{ background: '#18181b', color: '#ffffff' }}>
-                        {provider.label || provider.id}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                {isExternalSelected && providerSelection.provider && (
-                  <div>
-                    <label className="text-[10px] text-white/50 block mb-1">外部模型</label>
-                    <select
-                      value={externalProviderModel}
-                      onChange={(e) => update({ providerModel: e.target.value })}
-                      style={{ background: '#18181b', color: '#ffffff' }}
-                      className="w-full rounded border border-white/10 px-2 py-1 text-xs outline-none focus:border-white/30"
-                    >
-                      {externalModelOptions.map((m) => (
-                        <option key={m} value={m} style={{ background: '#18181b', color: '#ffffff' }}>{m}</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-                {savedExternalMissing && (
-                  <div className="text-[10px] text-amber-200 bg-amber-500/10 border border-amber-500/20 rounded px-2 py-1">
-                    当前画布记录的扩展平台未启用或不存在，已临时回到默认来源。
-                  </div>
-                )}
+              <option value="zhenzhen" style={{ background: '#18181b', color: '#ffffff' }}>默认</option>
+              {videoAdvancedProviders.map((provider) => (
+                <option key={provider.id} value={provider.id} style={{ background: '#18181b', color: '#ffffff' }}>
+                  {provider.label || provider.id}
+                </option>
+              ))}
+            </select>
+            {savedExternalMissing && (
+              <div className="text-[10px] text-amber-200 bg-amber-500/10 border border-amber-500/20 rounded px-2 py-1">
+                当前画布记录的扩展平台未启用或不存在，已临时回到默认来源。
               </div>
             )}
           </div>
@@ -567,12 +898,20 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
 
         {/* 模型 */}
         {isExternalSelected && providerSelection.provider ? (
-          <div className="rounded border border-amber-400/25 bg-amber-500/10 px-2 py-1.5 text-[10px] leading-relaxed text-amber-100/90">
-            当前使用「{providerSelection.provider.label || providerSelection.provider.id}」的外部模型
-            <span className="font-semibold"> {externalProviderModel || '未选模型'} </span>
-            生成；下方只保留时长、比例、分辨率、参考素材和 Prompt 等通用参数。
+          <div>
+            <label className="text-[10px] text-white/50 block mb-1">具体模型</label>
+            <select
+              value={externalProviderModel}
+              onChange={(e) => update({ providerModel: e.target.value })}
+              style={{ background: '#18181b', color: '#ffffff' }}
+              className="w-full rounded border border-white/10 px-2 py-1 text-xs outline-none focus:border-white/30"
+            >
+              {externalModelOptions.map((m) => (
+                <option key={m} value={m} style={{ background: '#18181b', color: '#ffffff' }}>{m}</option>
+              ))}
+            </select>
             {isJimengCliSelected && (
-              <div className="mt-1 text-amber-100/70">
+              <div className="mt-1 rounded border border-amber-400/20 bg-amber-500/10 px-2 py-1 text-[10px] leading-relaxed text-amber-100/80">
                 即梦 CLI 会通过本地 dreamina 上传图片 / 视频 / 音频参考，并在只返回 submit_id 时自动查询下载结果。
               </div>
             )}
@@ -581,11 +920,11 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
           <div>
             <label className="text-[10px] text-white/50 block mb-1">Model</label>
             <select
-              value={model}
+              value={defaultProviderModel}
               onChange={(e) => update({ model: e.target.value })}
               className="w-full rounded bg-white/5 border border-white/10 px-2 py-1 text-xs text-white outline-none focus:border-white/30"
             >
-              {MODEL_OPTIONS.map((m) => (
+              {modelOptions.map((m) => (
                 <option key={m.value} value={m.value} className="bg-zinc-900">{m.label}</option>
               ))}
             </select>
@@ -600,9 +939,9 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
           context={{
             providerSource: isExternalSelected ? providerSelection.providerSource : 'zhenzhen',
             providerId: providerSelection.providerId,
-            providerModel: isExternalSelected ? externalProviderModel : model,
+            providerModel: isExternalSelected ? externalProviderModel : effectiveModel,
             model,
-            apiModel: model,
+            apiModel: effectiveModel,
             providerKind: 'seedance',
           }}
         />

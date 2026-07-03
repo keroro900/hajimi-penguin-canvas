@@ -13,7 +13,8 @@ test('encrypted Electron loader only falls back to app require for bare packages
   assert.match(loader, /!path\.isAbsolute\(text\)/);
   assert.match(loader, /if \(!canFallbackToLoaderRequire\(id\)\) throw e;/);
   assert.match(loader, /if \(!canFallbackToLoaderRequire\(request\)\) throw e;/);
-  assert.match(loader, /return require\(id\)/);
+  assert.match(loader, /const value = require\(id\)/);
+  assert.match(loader, /return value;/);
   assert.match(loader, /return require\.resolve\(request, options\)/);
 });
 
@@ -35,6 +36,36 @@ test('dir packaging verification ignores stale release metadata unless update ar
   assert.match(postBuild, /const hasBlockmap = fs\.existsSync\(blockmap\)/);
   assert.match(postBuild, /!strict && !hasInstaller && !hasBlockmap/);
   assert.match(postBuild, /skipping installer\/latest\.yml checks for dir build/);
+});
+
+test('backend bytecode is compiled in the same Electron mode that loads it', () => {
+  const packageJson = JSON.parse(read('../package.json'));
+  const encryptScript = read('../electron/encrypt.cjs');
+  const runnerScript = read('../scripts/run-electron-encrypt.cjs');
+
+  assert.equal(packageJson.scripts.encrypt, 'node scripts/run-electron-encrypt.cjs');
+  assert.match(runnerScript, /delete env\.ELECTRON_RUN_AS_NODE/);
+  assert.match(encryptScript, /bytenode\.compileCode\(source\)/);
+  assert.doesNotMatch(encryptScript, /bytenode\.compileElectronCode/);
+});
+
+test('backend bytecode encryption cleans stale output with Windows-safe retries', () => {
+  const packageJson = JSON.parse(read('../package.json'));
+  const encryptScript = read('../electron/encrypt.cjs');
+  const backendResource = packageJson.build.extraResources.find((item: any) => item.to === 'backend-enc');
+
+  assert.equal(backendResource.from, 'build/backend-enc-desktop');
+  assert.match(encryptScript, /build['"], ['"]backend-enc-desktop/);
+  assert.match(encryptScript, /function removeDirWithRetry/);
+  assert.match(encryptScript, /ENOTEMPTY|EBUSY|EPERM/);
+  assert.match(encryptScript, /fs\.rmSync\(target,\s*\{\s*recursive:\s*true,\s*force:\s*true/);
+  assert.match(encryptScript, /fs\.renameSync\(target,\s*staleTarget\)/);
+  assert.match(encryptScript, /stale-backend-enc/);
+  assert.doesNotMatch(encryptScript, /attempt\s*>=\s*retries\)\s*throw error/);
+  assert.match(encryptScript, /backend-enc cleanup locked/);
+  assert.doesNotMatch(encryptScript, /in-place overwrite/);
+  assert.match(encryptScript, /Atomics\.wait/);
+  assert.match(encryptScript, /removeDirWithRetry\(OUT_DIR\)/);
 });
 
 test('Electron release publishing requires explicit per-version approval', () => {
@@ -73,13 +104,16 @@ test('Electron release keeps one packaged ffmpeg runtime and excludes installer 
 test('Electron packaging verifies encrypted local extension hook points', () => {
   const postBuild = read('../electron/_post_build.cjs');
   const encrypt = read('../electron/encrypt.cjs');
+  const config = read('../backend/src/config.js');
 
   assert.match(postBuild, /extensions['"], ['"]runtimeHooks\.t8c/);
   assert.match(postBuild, /routes['"], ['"]figma\.t8c/);
   assert.match(postBuild, /routes['"], ['"]grokOAuth\.t8c/);
   assert.match(postBuild, /routes['"], ['"]codexCli\.t8c/);
+  assert.match(postBuild, /routes['"], ['"]hakimiMcp\.t8c/);
   assert.match(postBuild, /utils['"], ['"]codexCliRunner\.t8c/);
   assert.match(postBuild, /utils['"], ['"]figmaBridge\.t8c/);
+  assert.match(postBuild, /utils['"], ['"]hakimiCanvasCli\.t8c/);
   assert.match(postBuild, /checkFigmaBridgeRuntime/);
   assert.match(postBuild, /tools['"], ['"]figma-bridge/);
   assert.match(encrypt, /const LOCAL_PRIVATE_BACKEND_DIRS = \[/);
@@ -89,6 +123,11 @@ test('Electron packaging verifies encrypted local extension hook points', () => 
   const packageJson = JSON.parse(read('../package.json'));
   const resources = packageJson.build.extraResources.map((item: any) => `${item.from}->${item.to}`);
   assert.ok(resources.includes('tools/figma-bridge->tools/figma-bridge'));
+  assert.ok(resources.includes('skills->skills'));
+  assert.ok(resources.includes('.agents/skills->.agents/skills'));
+  assert.match(config, /function seedPackagedCodexSkills\(\)/);
+  assert.match(config, /copyMissingDirectory/);
+  assert.match(config, /RESOURCES_ROOT/);
   const localHook = new URL('../local-private/extensions/build/post-build.cjs', import.meta.url);
   if (existsSync(localHook)) {
     const localPostBuild = read('../local-private/extensions/build/post-build.cjs');
@@ -96,4 +135,20 @@ test('Electron packaging verifies encrypted local extension hook points', () => 
     assert.match(localPostBuild, /private New API group source must be encrypted/);
     assert.match(localPostBuild, /backend-enc['"], ['"]local-private/);
   }
+});
+
+test('Electron desktop package bundles the Hakimi Canvas CLI', () => {
+  const packageJson = JSON.parse(read('../package.json'));
+  const postBuild = read('../electron/_post_build.cjs');
+  const resources = packageJson.build.extraResources.map((item: any) => `${item.from}->${item.to}`);
+  const cliResource = packageJson.build.extraResources.find((item: any) => item.to === 'tools/hakimi-canvas-cli');
+
+  assert.equal(packageJson.scripts['hakimi:canvas'], 'node tools/hakimi-canvas-cli/hakimi-canvas.mjs');
+  assert.ok(resources.includes('tools/hakimi-canvas-cli->tools/hakimi-canvas-cli'));
+  assert.deepEqual(cliResource.filter, ['hakimi-canvas.mjs', 'README.md']);
+  assert.match(postBuild, /function checkHakimiCanvasCliRuntime/);
+  assert.match(postBuild, /tools['"], ['"]hakimi-canvas-cli/);
+  assert.match(postBuild, /hakimi-canvas\.mjs/);
+  assert.match(postBuild, /README\.md/);
+  assert.match(postBuild, /checkHakimiCanvasCliRuntime\(\)/);
 });

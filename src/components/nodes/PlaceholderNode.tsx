@@ -26,6 +26,7 @@ const PlaceholderNode = ({ data, type, selected }: NodeProps) => {
   const meta = getNodeMeta(type as string);
   const label = (data as any)?.label || meta?.label || type;
   const description = meta?.description || '';
+  const placeholderNote = (data as any)?.placeholderNote || '';
   const iconName = meta?.icon || 'Box';
   // 动态查找 lucide-react 图标
   const IconComp = (Icons as any)[iconName] || Icons.Box;
@@ -64,6 +65,7 @@ const PlaceholderNode = ({ data, type, selected }: NodeProps) => {
       {/* 内容描述 */}
       <div className="px-3 py-2">
         <p className="text-xs text-white/60 leading-relaxed">{description}</p>
+        {placeholderNote ? <p className="mt-1 text-[10px] text-white/35 leading-relaxed">{placeholderNote}</p> : null}
         <div className="mt-2 text-[10px] text-white/30">
           Phase 1 占位 · 业务逻辑将于 Phase 2/3 接入
         </div>

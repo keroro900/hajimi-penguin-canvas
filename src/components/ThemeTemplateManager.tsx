@@ -448,7 +448,7 @@ function makeCustomCopy(template: ThemeTemplate): ThemeTemplate {
     id,
     name: `${template.name} 副本`,
     builtIn: false,
-    author: template.author || 'T8',
+    author: template.author || '内置',
   };
 }
 
@@ -709,7 +709,7 @@ export default function ThemeTemplateManager({ open, onClose }: ThemeTemplateMan
           <div className="flex-1 min-w-0">
             <div className="text-base font-bold">主题模板</div>
             <div className="text-[11px]" style={{ color: 'var(--t8-text-muted)' }}>
-              {templatesPath || 'D:\\zhenzhen\\theme-templates'}
+              {templatesPath || 'D:\\hajimi\\theme-templates'}
             </div>
           </div>
           {message && (
