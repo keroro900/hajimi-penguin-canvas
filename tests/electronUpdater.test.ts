@@ -105,7 +105,28 @@ test('release scripts split build, draft, publish, verification, and containment
   assert.match(verify, /release', 'download'/);
   assert.match(verify, /missing release asset/);
   assert.doesNotMatch(verify, /release', '(?:create|edit|upload|delete)'/);
-  assert.deepEqual(allowlist, { entries: [] });
+  assert.ok(Array.isArray(allowlist.entries));
+  const allowlistKeys = allowlist.entries.map((entry: { relativePath: string; ruleId: string; reason: string }) => {
+    assert.match(entry.relativePath, /^app\.asar\/[A-Za-z0-9@._/-]+$/);
+    assert.ok(['basic-auth', 'cookie-header', 'private-key-header', 'settings-credential'].includes(entry.ruleId));
+    assert.ok(entry.reason.trim().length >= 20);
+    return `${entry.relativePath}\0${entry.ruleId}`;
+  });
+  assert.equal(new Set(allowlistKeys).size, allowlistKeys.length);
+  assert.deepEqual(allowlistKeys, [
+    'app.asar/node_modules/@modelcontextprotocol/sdk/dist/cjs/client/auth-extensions.js\0basic-auth',
+    'app.asar/node_modules/@modelcontextprotocol/sdk/dist/cjs/client/auth.js\0basic-auth',
+    'app.asar/node_modules/@modelcontextprotocol/sdk/dist/esm/client/auth-extensions.js\0basic-auth',
+    'app.asar/node_modules/@modelcontextprotocol/sdk/dist/esm/client/auth.js\0basic-auth',
+    'app.asar/node_modules/jose/dist/webapi/key/import.js\0private-key-header',
+    'app.asar/node_modules/lucide-react/dist/umd/lucide-react.min.js\0cookie-header',
+    'app.asar/node_modules/prop-types/lib/ReactPropTypesSecret.js\0settings-credential',
+    'app.asar/node_modules/prop-types/prop-types.js\0settings-credential',
+    'app.asar/node_modules/stats-gl/node_modules/three/src/animation/tracks/ColorKeyframeTrack.js\0basic-auth',
+    'app.asar/node_modules/three/build/three.webgpu.js\0basic-auth',
+    'app.asar/node_modules/three/build/three.webgpu.nodes.js\0basic-auth',
+    'app.asar/node_modules/three/src/nodes/math/OperatorNode.js\0basic-auth',
+  ]);
   assert.match(notes, /2\.3\.8/);
   assert.match(notes, /keroro900\/hajimi-penguin-canvas/);
 });
