@@ -1,0 +1,509 @@
+/* ============================================================================
+   JIMI AI UI Foundation
+   ----------------------------------------------------------------------------
+   产品级基础层：先于所有主题 CSS 加载。
+   1. 提供 JIMI 深色画板的 --t8-* 预启动兜底值（运行时 applyThemeTemplate
+      会以 inline style 覆盖这里的同名变量）；
+   2. 定义品牌 token（Soft Pebble 橙 / 眼睛深色）；
+   3. 为默认模板 tech-default（JIMI Default）提供纯色无图案画布、
+      品牌橙焦点环、低扩散浮层阴影与 120–180ms 动效（含 reduced-motion 回退）。
+   ========================================================================== */
+
+:root {
+  /* --- JIMI 深色兜底（pre-boot defaults，运行时会被 inline style 覆盖） --- */
+  --t8-bg-app: #121214;
+  --t8-bg-canvas: #121214;
+  --t8-bg-panel: #1a1a1e;
+  --t8-bg-panel-elevated: #232329;
+  --t8-bg-panel-muted: #2a2a30;
+  --t8-bg-node: #1e1e24;
+  --t8-bg-node-header: #232329;
+  --t8-text-main: #f4f2ee;
+  --t8-text-muted: #b3aea6;
+  --t8-text-dim: #87837b;
+  --t8-border: #2b2b32;
+  --t8-border-strong: #3c3c45;
+  --t8-accent: #5f8dff;
+  --t8-accent-hover: #7ba3ff;
+  --t8-accent-text: #0f1c33;
+  --t8-secondary: #9db9ff;
+  --t8-warning: #e5a13d;
+  --t8-danger: #e5534b;
+  --t8-success: #34c77b;
+  --t8-shadow-panel: 0 12px 32px rgba(0, 0, 0, 0.45);
+  --t8-shadow-button: 0 2px 10px rgba(0, 0, 0, 0.35);
+  --t8-shadow-strong: 0 24px 64px rgba(0, 0, 0, 0.55);
+  --t8-radius-panel: 16px;
+  --t8-radius-button: 12px;
+  --t8-radius-node: 20px;
+  --t8-edge: #4a4a52;
+  --t8-edge-selected: #5f8dff;
+  --t8-selection-bg: rgba(95, 141, 255, 0.18);
+  --t8-selection-border: #5f8dff;
+  --t8-port-text: #7dd3fc;
+  --t8-port-image: #fcd34d;
+  --t8-port-video: #fda4af;
+  --t8-port-audio: #c4b5fd;
+  --t8-font-family: system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --t8-font-display: system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+
+  /* --- 品牌 token --- */
+  --t8-brand-accent: #5f8dff;
+  --t8-brand-pebble-eye: #0f1c33;
+
+  /* --- JIMI 动效时长 --- */
+  --t8-jimi-motion-fast: 120ms;
+  --t8-jimi-motion: 160ms;
+  --t8-jimi-motion-slow: 180ms;
+}
+
+/* 浅色模式下品牌蓝加深，保证暖白底上的对比度 */
+html[data-theme-mode="light"] {
+  --t8-brand-accent: #2f6df6;
+  --t8-brand-pebble-eye: #0f1c33;
+}
+
+/* ============================================================================
+   JIMI Default 精修：焦点环 / 浮层阴影 / 动效
+   ========================================================================== */
+
+html[data-theme-template="tech-default"] :focus-visible {
+  outline: 2px solid var(--t8-brand-accent, #5f8dff);
+  outline-offset: 1px;
+}
+
+html[data-theme-template="tech-default"] .t8-smart-node-composer .t8-smart-field .t8-smart-select {
+  border: 1px solid color-mix(in srgb, var(--t8-border-strong) 55%, var(--t8-border));
+  background: color-mix(in srgb, var(--t8-bg-panel-muted) 74%, var(--t8-bg-panel-elevated));
+  box-shadow: none;
+}
+
+html[data-theme-template="tech-default"] .react-flow__node:focus-visible,
+html[data-theme-template="tech-default"] button:focus-visible,
+html[data-theme-template="tech-default"] [role="button"]:focus-visible {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--t8-brand-accent, #5f8dff) 55%, transparent);
+}
+
+/* 低扩散浮层阴影：弹层 / 下拉 / 浮卡 */
+html[data-theme-template="tech-default"] [data-canvas-floating-ui],
+html[data-theme-template="tech-default"] .t8-smart-node-composer--portal {
+  box-shadow: var(--t8-shadow-panel, 0 12px 32px rgba(0, 0, 0, 0.45));
+}
+
+/* ============================================================================
+   JIMI Default：左下角浮动控制栏去边框（纯净悬浮语言，仅阴影分层）
+   ========================================================================== */
+html[data-theme-template="tech-default"] {
+  --t8-flow-controls-border: transparent;
+  --t8-shelf-border: transparent;
+}
+
+html[data-theme-template="tech-default"] .t8-canvas-shell .t8-control-rail .react-flow__controls {
+  border-color: var(--t8-border) !important;
+}
+
+html[data-theme-template="tech-default"] .t8-canvas-shell .t8-control-rail .react-flow__controls-button {
+  border-color: transparent !important;
+}
+
+html[data-theme-template="tech-default"] .t8-control-rail-help {
+  border-color: transparent;
+}
+
+html[data-theme-template="tech-default"] .t8-control-rail-help:hover {
+  border-color: transparent;
+  color: var(--t8-accent);
+  box-shadow: var(--t8-shadow-button, 0 8px 22px rgba(0, 0, 0, 0.24));
+}
+
+/* 激活态保留品牌蓝描边作为状态指示（非装饰边框） */
+html[data-theme-template="tech-default"] .t8-control-rail-help.is-active {
+  border-color: var(--t8-accent);
+  color: var(--t8-accent);
+  box-shadow:
+    var(--t8-shadow-button, 0 8px 22px rgba(0, 0, 0, 0.24)),
+    0 0 0 2px color-mix(in srgb, var(--t8-accent) 28%, transparent);
+}
+
+/* 高频共享交互表面：只过渡稳定的颜色、阴影与透明度属性。 */
+html[data-theme-template="tech-default"] .t8-node,
+html[data-theme-template="tech-default"] .t8-smart-node-card,
+html[data-theme-template="tech-default"] .react-flow__handle,
+html[data-theme-template="tech-default"] .t8-canvas-shell .t8-control-rail .react-flow__controls-button,
+html[data-theme-template="tech-default"] .t8-control-rail-help,
+html[data-theme-template="tech-default"] .t8-control-rail-placement-shelf,
+html[data-theme-template="tech-default"] .t8-placement-shelf,
+html[data-theme-template="tech-default"] .t8-smart-node-composer button,
+html[data-theme-template="tech-default"] .t8-smart-node-composer input,
+html[data-theme-template="tech-default"] .t8-smart-node-composer select,
+html[data-theme-template="tech-default"] .t8-smart-node-composer textarea,
+html[data-theme-template="tech-default"] .t8-smart-run-btn,
+html[data-theme-template="tech-default"] .t8-node-action-bar button {
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    color 120ms ease,
+    box-shadow 180ms ease,
+    opacity 160ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-theme-template="tech-default"] .t8-node,
+  html[data-theme-template="tech-default"] .t8-smart-node-card,
+  html[data-theme-template="tech-default"] .react-flow__handle,
+  html[data-theme-template="tech-default"] .t8-canvas-shell .t8-control-rail .react-flow__controls-button,
+  html[data-theme-template="tech-default"] .t8-control-rail-help,
+  html[data-theme-template="tech-default"] .t8-control-rail-placement-shelf,
+  html[data-theme-template="tech-default"] .t8-placement-shelf,
+  html[data-theme-template="tech-default"] .t8-smart-node-composer button,
+  html[data-theme-template="tech-default"] .t8-smart-node-composer input,
+  html[data-theme-template="tech-default"] .t8-smart-node-composer select,
+  html[data-theme-template="tech-default"] .t8-smart-node-composer textarea,
+  html[data-theme-template="tech-default"] .t8-smart-run-btn,
+  html[data-theme-template="tech-default"] .t8-node-action-bar button {
+    transition-duration: 0.01ms !important;
+  }
+
+  html[data-theme-template="tech-default"] *,
+  html[data-theme-template="tech-default"] *::before,
+  html[data-theme-template="tech-default"] *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+/* ============================================================================
+   JIMI Default：应用轨道 + 外壳面板（Slice 2）
+   —— 纯色净面，仅保留单根发丝分割线；轨道按钮 120–180ms 状态过渡
+   ========================================================================== */
+html[data-theme-template="tech-default"] .t8-app-rail,
+html[data-theme-template="tech-default"] .t8-shell-panel {
+  background: var(--t8-bg-panel, #17171a);
+  border-right: 1px solid var(--t8-border, rgba(255, 255, 255, 0.08));
+}
+
+html[data-theme-template="tech-default"] .t8-shell-panel__header {
+  border-bottom: 1px solid var(--t8-border, rgba(255, 255, 255, 0.08));
+}
+
+html[data-theme-template="tech-default"] .t8-app-rail__button {
+  transition:
+    background-color 160ms ease,
+    color 120ms ease;
+}
+
+html[data-theme-template="tech-default"] .t8-app-rail__button.is-active {
+  color: var(--t8-accent, #5f8dff);
+  background: color-mix(in srgb, var(--t8-accent, #5f8dff) 14%, transparent);
+  box-shadow: none;
+}
+
+/* ============================================================================
+   JIMI Default：画布上下文菜单 / 悬停连线操作 / 浮动操作条（Slice 3）
+   —— 16px 圆角、elevated 面板底、发丝描边、低扩散阴影、120–160ms 动效
+   ========================================================================== */
+html[data-theme-template="tech-default"] .t8-context-menu {
+  background: var(--t8-bg-panel-elevated, #232329);
+  border: 1px solid var(--t8-border, #2b2b32);
+  border-radius: var(--t8-radius-panel, 16px);
+  box-shadow: var(--t8-shadow-panel, 0 12px 32px rgba(0, 0, 0, 0.45));
+  backdrop-filter: none;
+}
+
+html[data-theme-template="tech-default"] .t8-context-menu__header {
+  background: transparent;
+  border-bottom: 1px solid var(--t8-border, #2b2b32);
+  color: var(--t8-text-muted, #b3aea6);
+}
+
+html[data-theme-template="tech-default"] .t8-context-menu__item {
+  transition:
+    background-color 140ms ease,
+    color 120ms ease,
+    opacity 140ms ease;
+}
+
+html[data-theme-template="tech-default"] .t8-context-menu__item:hover:not(:disabled),
+html[data-theme-template="tech-default"] .t8-context-menu__item:focus-visible:not(:disabled) {
+  background: color-mix(in srgb, var(--t8-accent, #5f8dff) 12%, transparent);
+  color: var(--t8-text-main, #f4f2ee);
+}
+
+html[data-theme-template="tech-default"] .t8-context-menu__item--danger {
+  color: var(--t8-danger, #e5534b) !important;
+}
+
+html[data-theme-template="tech-default"] .t8-context-menu__item--danger:hover:not(:disabled),
+html[data-theme-template="tech-default"] .t8-context-menu__item--danger:focus-visible:not(:disabled) {
+  background: color-mix(in srgb, var(--t8-danger, #e5534b) 12%, transparent);
+}
+
+/* 子菜单触发项的展开箭头：贴右、弱化色、随方向旋转过渡 */
+html[data-theme-template="tech-default"] .t8-context-menu__item > svg {
+  flex: 0 0 auto;
+}
+
+html[data-theme-template="tech-default"] .t8-context-menu__item > svg:last-child {
+  color: var(--t8-text-dim, #87837b);
+  transition: transform 140ms ease, color 120ms ease;
+}
+
+html[data-theme-template="tech-default"] .t8-context-menu__item:hover > svg:last-child {
+  color: var(--t8-accent, #5f8dff);
+}
+
+html[data-theme-template="tech-default"] .t8-context-menu__empty {
+  color: var(--t8-text-dim, #87837b);
+}
+
+/* 径向节点菜单：槽位统一 elevated 底 + 发丝描边，hover 透出品牌蓝 */
+html[data-theme-template="tech-default"] .t8-radial-node-menu {
+  --t8-radial-bg: var(--t8-bg-panel-elevated, #232329);
+  --t8-radial-border: var(--t8-border-strong, #3c3c45);
+  --t8-radial-glow: color-mix(in srgb, var(--t8-accent, #5f8dff) 22%, transparent);
+  --t8-radial-slot-bg: var(--t8-bg-panel, #1a1a1e);
+  --t8-radial-slot-border: var(--t8-border, #2b2b32);
+}
+
+html[data-theme-template="tech-default"] .t8-radial-node-menu__slot {
+  transition:
+    transform 140ms ease,
+    background-color 140ms ease,
+    color 120ms ease,
+    border-color 140ms ease,
+    opacity 140ms ease;
+}
+
+html[data-theme-template="tech-default"] .t8-radial-node-menu__slot:hover:not(.is-disabled):not(.is-active) {
+  background: color-mix(in srgb, var(--t8-accent, #5f8dff) 10%, var(--t8-bg-panel, #1a1a1e));
+  border-color: color-mix(in srgb, var(--t8-accent, #5f8dff) 55%, transparent);
+}
+
+/* 浮动操作条：药丸外形 + elevated 底；RUN 用品牌蓝，STOP 用 danger */
+html[data-theme-template="tech-default"] .t8-node-action-bar {
+  --t8-actionbar-bg: var(--t8-bg-panel-elevated, #232329);
+  --t8-actionbar-border: 1px solid var(--t8-border, #2b2b32);
+  --t8-actionbar-shadow: var(--t8-shadow-panel, 0 12px 32px rgba(0, 0, 0, 0.45));
+  border-radius: 999px !important;
+}
+
+html[data-theme-template="tech-default"] .t8-node-action-bar button {
+  border-radius: 999px !important;
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    color 120ms ease;
+}
+
+html[data-theme-template="tech-default"] .t8-node-action-bar button[title="执行此节点"] {
+  background: color-mix(in srgb, var(--t8-accent, #5f8dff) 20%, transparent) !important;
+  border-color: color-mix(in srgb, var(--t8-accent, #5f8dff) 58%, transparent) !important;
+  color: var(--t8-accent-hover, #7ba3ff) !important;
+}
+
+html[data-theme-template="tech-default"] .t8-node-action-bar button[title="执行此节点"]:hover {
+  background: color-mix(in srgb, var(--t8-accent, #5f8dff) 34%, transparent) !important;
+  border-color: var(--t8-accent, #5f8dff) !important;
+}
+
+html[data-theme-template="tech-default"] .t8-node-action-bar button[title^="中止当前运行"] {
+  background: color-mix(in srgb, var(--t8-danger, #e5534b) 16%, transparent) !important;
+  border-color: color-mix(in srgb, var(--t8-danger, #e5534b) 55%, transparent) !important;
+  color: var(--t8-danger, #e5534b) !important;
+}
+
+html[data-theme-template="tech-default"] .t8-node-action-bar button[title^="中止当前运行"]:hover {
+  background: color-mix(in srgb, var(--t8-danger, #e5534b) 28%, transparent) !important;
+  border-color: var(--t8-danger, #e5534b) !important;
+}
+
+/* 连线悬停操作簇：删除保持 danger、插入用品牌蓝，统一 elevated 圆钮 */
+html[data-theme-template="tech-default"] .t8-edge-cut-button,
+html[data-theme-template="tech-default"] .t8-edge-insert-button {
+  background: var(--t8-bg-panel-elevated, #232329);
+  box-shadow: var(--t8-shadow-button, 0 2px 10px rgba(0, 0, 0, 0.35));
+  transition:
+    transform 140ms ease,
+    background-color 140ms ease,
+    color 120ms ease,
+    box-shadow 140ms ease;
+}
+
+html[data-theme-template="tech-default"] .t8-edge-cut-button {
+  border-color: var(--t8-danger, #e5534b);
+  color: var(--t8-danger, #e5534b);
+}
+
+html[data-theme-template="tech-default"] .t8-edge-insert-button {
+  border-color: var(--t8-accent, #5f8dff);
+  color: var(--t8-accent, #5f8dff);
+}
+
+html[data-theme-template="tech-default"] .t8-edge-cut-button:hover {
+  background: var(--t8-danger, #e5534b);
+  color: #ffffff;
+}
+
+html[data-theme-template="tech-default"] .t8-edge-insert-button:hover {
+  background: var(--t8-accent, #5f8dff);
+  color: var(--t8-accent-text, #0f1c33);
+}
+
+/* ============================================================================
+   JIMI Default：智能节点卡片视觉精修（Slice 4）
+   —— 连接点从「被裁切的糊点」改为干净的裁口圆环端口；卡片去工程化：
+      柔化静态描边与投影、hover 轻浮起、选中态柔和双层光晕；
+      空态类型图标获得淡色圆形托底；序号徽章去高亮描边；
+      data-smart-state 新增左上角状态点（running/failed/result）。
+   ========================================================================== */
+
+/* --- 卡片：解除溢出裁切，让连接点完整呈现 -------------------------------
+   基础层 .t8-smart-node-card 的 overflow:hidden 会把骑在卡片边缘的
+   10px 连接点（RF 以 translate(±50%,-50%) 居中于边缘）裁掉外半侧，
+   形成「糊点」。本模板解除裁切，并为依赖裁切的内部面恢复圆角剪影。
+   OutputNode 卡片自带 inline overflow（其连接点已在卡片外），不受影响；
+   再生动画期间仍恢复裁切，保证扫光不外溢。 */
+html[data-theme-template="tech-default"] .t8-smart-node-card {
+  overflow: visible;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+/* 选中：保留品牌蓝描边，硬性 3px 环替换为柔和双层（细环 + 深投影） */
+html[data-theme-template="tech-default"] .t8-smart-node-card--selected {
+  border-color: var(--t8-accent, #5f8dff);
+  box-shadow:
+    0 0 0 1.5px color-mix(in srgb, var(--t8-accent, #5f8dff) 55%, transparent),
+    var(--t8-shadow-node);
+}
+
+/* 解除裁切后恢复内部面的圆角剪影：
+   preview 是无头媒体卡（图像/视频/音频/上传）的唯一表面，四角复原；
+   文本工具条 / 经典头部仅顶部两角复原（底部与内容相接） */
+html[data-theme-template="tech-default"] .t8-smart-node-preview {
+  border-radius: calc(var(--t8-radius-node, 20px) - 1px);
+}
+
+html[data-theme-template="tech-default"] .t8-smart-text-toolbar {
+  border-radius: calc(var(--t8-radius-node, 20px) - 1px) calc(var(--t8-radius-node, 20px) - 1px) 0 0;
+}
+
+html[data-theme-template="tech-default"] .t8-smart-node-card__header {
+  border-start-start-radius: inherit;
+  border-start-end-radius: inherit;
+  border-top-left-radius: inherit;
+  border-top-right-radius: inherit;
+}
+
+/* 空态类型图标：淡品牌蓝圆形托底，图标色由 muted 偏向品牌蓝 */
+html[data-theme-template="tech-default"] .t8-smart-node-empty > svg {
+  padding: 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--t8-accent, #5f8dff) 10%, transparent);
+  color: color-mix(in srgb, var(--t8-accent, #5f8dff) 65%, var(--t8-text-muted, #b3aea6));
+}
+
+/* --- 连接点（端口）：干净的裁口圆环 --------------------------------------
+   静止：10px 彩点（保留 inline 端口色）+ 2px 节点底色裁口 + 细外环，
+   不透明度 0.55 保持安静；节点 hover 升至 1；
+   端口 hover / 连线候选（connectingto / valid）放大 1.25 并切换品牌蓝环。 */
+html[data-theme-template="tech-default"] .t8-smart-node-port,
+html[data-theme-template="tech-default"] .t8-smart-node-shell > .react-flow__handle {
+  box-shadow:
+    0 0 0 2px var(--t8-bg-node, #1e1e24),
+    0 0 0 3.5px color-mix(in srgb, var(--t8-border-strong, #3c3c45) 60%, transparent);
+  transition:
+    opacity 140ms ease,
+    transform 140ms ease,
+    box-shadow 140ms ease;
+}
+
+/* 端口 hover / 连线候选：品牌蓝环 + 轻微外发光（命中区 ::before 不改动） */
+html[data-theme-template="tech-default"] .react-flow__handle:hover,
+html[data-theme-template="tech-default"] .react-flow__handle.connectingto,
+html[data-theme-template="tech-default"] .react-flow__handle.valid {
+  box-shadow:
+    0 0 0 2px var(--t8-bg-node, #1e1e24),
+    0 0 0 4px var(--t8-accent, #5f8dff),
+    0 0 12px color-mix(in srgb, var(--t8-accent, #5f8dff) 45%, transparent);
+}
+
+/* --- 序号徽章：去高亮描边，弱化为 dim 文本，节点 hover 时略提亮 ----------- */
+html[data-theme-template="tech-default"] .t8-node-serial-badge {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--t8-bg-panel-elevated, #232329) 88%, transparent);
+  color: var(--t8-text-dim, #87837b);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--t8-bg-canvas, #121214) 70%, transparent),
+    0 4px 10px rgba(0, 0, 0, 0.22);
+  transition: color 120ms ease;
+}
+
+html[data-theme-template="tech-default"] .react-flow__node:hover .t8-node-serial-badge {
+  color: var(--t8-text-muted, #b3aea6);
+}
+
+/* --- 连线：静态描边略暖柔，选中/悬停保留品牌蓝并加轻微外发光 --------------- */
+html[data-theme-template="tech-default"] .react-flow .react-flow__edge-path {
+  stroke: color-mix(in srgb, var(--t8-edge, #4a4a52) 84%, var(--t8-text-dim, #87837b));
+}
+
+html[data-theme-template="tech-default"] .react-flow .react-flow__edge.selected .react-flow__edge-path,
+html[data-theme-template="tech-default"] .react-flow .react-flow__edge:hover .react-flow__edge-path {
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--t8-accent, #5f8dff) 55%, transparent));
+}
+
+/* --- 状态点：data-smart-state 的首个 CSS 消费者 ---------------------------
+   左上角 8px 存在点，半跨卡片边缘；empty 无点。
+   状态语义已由壳层 aria-label 提供，本点为纯装饰（pointer-events:none）。 */
+html[data-theme-template="tech-default"] .t8-smart-node-shell[data-smart-state]::after {
+  content: '';
+  position: absolute;
+  top: -4px;
+  left: -4px;
+  z-index: 64;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  pointer-events: none;
+  box-shadow: 0 0 0 2px var(--t8-bg-canvas, #121214);
+}
+
+html[data-theme-template="tech-default"] .t8-smart-node-shell[data-smart-state="empty"]::after {
+  display: none;
+}
+
+html[data-theme-template="tech-default"] .t8-smart-node-shell[data-smart-state="running"]::after {
+  background: var(--t8-accent, #5f8dff);
+  animation: t8-jimi-node-status-pulse 1.6s ease-in-out infinite;
+}
+
+html[data-theme-template="tech-default"] .t8-smart-node-shell[data-smart-state="failed"]::after {
+  background: var(--t8-danger, #e5534b);
+}
+
+html[data-theme-template="tech-default"] .t8-smart-node-shell[data-smart-state="result"]::after {
+  background: var(--t8-success, #34c77b);
+}
+
+@keyframes t8-jimi-node-status-pulse {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 2px var(--t8-bg-canvas, #121214),
+      0 0 0 2px color-mix(in srgb, var(--t8-accent, #5f8dff) 55%, transparent);
+  }
+  50% {
+    box-shadow:
+      0 0 0 2px var(--t8-bg-canvas, #121214),
+      0 0 0 6px transparent;
+  }
+}
+
+/* reduced-motion：去掉状态点脉冲（时长回退由上方全局块保证） */
+@media (prefers-reduced-motion: reduce) {
+  html[data-theme-template="tech-default"] .t8-smart-node-shell[data-smart-state="running"]::after {
+    animation: none;
+  }
+}

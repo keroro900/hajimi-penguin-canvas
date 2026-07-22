@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useState } from 'react';
-import { Handle, Position, useEdges, useNodes } from '@xyflow/react';
+import { Handle, Position } from '@xyflow/react';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -17,6 +17,7 @@ import { fileNameFromUrl, getMediaItemsFromData, type MediaItem } from '../../ut
 import { useRunTrigger } from '../../hooks/useRunTrigger';
 import { useUpdateNodeData } from './useUpdateNodeData';
 import { useHasAutoOutput } from './useHasAutoOutput';
+import { useUpstreamNodeData } from './useUpstreamNodeData';
 import LoopingVideo from '../LoopingVideo';
 
 const UPSCALE_MODELS = [
@@ -91,12 +92,10 @@ function ToggleRow({
   );
 }
 
-function collectUpstreamVideos(id: string, edges: any[], nodes: any[]): MediaItem[] {
-  const upstreamIds = edges.filter((edge) => edge.target === id).map((edge) => edge.source);
+function collectUpstreamVideos(upstreamNodes: Array<{ id: string; data: any }>): MediaItem[] {
   const seen = new Set<string>();
   const out: MediaItem[] = [];
-  for (const sourceId of upstreamIds) {
-    const node = nodes.find((item) => item.id === sourceId);
+  for (const node of upstreamNodes) {
     for (const item of getMediaItemsFromData(node?.data || {}, 'video')) {
       if (!item.url || seen.has(item.url)) continue;
       seen.add(item.url);
@@ -114,8 +113,7 @@ function statusLabel(status: TopazStatus | null, loading: boolean) {
 
 function TopazVideoUpscaleNode({ id, data, selected }: { id: string; data: any; selected?: boolean }) {
   const update = useUpdateNodeData(id);
-  const edges = useEdges();
-  const nodes = useNodes();
+  const upstreamNodeData = useUpstreamNodeData(id);
   const hasAutoOutput = useHasAutoOutput(id);
   const [status, setStatus] = useState<TopazStatus | null>(null);
   const [statusLoading, setStatusLoading] = useState(false);
@@ -144,8 +142,8 @@ function TopazVideoUpscaleNode({ id, data, selected }: { id: string; data: any; 
       : [];
 
   const upstreamVideos = useMemo(
-    () => collectUpstreamVideos(id, edges, nodes),
-    [id, edges, nodes, data],
+    () => collectUpstreamVideos(upstreamNodeData),
+    [upstreamNodeData],
   );
   const inputVideo = upstreamVideos[0]?.url || '';
 
@@ -232,11 +230,9 @@ function TopazVideoUpscaleNode({ id, data, selected }: { id: string; data: any; 
 
   return (
     <div
-      className={`t8-node overflow-hidden ${selected ? 'ring-2' : ''}`}
+      className={`t8-node overflow-hidden ${selected ? 'is-selected' : ''}`}
       style={{
         width: 420,
-        borderColor: selected ? 'var(--t8-accent)' : 'var(--t8-border-strong)',
-        boxShadow: selected ? '0 0 0 2px color-mix(in srgb, var(--t8-accent) 32%, transparent)' : undefined,
       }}
     >
       <Handle type="target" position={Position.Left} style={{ background: '#fb7185', border: '1px solid var(--t8-bg-node)' }} />

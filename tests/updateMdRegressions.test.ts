@@ -6,18 +6,6 @@ function read(path: string) {
   return readFileSync(new URL(path, import.meta.url), 'utf8');
 }
 
-test('RunningHub local upload conversion accepts both input and output file URLs', () => {
-  const proxy = read('../backend/src/routes/proxy.js');
-  const runninghub = read('../src/components/nodes/RunningHubNode.tsx');
-
-  assert.match(proxy, /url\.startsWith\('\/files\/output\/'\)/);
-  assert.match(proxy, /url\.startsWith\('\/files\/input\/'\)/);
-  assert.match(proxy, /path\.join\(config\.OUTPUT_DIR/);
-  assert.match(proxy, /path\.join\(config\.INPUT_DIR/);
-  assert.match(runninghub, /v\.startsWith\('\/files\/output\/'\)/);
-  assert.match(runninghub, /v\.startsWith\('\/files\/input\/'\)/);
-});
-
 test('material context menu lets saved prompt templates choose or create categories', () => {
   const menu = read('../src/components/MaterialContextMenu.tsx');
 
@@ -81,11 +69,6 @@ test('canvas exposes Figma send, placement shelf, and external file drag protoco
   assert.match(canvas, /t8-control-stack/);
   assert.match(canvas, /RadialMenuSettingsModal/);
   assert.match(canvas, /data-canvas-floating-ui="radial-settings-toggle"/);
-  const controlStackIndex = canvas.indexOf('className="t8-control-stack"');
-  assert.ok(
-    canvas.indexOf('data-canvas-floating-ui="radial-settings-toggle"', controlStackIndex) <
-      canvas.indexOf('data-canvas-floating-ui="model-help-toggle"', controlStackIndex),
-  );
   assert.match(styles, /\.t8-control-rail[\s\S]*flex-direction:\s*row/);
   assert.match(styles, /\.t8-placement-shelf/);
   assert.match(styles, /\.t8-radial-settings-panel/);
@@ -211,23 +194,26 @@ test('canvas exposes Figma send, placement shelf, and external file drag protoco
   assert.doesNotMatch(figmaPlugin, /`/);
 });
 
-test('LLM node defaults to the second built-in model', () => {
+test('LLM node defaults to configured model names instead of a built-in LLM list', () => {
   const models = read('../src/providers/models.ts');
   const canvas = read('../src/components/Canvas.tsx');
   const llm = read('../src/components/nodes/LLMNode.tsx');
-  const features = read('../features.json');
 
-  assert.match(models, /export const DEFAULT_LLM_MODEL = 'gemini-3\.5-flash'/);
-  assert.match(canvas, /llm:\s*\{[\s\S]*model:\s*'gemini-3\.5-flash'/);
-  assert.match(llm, /gemini-3\.5-flash\(默认\)/);
-  assert.match(features, /gemini-3\.5-flash 默认/);
+  assert.match(models, /export const DEFAULT_LLM_MODEL = ''/);
+  assert.match(models, /llmModelOptionsFromSettings/);
+  assert.match(canvas, /llm:\s*\{[\s\S]*model:\s*''/);
+  assert.match(llm, /llmModelOptionsFromSettings\(apiSettings\)/);
+  assert.match(llm, /请先在 API 设置里配置 LLM 模型/);
+  assert.doesNotMatch(llm, /gemini-3\.5-flash|gpt-4o|gpt-5/);
 });
 
-test('topbar keeps update-safe app controls without personal tutorial or referral shortcuts', () => {
+test('app rail keeps update-safe app controls without personal tutorial or referral shortcuts', () => {
   const app = read('../src/App.tsx');
+  const rail = read('../src/components/shell/AppRail.tsx');
   const features = read('../features.json');
 
-  assert.match(app, /AppUpdaterButton/);
+  // 无顶栏布局：更新按钮迁入应用轨道，主题模板/资源库入口仍由 App 持有
+  assert.match(rail, /AppUpdaterButton/);
   assert.match(app, /ThemeTemplateManager/);
   assert.match(app, /ResourceLibraryDrawer/);
   assert.doesNotMatch(app, /inviteCode=/);

@@ -675,7 +675,7 @@ const TextSplitNode = ({ id, data, selected }: NodeProps) => {
 
   return (
     <div
-      className={`t8-node relative w-[760px] transition-all ${selected ? 'ring-2 ring-orange-300' : ''}`}
+      className={`t8-node relative w-[760px] transition-all ${selected ? 'is-selected' : ''}`}
     >
       <Handle
         type="target"

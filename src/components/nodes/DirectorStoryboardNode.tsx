@@ -32,6 +32,8 @@ import { useMaterialDropTarget } from '../../hooks/useMaterialDropTarget';
 import { useThemeStore } from '../../stores/theme';
 import { logBus } from '../../stores/logs';
 import { taskCompletionSound } from '../../stores/taskCompletionSound';
+import { useApiKeysStore } from '../../stores/apiKeys';
+import { effectiveModelId, modelsForKind } from '../../providers/modelCatalog';
 import { useDragMaterialStore, type MaterialPayload } from '../../stores/dragMaterial';
 import { useHasAutoOutput } from './useHasAutoOutput';
 import { useUpdateNodeData } from './useUpdateNodeData';
@@ -68,10 +70,6 @@ import {
 } from '../../utils/directorStoryboard';
 import { materialMentionKey, type MediaMention } from './mediaMentions';
 
-const MODEL_OPTIONS = [
-  { value: 'doubao-seedance-2-0-fast-260128', label: 'seedance-2-0-fast' },
-  { value: 'doubao-seedance-2-0-260128', label: 'seedance-2-0' },
-];
 const RATIO_OPTIONS = ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9', '9:21', 'adaptive'];
 const RESOLUTION_OPTIONS = ['480p', '720p', 'native1080p', '1080p', '2k', '4k'];
 const FRAME_MODE_OPTIONS = [
@@ -295,6 +293,8 @@ const DirectorStoryboardNode = ({ id, data, selected }: NodeProps) => {
   const isDark = theme === 'dark';
   const isPixel = themeStyle === 'pixel';
   const d = (data as any) || {};
+  const apiSettings = useApiKeysStore((state) => state.settings);
+  const videoModels = useMemo(() => modelsForKind(apiSettings, 'video'), [apiSettings]);
   const src = `director:${id.slice(0, 6)}`;
 
   const shots = useMemo(
@@ -335,7 +335,7 @@ const DirectorStoryboardNode = ({ id, data, selected }: NodeProps) => {
   );
   const hasBusyBridge = bridges.some((bridge) => isBridgeBusy(bridge));
   const isBusy = status === 'submitting' || status === 'polling' || hasBusyBridge;
-  const model = String(d.model || MODEL_OPTIONS[0].value);
+  const model = effectiveModelId(d.model, videoModels);
   const ratio = String(d.ratio || '16:9');
   const resolution = String(d.resolution || '480p');
   const generateAudio = d.generateAudio !== false;
@@ -1895,17 +1895,13 @@ const DirectorStoryboardNode = ({ id, data, selected }: NodeProps) => {
   return (
     <div
       {...dropProps}
-      className={`relative w-[460px] overflow-visible rounded-lg border-2 text-sm shadow-2xl transition-all ${
-        selected ? 'shadow-fuchsia-500/20' : ''
-      }`}
+      className={`t8-node relative w-[460px] overflow-visible rounded-lg text-sm transition-all ${selected ? 'is-selected' : ''}`}
       style={{
         background: 'var(--t8-bg-node, rgba(10,15,24,.95))',
         color: 'var(--t8-text-main, #f8fafc)',
-        borderColor: selected
-          ? 'var(--t8-accent, #d946ef)'
-          : isAccepting
-            ? 'var(--t8-success, #22c55e)'
-            : 'var(--t8-border-strong, rgba(255,255,255,.18))',
+        borderColor: isAccepting
+          ? 'var(--t8-success, #22c55e)'
+          : 'var(--t8-border-strong, rgba(255,255,255,.18))',
         boxShadow: isAccepting ? '0 0 0 3px color-mix(in srgb, var(--t8-success, #22c55e) 28%, transparent)' : undefined,
       }}
     >
@@ -1965,7 +1961,8 @@ const DirectorStoryboardNode = ({ id, data, selected }: NodeProps) => {
       <div className="space-y-2 p-3">
         <div className="grid grid-cols-4 gap-1.5">
           <select value={model} onChange={(event) => update({ model: event.target.value })} className="nodrag rounded border px-2 py-1 text-[11px] outline-none col-span-2" style={inputStyle}>
-            {MODEL_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+            {model && !videoModels.includes(model) && <option value={model}>{model}</option>}
+            {videoModels.map((item) => <option key={item} value={item}>{item}</option>)}
           </select>
           <select value={ratio} onChange={(event) => update({ ratio: event.target.value })} className="nodrag rounded border px-2 py-1 text-[11px] outline-none" style={inputStyle}>
             {RATIO_OPTIONS.map((item) => <option key={item} value={item}>{item}</option>)}
@@ -2008,7 +2005,7 @@ const DirectorStoryboardNode = ({ id, data, selected }: NodeProps) => {
             providerModel: model,
             model,
             apiModel: model,
-            mainId: 'seedance-2.0',
+            mainId: '',
             providerKind: 'seedance',
           }}
         />
@@ -2197,7 +2194,7 @@ const DirectorStoryboardNode = ({ id, data, selected }: NodeProps) => {
                   title="单镜头模型，留空继承全局"
                 >
                   <option value="">继承模型</option>
-                  {MODEL_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                  {videoModels.map((item) => <option key={item} value={item}>{item}</option>)}
                 </select>
                 <select
                   value={activeShot.ratioOverride || ''}

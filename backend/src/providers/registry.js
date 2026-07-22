@@ -504,6 +504,7 @@ function normalizeProvider(raw, previous = null) {
     apiKey: cleanSecret(raw.apiKey || raw.api_key, previousConfig.apiKey),
     imageModels: normalizeModelList(raw.imageModels || raw.image_models),
     videoModels: normalizeModelList(raw.videoModels || raw.video_models),
+    audioModels: normalizeModelList(raw.audioModels || raw.audio_models),
     chatModels: normalizeModelList(raw.chatModels || raw.chat_models),
     defaults: normalizePlainObject(raw.defaults),
   };

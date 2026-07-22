@@ -9,10 +9,7 @@ const modelProtocolRegistry = require('../shared/modelProtocolRegistry.json');
 const apiSettingsSource = readFileSync(new URL('../src/components/ApiSettings.tsx', import.meta.url), 'utf8');
 const appSource = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
 const indexCss = readFileSync(new URL('../src/styles/index.css', import.meta.url), 'utf8');
-const defaultTemplatesSource = readFileSync(new URL('../src/theme/defaultTemplates.ts', import.meta.url), 'utf8');
 const themeStoreSource = readFileSync(new URL('../src/stores/theme.ts', import.meta.url), 'utf8');
-const themeTemplateManagerSource = readFileSync(new URL('../src/components/ThemeTemplateManager.tsx', import.meta.url), 'utf8');
-const featuresSource = readFileSync(new URL('../features.json', import.meta.url), 'utf8');
 
 test('ApiSettings uses semantic theme classes for cross-theme readability', () => {
   const requiredClasses = [
@@ -107,6 +104,14 @@ test('ApiSettings can fetch upstream provider models into node model lists', () 
   assert.match(apiSettingsSource, /mergeModelLists/);
 });
 
+test('ApiSettings persists the current base URL before fetching models and saves drafts on close', () => {
+  assert.match(apiSettingsSource, /const fetchSettingsPatch: Partial<ApiSettings> = \{\}/);
+  assert.match(apiSettingsSource, /await save\(fetchSettingsPatch\)/);
+  assert.match(apiSettingsSource, /const handleAutoSaveAndClose = \(\) =>/);
+  assert.match(apiSettingsSource, /onMouseDown=\{\(e\) => \{[\s\S]*?handleAutoSaveAndClose\(\)/);
+  assert.match(apiSettingsSource, /aria-label="关闭设置"/);
+});
+
 test('ApiSettings classified API keys expose explicit clear actions', () => {
   assert.match(apiSettingsSource, /const \[clearedFields, setClearedFields\]/);
   assert.match(apiSettingsSource, /handleClearClassifiedKey/);
@@ -114,6 +119,16 @@ test('ApiSettings classified API keys expose explicit clear actions', () => {
   assert.match(apiSettingsSource, /\(patch as any\)\[f\] = ''/);
   assert.match(apiSettingsSource, /清空该分类独立 Key/);
   assert.match(apiSettingsSource, /aria-label=\{`\$\{spec\.label\}\$\{pendingClear \? '取消清空' : '清空'\}`\}/);
+});
+
+test('ApiSettings classified API keys can fetch default-service model overrides through the common URL', () => {
+  assert.match(apiSettingsSource, /CLASSIFIED_MODEL_FETCH_FIELDS/);
+  assert.match(apiSettingsSource, /handleFetchZhenzhenModels\(f\)/);
+  assert.match(apiSettingsSource, /apiKeyField:\s*sourceField/);
+  assert.match(apiSettingsSource, /baseUrl:\s*String\(baseUrlInputs\.zhenzhenBaseUrl/);
+  assert.match(apiSettingsSource, /title=\{`使用\$\{spec\.label\} Key 和通用服务 Base URL 拉取模型列表`\}/);
+  assert.match(apiSettingsSource, /aria-label=\{`\$\{spec\.label\}拉取模型覆盖`\}/);
+  assert.doesNotMatch(apiSettingsSource, /gptImageBaseUrl|nanoBananaBaseUrl|veoBaseUrl|soraBaseUrl|grokBaseUrl|seedanceBaseUrl|sunoBaseUrl/);
 });
 
 test('ApiSettings cloud upload panels link to vendor consoles and secret key reminders', () => {
@@ -169,53 +184,4 @@ test('ApiSettings exposes a persisted global UI font control', () => {
   assert.match(appSource, /applyUiFontPreference/);
   assert.match(indexCss, /\.t8-ui-font-option/);
   assert.match(indexCss, /\.t8-ui-font-preview/);
-});
-
-test('Dragon Ball theme defaults to bundled mp3 music and packaging validates the asset', () => {
-  const postBuild = readFileSync(new URL('../electron/_post_build.cjs', import.meta.url), 'utf8');
-  const musicAsset = new URL('../src/assets/theme-music/dragonball-makafushigi-adventure.mp3', import.meta.url);
-  const hiddenMusicAsset = new URL('../src/assets/theme-music/dragonball-shenron-cha-la-head-cha-la.mp3', import.meta.url);
-
-  assert.equal(existsSync(musicAsset), true);
-  assert.equal(existsSync(hiddenMusicAsset), true);
-  assert.match(defaultTemplatesSource, /dragonBallThemeMusicUrl = new URL\('\.\.\/assets\/theme-music\/dragonball-makafushigi-adventure\.mp3'/);
-  assert.match(defaultTemplatesSource, /dragonBallShenronHiddenMusicUrl = new URL\('\.\.\/assets\/theme-music\/dragonball-shenron-cha-la-head-cha-la\.mp3'/);
-  assert.match(defaultTemplatesSource, /id: DRAGON_BALL_TEMPLATE_ID[\s\S]*source: 'url'[\s\S]*url: dragonBallThemeMusicUrl/);
-  assert.match(defaultTemplatesSource, /title: '摩诃不思议 Adventure'/);
-  assert.match(defaultTemplatesSource, /hiddenTitle: 'CHA-LA HEAD-CHA-LA'/);
-  assert.match(defaultTemplatesSource, /hiddenUrl: dragonBallShenronHiddenMusicUrl/);
-  assert.match(themeTemplateManagerSource, /dragonBallThemeMusicUrl/);
-  assert.match(themeTemplateManagerSource, /dragonBallShenronHiddenMusicUrl/);
-  assert.match(themeTemplateManagerSource, /visualStyle === 'dragon-ball'[\s\S]*source: 'url'[\s\S]*url: dragonBallThemeMusicUrl/);
-  assert.match(themeTemplateManagerSource, /visualStyle === 'dragon-ball'[\s\S]*hiddenUrl: dragonBallShenronHiddenMusicUrl/);
-  assert.match(postBuild, /checkFrontendAsset\('dragonball-makafushigi-adventure-', '\.mp3'\)/);
-  assert.match(postBuild, /checkFrontendAsset\('dragonball-shenron-cha-la-head-cha-la-', '\.mp3'\)/);
-  assert.match(featuresSource, /"dragon-ball-style": "dragonball-makafushigi-adventure\.mp3"/);
-  assert.match(featuresSource, /"dragon-ball-shenron-hidden": "dragonball-shenron-cha-la-head-cha-la\.mp3"/);
-});
-
-test('Saint Seiya theme defaults to bundled sanctuary and Hades mp3 music', () => {
-  const postBuild = readFileSync(new URL('../electron/_post_build.cjs', import.meta.url), 'utf8');
-  const musicAsset = new URL('../src/assets/theme-music/saint-seiya-pegasus-fantasy.mp3', import.meta.url);
-  const hiddenMusicAsset = new URL('../src/assets/theme-music/saint-seiya-hades-last-holy-war.mp3', import.meta.url);
-
-  assert.equal(existsSync(musicAsset), true);
-  assert.equal(existsSync(hiddenMusicAsset), true);
-  assert.match(defaultTemplatesSource, /saintSeiyaThemeMusicUrl = new URL\('\.\.\/assets\/theme-music\/saint-seiya-pegasus-fantasy\.mp3'/);
-  assert.match(defaultTemplatesSource, /saintSeiyaHadesThemeMusicUrl = new URL\('\.\.\/assets\/theme-music\/saint-seiya-hades-last-holy-war\.mp3'/);
-  assert.match(defaultTemplatesSource, /id: SAINT_SEIYA_TEMPLATE_ID[\s\S]*source: 'url'[\s\S]*url: saintSeiyaThemeMusicUrl/);
-  assert.match(defaultTemplatesSource, /hiddenUrl: saintSeiyaHadesThemeMusicUrl/);
-  assert.match(themeTemplateManagerSource, /saintSeiyaThemeMusicUrl/);
-  assert.match(themeTemplateManagerSource, /visualStyle === 'saint-seiya'[\s\S]*source: 'url'[\s\S]*url: saintSeiyaThemeMusicUrl/);
-  assert.match(themeTemplateManagerSource, /visualStyle === 'saint-seiya'[\s\S]*hiddenUrl: saintSeiyaHadesThemeMusicUrl/);
-  assert.match(postBuild, /checkFrontendAsset\('saint-seiya-pegasus-fantasy-', '\.mp3'\)/);
-  assert.match(postBuild, /checkFrontendAsset\('saint-seiya-hades-last-holy-war-', '\.mp3'\)/);
-  assert.match(postBuild, /film-tech-01\.mp4\.t8media/);
-  assert.match(postBuild, /film-rh-01\.mp4\.t8media/);
-  assert.match(postBuild, /film-yyh-01\.mp4\.t8media/);
-  assert.match(postBuild, /film-dragon-ball-01\.mp4\.t8media/);
-  assert.match(postBuild, /film-saint-seiya-01\.mp4\.t8media/);
-  assert.match(postBuild, /film-tetris-01\.mp4\.t8media/);
-  assert.match(featuresSource, /"saint-seiya-style": "saint-seiya-pegasus-fantasy\.mp3"/);
-  assert.match(featuresSource, /"saint-seiya-hades-hidden": "saint-seiya-hades-last-holy-war\.mp3"/);
 });

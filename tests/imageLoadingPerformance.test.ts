@@ -30,17 +30,17 @@ test('local canvas image previews use cached backend thumbnails', () => {
   assert.match(filesRoute, /THUMBNAILS_DIR/);
 });
 
-test('local file uploads allow generated PNGs up to 20MB and report oversize as JSON', () => {
+test('local file uploads do not enforce a hard file-size cap', () => {
   const config = read('../backend/src/config.js');
   const filesRoute = read('../backend/src/routes/files.js');
 
-  assert.match(config, /MAX_FILE_SIZE:\s*20\s*\*\s*1024\s*\*\s*1024/);
+  assert.match(config, /MAX_FILE_SIZE:\s*0/);
+  assert.doesNotMatch(filesRoute, /limits:\s*\{\s*fileSize:\s*config\.MAX_FILE_SIZE\s*\}/);
   assert.match(filesRoute, /const uploadSingleFile = upload\.single\('file'\)/);
   assert.match(filesRoute, /err instanceof multer\.MulterError/);
-  assert.match(filesRoute, /err\.code === 'LIMIT_FILE_SIZE'/);
-  assert.match(filesRoute, /res\.status\(413\)\.json/);
-  assert.match(filesRoute, /code:\s*'file_too_large'/);
-  assert.match(filesRoute, /formatUploadLimit\(config\.MAX_FILE_SIZE\)/);
+  assert.doesNotMatch(filesRoute, /err\.code === 'LIMIT_FILE_SIZE'/);
+  assert.doesNotMatch(filesRoute, /code:\s*'file_too_large'/);
+  assert.doesNotMatch(filesRoute, /formatUploadLimit\(config\.MAX_FILE_SIZE\)/);
 });
 
 test('initial canvas boot keeps heavy nodes behind lazy boundaries', () => {
@@ -60,23 +60,21 @@ test('initial canvas boot keeps heavy nodes behind lazy boundaries', () => {
   assert.match(app, /function InfiniteCanvasBootLoading/);
   assert.match(app, /src="\/infinite-canvas-loading\.png"/);
   assert.match(app, /<Suspense fallback=\{<InfiniteCanvasBootLoading \/>}/);
-  assert.match(app, /sidebarCollapsed/);
-  assert.match(app, /aria-label=\{sidebarCollapsed \? '显示侧边栏' : '隐藏侧边栏'\}/);
-  assert.match(app, /title=\{sidebarCollapsed \? '显示侧边栏 \(H\)' : '隐藏侧边栏 \(H\)'\}/);
-  assert.match(app, /<PanelLeftClose/);
-  assert.match(app, /<PanelLeftOpen/);
+  assert.match(app, /<AppRail/);
+  assert.match(app, /<ShellPanel panel=\{activePanel\}/);
+  assert.match(app, /setActivePanel\(\(panel\)\s*=>\s*\(panel === null \? lastOpenPanelRef\.current : null\)\)/);
   assert.match(canvas, /function lazyCanvasNode/);
   assert.match(canvas, /const Panorama3DNode = lazyCanvasNode\(\(\) => import\('\.\/nodes\/Panorama3DNode'\)/);
   assert.match(canvas, /const ImageNode = lazyCanvasNode\(\(\) => import\('\.\/nodes\/ImageNode'\)/);
   assert.doesNotMatch(canvas, /import ImageNode from '\.\/nodes\/ImageNode'/);
 
   assert.match(canvas, /data-canvas-surface-load=\{heavyCanvasSurface \? 'heavy' : 'normal'\}/);
-  assert.match(canvas, /onlyRenderVisibleElements=\{shouldCullOffscreenElements\}/);
+  assert.match(canvas, /onlyRenderVisibleElements=\{canvasPerformance\.renderVisibleElementsOnly\}/);
   assert.match(runTrigger, /useRunBusStore/);
   assert.match(css, /Large graph rendering guard/);
   assert.match(
     css,
-    /\.t8-canvas-shell\[data-canvas-surface-load="heavy"\] \.react-flow__node:not\(\.selected\):not\(:focus-within\) :where\(img, video, iframe, canvas\) \{[\s\S]*content-visibility:\s*auto;[\s\S]*contain-intrinsic-size:\s*320px 260px;/,
+    /\.t8-canvas-shell\[data-canvas-surface-load="heavy"\] \.react-flow__node:not\(\.selected\):not\(:focus-within\) :where\(iframe, canvas\) \{[\s\S]*content-visibility:\s*auto;[\s\S]*contain-intrinsic-size:\s*320px 260px;/,
   );
   assert.match(
     css,
@@ -130,48 +128,6 @@ test('high-traffic node previews render through SmartImage', () => {
   }
 });
 
-test('decorative theme edge motion degrades while the canvas is busy', () => {
-  const canvas = read('../src/components/Canvas.tsx');
-  const edge = read('../src/components/edges/DeletableEdge.tsx');
-  const css = read('../src/styles/index.css');
-  const slamCss = read('../src/styles/theme-slamdunk.css');
-  const soccerCss = read('../src/styles/theme-soccer.css');
-  const dragonCss = read('../src/styles/theme-dragonball.css');
-  const main = read('../src/main.tsx');
-
-  assert.match(canvas, /EDGE_MOTION_HEAVY_EDGE_COUNT/);
-  assert.match(canvas, /isDecorativeEdgeVisual = isSlamdunk \|\| isSoccer \|\| isDragonBall/);
-  assert.match(canvas, /edgeMotionMode = isDecorativeEdgeVisual \? \(edgeMotionReduced \? 'reduced' : 'scoped'\) : undefined/);
-  assert.match(canvas, /data-t8-edge-motion/);
-  assert.match(canvas, /onMoveStart=\{handleViewportMoveStart\}/);
-  assert.match(canvas, /if \(isDraggingRef\.current\) return;/);
-  assert.match(canvas, /setDragSaveTick\(\(tick\) => tick \+ 1\)/);
-
-  assert.match(edge, /DECORATIVE_EDGE_MOTION_LIMIT/);
-  assert.match(edge, /isNodeSelectedFromStore/);
-  assert.match(edge, /countActiveThemeEdges/);
-  assert.match(edge, /activeThemeEdgeCount <= DECORATIVE_EDGE_MOTION_LIMIT/);
-  assert.match(edge, /t8-edge-theme-active/);
-  assert.match(edge, /shouldRenderPassBall/);
-  assert.match(edge, /shouldRenderSoccerBall/);
-  assert.match(edge, /\{shouldRenderPassBall && \(/);
-  assert.match(edge, /\{shouldRenderSoccerBall && \(/);
-
-  assert.match(css, /html\[data-t8-edge-motion="reduced"\]/);
-  assert.match(slamCss, /\.react-flow__edge-path\.t8-edge-theme-active/);
-  assert.match(slamCss, /\.t8-edge-yyh-red-segment\.t8-edge-theme-active/);
-  assert.match(slamCss, /html\[data-theme-visual="slamdunk"\] \.t8-sidebar::after \{\s*content: none;/);
-  assert.match(soccerCss, /\.react-flow__edge-path\.t8-edge-theme-active/);
-  assert.match(soccerCss, /\.t8-edge-yyh-red-segment\.t8-edge-theme-active/);
-  assert.match(css, /theme-dragonball\.css/);
-  assert.match(dragonCss, /\.react-flow__edge-path\.t8-edge-theme-active/);
-  assert.match(dragonCss, /data-t8-edge-motion="reduced"/);
-  assert.match(dragonCss, /\.t8-viewport-moving/);
-  assert.match(dragonCss, /\.t8-node-dragging/);
-  assert.match(css, /prefers-reduced-motion: reduce/);
-  assert.match(main, /VITE_T8_STRICT_MODE/);
-});
-
 test('autosave avoids full-canvas serialization during high-frequency movement', () => {
   const canvas = read('../src/components/Canvas.tsx');
 
@@ -186,17 +142,20 @@ test('large canvas pan and wheel movement shed nonessential render work', () => 
   const canvas = read('../src/components/Canvas.tsx');
   const css = read('../src/styles/index.css');
 
-  assert.match(canvas, /const canvasInteractionBusy = viewportMoving \|\| nodeDragging/);
-  assert.match(canvas, /const shouldCullOffscreenElements = heavyCanvasSurface \|\| canvasInteractionBusy/);
-  assert.match(canvas, /onlyRenderVisibleElements=\{shouldCullOffscreenElements\}/);
-  assert.match(canvas, /\{!canvasInteractionBusy && \(\s*<Background/);
-  assert.match(canvas, /\{!canvasInteractionBusy && \(\s*<MiniMap/);
+  assert.doesNotMatch(canvas, /const canvasInteractionBusy = viewportMoving \|\| nodeDragging/);
+  assert.match(canvas, /const canvasPerformance = useMemo\(/);
+  assert.match(canvas, /getCanvasPerformanceProfile\(\{\s*zoom: currentCanvasZoom,\s*nodeCount: nodes\.length,\s*edgeCount: edges\.length,\s*viewportMoving,\s*nodeDragging,/);
+  assert.match(canvas, /onlyRenderVisibleElements=\{canvasPerformance\.renderVisibleElementsOnly\}/);
+  assert.doesNotMatch(canvas, /import\s*\{[\s\S]*?\b(?:Background|BackgroundVariant)\b[\s\S]*?\}\s*from ['"]@xyflow\/react['"]/);
+  assert.doesNotMatch(canvas, /<Background(?:\s|\/|>)/);
+  assert.doesNotMatch(canvas, /canvasPerformance\.hideBackground/);
+  assert.doesNotMatch(canvas, /\bMiniMap,\s*\r?\n/);
+  assert.doesNotMatch(canvas, /<MiniMap/);
 
-  assert.match(css, /\.t8-canvas-shell\.t8-viewport-moving \.react-flow__minimap/);
-  assert.match(css, /\.t8-canvas-shell\.t8-viewport-moving \.react-flow__background/);
+  assert.doesNotMatch(css, /\.react-flow__minimap/);
   assert.match(css, /\.t8-canvas-shell\.t8-viewport-moving \.react-flow__node:not\(\.selected\) > div/);
-  assert.match(css, /\.t8-canvas-shell\.t8-viewport-moving :where\(video, iframe\)/);
-  assert.match(css, /\.t8-canvas-shell\.t8-node-dragging :where\(video, iframe\)/);
+  assert.doesNotMatch(css, /\.t8-canvas-shell\.t8-viewport-moving :where\(video, iframe\)/);
+  assert.doesNotMatch(css, /\.t8-canvas-shell\.t8-node-dragging :where\(video, iframe\)/);
   assert.match(css, /box-shadow: none !important/);
   assert.match(css, /filter: none !important/);
 }

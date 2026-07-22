@@ -4,6 +4,7 @@ export type OutputQuickActionId =
   | 'save-resource'
   | 'image-edit'
   | 'grid-edit'
+  | 'layer-agent'
   | 'image-to-video'
   | 'clip-studio'
   | 'director';
@@ -22,6 +23,7 @@ export interface OutputQuickActionOptions {
   text?: string;
   hasImageEditor?: boolean;
   hasGridEditor?: boolean;
+  hasLayerAgent?: boolean;
   hasImageToVideo?: boolean;
   hasClipStudio?: boolean;
   hasDirector?: boolean;
@@ -76,6 +78,7 @@ export function buildOutputQuickActions(options: OutputQuickActionOptions): Outp
     action('save-resource', '保存资源库', options, resourceEnabled, resourceReason),
     action('image-edit', '图像编辑', options, imageActionEnabled(options.hasImageEditor), imageActionReason(options.hasImageEditor, '图像编辑入口暂未接入')),
     action('grid-edit', '宫格编辑', options, imageActionEnabled(options.hasGridEditor), imageActionReason(options.hasGridEditor, '宫格编辑入口暂不可用')),
+    action('layer-agent', 'AI分层', options, imageActionEnabled(options.hasLayerAgent), imageActionReason(options.hasLayerAgent, 'AI分层入口暂不可用')),
     action('image-to-video', '图生视频', options, imageActionEnabled(options.hasImageToVideo), imageActionReason(options.hasImageToVideo, '图生视频入口暂不可用')),
     action('clip-studio', '加入剪辑台', options, imageActionEnabled(options.hasClipStudio), imageActionReason(options.hasClipStudio, '剪辑台入口暂不可用', '需要图像或视频素材')),
     action('director', '加入导演台', options, hasImage && options.hasDirector === true, '导演台入口暂未接入'),

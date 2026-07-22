@@ -1,9 +1,18 @@
-import { useMemo } from 'react';
-import { useEdges, useNodeConnections, useNodesData } from '@xyflow/react';
+import { useCallback, useMemo } from 'react';
+import { useEdges, useNodeConnections, useNodesData, useStore } from '@xyflow/react';
 import { collectMaterialSetBucketsFromData, valueOfMaterialSetItem } from '../../utils/materialSet';
 import { fileNameFromUrl } from '../../utils/mediaCollection';
 import { normalizeRhNodeId } from '../../utils/rhTextBinding';
 import { dedupeUpstreamMaterialBuckets } from '../../utils/upstreamMaterialBuckets';
+import { successfulMediaSlotUrls } from '../../utils/mediaTaskSlots';
+import {
+  getGroupMaterialRouteIndex,
+  getVirtualMaterialSourceIds,
+  mergeGroupMaterialBundles,
+  resolveConnectedGroupInputBundle,
+  resolveVirtualInputBundleForMember,
+  type GroupMaterialBundle,
+} from '../../utils/groupMaterialRouting';
 
 /**
  * useUpstreamMaterials - 通用「上游素材聚合」hook
@@ -40,6 +49,10 @@ export interface Material {
   mentionToken?: string;
   rhNodeId?: string;
   sourceNodeSerialId?: number;
+  sourceGroupPath?: string[];
+  originEdgeId?: string;
+  sourceHandle?: string | null;
+  portType?: MaterialKind | 'any';
 }
 
 export interface UpstreamMaterials {
@@ -55,6 +68,15 @@ const IMAGE_RE = /\.(png|jpe?g|webp|gif|bmp|avif|tiff?|svg)(\?|$)/i;
 
 type MediaBuckets = Pick<UpstreamMaterials, 'images' | 'videos' | 'audios'>;
 type MentionableKind = Exclude<MaterialKind, 'text'>;
+
+export function materialKindsForPortType(portType: unknown): Set<MaterialKind> {
+  const normalized = typeof portType === 'string' ? portType.trim() : '';
+  if (normalized === 'image') return new Set<MaterialKind>(['image']);
+  if (normalized === 'video') return new Set<MaterialKind>(['video']);
+  if (normalized === 'audio') return new Set<MaterialKind>(['audio']);
+  if (normalized === 'text') return new Set<MaterialKind>(['text']);
+  return new Set<MaterialKind>(['text', 'image', 'video', 'audio']);
+}
 
 function classifyMediaKind(kind: MentionableKind, url: string): MentionableKind {
   if (/^data:video\//i.test(url) || VIDEO_RE.test(url)) return 'video';
@@ -183,11 +205,47 @@ export function collectMentionableMediaFromNodeData(sourceId: string, data: any,
 
 export function useUpstreamMaterials(nodeId: string): UpstreamMaterials {
   const conns = useNodeConnections({ id: nodeId, handleType: 'target' });
+  const edges = useEdges();
+  const virtualRouteSnapshot = useStore(
+    useCallback((state: any) => {
+      const routeNodes = Array.isArray(state?.nodes) ? state.nodes : [];
+      const routeEdges = Array.isArray(state?.edges) ? state.edges : [];
+      const routeIndex = getGroupMaterialRouteIndex(routeNodes, routeEdges);
+      return {
+        routeIndex,
+        routeNodes,
+        routeEdges,
+        sourceIds: getVirtualMaterialSourceIds(nodeId, routeNodes, routeEdges),
+      };
+    }, [nodeId]),
+    (left, right) =>
+      left.routeIndex === right.routeIndex &&
+      left.sourceIds.length === right.sourceIds.length &&
+      left.sourceIds.every((id, index) => id === right.sourceIds[index]),
+  );
+  const virtualSourceIds = virtualRouteSnapshot.sourceIds;
+  const virtualSourceNodes = useNodesData(virtualSourceIds);
   const upstreamIds = useMemo(
     () => Array.from(new Set(conns.map((c) => c.source))),
     [conns]
   );
   const upstreamNodes = useNodesData(upstreamIds);
+
+  const virtualBundle = useMemo<GroupMaterialBundle>(() => {
+    const dataById = new Map(
+      (Array.isArray(virtualSourceNodes) ? virtualSourceNodes : [])
+        .filter(Boolean)
+        .map((node) => [node!.id, node]),
+    );
+    const hydratedNodes = virtualRouteSnapshot.routeNodes.map((node: any) => {
+      const current = dataById.get(node.id) as any;
+      return current ? { ...node, type: current.type || node.type, data: current.data || {} } : node;
+    });
+    return mergeGroupMaterialBundles(
+      resolveVirtualInputBundleForMember(nodeId, hydratedNodes, virtualRouteSnapshot.routeEdges),
+      resolveConnectedGroupInputBundle(nodeId, hydratedNodes, virtualRouteSnapshot.routeEdges),
+    );
+  }, [nodeId, virtualRouteSnapshot, virtualSourceNodes]);
 
   // v1.2.8.3: 收集每个上游 source 上被连接的 sourceHandle 集合, 供 FramePair 等多端口节点按 handle 区分输出
   // - sourceHandle === 'first' / 'last' (FramePair) → 只取对应帧
@@ -201,6 +259,22 @@ export function useUpstreamMaterials(nodeId: string): UpstreamMaterials {
     }
     return m;
   }, [conns]);
+
+  const allowedKindsBySource = useMemo(() => {
+    const m = new Map<string, Set<MaterialKind>>();
+    for (const edge of edges) {
+      if (edge.target !== nodeId) continue;
+      let set = m.get(edge.source);
+      if (!set) {
+        set = new Set<MaterialKind>();
+        m.set(edge.source, set);
+      }
+      for (const kind of materialKindsForPortType((edge.data as any)?.portType)) {
+        set.add(kind);
+      }
+    }
+    return m;
+  }, [edges, nodeId]);
 
   return useMemo<UpstreamMaterials>(() => {
     const texts: Material[] = [];
@@ -267,51 +341,69 @@ export function useUpstreamMaterials(nodeId: string): UpstreamMaterials {
 
     for (const n of list) {
       if (!n) continue;
+      // Group outputs are resolved from their live member/input bundle below.
+      // Reading mirrored compatibility fields here would add every item twice.
+      if (n.type === 'groupBox') continue;
       const sid = n.id;
       const ud: any = n.data || {};
       const handles = handleMap.get(sid) || new Set<string | null>([null]);
+      const allowedKinds = allowedKindsBySource.get(sid) || materialKindsForPortType(undefined);
+      const allowText = allowedKinds.has('text');
+      const allowImage = allowedKinds.has('image');
+      const allowVideo = allowedKinds.has('video');
+      const allowAudio = allowedKinds.has('audio');
       const textMeta = textMetaFromData(ud);
 
       // 显式素材集: 保留素材集内部顺序，并用序号 key 避免相同 URL 被全局去重误删。
       // 同时跳过下面的旧字段读取，避免 imageUrls/textSegments 双写后重复出现。
       if (n.type === 'material-set' && Array.isArray(ud.materialSetItems)) {
         const buckets = collectMaterialSetBucketsFromData(ud);
-        buckets.text.forEach((item, index) => {
-          pushText(sid, valueOfMaterialSetItem(item), `material-set:${sid}:text:${index}`, item.name, textMeta);
-        });
-        buckets.image.forEach((item, index) => {
-          pushUrl(sid, 'image', item.url, images, `material-set:${sid}:image:${index}`, item.name);
-        });
-        buckets.video.forEach((item, index) => {
-          pushUrl(sid, 'video', item.url, videos, `material-set:${sid}:video:${index}`, item.name);
-        });
-        buckets.audio.forEach((item, index) => {
-          pushUrl(sid, 'audio', item.url, audios, `material-set:${sid}:audio:${index}`, item.name);
-        });
+        if (allowText) {
+          buckets.text.forEach((item, index) => {
+            pushText(sid, valueOfMaterialSetItem(item), `material-set:${sid}:text:${index}`, item.name, textMeta);
+          });
+        }
+        if (allowImage) {
+          buckets.image.forEach((item, index) => {
+            pushUrl(sid, 'image', item.url, images, `material-set:${sid}:image:${index}`, item.name);
+          });
+        }
+        if (allowVideo) {
+          buckets.video.forEach((item, index) => {
+            pushUrl(sid, 'video', item.url, videos, `material-set:${sid}:video:${index}`, item.name);
+          });
+        }
+        if (allowAudio) {
+          buckets.audio.forEach((item, index) => {
+            pushUrl(sid, 'audio', item.url, audios, `material-set:${sid}:audio:${index}`, item.name);
+          });
+        }
         continue;
       }
 
       // 文本: textSegments/texts 数组优先, 避免文本分割节点再把 joined prompt 当成第 N+1 项
-      const textArrayFields = ['textSegments', 'segments', 'texts'];
-      const textArrayField = textArrayFields.find((f) => Array.isArray(ud[f]) && ud[f].length > 0);
-      if (textArrayField) {
-        ud[textArrayField].forEach((item: any, index: number) => {
-          pushText(sid, item, `text-array:${sid}:${textArrayField}:${index}`, undefined, textMeta);
-        });
-      } else {
-        // 文本: outputText (用户编辑覆盖) > reply > promptResolved(@素材已解析) > prompt > text
-        pushText(sid, ud.outputText, `text-field:${sid}:outputText`, undefined, textMeta);
-        pushText(sid, ud.reply, `text-field:${sid}:reply`, undefined, textMeta);
-        let primaryPromptText = '';
-        if (typeof ud.promptResolved === 'string' && ud.promptResolved.trim()) {
-          primaryPromptText = ud.promptResolved.trim();
-          pushText(sid, ud.promptResolved, `text-field:${sid}:promptResolved`, undefined, textMeta);
+      if (allowText) {
+        const textArrayFields = ['textSegments', 'segments', 'texts'];
+        const textArrayField = textArrayFields.find((f) => Array.isArray(ud[f]) && ud[f].length > 0);
+        if (textArrayField) {
+          ud[textArrayField].forEach((item: any, index: number) => {
+            pushText(sid, item, `text-array:${sid}:${textArrayField}:${index}`, undefined, textMeta);
+          });
         } else {
-          primaryPromptText = typeof ud.prompt === 'string' ? ud.prompt.trim() : '';
-          pushText(sid, ud.prompt, `text-field:${sid}:prompt`, undefined, textMeta);
-        }
-        if (typeof ud.text === 'string' && ud.text.trim() !== primaryPromptText) {
-          pushText(sid, ud.text, `text-field:${sid}:text`, undefined, textMeta);
+          // 文本: outputText (用户编辑覆盖) > reply > promptResolved(@素材已解析) > prompt > text
+          pushText(sid, ud.outputText, `text-field:${sid}:outputText`, undefined, textMeta);
+          pushText(sid, ud.reply, `text-field:${sid}:reply`, undefined, textMeta);
+          let primaryPromptText = '';
+          if (typeof ud.promptResolved === 'string' && ud.promptResolved.trim()) {
+            primaryPromptText = ud.promptResolved.trim();
+            pushText(sid, ud.promptResolved, `text-field:${sid}:promptResolved`, undefined, textMeta);
+          } else {
+            primaryPromptText = typeof ud.prompt === 'string' ? ud.prompt.trim() : '';
+            pushText(sid, ud.prompt, `text-field:${sid}:prompt`, undefined, textMeta);
+          }
+          if (typeof ud.text === 'string' && ud.text.trim() !== primaryPromptText) {
+            pushText(sid, ud.text, `text-field:${sid}:text`, undefined, textMeta);
+          }
         }
       }
 
@@ -328,26 +420,35 @@ export function useUpstreamMaterials(nodeId: string): UpstreamMaterials {
       if (isFramePair) {
         const wantFirst = handles.has('first') || (handles.has(null) && !handles.has('last'));
         const wantLast = handles.has('last') || (handles.has(null) && !handles.has('first'));
-        if (wantFirst) pushUrl(sid, 'image', ud.firstFrameUrl, images, 'firstFrameUrl');
-        if (wantLast) pushUrl(sid, 'image', ud.lastFrameUrl, images, 'lastFrameUrl');
+        if (allowImage && wantFirst) pushUrl(sid, 'image', ud.firstFrameUrl, images, 'firstFrameUrl');
+        if (allowImage && wantLast) pushUrl(sid, 'image', ud.lastFrameUrl, images, 'lastFrameUrl');
         continue;
       }
 
       // 图像: 单 + 多
-      pushUrl(sid, 'image', ud.imageUrl, images, 'imageUrl');
-      pushUrl(sid, 'image', ud.resultUrl, images, 'resultUrl', '目标框图像');
-      const arrFields = ['imageUrls', 'urls', 'generatedImages', 'resultUrls'];
-      for (const f of arrFields) {
-        const v = ud[f];
-        if (Array.isArray(v)) {
-          v.forEach((u, index) => pushUrl(sid, 'image', u, images, `${f}:${index}`));
+      if (allowImage) {
+        const slotUrls = successfulMediaSlotUrls(ud.imageResultSlots);
+        if (slotUrls.length) {
+          slotUrls.forEach((url, index) => pushUrl(sid, 'image', url, images, `imageResultSlots:${index}`));
+        } else {
+          pushUrl(sid, 'image', ud.imageUrl, images, 'imageUrl');
+          pushUrl(sid, 'image', ud.resultUrl, images, 'resultUrl', '目标框图像');
+          const arrFields = ['imageUrls', 'urls', 'generatedImages', 'resultUrls'];
+          for (const f of arrFields) {
+            const v = ud[f];
+            if (Array.isArray(v)) {
+              v.forEach((u, index) => pushUrl(sid, 'image', u, images, `${f}:${index}`));
+            }
+          }
         }
       }
 
       // 视频: 单 + 多 (v1.2.8.2: videoUrls 数组 — LoopNode 聚合多视频产物)
-      pushUrl(sid, 'video', ud.videoUrl, videos, 'videoUrl');
-      if (Array.isArray(ud.videoUrls)) {
-        ud.videoUrls.forEach((u: unknown, index: number) => pushUrl(sid, 'video', u, videos, `videoUrls:${index}`));
+      if (allowVideo) {
+        pushUrl(sid, 'video', ud.videoUrl, videos, 'videoUrl');
+        if (Array.isArray(ud.videoUrls)) {
+          ud.videoUrls.forEach((u: unknown, index: number) => pushUrl(sid, 'video', u, videos, `videoUrls:${index}`));
+        }
       }
 
       // === v1.2.9.14: Suno 双端口语义 (与 FramePair 同模式) ===
@@ -361,19 +462,21 @@ export function useUpstreamMaterials(nodeId: string): UpstreamMaterials {
       if (isSuno) {
         const wantA0 = handles.has('audio-0') || (handles.has(null) && !handles.has('audio-1'));
         const wantA1 = handles.has('audio-1') || (handles.has(null) && !handles.has('audio-0'));
-        if (wantA0) pushUrl(sid, 'audio', ud.audioUrl, audios, 'audioUrl');
-        if (wantA1) pushUrl(sid, 'audio', ud.audioUrl_1, audios, 'audioUrl_1');
-        if (Array.isArray(ud.audioUrls)) {
+        if (allowAudio && wantA0) pushUrl(sid, 'audio', ud.audioUrl, audios, 'audioUrl');
+        if (allowAudio && wantA1) pushUrl(sid, 'audio', ud.audioUrl_1, audios, 'audioUrl_1');
+        if (allowAudio && Array.isArray(ud.audioUrls)) {
           ud.audioUrls.forEach((u: unknown, index: number) => pushUrl(sid, 'audio', u, audios, `audioUrls:${index}`));
         }
         continue;
       }
 
       // 音频 (audioUrl 主轨, audioUrl_1 副轨——AudioNode 双输出口, audioUrls 数组 — LoopNode 聚合)
-      pushUrl(sid, 'audio', ud.audioUrl, audios, 'audioUrl');
-      pushUrl(sid, 'audio', ud.audioUrl_1, audios, 'audioUrl_1');
-      if (Array.isArray(ud.audioUrls)) {
-        ud.audioUrls.forEach((u: unknown, index: number) => pushUrl(sid, 'audio', u, audios, `audioUrls:${index}`));
+      if (allowAudio) {
+        pushUrl(sid, 'audio', ud.audioUrl, audios, 'audioUrl');
+        pushUrl(sid, 'audio', ud.audioUrl_1, audios, 'audioUrl_1');
+        if (Array.isArray(ud.audioUrls)) {
+          ud.audioUrls.forEach((u: unknown, index: number) => pushUrl(sid, 'audio', u, audios, `audioUrls:${index}`));
+        }
       }
     }
 
@@ -391,8 +494,36 @@ export function useUpstreamMaterials(nodeId: string): UpstreamMaterials {
       fixedImages.push(m);
     }
 
+    const appendVirtual = (bundle: GroupMaterialBundle) => {
+      const append = (items: typeof bundle.images, target: Material[]) => {
+        for (const item of items) {
+          target.push({
+            id: item.id,
+            kind: item.kind,
+            url: item.value,
+            sourceNodeId: item.sourceNodeId,
+            origin: 'upstream',
+            label: item.label,
+            mentionKey: item.mentionKey,
+            mentionToken: item.mentionToken,
+            rhNodeId: item.rhNodeId,
+            sourceNodeSerialId: item.sourceNodeSerialId,
+            sourceGroupPath: item.sourceGroupPath,
+            originEdgeId: item.originEdgeId,
+            sourceHandle: item.sourceHandle,
+            portType: item.portType,
+          });
+        }
+      };
+      append(bundle.texts, texts);
+      append(bundle.images, fixedImages);
+      append(bundle.videos, videos);
+      append(bundle.audios, audios);
+    };
+    appendVirtual(virtualBundle);
+
     return dedupeUpstreamMaterialBuckets({ texts, images: fixedImages, videos, audios });
-  }, [upstreamNodes, handleMap]);
+  }, [upstreamNodes, handleMap, allowedKindsBySource, virtualBundle]);
 }
 
 /**

@@ -67,7 +67,6 @@ test('portrait resources restore advanced fields to node data', () => {
   assert.deepEqual(data?.portraitAdvancedSelection, advancedSelection);
   assert.equal(data?.portraitAdvancedLocks[Object.keys(advancedSelection)[0]], true);
   assert.equal(data?.portraitAdvancedEnabled, true);
-  assert.equal(data?.yyhPortraitHidden, true);
   assert.match(data?.prompt, /cinematic portrait/);
   assert.equal(data?.portraitMetadata.sourceResourceTitle, '隐藏角色 · 肖像配置');
 });

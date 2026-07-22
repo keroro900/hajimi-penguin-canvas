@@ -85,7 +85,6 @@ const FARM_CANVAS_EXCLUSION_SELECTOR = [
   '.react-flow__handle',
   '.react-flow__edge',
   '.react-flow__controls',
-  '.react-flow__minimap',
   'input',
   'textarea',
   'select',

@@ -12,7 +12,7 @@ const {
 } = require('./mediaResolver');
 
 const DEFAULT_BASE_URL = `http://127.0.0.1:${config.PORT}`;
-const DEFAULT_VIDEO_MODE = 'frames';
+const DEFAULT_VIDEO_MODE = 'compressed-base64';
 const DEFAULT_VIDEO_MAX_DIMENSION = 720;
 const DEFAULT_VIDEO_MAX_BYTES = 8 * 1024 * 1024;
 const DEFAULT_VIDEO_CRF = 32;
@@ -54,6 +54,10 @@ function ffmpegBinaryName() {
   return process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
 }
 
+function ffprobeBinaryName() {
+  return process.platform === 'win32' ? 'ffprobe.exe' : 'ffprobe';
+}
+
 function executableExists(p) {
   try {
     return !!p && fs.existsSync(p) && fs.statSync(p).isFile();
@@ -80,6 +84,22 @@ function resolveBundledFfmpeg() {
     if (executableExists(installer.path)) return installer.path;
   } catch {
     // optional dev fallback only
+  }
+  return binary;
+}
+
+function resolveBundledFfprobe() {
+  const binary = ffprobeBinaryName();
+  const resRoot = String(process.env.T8PC_RES || '').trim();
+  const candidates = [
+    process.env.T8_FFPROBE_BIN,
+    resRoot && path.join(resRoot, 'tools', 'ffmpeg', binary),
+    resRoot && path.join(resRoot, 'tools', 'ffmpeg-runtime', binary),
+    path.join(repoRoot(), 'tools', 'ffmpeg-runtime', binary),
+    path.join(repoRoot(), 'tools', 'ffmpeg', binary),
+  ].filter(Boolean);
+  for (const candidate of candidates) {
+    if (executableExists(candidate)) return candidate;
   }
   return binary;
 }
@@ -282,7 +302,7 @@ async function compressDataVideoToDataUrl(value, options = {}) {
 
 function normalizeVideoMode(value) {
   const text = String(value || '').trim().toLowerCase();
-  if (text === 'frames' || text === 'keyframes' || text === 'frame') return 'frames';
+  if (text === 'frames' || text === 'keyframes' || text === 'frame') return 'compressed-base64';
   if (text === 'url') return 'url';
   if (
     text === 'base64' ||
@@ -369,9 +389,34 @@ async function normalizeVideoUrl(url, options = {}) {
   const nativeMode = mode === 'frames' ? 'compressed-base64' : mode;
   const baseUrl = options.baseUrl || DEFAULT_BASE_URL;
   if (nativeMode === 'url') return mediaRefToAbsoluteUrl(text, { baseUrl });
-  if (isRemoteUrl(text)) return text;
 
   const maxBytes = numberOr(options.videoMaxBase64Bytes, DEFAULT_VIDEO_MAX_BYTES);
+  if (isRemoteUrl(text)) {
+    let remotePath = '';
+    try {
+      const response = await fetch(text);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const mime = String(response.headers.get('content-type') || 'video/mp4').split(';')[0].trim();
+      if (!/^video\//i.test(mime)) throw new Error(`返回类型不是视频: ${mime}`);
+      const buffer = Buffer.from(await response.arrayBuffer());
+      if (buffer.length <= maxBytes) return `data:${mime};base64,${buffer.toString('base64')}`;
+
+      const ext = mime.includes('webm') ? 'webm' : mime.includes('quicktime') ? 'mov' : 'mp4';
+      remotePath = tempFilePath(ext);
+      fs.writeFileSync(remotePath, buffer);
+      return await compressLocalVideoToDataUrl(remotePath, { ...options, videoMaxBase64Bytes: maxBytes });
+    } catch (error) {
+      if (options.requireVideoBase64) {
+        throw new Error(`远程完整视频转 Base64 失败: ${error?.message || error}`);
+      }
+      return text;
+    } finally {
+      if (remotePath) {
+        try { fs.rmSync(remotePath, { force: true }); } catch {}
+      }
+    }
+  }
+
   if (isDataUrl(text)) {
     if (!/^data:video\//i.test(text)) return text;
     if (dataUrlByteLength(text) <= maxBytes) return text;
@@ -394,6 +439,7 @@ async function normalizeVideoUrl(url, options = {}) {
     } catch {
       const size = fs.existsSync(local.path) ? fs.statSync(local.path).size : Number.POSITIVE_INFINITY;
       if (size <= maxBytes) return fileDataUrl(local.path, mimeFromPath(local.path, 'video/mp4'));
+      if (options.requireVideoBase64) throw new Error('完整视频压缩后仍超过 Base64 大小上限');
       return mediaRefToAbsoluteUrl(text, { baseUrl });
     }
   }
@@ -407,20 +453,7 @@ async function videoPartToMessageParts(part, options = {}, index = 0) {
   const value = videoRef.container?.[videoRef.key];
   if (typeof value !== 'string' || !value) return [part];
   const mode = normalizeVideoMode(options.videoMode);
-  if (mode === 'frames') {
-    const frames = await extractVideoFramesToDataUrls(value, options);
-    if (frames.length) {
-      const label = index > 0 ? `视频 ${index + 1}` : '视频';
-      return [
-        {
-          type: 'text',
-          text: `以下是${label}按整段视频时间顺序均匀抽取的 ${frames.length} 张关键帧，请结合这些连续画面理解视频内容。`,
-        },
-        ...frames.map((frame) => ({ type: 'image_url', image_url: { url: frame } })),
-      ];
-    }
-  }
-  const normalized = await normalizeVideoUrl(value, { ...options, videoMode: mode === 'frames' ? 'compressed-base64' : mode });
+  const normalized = await normalizeVideoUrl(value, { ...options, videoMode: mode });
   const cloned = JSON.parse(JSON.stringify(part));
   const clonedRef = getMediaUrlPart(cloned, 'video');
   if (clonedRef) clonedRef.container[clonedRef.key] = normalized;
@@ -457,6 +490,7 @@ function normalizeOptions(input = {}, options = {}) {
       : (options.videoMaxBase64Bytes || DEFAULT_VIDEO_MAX_BYTES),
     ffmpegPath: options.ffmpegPath,
     ffmpegTimeoutMs: options.ffmpegTimeoutMs,
+    requireVideoBase64: !!options.requireVideoBase64,
   };
 }
 
@@ -495,4 +529,5 @@ module.exports = {
   extractVideoFramesToDataUrls,
   normalizeLlmMessageMedia,
   resolveBundledFfmpeg,
+  resolveBundledFfprobe,
 };

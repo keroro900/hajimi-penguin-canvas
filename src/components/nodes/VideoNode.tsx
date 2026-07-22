@@ -1,12 +1,12 @@
-import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type SyntheticEvent } from 'react';
 import { flushSync } from 'react-dom';
 import { Handle, Position, useReactFlow, useUpdateNodeInternals, type NodeProps } from '@xyflow/react';
-import { AlertCircle, Loader2, RefreshCcw, Video as VideoIcon, Sparkles, Square, X } from 'lucide-react';
+import { AlertCircle, Eye, Loader2, RefreshCcw, Video as VideoIcon, Sparkles, Square, X } from 'lucide-react';
 import {
   VIDEO_MODELS,
   GROK_VIDEO_1_5_NEW_SIZES,
+  apishuVeoOmniMode,
   grokVideo15NewSizeFromRatio,
-  isApishuVeoOmniModel,
   isFalVideoModel,
   isGrokVideo15NewModel,
   VIDEO_FAL_REGISTRY,
@@ -23,6 +23,7 @@ import {
   parseModelList,
   withUpstreamModelOption,
 } from '../../providers/models';
+import { effectiveModelId, modelSelectOptions, modelsForKind } from '../../providers/modelCatalog';
 import {
   generateExternalVideo,
   submitVideo,
@@ -36,6 +37,8 @@ import { useUpdateNodeData } from './useUpdateNodeData';
 import { useHasAutoOutput } from './useHasAutoOutput';
 import { useRunTrigger } from '../../hooks/useRunTrigger';
 import { useRunBusStore } from '../../stores/runBus';
+import { useOutsideClose } from './shared/useOutsideClose';
+import { smartNodeComposerActions, useIsSmartNodeComposerOpen } from '../../stores/smartNodeComposer';
 import { logBus } from '../../stores/logs';
 import { useThemeStore } from '../../stores/theme';
 import { useUpstreamMaterials, type Material } from './useUpstreamMaterials';
@@ -70,9 +73,11 @@ import ResizableCorners from './ResizableCorners';
 import SmartNodeComposer from './shared/SmartNodeComposer';
 import SmartNodeShell from './shared/SmartNodeShell';
 import { useNodeGeometrySync } from './shared/useNodeGeometrySync';
-import { useOutsideClose } from './shared/useOutsideClose';
 import { useSmartNodePanelToggle } from './shared/useSmartNodePanelToggle';
 import { useThrottledNodeUpdate } from './shared/useThrottledNodeUpdate';
+import SmartMediaPreviewModal from './shared/SmartMediaPreviewModal';
+import { probeVideo } from '../../services/videoOps';
+import { resolveVideoDisplaySize } from '../../utils/videoDisplayAspect';
 
 /**
  * VideoNode - 异步视频生成(完全对齐 gpt-image-2-web)
@@ -139,14 +144,25 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
   const updateNodeInternals = useUpdateNodeInternals();
   const { getEdges, getNodes } = useReactFlow();
   const [error, setError] = useState<string | null>(null);
-  const [smartComposerOpenLocal, setSmartComposerOpenLocal] = useState(false);
+  const smartComposerOpenLocal = useIsSmartNodeComposerOpen(id);
+  const setSmartComposerOpenLocal = useCallback(
+    (nextOpen: boolean) => {
+      if (nextOpen) smartNodeComposerActions.open(id);
+      else smartNodeComposerActions.close(id);
+    },
+    [id],
+  );
   const [smartCardDragging, setSmartCardDragging] = useState(false);
+  const [videoNaturalRatio, setVideoNaturalRatio] = useState('');
+  const [videoProbedSize, setVideoProbedSize] = useState<{ width: number; height: number; ratio: string } | null>(null);
+  const [videoPreviewOpen, setVideoPreviewOpen] = useState(false);
   const pollTimer = useRef<number | null>(null);
   const videoRunSeqRef = useRef(0);
   const activePollRejectRef = useRef<((error: Error) => void) | null>(null);
   const runCancelSeq = useRunBusStore((s) => s.cancelSeq);
   const runCancelTargets = useRunBusStore((s) => s.cancelTargets);
   const smartNodeRef = useRef<HTMLDivElement | null>(null);
+  const smartPromptRef = useRef<HTMLDivElement | null>(null);
   const src = `video:${id.slice(0, 6)}`;
   const throwIfVideoRunCancelled = (runSeq: number) => {
     if (videoRunSeqRef.current !== runSeq) throw new Error('已停止生成');
@@ -186,26 +202,30 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
   const agnesFrameRate = Number(providerParams.frameRate ?? providerParams.frame_rate ?? 24) || 24;
   const agnesNumFrames = providerParams.numFrames ?? providerParams.num_frames ?? '';
   const updateProviderParams = (patch: Record<string, any>) => update({ providerParams: { ...providerParams, ...patch } });
-  // 主模型 id (对应 VIDEO_MODELS 项)
+  const catalogVideoModels = useMemo(() => modelsForKind(apiSettings, 'video'), [apiSettings]);
   const rawModel = typeof d?.model === 'string' ? d.model : '';
-  const isLegacySora2Model = /^sora-2(?:-\d{4}-\d{2}-\d{2})?$/.test(rawModel);
-  const mainId = d?.mainId || (isLegacySora2Model ? 'sora-2' : (d?.model && VIDEO_MODELS.find((m) => m.id === d.model || m.apiModelOptions.some((o) => o.value === d.model))?.id)) || VIDEO_MODELS[0].id;
+  const mainId = d?.mainId || '';
   const modelDef = useMemo(() => VIDEO_MODELS.find((m) => m.id === mainId) || VIDEO_MODELS[0], [mainId]);
-  const configuredApiModelOverride = String(apiSettings.zhenzhenVideoModelOverrides?.[modelDef.id] || '').trim();
-  const configuredApiModels = parseModelList(configuredApiModelOverride);
-  const apiModelOptions = withUpstreamModelOption(modelDef.apiModelOptions, configuredApiModelOverride);
-  // 子模型(上游真实 model 名)
-  const apiModel: string = d?.model && apiModelOptions.some((o) => o.value === d.model) && (!configuredApiModels.length || configuredApiModels.includes(d.model))
-    ? d.model
-    : (configuredApiModels[0] || modelDef.apiModelOptions[0].value);
+  const apiModel = effectiveModelId(rawModel, catalogVideoModels);
+  const apiModelOptions = modelSelectOptions(
+    apiModel && !catalogVideoModels.includes(apiModel) ? [apiModel, ...catalogVideoModels] : catalogVideoModels,
+  );
   const effectiveApiModel = apiModel;
+  const omniVideoMode = !isExternalSelected ? apishuVeoOmniMode(apiModel) : null;
+  const isApishuVeoOmni = omniVideoMode !== null;
+  const isApishuVeoOmniComponents = omniVideoMode === 'components';
+  const isApishuVeoOmniEdit = omniVideoMode === 'edit';
   const protocolModel: string = String(d?.protocolModel || '').trim();
   const pollingApiModel = protocolModel || effectiveApiModel;
   const defaultProviderApiModel = effectiveApiModel;
   // 各参数(跳过着调用 update 默认值)
   const ratio: string = d?.ratio || modelDef.defaultRatio;
-  const duration: number = d?.duration ?? modelDef.defaultDuration ?? (modelDef.durations?.[0] || 0);
-  const resolution: string = d?.resolution || (isJimengSeedanceSelected ? '720p' : modelDef.defaultResolution || '');
+  const savedDuration = Number(d?.duration ?? modelDef.defaultDuration ?? (modelDef.durations?.[0] || 0));
+  const duration: number = isApishuVeoOmni && ![4, 6, 8, 10].includes(savedDuration) ? 6 : savedDuration;
+  const savedResolution = String(d?.resolution || (isJimengSeedanceSelected ? '720p' : modelDef.defaultResolution || ''));
+  const resolution: string = isApishuVeoOmni
+    ? (['720p', '1080p', '4k'].includes(savedResolution.toLowerCase()) ? savedResolution.toLowerCase() : '720p')
+    : savedResolution;
   const seed: number = typeof d?.seed === 'number' ? d.seed : 0;
   const enhancePrompt: boolean = d?.enhancePrompt ?? false;
   const enableUpsample: boolean = d?.enableUpsample ?? false;
@@ -219,26 +239,30 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
     ? d.size
     : grokVideo15NewSizeFromRatio(ratio);
   const isSoraZhenzhen = !isExternalSelected && modelDef.kind === 'sora' && !isFal;
-  const isApishuVeoOmni = !isExternalSelected && isApishuVeoOmniModel(apiModel);
-  const isApishuVeoOmniEdit = apiModel === 'veo-omni-flash-video-edit';
   const isVeoOmni = !isExternalSelected && apiModel === 'veo-omni-10s';
   const showBuiltinFalControls = !isExternalSelected && isFal && !!falReg;
   const showGenericVideoControls = isExternalSelected || !isFal;
-  const ratioOptions = isJimengSeedanceSelected
+  const ratioOptions = isApishuVeoOmni
+    ? ['16:9', '9:16']
+    : isJimengSeedanceSelected
     ? ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9']
     : isAgnesExternalSelected
     ? ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9']
     : isGrok15New
     ? ['16:9', '9:16']
     : modelDef.ratios;
-  const durationOptions = isJimengSeedanceSelected
+  const durationOptions = isApishuVeoOmni
+    ? [4, 6, 8, 10]
+    : isJimengSeedanceSelected
     ? [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
     : isAgnesExternalSelected
     ? [1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 18]
     : isGrok15New
     ? []
     : modelDef.durations || [];
-  const resolutionOptions = isJimengSeedanceSelected
+  const resolutionOptions = isApishuVeoOmni
+    ? ['720p', '1080p', '4k']
+    : isJimengSeedanceSelected
     ? ['480p', '720p', '1080p']
     : isAgnesExternalSelected
     ? ['480p', '720p', '1080p']
@@ -371,9 +395,9 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
     if (m.kind === 'video') update({ localRefVideos: localRefVideos.filter((url) => url !== m.url), materialOrder: nextOrder });
     if (m.kind === 'audio') update({ localRefAudios: localRefAudios.filter((url) => url !== m.url), materialOrder: nextOrder });
   };
-  const maxApishuVeoOmniRefs = isApishuVeoOmni ? 9 : 0;
+  const maxApishuVeoOmniRefs = isApishuVeoOmniEdit ? 0 : isApishuVeoOmniComponents ? 9 : isApishuVeoOmni ? 1 : 0;
   const maxMentionRefs =
-    maxApishuVeoOmniRefs
+    isApishuVeoOmni
       ? maxApishuVeoOmniRefs
       : isVeoOmni
       ? 1
@@ -466,7 +490,7 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
 
   // 分组动态跟随子模型: Seedance / 即梦 CLI 支持 image/video/audio, 其他 (grok/veo/sora) 仅 image
   const previewGroups = useMemo<ReadonlyArray<'text' | 'image' | 'video' | 'audio'>>(
-    () => (isApishuVeoOmniEdit ? ['text', 'image', 'video'] : (modelDef.kind === 'seedance' || isJimengSeedanceSelected ? ['text', 'image', 'video', 'audio'] : ['text', 'image'])),
+    () => (isApishuVeoOmniEdit ? ['text', 'video'] : (modelDef.kind === 'seedance' || isJimengSeedanceSelected ? ['text', 'image', 'video', 'audio'] : ['text', 'image'])),
     [isApishuVeoOmniEdit, modelDef.kind, isJimengSeedanceSelected],
   );
 
@@ -523,20 +547,7 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
 
   useEffect(() => () => stopPoll(), []);
 
-  // 切主模型时重置所有参数为该模型默认值(避免跨模型参数遗留)
-  const switchMainModel = (nextId: string) => {
-    const def = VIDEO_MODELS.find((m) => m.id === nextId) || VIDEO_MODELS[0];
-    const nextModel = parseModelList(apiSettings.zhenzhenVideoModelOverrides?.[def.id])[0] || def.apiModelOptions[0].value;
-    update({
-      mainId: def.id,
-      model: nextModel,
-      ratio: def.defaultRatio,
-      duration: def.defaultDuration ?? def.durations?.[0],
-      resolution: def.defaultResolution || '',
-      ...(nextModel === 'grok-imagine-video-1.5' ? { gkfMode: 'image_to_video' } : {}),
-      ...(isGrokVideo15NewModel(nextModel) ? { ratio: '16:9', resolution: '' } : {}),
-    });
-  };
+  const switchMainModel = (nextModel: string) => update({ model: nextModel, mainId: '' });
 
   // v1.2.9.11: 返回 Promise，调用方 await 直到任务真正成功/失败/超时才 resolve/reject。
   //   原设计中 startPolling 启动 setInterval 后立即返回 → handleGenerate 提交成功后也立即返回 →
@@ -571,11 +582,15 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
             lastProgress = nextProgress;
             logBus.debug(`[${elapsed}/${MAX}] status=${r.status} progress=${nextProgress}`, src);
           }
-          if (r.status === 'SUCCESS' && r.videoUrl) {
+          const nextVideoUrls = Array.isArray(r.videoUrls) && r.videoUrls.length
+            ? r.videoUrls
+            : (r.videoUrl ? [r.videoUrl] : []);
+          const nextVideoUrl = nextVideoUrls[0] || '';
+          if (r.status === 'SUCCESS' && nextVideoUrl) {
             stopPoll();
             flushProgressUpdate();
-            update({ status: 'success', videoUrl: r.videoUrl, progress: '100%' });
-            logBus.success(`任务完成 → ${r.videoUrl}`, src);
+            update({ status: 'success', videoUrl: nextVideoUrl, videoUrls: nextVideoUrls, progress: '100%' });
+            logBus.success(`任务完成 → ${nextVideoUrl}${nextVideoUrls.length > 1 ? ` 等 ${nextVideoUrls.length} 个视频` : ''}`, src);
             taskCompletionSound.notifyComplete(id, 'video');
             resolve();
           } else if (r.status === 'FAILURE') {
@@ -598,9 +613,9 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
   };
 
   useEffect(() => {
-    if (status !== 'polling' || !taskId || videoUrl || pollTimer.current) return;
+    if (status !== 'polling' || !taskId || pollTimer.current) return;
     void startPolling(taskId).catch(() => undefined);
-  }, [status, taskId, videoUrl, pollingApiModel]);
+  }, [status, taskId, pollingApiModel]);
 
   // FAL 轮询
   const falPollRef = useRef<{ responseUrl?: string; endpoint?: string; requestId?: string } | null>(null);
@@ -675,9 +690,14 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
       logBus.error('生成中止: Grok 1.5 New 缺少参考图', src);
       return;
     }
+    if (isApishuVeoOmniComponents && imageUrls.length === 0) {
+      setError('omni-flash-components 至少需要 1 张参考图');
+      logBus.error('生成中止: omni-flash-components 缺少参考图', src);
+      return;
+    }
     if (isApishuVeoOmniEdit && videoUrls.length === 0) {
-      setError('veo-omni-flash-video-edit 需要 1 个源视频(video_url/video)');
-      logBus.error('生成中止: veo-omni-flash-video-edit 缺少源视频', src);
+      setError(`${apiModel} 需要 1 个源视频`);
+      logBus.error(`生成中止: ${apiModel} 缺少源视频`, src);
       return;
     }
     taskCompletionSound.primeAudio();
@@ -698,12 +718,18 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
           providerId: providerSelection.provider.id,
           providerModel,
           model: providerModel,
+          protocolModel: effectiveApiModel,
+          providerKind: modelDef.kind,
           prompt: finalPrompt,
           aspect_ratio: ratio,
           ratio,
           duration,
           resolution,
+          size: isGrokVideo15NewModel(providerModel) ? grok15NewSize : undefined,
           seed: seed > 0 ? seed : undefined,
+          enhance_prompt: modelDef.kind === 'veo' ? enhancePrompt : undefined,
+          enable_upsample: modelDef.kind === 'veo' && enableUpsample ? true : undefined,
+          private: modelDef.kind === 'sora' ? soraPrivate : undefined,
           images: refs,
           videos: videoRefs,
           audios: audioRefs,
@@ -816,7 +842,7 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
       // 参考图预处理:
       //   - Grok: 直接传 URL (本地 /files/* 也可,后端会转上游 URL)
       //   - Veo / Sora2 / Seedance: 转 base64
-      const refs = imageUrls.slice(0, isApishuVeoOmni ? 9 : ((isVeoOmni || isGrok15New) ? 1 : modelDef.maxRefImages));
+      const refs = imageUrls.slice(0, isApishuVeoOmni ? maxApishuVeoOmniRefs : ((isVeoOmni || isGrok15New) ? 1 : modelDef.maxRefImages));
       let images: string[] | undefined;
       if (modelDef.supportImages && refs.length > 0) {
         if (modelDef.kind === 'grok') {
@@ -832,7 +858,14 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
       }
 
       // 按 kind 走不同字段(完全对齐 gpt-image-2-web payload)
-      const payload: VideoSubmitRequest = { model: effectiveApiModel, protocolModel: apiModel, prompt: finalPrompt, providerParams };
+      const payload: VideoSubmitRequest = {
+        model: effectiveApiModel,
+        protocolModel: apiModel,
+        prompt: finalPrompt,
+        providerParams,
+        duration: Number(duration) || modelDef.defaultDuration || 5,
+        resolution: resolution || modelDef.defaultResolution || '720p',
+      };
       if (isGrok15New) {
         payload.size = grok15NewSize;
       } else if (modelDef.kind === 'grok') {
@@ -849,7 +882,6 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
         // veo / seedance
         payload.aspect_ratio = ratio;
         if (isApishuVeoOmni) {
-          payload.duration = 10;
           if (isApishuVeoOmniEdit && videoUrls.length) {
             payload.video_url = videoUrls[0];
             payload.videos = videoUrls.slice(0, 1);
@@ -873,7 +905,7 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
           : modelDef.kind === 'sora'
             ? ` duration=${payload.duration}s private=${payload.private}`
             : isApishuVeoOmni
-                ? ` duration=10s endpoint=/v1/videos apishu-json video=${isApishuVeoOmniEdit ? (videoUrls[0] ? 1 : 0) : 0}`
+                ? ` seconds=${payload.duration}s endpoint=/v1/videos skylee-omni video=${isApishuVeoOmniEdit ? (videoUrls[0] ? 1 : 0) : 0}`
               : isVeoOmni
                 ? ' duration=10s endpoint=/v1/videos'
               : ` enhance=${payload.enhance_prompt}`) +
@@ -886,7 +918,8 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
       update({
         status: 'polling',
         taskId: r.taskId,
-        protocolModel: r.protocol || r.effectiveModel || r.requestedModel,
+        protocolModel: r.effectiveModel || r.requestedModel || effectiveApiModel,
+        videoProtocol: r.protocol || null,
         lastPrompt: finalPrompt,
         progress: '0%',
       });
@@ -958,7 +991,7 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
   };
   const { dropProps, isAccepting } = useMaterialDropTarget({
     id,
-    accepts: isApishuVeoOmniEdit ? ['image', 'video', 'text'] : (isJimengSeedanceSelected ? ['image', 'video', 'audio', 'text'] : ['image', 'text']),
+    accepts: isApishuVeoOmniEdit ? ['video', 'text'] : (isJimengSeedanceSelected ? ['image', 'video', 'audio', 'text'] : ['image', 'text']),
     onDrop: handleDrop,
   });
 
@@ -974,12 +1007,14 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
   const videoNodeUiVariant: 'smart-card' | 'classic' = d?.uiVariant === 'classic' ? 'classic' : 'smart-card';
   const useSmartCardVideoNode = videoNodeUiVariant === 'smart-card';
   const hasManualSmartSize = d?.smartCardManualSize === true;
-  const smartAspectSize = resolveSmartMediaCardSize(ratio, hasManualSmartSize ? d?.smartCardWidth : undefined);
+  const previewAspectRatio = videoProbedSize?.ratio || videoNaturalRatio || ratio;
+  const smartAspectSize = resolveSmartMediaCardSize(previewAspectRatio, hasManualSmartSize ? d?.smartCardWidth : undefined);
   const smartCardWidth = smartAspectSize.width;
   const smartCardHeight = smartAspectSize.height;
   const smartComposerOpen = smartComposerOpenLocal && !smartCardDragging;
+  const smartVideoCardState = isBusy ? 'running' : status === 'error' ? 'failed' : videoUrl ? 'result' : 'empty';
   const smartComposerWidth = Math.max(smartCardWidth, 620);
-  const smartVideoAspect = ratio && ratio.includes(':') ? ratio.replace(':', '/') : '16/9';
+  const smartVideoAspect = previewAspectRatio && previewAspectRatio.includes(':') ? previewAspectRatio.replace(':', '/') : '16/9';
   const isSmartRegenerating = isBusy && Boolean(videoUrl);
   const smartStatusLabel =
     status === 'submitting'
@@ -997,11 +1032,38 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
   const syncVideoNodeGeometry = useNodeGeometrySync(id, updateNodeInternals);
 
   useEffect(() => {
+    setVideoNaturalRatio('');
+    setVideoProbedSize(null);
+    if (!videoUrl) return;
+    let active = true;
+    void probeVideo(videoUrl)
+      .then((probe) => {
+        if (!active) return;
+        setVideoProbedSize(resolveVideoDisplaySize(probe.width, probe.height, probe.rotation));
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [videoUrl]);
+
+  const handleVideoLoadedMetadata = (event: SyntheticEvent<HTMLVideoElement>) => {
+    const videoWidth = event.currentTarget.videoWidth;
+    const videoHeight = event.currentTarget.videoHeight;
+    if (videoWidth > 0 && videoHeight > 0) {
+      setVideoNaturalRatio(`${videoWidth}:${videoHeight}`);
+    }
+    syncVideoNodeGeometry();
+  };
+
+  useEffect(() => {
     if (!useSmartCardVideoNode) return;
     const raf = window.requestAnimationFrame(syncVideoNodeGeometry);
     return () => window.cancelAnimationFrame(raf);
   }, [selected, smartCardWidth, smartCardHeight, smartComposerOpen, syncVideoNodeGeometry, useSmartCardVideoNode]);
 
+  // Kept alongside the composer-owned dismissal: ignores prompt portals
+  // and other floating editors that legitimately sit outside the anchor.
   useOutsideClose({
     enabled: useSmartCardVideoNode && smartComposerOpenLocal,
     refs: smartNodeRef,
@@ -1017,6 +1079,9 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
     disabled: !useSmartCardVideoNode,
   });
 
+  // Composer open state is session-only; release it when the node unmounts.
+  useEffect(() => () => smartNodeComposerActions.close(id), [id]);
+
   const switchVideoNodeVariant = (variant: 'smart-card' | 'classic') => {
     setSmartComposerOpenLocal(false);
     smartPanelToggle.handledClickRef.current = false;
@@ -1031,8 +1096,12 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
     return (
       <SmartNodeShell
         rootRef={smartNodeRef}
-        className="t8-smart-video-node relative overflow-visible"
+      data-canvas-node-root={true}
+      className={`t8-smart-video-node relative overflow-visible ${selected ? 'is-selected' : ''}`}
         style={{ width: smartCardWidth }}
+        accessibleLabel="视频节点"
+        smartState={smartVideoCardState}
+        onKeyboardActivate={() => setSmartComposerOpenLocal(true)}
         rootProps={{
           ...dropProps,
           onPointerDown: smartPanelToggle.onPointerDown,
@@ -1050,43 +1119,13 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
         >
           <Handle type="target" position={Position.Left} className="t8-smart-node-port !border-0" style={{ top: '50%' }} />
           <Handle type="source" position={Position.Right} className="t8-smart-node-port !border-0" style={{ top: '50%' }} />
-          <ResizableCorners
-            selected={selected}
-            minWidth={300}
-            minHeight={170}
-            maxWidth={760}
-            maxHeight={720}
-            accent="var(--t8-accent)"
-            keepAspectRatio
-            onResize={(_e, p) => {
-              const nextWidth = Math.round(p.width);
-              const nextSize = resolveSmartMediaCardSize(ratio, nextWidth);
-              update({
-                smartCardWidth: nextSize.width,
-                smartCardHeight: nextSize.height,
-                smartCardManualSize: true,
-              });
-              syncVideoNodeGeometry();
-            }}
-            onResizeEnd={(_e, p) => {
-              const nextWidth = Math.round(p.width);
-              const nextSize = resolveSmartMediaCardSize(ratio, nextWidth);
-              update({
-                smartCardWidth: nextSize.width,
-                smartCardHeight: nextSize.height,
-                smartCardManualSize: true,
-              });
-              syncVideoNodeGeometry();
-            }}
-          />
-
           <div className="t8-smart-node-body">
             <div className="t8-smart-node-preview t8-smart-video-preview">
               {videoUrl ? (
                 <LoopingVideo
                   src={videoUrl}
                   controls
-                  className="h-full w-full object-cover"
+                  className="h-full w-full object-contain"
                   style={{ aspectRatio: smartVideoAspect }}
                   data-drag-source
                   data-drag-kind="video"
@@ -1097,13 +1136,35 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
                   data-prompt-template-kind="video"
                   data-prompt-template-category="video-image-to-video"
                   data-prompt-template-prompt={d?.lastPrompt || localPrompt}
-                  onLoadedMetadata={() => syncVideoNodeGeometry()}
+                  onLoadedMetadata={handleVideoLoadedMetadata}
+                  onDoubleClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setVideoPreviewOpen(true);
+                  }}
                   onMouseDown={(e) => beginMaterialDrag(e, { kind: 'video', url: videoUrl, sourceNodeId: id, previewUrl: videoUrl })}
                   title="按住 Ctrl 拖拽到其他节点"
                 />
               ) : (
                 <div className="t8-smart-node-empty t8-smart-video-empty">
                   <VideoIcon size={28} />
+                </div>
+              )}
+              {videoUrl && (
+                <div className="nodrag nopan t8-smart-result-tools">
+                  <button
+                    type="button"
+                    className="t8-smart-result-tool"
+                    title="预览视频"
+                    aria-label="预览视频"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      setVideoPreviewOpen(true);
+                    }}
+                  >
+                    <Eye size={14} />
+                  </button>
                 </div>
               )}
               <div className="t8-smart-video-badge">
@@ -1126,12 +1187,44 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
           </div>
         </div>
 
+        <ResizableCorners
+          selected={selected}
+          minWidth={300}
+          minHeight={170}
+          maxWidth={760}
+          maxHeight={720}
+          accent="var(--t8-accent)"
+          keepAspectRatio
+          onResize={(_e, p) => {
+            const nextWidth = Math.round(p.width);
+            const nextSize = resolveSmartMediaCardSize(ratio, nextWidth);
+            update({
+              smartCardWidth: nextSize.width,
+              smartCardHeight: nextSize.height,
+              smartCardManualSize: true,
+            });
+          }}
+          onResizeEnd={(_e, p) => {
+            const nextWidth = Math.round(p.width);
+            const nextSize = resolveSmartMediaCardSize(ratio, nextWidth);
+            update({
+              smartCardWidth: nextSize.width,
+              smartCardHeight: nextSize.height,
+              smartCardManualSize: true,
+            });
+            syncVideoNodeGeometry();
+          }}
+        />
+
         {smartComposerOpen && (
           <SmartNodeComposer
             portal
             anchorRef={smartNodeRef}
             style={{ width: smartComposerWidth }}
             onMouseDown={(e) => e.stopPropagation()}
+            onRequestClose={() => setSmartComposerOpenLocal(false)}
+            ariaLabel="视频节点属性"
+            initialFocusRef={smartPromptRef}
           >
             <MaterialPreviewSection
               texts={orderedTexts}
@@ -1162,7 +1255,6 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
                 type="button"
                 className="nodrag nopan t8-btn t8-smart-classic-switch"
                 onPointerDown={(e) => {
-                  e.preventDefault();
                   e.stopPropagation();
                 }}
                 onClick={(e) => {
@@ -1217,16 +1309,6 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
                   </select>
                 </label>
               )}
-              {!isExternalSelected && (
-                <label className="t8-smart-field">
-                  <span>模型类型</span>
-                  <select value={modelDef.id} onChange={(e) => switchMainModel(e.target.value)} className="t8-select t8-smart-select">
-                    {VIDEO_MODELS.filter((m) => m.kind !== 'seedance').map((m) => (
-                      <option key={m.id} value={m.id}>{m.label}</option>
-                    ))}
-                  </select>
-                </label>
-              )}
               {isExternalSelected && providerSelection.provider ? (
                 <label className="t8-smart-field">
                   <span>具体模型</span>
@@ -1240,21 +1322,12 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
                     ))}
                   </select>
                 </label>
-              ) : apiModelOptions.length > 1 && (
+              ) : (
                 <label className="t8-smart-field">
-                  <span>具体模型</span>
+                  <span>模型</span>
                   <select
                     value={defaultProviderApiModel}
-                    onChange={(e) => {
-                      const nextModel = e.target.value;
-                      update({
-                        model: nextModel,
-                        ...(nextModel === 'grok-imagine-video-1.5' ? { gkfMode: 'image_to_video' } : {}),
-                        ...(isGrokVideo15NewModel(nextModel) ? { ratio: '16:9', size: '1280x720', resolution: '' } : {}),
-                        ...(nextModel === 'sora-2-zhenzhen' ? { ratio: '16:9', duration: 15, resolution: '' } : {}),
-                        ...(nextModel === 'veo-omni-10s' ? { ratio: '16:9', duration: 10, resolution: '' } : {}),
-                      });
-                    }}
+                    onChange={(e) => switchMainModel(e.target.value)}
                     className="t8-select t8-smart-select"
                   >
                     {apiModelOptions.map((o) => (
@@ -1267,6 +1340,7 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
 
             <div className="t8-smart-prompt-shell">
               <MentionPromptInput
+                editorRef={smartPromptRef}
                 title="视频 Prompt"
                 value={localPrompt}
                 mentions={promptMentions}
@@ -1328,6 +1402,14 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
             )}
           </SmartNodeComposer>
         )}
+        <SmartMediaPreviewModal
+          open={videoPreviewOpen}
+          url={videoUrl}
+          title="生成视频"
+          kind="video"
+          meta={videoProbedSize ? `${videoProbedSize.width}×${videoProbedSize.height}` : (videoNaturalRatio ? videoNaturalRatio.replace(':', '×') : undefined)}
+          onClose={() => setVideoPreviewOpen(false)}
+        />
       </SmartNodeShell>
     );
   }
@@ -1335,8 +1417,8 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
   return (
     <div
       {...dropProps}
-      className={`relative rounded-xl border-2 transition-all w-[300px] ${
-        selected ? 'border-rose-400 shadow-2xl shadow-rose-500/20' : isAccepting ? 'border-emerald-400' : 'border-white/15 hover:border-white/30'
+      className={`t8-node relative rounded-xl border-2 transition-all w-[300px] ${selected ? 'is-selected' : ''} ${
+        isAccepting ? 'border-emerald-400' : ''
       }`}
       style={{
         background: 'rgba(20,20,22,.92)',
@@ -1366,7 +1448,6 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
           type="button"
           className="nodrag nopan t8-btn t8-smart-classic-switch"
           onPointerDown={(e) => {
-            e.preventDefault();
             e.stopPropagation();
           }}
           onClick={(e) => {
@@ -1428,23 +1509,6 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
           </div>
         )}
 
-        {/* 主模型 */}
-        {!isExternalSelected && (
-        <div>
-          <label className="text-[10px] text-white/50 block mb-1">模型类型</label>
-          <select
-            value={modelDef.id}
-            onChange={(e) => switchMainModel(e.target.value)}
-            className="w-full rounded bg-white/5 border border-white/10 px-2 py-1 text-xs text-white outline-none focus:border-white/30"
-          >
-            {VIDEO_MODELS.filter((m) => m.kind !== 'seedance').map((m) => (
-              <option key={m.id} value={m.id} className="bg-zinc-900">{m.label}</option>
-            ))}
-          </select>
-        </div>
-        )}
-
-        {/* 子模型(主项目 veo_model / gk_model) */}
         {isExternalSelected && providerSelection.provider ? (
           <div>
             <label className="text-[10px] text-white/50 block mb-1">具体模型</label>
@@ -1459,21 +1523,12 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
               ))}
             </select>
           </div>
-        ) : apiModelOptions.length > 1 && (
+        ) : (
           <div>
-            <label className="text-[10px] text-white/50 block mb-1">具体模型</label>
+            <label className="text-[10px] text-white/50 block mb-1">模型</label>
             <select
               value={defaultProviderApiModel}
-              onChange={(e) => {
-                const nextModel = e.target.value;
-                update({
-                  model: nextModel,
-                  ...(nextModel === 'grok-imagine-video-1.5' ? { gkfMode: 'image_to_video' } : {}),
-                  ...(isGrokVideo15NewModel(nextModel) ? { ratio: '16:9', size: '1280x720', resolution: '' } : {}),
-                  ...(nextModel === 'sora-2-zhenzhen' ? { ratio: '16:9', duration: 15, resolution: '' } : {}),
-                  ...(nextModel === 'veo-omni-10s' ? { ratio: '16:9', duration: 10, resolution: '' } : {}),
-                });
-              }}
+              onChange={(e) => switchMainModel(e.target.value)}
               className="w-full rounded bg-white/5 border border-white/10 px-2 py-1 text-xs text-white outline-none focus:border-white/30"
             >
               {apiModelOptions.map((o) => (
@@ -2025,8 +2080,9 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
           <LoopingVideo
             src={videoUrl}
             controls
-            className="w-full rounded"
-            style={{ aspectRatio: ratio.replace(':', '/') }}
+            className="w-full rounded object-contain"
+            style={{ aspectRatio: smartVideoAspect }}
+            onLoadedMetadata={handleVideoLoadedMetadata}
             data-drag-source
             data-drag-kind="video"
             data-drag-url={videoUrl}

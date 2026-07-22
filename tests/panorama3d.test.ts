@@ -87,7 +87,7 @@ test('panorama 3d node exposes built-in generation and resource actions', () => 
   const canvas = readFileSync(new URL('../src/components/Canvas.tsx', import.meta.url), 'utf8');
 
   assert.match(source, /submitImageAsync/);
-  assert.match(source, /queryImageStatus\(taskId,\s*'gpt-image-2'\)/);
+  assert.match(source, /queryImageStatus\(taskId,\s*imageModel\)/);
   assert.match(source, /PANORAMA_FIXED_PROMPT/);
   assert.match(source, /连接预览/);
   assert.match(source, /文生全景/);
@@ -320,7 +320,6 @@ test('panorama storyboard prompt board defaults closed and stitches text below s
   const source = readFileSync(new URL('../src/components/nodes/Panorama3DNode.tsx', import.meta.url), 'utf8');
   const canvas = readFileSync(new URL('../src/components/Canvas.tsx', import.meta.url), 'utf8');
   const css = readFileSync(new URL('../src/styles/index.css', import.meta.url), 'utf8');
-  const farmCss = readFileSync(new URL('../src/styles/theme-farm-story.css', import.meta.url), 'utf8');
   const utilsSource = readFileSync(new URL('../src/utils/panorama3d.ts', import.meta.url), 'utf8');
   const utils = await import('../src/utils/panorama3d.ts');
 
@@ -438,31 +437,6 @@ test('panorama storyboard prompt board defaults closed and stitches text below s
   assert.match(css, /data-panorama-storyboard-live-preview-text="white"[\s\S]*paint-order:\s*stroke fill !important/);
   assert.match(css, /data-panorama-storyboard-live-preview-text="white"[\s\S]*0 0 0 #ffffff/);
   assert.match(css, /data-theme-mode="light"[\s\S]*data-panorama-storyboard-live-preview-text="white"[\s\S]*-webkit-text-fill-color:\s*#ffffff !important/);
-  assert.match(farmCss, /data-theme-visual="farm-story"[\s\S]*\.t8-panorama-storyboard-preview-caption/);
-  assert.match(farmCss, /\.t8-panorama-storyboard-preview-caption-line[\s\S]*-webkit-text-fill-color:\s*#ffffff !important/);
-  assert.match(farmCss, /data-panorama-storyboard-preview-caption="true"[\s\S]*-webkit-text-fill-color:\s*#ffffff !important/);
-  assert.match(farmCss, /data-panorama-storyboard-preview-line="true"[\s\S]*color:\s*#ffffff !important/);
-  assert.match(farmCss, /data-panorama-storyboard-preview-tone="locked-white"[\s\S]*forced-color-adjust:\s*none !important/);
-  assert.match(farmCss, /data-panorama-storyboard-preview-line="true"\]\[data-panorama-storyboard-preview-tone="locked-white"[\s\S]*font-size:\s*15px !important/);
-  assert.match(farmCss, /data-panorama-storyboard-preview-line="true"\]\[data-panorama-storyboard-preview-tone="locked-white"[\s\S]*font-weight:\s*900 !important/);
-  assert.match(farmCss, /data-panorama-storyboard-preview-line="true"\]\[data-panorama-storyboard-preview-tone="locked-white"[\s\S]*line-height:\s*1\.42 !important/);
-  assert.match(farmCss, /data-theme-visual="farm-story"\] \[data-panorama-storyboard-preview-caption="true"\]\[data-panorama-storyboard-preview-tone="locked-white"\][\s\S]*background-color:\s*#050505 !important/);
-  assert.match(farmCss, /data-theme-visual="farm-story"\] \[data-panorama-storyboard-preview-line="true"\]\[data-panorama-storyboard-preview-tone="locked-white"\][\s\S]*-webkit-text-fill-color:\s*#ffffff !important/);
-  assert.match(farmCss, /data-theme-visual="farm-story"\] \[data-panorama-storyboard-preview-placeholder="true"\]\[data-panorama-storyboard-preview-tone="locked-white"\][\s\S]*color:\s*rgba\(255,\s*255,\s*255,\s*\.72\) !important/);
-  assert.match(farmCss, /data-theme-visual="farm-story"\]\[data-theme-mode="light"\] \[data-panorama-storyboard-preview-day-safe="true"\][\s\S]*--tw-text-opacity:\s*1 !important/);
-  assert.match(farmCss, /data-theme-visual="farm-story"\]\[data-theme-mode="light"\] \[data-panorama-storyboard-preview-line="true"\]\[data-panorama-storyboard-preview-day-safe="true"\][\s\S]*font-size:\s*15px !important/);
-  assert.match(farmCss, /data-theme-visual="farm-story"\]\[data-theme-mode="light"\] \[data-panorama-storyboard-preview-line="true"\]\[data-panorama-storyboard-preview-day-safe="true"\][\s\S]*font-weight:\s*900 !important/);
-  assert.match(farmCss, /data-theme-visual="farm-story"\]\[data-theme-mode="light"\] \[data-panorama-storyboard-preview-line="true"\]\[data-panorama-storyboard-preview-day-safe="true"\][\s\S]*line-height:\s*1\.42 !important/);
-  assert.match(farmCss, /data-theme-visual="farm-story"\]\[data-theme-mode="light"\] \[data-panorama-storyboard-preview-placeholder="true"\]\[data-panorama-storyboard-preview-day-safe="true"\][\s\S]*rgba\(255,\s*255,\s*255,\s*\.84\) !important/);
-  assert.match(farmCss, /Farm day-mode final guard: keep 3D panorama storyboard live preview readable/);
-  assert.match(farmCss, /data-theme-visual="farm-story"\] \[data-t8-color-lock="panorama-storyboard-preview"\][\s\S]*--tw-text-opacity:\s*1 !important/);
-  assert.match(farmCss, /data-theme-visual="farm-story"\] \[data-t8-color-lock="panorama-storyboard-preview"\][\s\S]*-webkit-text-fill-color:\s*#ffffff !important/);
-  assert.match(farmCss, /data-theme-visual="farm-story"\] \[data-t8-color-lock="panorama-storyboard-preview"\]\[data-panorama-storyboard-preview-line="true"\][\s\S]*font-weight:\s*900 !important/);
-  assert.match(farmCss, /Farm runtime contrast lock for panorama storyboard live preview/);
-  assert.match(farmCss, /data-theme-visual="farm-story"\] \[data-panorama-storyboard-preview-contrast-lock="true"\][\s\S]*-webkit-text-fill-color:\s*#ffffff !important/);
-  assert.match(farmCss, /Farm readable live preview text guard for the 3D panorama storyboard board/);
-  assert.match(farmCss, /data-theme-visual="farm-story"\]\[data-theme-mode="light"\] \[data-panorama-storyboard-live-preview-text="white"\][\s\S]*paint-order:\s*stroke fill !important/);
-  assert.match(farmCss, /data-theme-visual="farm-story"\]\[data-theme-mode="light"\] \[data-panorama-storyboard-live-preview-text="white"\][\s\S]*0 0 0 #ffffff/);
 });
 
 test('panorama storyboard prompt board manages reusable prompt presets', async () => {
@@ -591,16 +565,17 @@ test('panorama generation validation matches text and image modes', () => {
   assert.deepEqual(validatePanoramaGeneration({ mode: 'image', referenceUrl: '/files/input/a.png' }), { ok: true });
 });
 
-test('panorama image request uses gpt-image-2 21:9 and size levels', () => {
+test('panorama image request preserves the selected real model with 21:9 and size levels', () => {
   assert.deepEqual(buildPanoramaImageRequest({
+    model: 'relay-real-image-model',
     mode: 'text',
     prompt: '未来展厅',
     sizeLevel: '1K',
     viewerPosition: '站在大厅中央',
     viewCenter: '正对主展品',
   }), {
-    model: 'gpt-image-2',
-    apiModel: 'gpt-image-2',
+    model: 'relay-real-image-model',
+    apiModel: 'relay-real-image-model',
     paramKind: 'gpt-size',
     prompt: `${PANORAMA_FIXED_PROMPT}\n摄像机位置要求：观看者站位：站在大厅中央。初始视线中心：正对主展品。\n未来展厅`,
     aspectRatio: '21:9',
@@ -611,13 +586,14 @@ test('panorama image request uses gpt-image-2 21:9 and size levels', () => {
     n: 1,
   });
   assert.deepEqual(buildPanoramaImageRequest({
+    model: 'relay-real-image-model',
     mode: 'image',
     prompt: '',
     sizeLevel: '2K',
     referenceUrl: '/files/input/ref.png',
   }), {
-    model: 'gpt-image-2',
-    apiModel: 'gpt-image-2',
+    model: 'relay-real-image-model',
+    apiModel: 'relay-real-image-model',
     paramKind: 'gpt-size',
     prompt: PANORAMA_FIXED_PROMPT,
     aspectRatio: '21:9',

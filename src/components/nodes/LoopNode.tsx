@@ -12,6 +12,7 @@ import LoopingVideo from '../LoopingVideo';
 import SmartImage from '../SmartImage';
 // v1.2.10.5: 节点落点防重叠 —— 多链克隆子图整组避让
 import { placeBatchNodes, rectOf, type Rect as PlacementRect } from '../../utils/nodePlacement';
+import { sanitizeClipboardNodeData } from '../../utils/canvasClipboard';
 
 /**
  * LoopNode — 工具节点：循环器（v1.2.8 新增）
@@ -35,10 +36,7 @@ import { placeBatchNodes, rectOf, type Rect as PlacementRect } from '../../utils
 const EXEC_TYPES = new Set<string>([
   'image', 'edit',
   'multi-angle-3d', 'panorama-720', 'penguin-portrait',
-  'video', 'seedance', 'audio', 'llm', 'runninghub', 'runninghub-wallet',
-    // v1.2.10.1: RH 工具节点 (循环器中作为 EXEC 使用)
-    'rh-tools', 'rh-toolbox', 'fal-toolbox', 'comfyui-store',
-  'grok-oauth-agent', 'codex-cli-agent',
+  'video', 'seedance', 'audio', 'llm',
   'resize', 'upscale', 'grid-crop', 'grid-editor', 'remove-bg', 'combine',
   'panorama-3d',
   'frame-extractor', 'frame-pair',
@@ -635,7 +633,12 @@ const LoopNode = (p: NodeProps) => {
         ...n,
         id: idMap.get(n.id)!,
         position: { x: n.position.x + _offClone.dx, y: n.position.y + yOffset + _offClone.dy },
-        data: { ...(n.data as any), status: 'idle', error: null, __loopClone: id },
+        data: {
+          ...sanitizeClipboardNodeData(n.data, n.type as string, { preserveMediaSnapshots: false }),
+          status: 'idle',
+          error: null,
+          __loopClone: id,
+        },
         selected: false,
       } as Node));
       const clonedEdges: Edge[] = subEdges.map((e, idx) => ({
@@ -747,10 +750,10 @@ const LoopNode = (p: NodeProps) => {
   // ===== 双主题 token =====
   // 重要: 必须固定 width 不能只设 minWidth, 否则子元素的预览图 / 视频会把节点擑到反近十倍宽
   const containerStyle: React.CSSProperties = isPixel
-    ? { background: 'var(--px-surface)', border: '2px solid var(--px-ink)', borderRadius: 8, boxShadow: p.selected ? '5px 5px 0 var(--px-ink)' : '3px 3px 0 var(--px-ink)', width: 300 }
+    ? { background: 'var(--px-surface)', border: '2px solid var(--px-ink)', borderRadius: 8, boxShadow: '3px 3px 0 var(--px-ink)', width: 300 }
     : isDark
-      ? { background: 'rgba(20,20,22,0.92)', border: `2px solid ${p.selected ? COLOR : 'rgba(255,255,255,0.15)'}`, borderRadius: 12, boxShadow: '0 8px 24px rgba(0,0,0,0.45)', backdropFilter: 'blur(8px)', width: 300 }
-      : { background: 'rgba(255,255,255,0.95)', border: `2px solid ${p.selected ? COLOR : 'rgba(0,0,0,0.12)'}`, borderRadius: 12, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', backdropFilter: 'blur(8px)', width: 300 };
+      ? { background: 'rgba(20,20,22,0.92)', border: '2px solid rgba(255,255,255,0.15)', borderRadius: 12, boxShadow: '0 8px 24px rgba(0,0,0,0.45)', backdropFilter: 'blur(8px)', width: 300 }
+      : { background: 'rgba(255,255,255,0.95)', border: '2px solid rgba(0,0,0,0.12)', borderRadius: 12, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', backdropFilter: 'blur(8px)', width: 300 };
 
   // 像素风 headerBg 改为 surface 白底 (与 FramePair/Upload/Pick 一致), 仅图标色块用 peach
   const headerBg = isPixel ? 'var(--px-surface)' : isDark ? 'rgba(167,139,250,0.16)' : 'rgba(167,139,250,0.12)';
@@ -772,7 +775,7 @@ const LoopNode = (p: NodeProps) => {
   const stopBtn: React.CSSProperties = { ...primaryBtn, background: isPixel ? 'var(--px-peach)' : '#ef4444', color: isPixel ? 'var(--px-ink)' : '#fff' };
 
   return (
-    <div className="relative" style={containerStyle}>
+    <div className={`t8-node relative ${p.selected ? 'is-selected' : ''}`} style={containerStyle}>
       {/* target handle (左) */}
       <Handle
         type="target"

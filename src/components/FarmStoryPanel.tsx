@@ -24,7 +24,6 @@ import {
   Wheat,
   X,
 } from 'lucide-react';
-import { trackAchievementEvent } from '../stores/achievements';
 import type { ThemeMode, ThemeVisualStyle } from '../theme/types';
 import type { FarmCanvasFloatingFeedback } from './FarmCanvasLayer';
 import type { FarmAnimalMood, FarmAnimalProductId, FarmCanvasState, FarmCropId, FarmDecorObjectType, FarmLongTermGoal, FarmNpcVisitState, FarmTool } from '../types/canvas';
@@ -2607,7 +2606,6 @@ function FarmStoryPanelRuntime({
     if (newlyUnlockedBeauty.length > 0) {
       const firstReward = beautyRewards.find((reward) => reward.id === newlyUnlockedBeauty[0]);
       newlyUnlockedBeauty.forEach((rewardId) => {
-        trackAchievementEvent({ type: 'farm.beauty_reward', theme: 'farm-story', kind: rewardId });
       });
       pushFarmRewardBurst({
         kind: 'beauty',

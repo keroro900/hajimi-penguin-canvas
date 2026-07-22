@@ -103,7 +103,6 @@ export function portraitResourceToNodeData(item: ResourceItem): Record<string, a
     portraitStats: portraitSelectionStats(selection),
     portraitAdvancedSummary: summarizePortraitAdvancedSelection(advancedSelection, 'zh'),
     portraitAdvancedStats: portraitAdvancedStats(advancedSelection),
-    yyhPortraitHidden: advancedEnabled,
     portraitSchemaVersion: Number(parsed.version) || 1,
   };
 }

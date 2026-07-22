@@ -378,7 +378,7 @@ function VideoEditNode({ id, data, selected }: NodeProps) {
   };
 
   return (
-    <div className={`t8-node min-w-[760px] max-w-[760px] overflow-hidden rounded-xl ${selected ? 'ring-2 ring-cyan-300' : ''}`}>
+    <div className={`t8-node min-w-[760px] max-w-[760px] overflow-hidden rounded-xl ${selected ? 'is-selected' : ''}`}>
       <Handle type="target" position={Position.Left} className="!h-3 !w-3" />
       <Handle type="source" position={Position.Right} className="!h-3 !w-3" />
 

@@ -37,6 +37,7 @@ import SmartNodeShell from './shared/SmartNodeShell';
 import { useNodeGeometrySync } from './shared/useNodeGeometrySync';
 import { useOutsideClose } from './shared/useOutsideClose';
 import { useSmartNodePanelToggle } from './shared/useSmartNodePanelToggle';
+import { smartNodeComposerActions, useIsSmartNodeComposerOpen } from '../../stores/smartNodeComposer';
 import {
   isMaterialSetKind,
   createMaterialSetBackup,
@@ -101,22 +102,28 @@ function arrayMoveLocal<T>(list: T[], from: number, to: number): T[] {
   return next;
 }
 
-const MaterialSetNode = ({ id, data, selected }: NodeProps) => {
+const MaterialSetNode = ({ id, data, selected, dragging }: NodeProps) => {
   const update = useUpdateNodeData(id);
   const rf = useReactFlow();
   const updateNodeInternals = useUpdateNodeInternals();
   const themeMode = useThemeStore((state) => state.theme);
   const themeStyle = useThemeStore((state) => state.style);
-  const smartRootRef = useRef<HTMLDivElement | null>(null);
-  const composerRef = useRef<HTMLDivElement | null>(null);
+  const smartNodeRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const jsonInputRef = useRef<HTMLInputElement>(null);
   const [textDraft, setTextDraft] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [dragActive, setDragActive] = useState(false);
-  const [smartPanelOpen, setSmartPanelOpen] = useState(false);
-  const [smartDragging, setSmartDragging] = useState(false);
+  const smartComposerOpenLocal = useIsSmartNodeComposerOpen(id);
+  const setSmartComposerOpenLocal = useCallback(
+    (nextOpen: boolean) => {
+      if (nextOpen) smartNodeComposerActions.open(id);
+      else smartNodeComposerActions.close(id);
+    },
+    [id],
+  );
+  const [smartCardDragging, setSmartCardDragging] = useState(false);
   const [sortDrag, setSortDrag] = useState<{ activeId: string; overId: string | null; moved: boolean } | null>(null);
   const sortDragRef = useRef<{ activeId: string; overId: string | null; moved: boolean } | null>(null);
   const sortStartRef = useRef<{ x: number; y: number; itemId: string; pointerId: number } | null>(null);
@@ -136,6 +143,9 @@ const MaterialSetNode = ({ id, data, selected }: NodeProps) => {
     [d.materialSetItems, kind],
   );
   const materials = useMemo(() => items.map((item) => materialFromSetItem(item, id)), [items, id]);
+  const smartComposerOpen = smartComposerOpenLocal && !smartCardDragging && !dragging;
+  const smartMaterialSetCardState = items.length === 0 ? 'empty' : 'result';
+  const smartComposerWidth = Math.max(smartCardWidth, 520);
 
   const upstream = useUpstreamMaterials(id);
   const upstreamCandidate = useMemo(() => {
@@ -477,22 +487,16 @@ const MaterialSetNode = ({ id, data, selected }: NodeProps) => {
   const targetTitle = '可接入文本 / 图像 / 视频 / 音频，上游同类型可收集到素材集';
   const sourceTitle = kind ? `输出${KIND_LABEL[kind]}素材集` : '请先加入素材';
   const smartPanelToggle = useSmartNodePanelToggle({
-    open: smartPanelOpen,
-    dragging: smartDragging,
-    onToggle: (nextOpen) => {
-      setSmartPanelOpen(nextOpen);
-      syncMaterialSetGeometry();
-    },
-    onDragChange: setSmartDragging,
-    onDragClose: () => {
-      setSmartPanelOpen(false);
-      syncMaterialSetGeometry();
-    },
+    open: smartComposerOpenLocal,
+    dragging,
+    onToggle: setSmartComposerOpenLocal,
+    onDragChange: setSmartCardDragging,
+    onDragClose: () => setSmartComposerOpenLocal(false),
     disabled: !useSmartCardMaterialSetNode,
   });
 
   const switchMaterialSetVariant = useCallback((nextVariant: MaterialSetNodeVariant) => {
-    setSmartPanelOpen(false);
+    setSmartComposerOpenLocal(false);
     smartPanelToggle.clearPointer();
     smartPanelToggle.handledClickRef.current = false;
     smartPanelToggle.suppressClickRef.current = true;
@@ -500,21 +504,21 @@ const MaterialSetNode = ({ id, data, selected }: NodeProps) => {
       update({ uiVariant: nextVariant, materialSetNodeVariant: nextVariant });
     });
     syncMaterialSetGeometry();
-  }, [smartPanelToggle, syncMaterialSetGeometry, update]);
+  }, [setSmartComposerOpenLocal, smartPanelToggle, syncMaterialSetGeometry, update]);
 
   useOutsideClose({
-    enabled: useSmartCardMaterialSetNode && smartPanelOpen,
-    refs: [smartRootRef, composerRef],
-    onOutside: () => {
-      setSmartPanelOpen(false);
-      syncMaterialSetGeometry();
-    },
+    enabled: useSmartCardMaterialSetNode && smartComposerOpenLocal,
+    refs: smartNodeRef,
+    onOutside: () => setSmartComposerOpenLocal(false),
   });
+
+  // Composer open state is session-only; release it when the node unmounts.
+  useEffect(() => () => smartNodeComposerActions.close(id), [id]);
 
   useEffect(() => {
     if (!useSmartCardMaterialSetNode) return;
     syncMaterialSetGeometry();
-  }, [items.length, kind, smartCardHeight, smartCardWidth, smartPanelOpen, syncMaterialSetGeometry, useSmartCardMaterialSetNode]);
+  }, [items.length, kind, smartCardHeight, smartCardWidth, smartComposerOpen, syncMaterialSetGeometry, useSmartCardMaterialSetNode]);
 
   const kindIcon = kind === 'video' ? Video : kind === 'audio' ? Music : kind === 'text' ? FileText : Images;
   const KindIcon = kindIcon;
@@ -522,7 +526,7 @@ const MaterialSetNode = ({ id, data, selected }: NodeProps) => {
 
   const renderClassicNode = () => (
     <div
-      className={`t8-node t8-material-set-classic relative transition-colors ${selected ? 't8-material-set-classic--selected' : ''}`}
+      className={`t8-node t8-material-set-classic relative transition-colors ${selected ? 'is-selected t8-material-set-classic--selected' : ''}`}
       style={{ width: 320, minHeight: 220, '--t8-material-set-accent': accent } as any}
     >
       <Handle
@@ -576,7 +580,6 @@ const MaterialSetNode = ({ id, data, selected }: NodeProps) => {
           title="切回卡片版节点"
           aria-label="切回卡片版节点"
           onPointerDown={(e) => {
-            e.preventDefault();
             e.stopPropagation();
           }}
           onClick={(e) => {
@@ -873,14 +876,18 @@ const MaterialSetNode = ({ id, data, selected }: NodeProps) => {
 
   // Material set management lives in the external composer so the canvas card stays clean.
   const renderSmartComposer = () => {
-    if (!smartPanelOpen) return null;
+    if (!smartComposerOpen) return null;
     return (
       <SmartNodeComposer
+        portal
+        anchorRef={smartNodeRef}
         className="t8-smart-material-set-composer"
-        style={{ left: smartCardWidth + 12, top: 0 }}
+        style={{ width: smartComposerWidth }}
         onMouseDown={(event) => event.stopPropagation()}
+        onRequestClose={() => setSmartComposerOpenLocal(false)}
+        ariaLabel="素材集节点属性"
       >
-        <div ref={composerRef}>
+        <div>
           <div className="t8-smart-material-set-composer__header">
             <div>
               <div className="t8-smart-node-title">素材集配置</div>
@@ -1098,9 +1105,12 @@ const MaterialSetNode = ({ id, data, selected }: NodeProps) => {
 
   const renderSmartCard = () => (
     <SmartNodeShell
-      rootRef={smartRootRef}
+      rootRef={smartNodeRef}
       className="t8-smart-material-set-node"
       style={{ width: smartCardWidth }}
+      accessibleLabel="素材集节点"
+      smartState={smartMaterialSetCardState}
+      onKeyboardActivate={() => setSmartComposerOpenLocal(true)}
       rootProps={{
         onPointerDown: smartPanelToggle.onPointerDown,
         onPointerMove: smartPanelToggle.onPointerMove,
@@ -1111,9 +1121,9 @@ const MaterialSetNode = ({ id, data, selected }: NodeProps) => {
       composer={renderSmartComposer()}
     >
       <div
-        className={`t8-node t8-smart-node-card t8-smart-material-set-card transition-all ${selected ? 't8-smart-node-card--selected' : ''} ${
+        className={`t8-node t8-smart-node-card t8-smart-material-set-card transition-all ${selected ? 'is-selected t8-smart-node-card--selected' : ''} ${
           dragActive ? 't8-smart-node-card--accepting' : ''
-        } ${smartPanelOpen ? 't8-smart-material-set-card--open' : ''}`}
+        } ${smartComposerOpen ? 't8-smart-material-set-card--open' : ''}`}
         style={{ height: smartCardHeight }}
       >
         <ResizableCorners
@@ -1162,7 +1172,6 @@ const MaterialSetNode = ({ id, data, selected }: NodeProps) => {
             title="切换到经典版节点"
             aria-label="切换到经典版节点"
             onPointerDown={(e) => {
-              e.preventDefault();
               e.stopPropagation();
             }}
             onClick={(e) => {
@@ -1187,8 +1196,10 @@ const MaterialSetNode = ({ id, data, selected }: NodeProps) => {
     </SmartNodeShell>
   );
 
-  if (!useSmartCardMaterialSetNode) return renderClassicNode();
-  return renderSmartCard();
+  if (!useSmartCardMaterialSetNode) {
+    return <div className="contents" data-canvas-node-root={true}>{renderClassicNode()}</div>;
+  }
+  return <div className="contents" data-canvas-node-root={true}>{renderSmartCard()}</div>;
 };
 
 export default memo(MaterialSetNode);

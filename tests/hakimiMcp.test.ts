@@ -28,7 +28,14 @@ test('Hakimi MCP catalog exposes every canvas node type with ports', async () =>
   assert.ok(catalog.nodes.length > 40);
   assert.deepEqual(catalog.ports.image, { inputs: ['text', 'image'], outputs: ['image'] });
   assert.deepEqual(catalog.ports.video.outputs, ['video']);
-  assert.equal(catalog.nodes.find((node: any) => node.type === 'codex-cli-agent').category, 'codex');
+  assert.equal(catalog.nodes.some((node: any) => node.type === 'codex-cli-agent'), false);
+  const imageNode = catalog.nodes.find((node: any) => node.type === 'image');
+  assert.ok(imageNode.capabilities.includes('node.read'));
+  assert.ok(imageNode.capabilities.includes('node.update'));
+  assert.ok(imageNode.capabilities.includes('node.run'));
+  assert.ok(imageNode.editableFields.includes('prompt'));
+  assert.ok(imageNode.editableFields.includes('model'));
+  assert.deepEqual(imageNode.requiredInputs, ['text', 'image']);
   assert.match(catalog.agentNodeDataRules.image, /imageUrl/);
   assert.match(catalog.agentNodeDataRules.upload, /uploadType/);
   assert.match(catalog.agentNodeDataRules.text, /prompt/);
@@ -70,6 +77,11 @@ test('Hakimi MCP tool manifest includes semantic tools and full backend bridge',
     'hakimi_canvas_apply_plan',
     'hakimi_canvas_diff_plan',
     'hakimi_canvas_verify_plan',
+    'hakimi_canvas_node_capabilities',
+    'hakimi_canvas_configure_generation',
+    'hakimi_canvas_run_node',
+    'hakimi_canvas_read_node_result',
+    'hakimi_canvas_undo_batch',
     'hakimi_canvas_generate_image',
     'hakimi_canvas_generate_video',
     'hakimi_canvas_run_codex_agent',
@@ -107,12 +119,27 @@ test('backend exposes Hakimi as streamable HTTP MCP for packaged Codex SDK', () 
   assert.match(route, /new McpServer/);
   assert.match(route, /hakimi_canvas_diff_plan/);
   assert.match(route, /hakimi_canvas_apply_plan/);
+  assert.match(route, /hakimi_canvas_node_capabilities/);
+  assert.match(route, /hakimi_canvas_configure_generation/);
+  assert.match(route, /hakimi_canvas_read_node_result/);
+  assert.match(route, /hakimi_canvas_undo_batch/);
   assert.match(route, /transport\.handleRequest\(req,\s*res,\s*req\.body\)/);
   assert.match(sdkManager, /\/api\/hakimi-mcp/);
   assert.match(sdkManager, /mcp_servers:\s*\{[\s\S]*hakimi_http/);
 });
 
-test('frontend topbar shows one Codex connectivity chip backed by Codex CLI status', () => {
+test('Codex SDK routes atomic Hakimi tools to concise visible timeline labels', () => {
+  const sdkManager = read('../backend/src/utils/codexSdkManager.js');
+
+  assert.match(sdkManager, /hakimi_canvas_node_capabilities/);
+  assert.match(sdkManager, /hakimi_canvas_configure_generation/);
+  assert.match(sdkManager, /hakimi_canvas_run_node/);
+  assert.match(sdkManager, /hakimi_canvas_read_node_result/);
+  assert.match(sdkManager, /hakimi_canvas_undo_batch/);
+  assert.match(sdkManager, /小任务优先使用原子工具/);
+});
+
+test('frontend rail status dots show Codex connectivity backed by Codex CLI status', () => {
   const app = read('../src/App.tsx');
   const api = read('../src/services/api.ts');
   const codexService = read('../src/services/codexCli.ts');
@@ -124,7 +151,7 @@ test('frontend topbar shows one Codex connectivity chip backed by Codex CLI stat
   assert.match(app, /getCodexCliStatus/);
   assert.match(app, /status\.available/);
   assert.match(app, /codexStatusDetail/);
-  assert.match(app, /title=\{codexStatusDetail\}/);
+  assert.match(app, /codexStatusTitle=\{codexStatusTitle\}/);
   assert.doesNotMatch(app, /canvasStatus/);
   assert.doesNotMatch(app, /hakimiMcpStatus/);
   assert.match(app, /codexStatus/);
@@ -176,7 +203,7 @@ test('Hakimi MCP stays documented for Codex config', () => {
   assert.match(doc, /HAKIMI_BACKEND_URL/);
   assert.match(doc, /ssh -L 18766:127\.0\.0\.1:18766/);
   assert.match(doc, /系统设置/);
-  assert.match(rootReadme, /哈基米 MCP/);
+  assert.match(rootReadme, /Hakimi MCP/);
   assert.match(rootReadme, /npm run hakimi:mcp/);
 });
 

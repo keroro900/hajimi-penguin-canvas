@@ -1,3 +1,5 @@
+import { getGroupMemberIds, type GroupMembershipNode } from './groupMembership.ts';
+
 export interface ClipboardPosition {
   x: number;
   y: number;
@@ -16,6 +18,10 @@ export interface ClipboardPositionNode {
   } | null;
 }
 
+export interface SanitizeClipboardNodeDataOptions {
+  preserveMediaSnapshots?: boolean;
+}
+
 export interface ClipboardNodeBounds {
   minX: number;
   minY: number;
@@ -31,6 +37,9 @@ const finiteNumber = (value: unknown, fallback = 0) =>
 const TRANSIENT_CLIPBOARD_DATA_KEYS = [
   'status',
   'taskId',
+  'requestId',
+  'responseUrl',
+  'statusUrl',
   'progress',
   'error',
   'isRunning',
@@ -51,6 +60,101 @@ const TRANSIENT_CLIPBOARD_DATA_KEYS = [
   'abortController',
   'abortSignal',
 ];
+
+const MEDIA_SNAPSHOT_CLIPBOARD_NODE_TYPES = new Set([
+  'output',
+  'video-output',
+  'upload',
+  'model-3d-upload',
+  'material-set',
+  'apparel-pack-output',
+]);
+
+const GENERATED_RESULT_CLIPBOARD_DATA_KEYS = [
+  'imageUrl',
+  'imageUrls',
+  'generatedImages',
+  'remoteImageUrls',
+  'imageResultSlots',
+  'videoUrl',
+  'videoUrls',
+  'remoteVideoUrls',
+  'videoResultSlots',
+  'audioUrl',
+  'audioUrl_1',
+  'audioUrls',
+  'tracks',
+  'audioResultSlots',
+  'urls',
+  'resultUrl',
+  'resultUrls',
+  'resultVersions',
+  'modelUrl',
+  'modelUrls',
+  'directModelUrl',
+  'directModelUrls',
+  'outputText',
+  'reply',
+  'textSegments',
+  'segments',
+  'texts',
+  'directOutputSingleSnapshot',
+  'directOutputText',
+  'directTextSegments',
+  'directImageUrl',
+  'directImageUrls',
+  'directVideoUrl',
+  'directVideoUrls',
+  'directAudioUrl',
+  'directAudioUrls',
+  'lastPrompt',
+  'usedI2I',
+  'remoteUrls',
+  'directorOutputItems',
+  'directorOutputRefreshNonce',
+  'output',
+  'job',
+  'thumbnailUrl',
+  'randomRouteActiveHandles',
+  'randomRouteLastRunAt',
+  'randomRouteLastOrder',
+  'randomRouteLastOkCount',
+  'randomRouteLastFailCount',
+];
+
+const NODE_SPECIFIC_RESULT_CLIPBOARD_DATA_KEYS: Record<string, readonly string[]> = {
+  relay: ['prompt', 'text'],
+  loop: ['prompt', 'text', 'outputs', 'progress'],
+  'random-route': [
+    'prompt',
+    'text',
+    'randomRouteActiveHandles',
+    'randomRouteLastRunAt',
+    'randomRouteLastOrder',
+    'randomRouteLastOkCount',
+    'randomRouteLastFailCount',
+  ],
+  'text-split': ['segmentsOverride', 'segmentsOverrideSig'],
+  'video-edit': ['output', 'job'],
+  'director-storyboard': ['shotResults'],
+  'aggregate-parser': ['aggregateParserResult', 'aggregateParserMedia'],
+  'batch-processor': ['batchProcessorResults', 'batchProcessorProgress'],
+  'layer-agent': ['layerStack', 'selectedLayerId'],
+  'panorama-3d': [
+    'panoramaGeneratedUrl',
+    'panoramaGeneratedHistory',
+    'panoramaControlSnapshotUrl',
+    'panoramaSceneSnapshot',
+    'panoramaStoryboardPromptSnapshotText',
+  ],
+};
+
+const MODEL_3D_PREVIEW_REFERENCE_KEYS = [
+  'modelUrl',
+  'modelUrls',
+  'directModelUrl',
+  'directModelUrls',
+] as const;
 
 const cloneClipboardData = (data: unknown): Record<string, any> => {
   if (!data || typeof data !== 'object') return {};
@@ -78,15 +182,40 @@ const normalizeCopiedImageResultSlots = (slots: unknown) => {
   return successSlots.length > 0 ? successSlots : undefined;
 };
 
-export function sanitizeClipboardNodeData(data: unknown): Record<string, any> {
+const pickClipboardDataKeys = (data: Record<string, any>, keys: readonly string[]) => {
+  const picked: Record<string, any> = {};
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(data, key)) picked[key] = data[key];
+  }
+  return picked;
+};
+
+export function sanitizeClipboardNodeData(
+  data: unknown,
+  nodeType?: string,
+  options: SanitizeClipboardNodeDataOptions = {},
+): Record<string, any> {
   const next = cloneClipboardData(data);
   for (const key of TRANSIENT_CLIPBOARD_DATA_KEYS) delete next[key];
 
-  const imageResultSlots = normalizeCopiedImageResultSlots((data as Record<string, any> | null | undefined)?.imageResultSlots);
-  if (imageResultSlots) {
-    next.imageResultSlots = imageResultSlots;
+  const preserveMediaSnapshots = options.preserveMediaSnapshots !== false;
+  const shouldClearResultFields = Boolean(
+    nodeType && (!preserveMediaSnapshots || !MEDIA_SNAPSHOT_CLIPBOARD_NODE_TYPES.has(nodeType)),
+  );
+  if (shouldClearResultFields) {
+    const preservedReferenceFields = nodeType === 'model-3d-preview'
+      ? pickClipboardDataKeys(next, MODEL_3D_PREVIEW_REFERENCE_KEYS)
+      : {};
+    for (const key of GENERATED_RESULT_CLIPBOARD_DATA_KEYS) delete next[key];
+    for (const key of NODE_SPECIFIC_RESULT_CLIPBOARD_DATA_KEYS[nodeType as string] || []) delete next[key];
+    Object.assign(next, preservedReferenceFields);
   } else {
-    delete next.imageResultSlots;
+    const imageResultSlots = normalizeCopiedImageResultSlots((data as Record<string, any> | null | undefined)?.imageResultSlots);
+    if (imageResultSlots) {
+      next.imageResultSlots = imageResultSlots;
+    } else {
+      delete next.imageResultSlots;
+    }
   }
 
   next.status = 'idle';
@@ -162,26 +291,11 @@ export function getClipboardGroupMemberIds(
   sourceNodes: ClipboardPositionNode[],
 ): string[] {
   if (!groupNode.id || groupNode.type !== 'groupBox') return [];
-  const memberIds = new Set<string>(
-    Array.isArray(groupNode.data?.memberIds)
-      ? groupNode.data.memberIds.filter((value): value is string => typeof value === 'string' && !!value)
-      : [],
+  const eligibleNodes = sourceNodes.filter((node): node is ClipboardPositionNode & { id: string } => Boolean(node.id));
+  return getGroupMemberIds(
+    groupNode as GroupMembershipNode,
+    eligibleNodes as GroupMembershipNode[],
   );
-  const groupRect = rectForClipboardNode(groupNode);
-  sourceNodes.forEach((node) => {
-    if (!node.id || node.id === groupNode.id || node.type === 'groupBox' || node.id === 'bulk-phantom') return;
-    const rect = rectForClipboardNode(node);
-    const center = { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
-    if (
-      center.x >= groupRect.x &&
-      center.x <= groupRect.x + groupRect.width &&
-      center.y >= groupRect.y &&
-      center.y <= groupRect.y + groupRect.height
-    ) {
-      memberIds.add(node.id);
-    }
-  });
-  return Array.from(memberIds);
 }
 
 export function expandClipboardNodesForGroups<T extends ClipboardPositionNode>(
@@ -199,15 +313,11 @@ export function expandClipboardNodesForGroups<T extends ClipboardPositionNode>(
 
 export function remapPastedGroupMemberIds<T extends ClipboardPositionNode>(
   pastedNodes: T[],
-  idMap: Map<string, string>,
+  _idMap: Map<string, string>,
 ): T[] {
   return pastedNodes.map((node) => {
     if (node.type !== 'groupBox') return node;
-    const memberIds = Array.isArray(node.data?.memberIds)
-      ? node.data.memberIds
-          .map((value) => (typeof value === 'string' ? idMap.get(value) : undefined))
-          .filter((value): value is string => typeof value === 'string' && !!value)
-      : [];
+    const memberIds = getClipboardGroupMemberIds(node, pastedNodes);
     return {
       ...node,
       data: {

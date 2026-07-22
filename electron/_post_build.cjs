@@ -18,7 +18,7 @@ const PACKAGE_JSON = require(path.join(ROOT, 'package.json'));
 const APP_VERSION = PACKAGE_JSON.version;
 const PRODUCT_NAME = PACKAGE_JSON.build && PACKAGE_JSON.build.productName
   ? PACKAGE_JSON.build.productName
-  : '哈基米画布';
+  : 'JIMI AI';
 const UNPACKED = path.join(ROOT, 'dist_electron', 'win-unpacked');
 const RES = path.join(UNPACKED, 'resources');
 let missingCount = 0;
@@ -54,24 +54,14 @@ function checkFrontendAsset(prefix, ext) {
   }
 }
 
-function checkAchievementMedia() {
-  const mediaRoot = path.join(RES, 'resources', 'achievement-media');
-  const encryptedRewards = [
-    'film-tech-01.mp4.t8media',
-    'film-rh-01.mp4.t8media',
-    'film-yyh-01.mp4.t8media',
-    'film-dragon-ball-01.mp4.t8media',
-    'film-saint-seiya-01.mp4.t8media',
-    'film-tetris-01.mp4.t8media',
+function checkBuiltInThemeMusicAssets() {
+  const assets = [
+    ['classic-one-summer-day-', '.mp3'],
+    ['pixel-theme-of-sss-', '.mp3'],
+    ['rh-tide-', '.mp3'],
+    ['rh-hidden-saya-', '.mp3'],
   ];
-  for (const fileName of encryptedRewards) {
-    checkFile(path.join(mediaRoot, fileName));
-  }
-  for (const file of walkFiles(mediaRoot)) {
-    if (path.extname(file).toLowerCase() === '.mp4') {
-      failSecurity('achievement reward video must be encrypted before packaging:', file);
-    }
-  }
+  for (const [prefix, ext] of assets) checkFrontendAsset(prefix, ext);
 }
 
 function checkWebImageExtensionResources() {
@@ -228,6 +218,7 @@ function checkAiWatermarkRuntime() {
 function checkFfmpegRuntime() {
   const runtimeRoot = path.join(RES, 'tools', 'ffmpeg');
   const binary = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
+  const probeBinary = process.platform === 'win32' ? 'ffprobe.exe' : 'ffprobe';
   const ffmpeg = path.join(runtimeRoot, binary);
   if (!fs.existsSync(ffmpeg)) {
     missingCount += 1;
@@ -235,6 +226,12 @@ function checkFfmpegRuntime() {
     return;
   }
   ok(ffmpeg);
+  const ffprobe = path.join(runtimeRoot, probeBinary);
+  if (fs.existsSync(ffprobe)) {
+    ok(ffprobe);
+  } else {
+    console.log('  ⚠️ ', `ffprobe sidecar not bundled; video probe will fall back to ffmpeg stderr (${ffprobe})`);
+  }
 }
 
 function checkParseHubRuntime() {
@@ -276,6 +273,17 @@ function checkFigmaBridgeRuntime() {
   checkFile(path.join(root, 'plugin', 'ui.html'));
 }
 
+function checkPhotoshopBridgeRuntime() {
+  const root = path.join(RES, 'tools', 'photoshop-bridge', 'plugin');
+  checkFile(path.join(root, 'manifest.json'));
+  checkFile(path.join(root, 'index.html'));
+  checkFile(path.join(root, 'style.css'));
+  checkFile(path.join(root, 'js', 'app.js'));
+  checkFile(path.join(root, 'js', 'net.js'));
+  checkFile(path.join(root, 'js', 'ps.js'));
+  checkFile(path.join(root, 'js', 'state.js'));
+}
+
 function checkHakimiCanvasCliRuntime() {
   const root = path.join(RES, 'tools', 'hakimi-canvas-cli');
   checkFile(path.join(root, 'hakimi-canvas.mjs'));
@@ -302,7 +310,17 @@ function checkUpdateArtifacts() {
   checkFile(latest);
 
   if (fs.existsSync(latest)) {
-    const text = fs.readFileSync(latest, 'utf-8');
+    let text = fs.readFileSync(latest, 'utf-8');
+    if (hasInstaller && !text.includes(installerName)) {
+      const nextText = text
+        .replace(/^(\s*-\s*url:\s*).+$/m, `$1${installerName}`)
+        .replace(/^(\s*path:\s*).+$/m, `$1${installerName}`);
+      if (nextText !== text) {
+        fs.writeFileSync(latest, nextText);
+        text = nextText;
+        console.log(`  ✅ latest.yml references normalized to ${installerName}`);
+      }
+    }
     if (!new RegExp(`version:\\s*${APP_VERSION.replace(/\./g, '\\.')}`).test(text)) {
       missingCount += 1;
       console.error(`  ❌ latest.yml version mismatch, expected ${APP_VERSION}`);
@@ -314,112 +332,6 @@ function checkUpdateArtifacts() {
       console.error(`  ❌ latest.yml does not reference ${installerName}`);
     }
   }
-}
-
-function checkNoRhToolboxMaker() {
-  const forbiddenDirs = [
-    path.join(RES, 'tools', 'rh-toolbox-maker'),
-    path.join(RES, 'rh-toolbox-maker'),
-    path.join(RES, 'app', 'rh-toolbox-maker'),
-    path.join(RES, 'app.asar.unpacked', 'rh-toolbox-maker'),
-  ];
-  for (const p of forbiddenDirs) {
-    if (fs.existsSync(p)) {
-      failSecurity('RH toolbox maker must not be shipped to end users:', p);
-    }
-  }
-
-  const forbiddenText = [
-    /RHToolboxMakerNode/,
-    /RH工具箱制作器/,
-    /rh-toolbox-maker/,
-  ];
-  for (const p of walkFiles(path.join(RES, 'frontend')).filter(isSmallTextFile)) {
-    const text = fs.readFileSync(p, 'utf-8');
-    if (forbiddenText.some((re) => re.test(text))) {
-      failSecurity('RH toolbox maker frontend code leaked into packaged assets:', p);
-    }
-  }
-  console.log('  ✅ RH toolbox maker is not present in packaged resources');
-}
-
-function isFrontendBundleTextFile(p) {
-  const ext = path.extname(p).toLowerCase();
-  if (!['.json', '.js', '.mjs', '.html'].includes(ext)) return false;
-  try {
-    return fs.statSync(p).size <= 20 * 1024 * 1024;
-  } catch (_) {
-    return false;
-  }
-}
-
-function extractRhToolboxManifestObjectLiteral(source) {
-  const marker = 'export const RH_TOOLBOX_MANIFEST';
-  const markerIndex = source.indexOf(marker);
-  if (markerIndex < 0) throw new Error('RH_TOOLBOX_MANIFEST export not found');
-  const start = source.indexOf('{', markerIndex);
-  if (start < 0) throw new Error('RH_TOOLBOX_MANIFEST object literal not found');
-
-  let depth = 0;
-  let quote = '';
-  let escaped = false;
-  for (let index = start; index < source.length; index += 1) {
-    const ch = source[index];
-    if (quote) {
-      if (escaped) escaped = false;
-      else if (ch === '\\') escaped = true;
-      else if (ch === quote) quote = '';
-      continue;
-    }
-    if (ch === '"' || ch === "'" || ch === '`') {
-      quote = ch;
-      continue;
-    }
-    if (ch === '{') depth += 1;
-    if (ch === '}') {
-      depth -= 1;
-      if (depth === 0) return source.slice(start, index + 1);
-    }
-  }
-  throw new Error('RH_TOOLBOX_MANIFEST object literal is not balanced');
-}
-
-function loadRhToolboxReleaseManifestMarkers() {
-  const manifestPath = path.join(ROOT, 'src', 'data', 'rhToolboxManifest.ts');
-  const source = fs.readFileSync(manifestPath, 'utf-8');
-  const literal = extractRhToolboxManifestObjectLiteral(source);
-  const manifest = Function(`"use strict"; return (${literal});`)();
-  const markers = [];
-  for (const tool of Array.isArray(manifest.tools) ? manifest.tools : []) {
-    if (!tool || tool.enabled === false || !String(tool.webappId || '').trim()) continue;
-    if (String(tool.id || '').trim()) markers.push(String(tool.id).trim());
-    markers.push(String(tool.webappId).trim());
-  }
-  return Array.from(new Set(markers));
-}
-
-function checkRhToolboxReleaseManifest() {
-  const frontendRoot = path.join(RES, 'frontend');
-  if (!fs.existsSync(frontendRoot)) {
-    failSecurity('frontend assets missing before RH toolbox release manifest check:', frontendRoot);
-  }
-  const requiredMarkers = loadRhToolboxReleaseManifestMarkers();
-  if (requiredMarkers.length === 0) {
-    failSecurity('RH toolbox release manifest has no enabled tools to verify:', frontendRoot);
-  }
-  const found = new Set();
-  for (const p of walkFiles(frontendRoot).filter(isFrontendBundleTextFile)) {
-    const text = fs.readFileSync(p, 'utf-8');
-    for (const marker of requiredMarkers) {
-      if (text.includes(marker)) found.add(marker);
-    }
-  }
-  for (const marker of requiredMarkers) {
-    if (!found.has(marker)) {
-      failSecurity(`RH toolbox release manifest marker missing from frontend assets: ${marker}`, frontendRoot);
-    }
-  }
-  console.log('  ✅ RH toolbox release manifest is bundled in frontend assets');
 }
 
 function checkNoFalToolboxMaker() {
@@ -472,19 +384,18 @@ function main() {
   checkFile(path.join(RES, 'backend-enc', 'routes', 'themes.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'routes', 'eagle.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'routes', 'figma.t8c'));
+  checkFile(path.join(RES, 'backend-enc', 'routes', 'photoshopBridge.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'routes', 'grokOAuth.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'routes', 'codexCli.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'routes', 'hakimiMcp.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'routes', 'aiWatermark.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'routes', 'cloudUploads.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'routes', 'parseHub.t8c'));
-  checkFile(path.join(RES, 'backend-enc', 'routes', 'achievements.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'routes', 'topaz.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'routes', 'vibexBridge.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'routes', 'videoOps.t8c'));
+  checkFile(path.join(RES, 'backend-enc', 'routes', 'layerAgent.t8c'));
   checkNoLocalVibexRoute();
-  checkFile(path.join(RES, 'backend-enc', 'achievements', 'media.t8c'));
-  checkFile(path.join(RES, 'backend-enc', 'achievements', 'store.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'cloudUploads', 'settings.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'cloudUploads', 'uploader.t8c'));
   checkFile(path.join(RES, 'backend-enc', 'extensions', 'runtimeHooks.t8c'));
@@ -512,24 +423,9 @@ function main() {
   console.log('\n[2] 前端 dist:');
   checkFile(path.join(RES, 'frontend', 'index.html'));
   checkFile(path.join(RES, 'frontend', 'assets'));
+  checkFile(path.join(RES, 'shared', 'videoTransitions.json'));
   checkWebImageExtensionResources();
-  checkFile(path.join(RES, 'shared', 'achievementManifest.json'));
-  checkFrontendAsset('classic-one-summer-day-', '.mp3');
-  checkFrontendAsset('pixel-theme-of-sss-', '.mp3');
-  checkFrontendAsset('op-battle-scars-', '.mp3');
-  checkFrontendAsset('rh-tide-', '.mp3');
-  checkFrontendAsset('rh-hidden-saya-', '.mp3');
-  checkFrontendAsset('naruto-shinsei-gyakuten-', '.mp3');
-  checkFrontendAsset('eva-decisive-battle-', '.mp3');
-  checkFrontendAsset('yyh-unbalanced-kiss-piano-', '.mp3');
-  checkFrontendAsset('yyh-hidden-tonight-', '.mp3');
-  checkFrontendAsset('slamdunk-kimi-ga-suki-', '.mp3');
-  checkFrontendAsset('soccer-tsubasa-burning-hero-', '.mid');
-  checkFrontendAsset('dragonball-makafushigi-adventure-', '.mp3');
-  checkFrontendAsset('dragonball-shenron-cha-la-head-cha-la-', '.mp3');
-  checkFrontendAsset('saint-seiya-pegasus-fantasy-', '.mp3');
-  checkFrontendAsset('saint-seiya-hades-last-holy-war-', '.mp3');
-  checkAchievementMedia();
+  checkBuiltInThemeMusicAssets();
 
   console.log('\n[3] 清除可能混入的明文后端源码:');
   nukePlainBackend();
@@ -549,22 +445,19 @@ function main() {
   console.log('\n[8] Figma bridge/plugin:');
   checkFigmaBridgeRuntime();
 
-  console.log('\n[9] Hakimi Canvas CLI:');
+  console.log('\n[9] Photoshop bridge/plugin:');
+  checkPhotoshopBridgeRuntime();
+
+  console.log('\n[10] Hakimi Canvas CLI:');
   checkHakimiCanvasCliRuntime();
 
-  console.log('\n[10] RH工具箱制作器分发检查:');
-  checkNoRhToolboxMaker();
-
-  console.log('\n[11] RH工具箱发布清单分发检查:');
-  checkRhToolboxReleaseManifest();
-
-  console.log('\n[12] FAL应用制作工具分发检查:');
+  console.log('\n[11] FAL应用制作工具分发检查:');
   checkNoFalToolboxMaker();
 
-  console.log('\n[13] GitHub 自动更新资产:');
+  console.log('\n[12] GitHub 自动更新资产:');
   checkUpdateArtifacts();
 
-  console.log('\n[14] resources/ 完整结构:');
+  console.log('\n[13] resources/ 完整结构:');
   listDir(RES);
 
   if (missingCount > 0) {

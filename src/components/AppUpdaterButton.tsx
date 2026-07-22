@@ -4,6 +4,8 @@ import { AlertTriangle, CheckCircle2, Download, Loader2, RefreshCw, RotateCcw, X
 interface AppUpdaterButtonProps {
   isPixel: boolean;
   isDark: boolean;
+  /** 轨道模式：32px 图标按钮，下拉面板向轨道右侧弹出（无顶栏布局） */
+  rail?: boolean;
 }
 
 const fallbackStatus: T8UpdaterStatus = {
@@ -85,7 +87,7 @@ function PrimaryIcon({ status, size }: { status: T8UpdaterStatusCode; size: numb
   return <RefreshCw size={size} />;
 }
 
-export default function AppUpdaterButton({ isPixel, isDark }: AppUpdaterButtonProps) {
+export default function AppUpdaterButton({ isPixel, isDark, rail = false }: AppUpdaterButtonProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -163,6 +165,10 @@ export default function AppUpdaterButton({ isPixel, isDark }: AppUpdaterButtonPr
     status.status === 'installing';
 
   const buttonClass = useMemo(() => {
+    if (rail) {
+      // 应用轨道 32px 图标按钮语言；状态语义由 title tooltip 与图标承载
+      return 't8-mini-icon-button t8-app-rail__button';
+    }
     if (isPixel) {
       if (tone === 'warn') return 'px-btn px-btn--sm px-btn--yellow';
       if (tone === 'bad') return 'px-btn px-btn--sm px-btn--pink';
@@ -192,7 +198,7 @@ export default function AppUpdaterButton({ isPixel, isDark }: AppUpdaterButtonPr
       }`;
     }
     return `${base} ${isDark ? 'border-white/10 text-white/70 hover:bg-white/10' : 'border-black/10 text-zinc-600 hover:bg-black/5'}`;
-  }, [isDark, isPixel, tone]);
+  }, [isDark, isPixel, rail, tone]);
 
   if (!desktopShellDetected) return null;
 
@@ -241,17 +247,19 @@ export default function AppUpdaterButton({ isPixel, isDark }: AppUpdaterButtonPr
         onClick={() => setOpen((v) => !v)}
         className={buttonClass}
         title={status.message || '自动更新'}
+        aria-label="自动更新"
       >
-        <PrimaryIcon status={status.status} size={isPixel ? 12 : 14} />
-        <span className="text-[11px]">{statusLabel(status)}</span>
+        <PrimaryIcon status={status.status} size={rail ? 16 : isPixel ? 12 : 14} />
+        {rail ? null : <span className="text-[11px]">{statusLabel(status)}</span>}
       </button>
 
       {open && (
         <div
           className={
+            // 轨道模式下下拉面板向轨道右侧弹出、底部对齐，避免超出窗口下沿
             isPixel
-              ? 'absolute right-0 top-full z-[70] mt-2 w-[280px] px-panel rounded-2xl p-3'
-              : `absolute right-0 top-full z-[70] mt-2 w-[280px] rounded-xl border p-3 shadow-2xl backdrop-blur-md ${
+              ? `absolute ${rail ? 'left-full bottom-0 ml-2' : 'right-0 top-full mt-2'} z-[70] w-[280px] px-panel rounded-2xl p-3`
+              : `absolute ${rail ? 'left-full bottom-0 ml-2' : 'right-0 top-full mt-2'} z-[70] w-[280px] rounded-xl border p-3 shadow-2xl backdrop-blur-md ${
                   isDark
                     ? 'border-white/10 bg-zinc-950/95 text-white shadow-black/30'
                     : 'border-zinc-200 bg-white/95 text-zinc-900 shadow-zinc-300/50'

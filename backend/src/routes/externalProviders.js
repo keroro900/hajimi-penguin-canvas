@@ -213,6 +213,35 @@ async function saveVideoOutputs(urls, options = {}) {
   return out;
 }
 
+function mediaOutputSaveWarning(url, error) {
+  const preview = String(url || '').replace(/\s+/g, ' ').slice(0, 160);
+  const message = error?.message || String(error || 'unknown');
+  return `转存扩展平台输出失败，已回退远程地址：${message}${preview ? ` · ${preview}` : ''}`;
+}
+
+async function saveMediaOutputsWithFallback(urls, kind = 'image', options = {}) {
+  const out = [];
+  const warnings = [];
+  for (const url of Array.isArray(urls) ? urls : []) {
+    const text = String(url || '').trim();
+    if (!text) continue;
+    try {
+      const saved = await saveOneMediaOutput(text, kind, options);
+      if (saved) out.push(saved);
+    } catch (error) {
+      const warning = mediaOutputSaveWarning(text, error);
+      warnings.push(warning);
+      console.warn(`[external/${kind}] ${warning}`);
+      out.push(text);
+    }
+  }
+  return {
+    urls: out,
+    outputSaveFailed: warnings.length > 0,
+    outputSaveWarnings: warnings,
+  };
+}
+
 function resultResponse(res, result, provider, dataPatch = {}) {
   const payload = {
     ...result,
@@ -469,10 +498,12 @@ router.post('/image', async (req, res) => {
     });
     if (!result.ok) return resultResponse(res, result, resolved.provider);
     const remoteImageUrls = Array.isArray(result.imageUrls) ? result.imageUrls : [];
-    const imageUrls = await saveImageOutputs(remoteImageUrls);
+    const savedImages = await saveMediaOutputsWithFallback(remoteImageUrls, 'image');
     return resultResponse(res, result, resolved.provider, {
       remoteImageUrls,
-      imageUrls,
+      imageUrls: savedImages.urls,
+      outputSaveFailed: savedImages.outputSaveFailed,
+      outputSaveWarnings: savedImages.outputSaveWarnings,
     });
   } catch (e) {
     return res.status(500).json({
@@ -634,7 +665,7 @@ router.post('/web-image', async (req, res) => {
     }
 
     const remoteImageUrls = Array.isArray(imageResult.imageUrls) ? imageResult.imageUrls : [];
-    const imageUrls = await saveImageOutputs(remoteImageUrls);
+    const savedImages = await saveMediaOutputsWithFallback(remoteImageUrls, 'image');
     return res.json({
       success: true,
       code: 'completed',
@@ -644,7 +675,9 @@ router.post('/web-image', async (req, res) => {
         prompt,
         sourceImageUrl: imageUrl,
         remoteImageUrls,
-        imageUrls,
+        imageUrls: savedImages.urls,
+        outputSaveFailed: savedImages.outputSaveFailed,
+        outputSaveWarnings: savedImages.outputSaveWarnings,
         chat: {
           model: chatResult.model,
           finishReason: chatResult.finishReason,
@@ -680,10 +713,12 @@ router.post('/video', async (req, res) => {
     });
     if (!result.ok) return resultResponse(res, result, resolved.provider);
     const remoteVideoUrls = Array.isArray(result.videoUrls) ? result.videoUrls : [];
-    const videoUrls = await saveVideoOutputs(remoteVideoUrls);
+    const savedVideos = await saveMediaOutputsWithFallback(remoteVideoUrls, 'video');
     return resultResponse(res, result, resolved.provider, {
       remoteVideoUrls,
-      videoUrls,
+      videoUrls: savedVideos.urls,
+      outputSaveFailed: savedVideos.outputSaveFailed,
+      outputSaveWarnings: savedVideos.outputSaveWarnings,
     });
   } catch (e) {
     return res.status(500).json({

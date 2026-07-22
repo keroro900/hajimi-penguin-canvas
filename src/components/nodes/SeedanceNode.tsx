@@ -1,6 +1,7 @@
-import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type SyntheticEvent } from 'react';
+import { flushSync } from 'react-dom';
 import { Handle, Position, useUpdateNodeInternals, type NodeProps } from '@xyflow/react';
-import { AlertCircle, Loader2, Film, Sparkles, Square, X } from 'lucide-react';
+import { AlertCircle, Eye, Loader2, Film, Sparkles, Square, X } from 'lucide-react';
 import {
   generateExternalVideo,
   submitSeedance,
@@ -11,6 +12,8 @@ import { useUpdateNodeData } from './useUpdateNodeData';
 import { useHasAutoOutput } from './useHasAutoOutput';
 import { useRunTrigger } from '../../hooks/useRunTrigger';
 import { useRunBusStore } from '../../stores/runBus';
+import { useOutsideClose } from './shared/useOutsideClose';
+import { smartNodeComposerActions, useIsSmartNodeComposerOpen } from '../../stores/smartNodeComposer';
 import { logBus } from '../../stores/logs';
 import { useThemeStore } from '../../stores/theme';
 import { useUpstreamMaterials, type Material } from './useUpstreamMaterials';
@@ -40,28 +43,29 @@ import {
   normalizeExcludedMaterialIds,
 } from '../../utils/materialExclusion';
 import { resolveSmartMediaCardSize } from '../../utils/smartNodeAspect';
+import { extractSeedancePromptPayload, type SeedancePromptRef } from '../../utils/seedancePromptPayload';
 import SmartNodeShell from './shared/SmartNodeShell';
 import SmartNodeComposer from './shared/SmartNodeComposer';
+import ResizableCorners from './ResizableCorners';
 import { useNodeGeometrySync } from './shared/useNodeGeometrySync';
-import { useOutsideClose } from './shared/useOutsideClose';
 import { useSmartNodePanelToggle } from './shared/useSmartNodePanelToggle';
 import { useThrottledNodeUpdate } from './shared/useThrottledNodeUpdate';
 import { LocalNodeAddonSlot } from 'virtual:t8-local-extensions';
+import SmartMediaPreviewModal from './shared/SmartMediaPreviewModal';
+import { probeVideo } from '../../services/videoOps';
+import { resolveVideoDisplaySize } from '../../utils/videoDisplayAspect';
 import {
   SEEDANCE_DURATION_OPTIONS,
-  SEEDANCE_MODEL_OPTIONS,
   SEEDANCE_RATIO_OPTIONS,
   SEEDANCE_RESOLUTION_OPTIONS,
-  parseModelList,
-  resolveSeedanceVideoOverride,
-  withUpstreamModelOption,
 } from '../../providers/models';
+import { effectiveModelId, modelSelectOptions, modelsForKind } from '../../providers/modelCatalog';
 
 /**
  * SeedanceNode — 字节 Seedance 2.0 视频分镜节点
  * 完全对齐 gpt-image-2-web runSeedance / pollSeedance:
- *   - 上游 endpoint: /seedance/v3/contents/generations/tasks
- *   - 模型: doubao-seedance-2-0-260128 / doubao-seedance-2-0-fast-260128 / doubao-seedance-2.0-mini
+ *   - XS-Token endpoint: /v1/videos
+ *   - 模型: seedance-fast-2.0 / seedance-2.0 / sora-v3-pro / sora-v4-fast 等真实模型名
  *   - content[]: text + image_url(role=first_frame|last_frame|reference_image)
  *                + video_url(role=reference_video) + audio_url(role=reference_audio)
  *   - 参数: duration / ratio / resolution / generate_audio / return_last_frame
@@ -74,8 +78,6 @@ import {
  *   - 多张同时可用作 first_frame / last_frame (UI 中按顺序取第 1、2 张)
  */
 
-// Registry audit: { value: 'doubao-seedance-2.0-mini', label: 'seedance-2.0-mini' }.
-const MODEL_OPTIONS = SEEDANCE_MODEL_OPTIONS;
 const RATIO_OPTIONS = SEEDANCE_RATIO_OPTIONS;
 const RESOLUTION_OPTIONS = SEEDANCE_RESOLUTION_OPTIONS;
 const DURATION_OPTIONS = SEEDANCE_DURATION_OPTIONS;
@@ -90,11 +92,22 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
   const hasAutoOutput = useHasAutoOutput(id);
   const [error, setError] = useState<string | null>(null);
   const [smartCardDragging, setSmartCardDragging] = useState(false);
-  const [smartComposerOpenLocal, setSmartComposerOpenLocal] = useState(Boolean((data as any)?.smartComposerOpen));
+  const smartComposerOpenLocal = useIsSmartNodeComposerOpen(id);
+  const setSmartComposerOpenLocal = useCallback(
+    (nextOpen: boolean) => {
+      if (nextOpen) smartNodeComposerActions.open(id);
+      else smartNodeComposerActions.close(id);
+    },
+    [id],
+  );
+  const [videoMetadataRatio, setVideoMetadataRatio] = useState('');
+  const [videoProbedSize, setVideoProbedSize] = useState<{ width: number; height: number; ratio: string } | null>(null);
+  const [videoPreviewOpen, setVideoPreviewOpen] = useState(false);
   const pollTimer = useRef<number | null>(null);
   const runCancelSeq = useRunBusStore((s) => s.cancelSeq);
   const runCancelTargets = useRunBusStore((s) => s.cancelTargets);
   const smartNodeRef = useRef<HTMLDivElement | null>(null);
+  const smartPromptRef = useRef<HTMLDivElement | null>(null);
   const updateNodeInternals = useUpdateNodeInternals();
   const src = `seedance:${id.slice(0, 6)}`;
 
@@ -126,14 +139,12 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
     ? advancedProviderModelOptions(providerSelection.provider, 'video')
     : [];
   const externalProviderModel = providerSelection.providerModel || externalModelOptions[0] || '';
+  const catalogVideoModels = useMemo(() => modelsForKind(apiSettings, 'video'), [apiSettings]);
   const savedModel = String(d.model || '').trim();
-  const baseModel = savedModel || MODEL_OPTIONS[0].value;
-  const configuredModelOverride = resolveSeedanceVideoOverride(apiSettings.zhenzhenVideoModelOverrides, savedModel);
-  const configuredModels = parseModelList(configuredModelOverride);
-  const modelOptions = withUpstreamModelOption(MODEL_OPTIONS, configuredModelOverride);
-  const model: string = savedModel && modelOptions.some((option) => option.value === savedModel) && (!configuredModels.length || configuredModels.includes(savedModel))
-    ? savedModel
-    : (configuredModels[0] || baseModel);
+  const model = effectiveModelId(savedModel, catalogVideoModels);
+  const modelOptions = modelSelectOptions(
+    model && !catalogVideoModels.includes(model) ? [model, ...catalogVideoModels] : catalogVideoModels,
+  );
   const effectiveModel = model;
   const protocolModel: string = String(d?.protocolModel || '').trim();
   const pollingModel = protocolModel || effectiveModel;
@@ -162,6 +173,28 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
   const videoUrl: string | undefined = d.videoUrl;
   const progress: string = d.progress || '';
   const localPrompt: string = d.prompt || '';
+
+  useEffect(() => {
+    setVideoMetadataRatio('');
+    setVideoProbedSize(null);
+    if (!videoUrl) return;
+    let active = true;
+    void probeVideo(videoUrl)
+      .then((probe) => {
+        if (!active) return;
+        setVideoProbedSize(resolveVideoDisplaySize(probe.width, probe.height, probe.rotation));
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [videoUrl]);
+
+  const handleVideoLoadedMetadata = (event: SyntheticEvent<HTMLVideoElement>) => {
+    const width = event.currentTarget.videoWidth;
+    const height = event.currentTarget.videoHeight;
+    if (width > 0 && height > 0) setVideoMetadataRatio(`${width}:${height}`);
+  };
   const promptMentions: MediaMention[] = Array.isArray(d?.promptMentions) ? d.promptMentions : [];
 
   // === 上游素材聚合 (跨节点统一机制) ===
@@ -327,11 +360,15 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
           } else if (elapsed % 3 === 0) {
             logBus.debug(`[${elapsed}/${MAX}] status=${r.status}`, src);
           }
-          if (r.status === 'succeeded' && r.videoUrl) {
+          const nextVideoUrls = Array.isArray(r.videoUrls) && r.videoUrls.length
+            ? r.videoUrls
+            : (r.videoUrl ? [r.videoUrl] : []);
+          const nextVideoUrl = nextVideoUrls[0] || '';
+          if (r.status === 'succeeded' && nextVideoUrl) {
             stopPoll();
             flushProgressUpdate();
-            update({ status: 'success', videoUrl: r.videoUrl, progress: '100%' });
-            logBus.success(`任务完成 → ${r.videoUrl}`, src);
+            update({ status: 'success', videoUrl: nextVideoUrl, videoUrls: nextVideoUrls, progress: '100%' });
+            logBus.success(`任务完成 → ${nextVideoUrl}${nextVideoUrls.length > 1 ? ` 等 ${nextVideoUrls.length} 个视频` : ''}`, src);
             taskCompletionSound.notifyComplete(id, 'seedance');
             resolve();
           } else if (r.status === 'failed') {
@@ -354,15 +391,16 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
   };
 
   useEffect(() => {
-    if (status !== 'polling' || !taskId || videoUrl || pollTimer.current) return;
+    if (status !== 'polling' || !taskId || pollTimer.current) return;
     void startPolling(taskId).catch(() => undefined);
-  }, [status, taskId, videoUrl, pollingModel]);
+  }, [status, taskId, pollingModel]);
 
   const handleGenerate = async () => {
     setError(null);
     const { prompt: upstreamPrompt, imageUrls, videoUrls, audioUrls } = collectUpstream();
     const resolvedLocalPrompt = resolveMediaMentions(localPrompt, promptMentions, mentionMaterials);
-    const finalPrompt = (upstreamPrompt || resolvedLocalPrompt || '').trim();
+    const promptPayload = extractSeedancePromptPayload(upstreamPrompt || resolvedLocalPrompt || '');
+    const finalPrompt = promptPayload.prompt.trim();
     if (!finalPrompt) {
       setError('未连接 text 节点也未填写 prompt');
       logBus.error('生成中止: 缺少 prompt', src);
@@ -382,12 +420,18 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
           providerId: providerSelection.provider.id,
           providerModel,
           model: providerModel,
+          protocolModel: effectiveModel,
+          providerKind: 'seedance',
           prompt: finalPrompt,
           aspect_ratio: ratio,
           ratio,
           duration,
           resolution,
           seed: seed >= 0 ? seed : undefined,
+          generate_audio: generateAudio,
+          return_last_frame: returnLastFrame,
+          watermark,
+          web_search: webSearch,
           images: imageUrls,
           videos: videoUrls,
           audios: audioUrls,
@@ -427,7 +471,7 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
       //  - activeFrameMode='firstlast': 第 1 张 first, 第 2 张 last, 其余作为 reference_image
       let firstFrame: string | undefined;
       let lastFrame: string | undefined;
-      let refImages: string[] = [];
+      let refImages: Array<string | SeedancePromptRef> = [];
       if (activeFrameMode === 'first' && imageUrls.length >= 1) {
         firstFrame = imageUrls[0];
         refImages = imageUrls.slice(1);
@@ -437,6 +481,9 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
         refImages = imageUrls.slice(2);
       } else {
         refImages = imageUrls;
+      }
+      if (promptPayload.refImages.length) {
+        refImages = [...refImages, ...promptPayload.refImages];
       }
 
       const payload: SeedanceSubmitRequest = {
@@ -474,7 +521,8 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
       update({
         status: 'polling',
         taskId: r.taskId,
-        protocolModel: r.protocol || r.effectiveModel || r.requestedModel,
+        protocolModel: r.effectiveModel || r.requestedModel || effectiveModel,
+        videoProtocol: r.protocol || null,
         lastPrompt: finalPrompt,
         progress: '15%',
       });
@@ -546,10 +594,12 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
   const refsCount = orderedReferenceImages.length;
   const seedanceNodeUiVariant: 'smart-card' | 'classic' = d?.uiVariant === 'classic' ? 'classic' : 'smart-card';
   const useSmartCardSeedanceNode = seedanceNodeUiVariant === 'smart-card';
-  const smartAspectSize = resolveSmartMediaCardSize(ratio, d?.smartCardWidth);
+  const previewAspectRatio = videoProbedSize?.ratio || videoMetadataRatio || ratio;
+  const smartAspectSize = resolveSmartMediaCardSize(previewAspectRatio, d?.smartCardWidth);
   const smartCardWidth = smartAspectSize.width;
   const smartCardHeight = smartAspectSize.height;
   const smartComposerOpen = smartComposerOpenLocal && !smartCardDragging;
+  const smartSeedanceCardState = isBusy ? 'running' : status === 'error' ? 'failed' : videoUrl ? 'result' : 'empty';
   const smartComposerWidth = Math.max(smartCardWidth, 620);
   const isSmartRegenerating = isBusy && Boolean(videoUrl);
   const syncSeedanceNodeGeometry = useNodeGeometrySync(id, updateNodeInternals);
@@ -560,6 +610,8 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
     return () => window.cancelAnimationFrame(raf);
   }, [selected, smartCardWidth, smartCardHeight, smartComposerOpen, syncSeedanceNodeGeometry, useSmartCardSeedanceNode]);
 
+  // Kept alongside the composer-owned dismissal: ignores prompt portals
+  // and other floating editors that legitimately sit outside the anchor.
   useOutsideClose({
     enabled: useSmartCardSeedanceNode && smartComposerOpenLocal,
     refs: smartNodeRef,
@@ -575,11 +627,16 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
     disabled: !useSmartCardSeedanceNode,
   });
 
+  // Composer open state is session-only; release it when the node unmounts.
+  useEffect(() => () => smartNodeComposerActions.close(id), [id]);
+
   const switchSeedanceNodeVariant = (variant: 'smart-card' | 'classic') => {
     setSmartComposerOpenLocal(false);
     smartPanelToggle.handledClickRef.current = false;
     smartPanelToggle.suppressClickRef.current = true;
-    update({ uiVariant: variant });
+    flushSync(() => {
+      update({ uiVariant: variant });
+    });
     syncSeedanceNodeGeometry();
   };
 
@@ -587,8 +644,12 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
     return (
       <SmartNodeShell
         rootRef={smartNodeRef}
-        className="t8-smart-seedance-node relative overflow-visible"
+      data-canvas-node-root={true}
+      className={`t8-smart-seedance-node relative overflow-visible ${selected ? 'is-selected' : ''}`}
         style={{ width: smartCardWidth }}
+        accessibleLabel="SD 2.0 节点"
+        smartState={smartSeedanceCardState}
+        onKeyboardActivate={() => setSmartComposerOpenLocal(true)}
         rootProps={{
           ...dropProps,
           onPointerDown: smartPanelToggle.onPointerDown,
@@ -612,8 +673,8 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
                 <LoopingVideo
                   src={videoUrl}
                   controls
-                  className="h-full w-full object-cover"
-                  style={{ aspectRatio: ratio === 'adaptive' ? undefined : ratio.replace(':', '/') }}
+                  className="h-full w-full object-contain"
+                  style={{ aspectRatio: previewAspectRatio === 'adaptive' ? undefined : previewAspectRatio.replace(':', '/') }}
                   data-drag-source
                   data-drag-kind="video"
                   data-drag-url={videoUrl}
@@ -623,12 +684,35 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
                   data-prompt-template-kind="video"
                   data-prompt-template-category="video-image-to-video"
                   data-prompt-template-prompt={d?.lastPrompt || localPrompt}
+                  onLoadedMetadata={handleVideoLoadedMetadata}
+                  onDoubleClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setVideoPreviewOpen(true);
+                  }}
                   onMouseDown={(e) => beginMaterialDrag(e, { kind: 'video', url: videoUrl, sourceNodeId: id, previewUrl: videoUrl })}
                   title="按住 Ctrl 拖拽到其他节点"
                 />
               ) : (
                 <div className="t8-smart-node-empty t8-smart-video-empty">
                   <Film size={28} />
+                </div>
+              )}
+              {videoUrl && (
+                <div className="nodrag nopan t8-smart-result-tools">
+                  <button
+                    type="button"
+                    className="t8-smart-result-tool"
+                    title="预览视频"
+                    aria-label="预览视频"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      setVideoPreviewOpen(true);
+                    }}
+                  >
+                    <Eye size={14} />
+                  </button>
                 </div>
               )}
               <div className="t8-smart-video-badge">
@@ -649,8 +733,41 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
           </div>
         </div>
 
+        <ResizableCorners
+          selected={selected}
+          minWidth={300}
+          minHeight={170}
+          maxWidth={760}
+          maxHeight={720}
+          accent="var(--t8-accent)"
+          keepAspectRatio
+          onResize={(_event, params) => {
+            const nextSize = resolveSmartMediaCardSize(previewAspectRatio, Math.round(params.width));
+            update({
+              smartCardWidth: nextSize.width,
+              smartCardHeight: nextSize.height,
+            });
+          }}
+          onResizeEnd={(_event, params) => {
+            const nextSize = resolveSmartMediaCardSize(previewAspectRatio, Math.round(params.width));
+            update({
+              smartCardWidth: nextSize.width,
+              smartCardHeight: nextSize.height,
+            });
+            syncSeedanceNodeGeometry();
+          }}
+        />
+
         {smartComposerOpen && (
-          <SmartNodeComposer portal anchorRef={smartNodeRef} style={{ width: smartComposerWidth }} onMouseDown={(e) => e.stopPropagation()}>
+          <SmartNodeComposer
+            portal
+            anchorRef={smartNodeRef}
+            style={{ width: smartComposerWidth }}
+            onMouseDown={(e) => e.stopPropagation()}
+            onRequestClose={() => setSmartComposerOpenLocal(false)}
+            ariaLabel="SD 2.0 节点属性"
+            initialFocusRef={smartPromptRef}
+          >
             <MaterialPreviewSection
               texts={orderedTexts}
               images={orderedReferenceImages}
@@ -677,7 +794,7 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
               <button
                 type="button"
                 className="nodrag nopan t8-btn t8-smart-classic-switch"
-                onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                onPointerDown={(e) => { e.stopPropagation(); }}
                 onClick={(e) => { e.preventDefault(); e.stopPropagation(); switchSeedanceNodeVariant('classic'); }}
                 title="切换到经典版节点"
                 aria-label="切换到经典版节点"
@@ -749,6 +866,7 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
 
             <div className="t8-smart-prompt-shell">
               <MentionPromptInput
+                editorRef={smartPromptRef}
                 title="SD2.0 Prompt"
                 value={localPrompt}
                 mentions={promptMentions}
@@ -804,6 +922,14 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
             )}
           </SmartNodeComposer>
         )}
+        <SmartMediaPreviewModal
+          open={videoPreviewOpen}
+          url={videoUrl}
+          title="SD2.0 视频"
+          kind="video"
+          meta={videoProbedSize ? `${videoProbedSize.width}×${videoProbedSize.height}` : undefined}
+          onClose={() => setVideoPreviewOpen(false)}
+        />
       </SmartNodeShell>
     );
   }
@@ -811,8 +937,8 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
   return (
     <div
       {...dropProps}
-      className={`relative rounded-xl border-2 transition-all w-[300px] ${
-        selected ? 'border-fuchsia-400 shadow-2xl shadow-fuchsia-500/20' : isAccepting ? 'border-emerald-400' : 'border-white/15 hover:border-white/30'
+      className={`t8-node relative rounded-xl border-2 transition-all w-[300px] ${selected ? 'is-selected' : ''} ${
+        isAccepting ? 'border-emerald-400' : ''
       }`}
       style={{
         background: 'rgba(20,20,22,.92)',
@@ -842,7 +968,6 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
           type="button"
           className="nodrag nopan t8-btn t8-smart-classic-switch"
           onPointerDown={(e) => {
-            e.preventDefault();
             e.stopPropagation();
           }}
           onClick={(e) => {

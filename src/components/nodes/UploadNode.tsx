@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from 'react';
 import { createPortal, flushSync } from 'react-dom';
 import { Handle, Position, useReactFlow, useUpdateNodeInternals, type Node, type Edge, type NodeProps } from '@xyflow/react';
 import {
@@ -9,7 +9,6 @@ import {
   Eye,
   FileImage,
   FileVideo,
-  Info,
   Layers2,
   Music,
   Plus,
@@ -20,8 +19,6 @@ import {
 } from 'lucide-react';
 import { useUpdateNodeData } from './useUpdateNodeData';
 import { useThemeStore } from '../../stores/theme';
-import { trackAchievementEvent } from '../../stores/achievements';
-import { useHiddenFeatureStore, isRhDuckUploadEnabled } from '../../stores/hiddenFeatures';
 import { PORT_COLOR } from '../../config/portTypes';
 import { useRunTrigger } from '../../hooks/useRunTrigger';
 import { useDragMaterialStore, type MaterialPayload } from '../../stores/dragMaterial';
@@ -30,12 +27,18 @@ import ImageEditModal, { type ImageEditProduceMeta } from './ImageEditModal';
 import ResizableCorners from './ResizableCorners';
 import LoopingVideo from '../LoopingVideo';
 import MediaMetadataBadge from '../MediaMetadataBadge';
-import RhImageCapabilityRail from '../RhImageCapabilityRail';
 import SmartImage from '../SmartImage';
 import { readImageNaturalSize } from '../../utils/imageNaturalSize';
 import { generateImage } from '../../services/generation';
-import { decodeDuckFiles, type DuckDecodeFileItem } from '../../services/api';
+import { useApiKeysStore } from '../../stores/apiKeys';
+import { effectiveModelId, modelsForKind } from '../../providers/modelCatalog';
 import { resolveThemeTemplate } from '../../theme/defaultTemplates';
+import SmartMediaPreviewModal from './shared/SmartMediaPreviewModal';
+import SmartNodeComposer from './shared/SmartNodeComposer';
+import SmartNodeShell from './shared/SmartNodeShell';
+import { useSmartNodePanelToggle } from './shared/useSmartNodePanelToggle';
+import { useOutsideClose } from './shared/useOutsideClose';
+import { smartNodeComposerActions, useIsSmartNodeComposerOpen } from '../../stores/smartNodeComposer';
 import {
   createEmptyUploadMediaData,
   createOutputDataFromItems,
@@ -165,7 +168,10 @@ function uploadCardHeightForRatio(width: number, ratio: number): number {
   return Math.max(160, Math.min(640, Math.round(width / clampUploadRatio(ratio))));
 }
 
-const UploadNode = ({ id, data, selected, type }: NodeProps) => {
+const UploadNode = ({ id, data, selected, type, dragging }: NodeProps) => {
+  const apiSettings = useApiKeysStore((state) => state.settings);
+  const imageModels = useMemo(() => modelsForKind(apiSettings, 'image'), [apiSettings]);
+  const annotationImageModel = effectiveModelId((data as any)?.apiModel || (data as any)?.model, imageModels);
   const update = useUpdateNodeData(id);
   const { theme, style, templateId, customTemplates } = useThemeStore();
   const isDark = theme === 'dark';
@@ -174,52 +180,38 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
     () => resolveThemeTemplate(templateId, customTemplates),
     [templateId, customTemplates],
   );
-  const isRhDomVisual =
-    typeof document !== 'undefined' && document.documentElement.dataset.themeVisual === 'rh';
-  const isRhVisual = activeTemplate.visuals?.style === 'rh' || isRhDomVisual;
-  const isYyhDomVisual =
-    typeof document !== 'undefined' && document.documentElement.dataset.themeVisual === 'yyh';
-  const isYyhVisual = activeTemplate.visuals?.style === 'yyh' || isYyhDomVisual;
-  const rhDuckUploadIds = useHiddenFeatureStore((s) => s.rhDuckUploadIds);
-  const clearRhDuckUpload = useHiddenFeatureStore((s) => s.clearRhDuckUpload);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const updateNodeInternals = useUpdateNodeInternals();
   const syncUploadNodeGeometry = useNodeGeometrySync(id, updateNodeInternals);
   const rf = useReactFlow();
 
   const [error, setError] = useState<string | null>(null);
-  const [rhCapabilityBusy, setRhCapabilityBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [dragActive, setDragActive] = useState(false);
-  const [infoOpen, setInfoOpen] = useState(false);
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   // 图像编辑弹窗 src URL（与 OutputNode 双击逻辑保持一致）
   const [editingUrl, setEditingUrl] = useState<string | null>(null);
+  const smartComposerOpenLocal = useIsSmartNodeComposerOpen(id);
+  const setSmartComposerOpenLocal = useCallback(
+    (nextOpen: boolean) => {
+      if (nextOpen) smartNodeComposerActions.open(id);
+      else smartNodeComposerActions.close(id);
+    },
+    [id],
+  );
+  const [smartCardDragging, setSmartCardDragging] = useState(false);
+  const smartNodeRef = useRef<HTMLDivElement>(null);
 
   const d = data as any;
-  const rhDuckStoredMode =
-    d?.rhDuckHiddenUpload === false
-      ? false
-      : Boolean(d?.rhDuckHiddenUpload || d?.rhDuckMode || d?.rhDuckUploadMode);
-  const rhDuckStoreMode = isRhDuckUploadEnabled(rhDuckUploadIds, id);
-  const rhDuckPersistentMode = Boolean(isRhVisual && type === 'upload' && (rhDuckStoredMode || rhDuckStoreMode));
   const lockedUploadType: UploadKind | null =
     type === 'model-3d-upload' || d?.lockedUploadType === 'model3d'
       ? 'model3d'
-      : rhDuckPersistentMode
-        ? 'image'
-        : null;
+      : null;
   const uploadType: UploadKind | null =
-    lockedUploadType === 'image' ? 'image' : d?.uploadType ?? lockedUploadType;
+    d?.uploadType ?? lockedUploadType;
   const meta = uploadType ? KIND_META[uploadType] : null;
   const mediaItems = uploadType ? getMediaItemsFromData(d, uploadType) : [];
   const url: string | undefined = mediaItems[0]?.url;
-  const rhDuckMode = Boolean(
-    isRhVisual &&
-      uploadType === 'image' &&
-      (rhDuckStoredMode || rhDuckStoreMode),
-  );
-  const yyhPortraitUploadMode = Boolean(isYyhVisual && d?.yyhPortraitHidden);
 
   // 节点本地尺寸 state: 默认 (260, 高度由内容撑开 — 上传后图/视频会撑高 root)
   // 拖角后由 ResizableCorners onResize 同步具体 px (保证 measured 准确 + keepAspectRatio 生效 + handleBounds 准确)
@@ -232,10 +224,9 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
     180,
     Number(d?.smartUploadHeight) || (mediaItems.length > 0 ? uploadCardHeightForRatio(smartUploadWidth, smartUploadRatio) : 210),
   );
-  const switchUploadNodeVariant = (variant: 'smart-card' | 'classic') => {
-    flushSync(() => update({ uiVariant: variant }));
-    syncUploadNodeGeometry();
-  };
+  const smartComposerOpen = smartComposerOpenLocal && !smartCardDragging && !dragging;
+  const smartUploadCardState = mediaItems.length > 0 ? 'result' : 'empty';
+  const smartComposerWidth = Math.max(smartUploadWidth, 480);
   const syncUploadMediaRatio = (width: number, height: number) => {
     if (!useSmartCardUploadNode || mediaItems.length !== 1) return;
     if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return;
@@ -263,45 +254,7 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
     const edges = rf.getEdges();
     const nodes = rf.getNodes();
 
-    const toDecodedMediaItem = (source: MediaItem, decoded?: DuckDecodeFileItem): MediaItem | null => {
-      if (!decoded?.decoded || !decoded.url) return null;
-      if (decoded.kind !== 'image' && decoded.kind !== 'video' && decoded.kind !== 'audio') return null;
-      return {
-        kind: decoded.kind,
-        url: decoded.url,
-        name: decoded.filename || source.name,
-        size: decoded.size,
-        mime: decoded.mime || source.mime,
-      };
-    };
-
     let outputGroups: Array<{ kind: MediaKind; items: MediaItem[] }> = [{ kind: uploadType, items: mediaItems }];
-    let outputFromRhDuckDecode = false;
-    if (rhDuckMode && uploadType === 'image') {
-      try {
-        const decoded = await decodeDuckFiles(mediaItems.map((item) => item.url));
-        if (decoded.decodedCount > 0) {
-          const decodedBySource = new Map(decoded.items.map((item) => [item.sourceUrl, item]));
-          const grouped = new Map<MediaKind, MediaItem[]>();
-          const push = (item: MediaItem) => {
-            const list = grouped.get(item.kind) || [];
-            list.push(item);
-            grouped.set(item.kind, list);
-          };
-          mediaItems.forEach((item) => {
-            const decodedItem = toDecodedMediaItem(item, decodedBySource.get(item.url));
-            if (decodedItem) push(decodedItem);
-          });
-          const decodedGroups = Array.from(grouped.entries()).map(([kind, items]) => ({ kind, items }));
-          if (decodedGroups.length > 0) {
-            outputGroups = decodedGroups;
-            outputFromRhDuckDecode = true;
-          }
-        }
-      } catch (e) {
-        console.warn('[UploadNode] RH duck decode failed, fallback to normal upload output', e);
-      }
-    }
 
     const groupsToCreate = outputGroups.filter(({ kind, items }) => {
       if (items.length === 0) return false;
@@ -351,7 +304,6 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
         },
         data: {
           ...createOutputDataFromItems(kind, items),
-          ...(outputFromRhDuckDecode ? { rhDuckDecoded: true, rhDuckSourceNodeId: id } : {}),
         },
         selected: false,
       } as Node;
@@ -361,15 +313,9 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
       source: id,
       target: node.id,
       type: 'deletable',
-      ...(outputFromRhDuckDecode
-        ? { className: 'rh-duck-edge', data: { rhDuckEdge: true } }
-        : {}),
     } as Edge));
     rf.addNodes(newNodes);
     rf.setEdges((eds) => [...eds, ...newEdges]);
-    if (outputFromRhDuckDecode) {
-      trackAchievementEvent({ type: 'hidden_mode.used', theme: 'rh', kind: 'rh-duck', mode: 'used', nodeType: 'upload' });
-    }
   };
 
   // 接入运行总线, 供 NodeActionBar / 批量运行 调起
@@ -387,25 +333,27 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
 
   /** 重置:清空所有字段,回到默认拖拽上传状态 */
   const handleReset = () => {
-    if (!rhDuckMode) clearRhDuckUpload(id);
     update({
       ...createEmptyUploadMediaData(),
-      uploadType: rhDuckMode ? 'image' : lockedUploadType,
+      uploadType: lockedUploadType,
       lockedUploadType: lockedUploadType === 'model3d' ? 'model3d' : undefined,
-      ...(rhDuckMode ? { rhDuckHiddenUpload: true } : {}),
     });
     setError(null);
   };
 
   const handleRemoveUploadItem = (index: number) => {
     if (!uploadType) return;
-    const emptyUploadType = lockedUploadType ?? (rhDuckMode ? 'image' : null);
+    const emptyUploadType = lockedUploadType ?? null;
     update({
       ...createUploadMediaRemovalData(d, uploadType, index, emptyUploadType),
       lockedUploadType: lockedUploadType === 'model3d' ? 'model3d' : undefined,
-      ...(rhDuckMode ? { rhDuckHiddenUpload: true } : {}),
     });
     setError(null);
+    setPreviewIndex((current) => {
+      if (current === null) return null;
+      if (current === index) return null;
+      return current > index ? current - 1 : current;
+    });
     if (editingUrl === mediaItems[index]?.url) setEditingUrl(null);
   };
 
@@ -446,7 +394,6 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
       const base = uploadType === kind ? mediaItems : [];
       update({
         ...createUploadDataFromItems(kind, [...base, ...uploaded]),
-        ...(rhDuckMode ? { rhDuckHiddenUpload: true } : {}),
       });
       if (skipped > 0) {
         setError(`已上传 ${uploaded.length} 个${KIND_META[kind].label}，跳过 ${skipped} 个非同类型文件`);
@@ -521,6 +468,7 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
       throw error;
     }
     try {
+      if (!annotationImageModel) throw new Error('请先拉取或手动填写图片模型');
       logBus.info('正在按标注说明生成改图结果', logSource);
       const request = buildAnnotationEditRequest({
         sourceNodeId: id,
@@ -530,11 +478,11 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
         annotationTextCount: meta.annotationTextCount,
         annotationShapeCount: meta.annotationShapeCount,
         providerId: 'default-image',
-        providerModel: 'gpt-image-2',
+        providerModel: annotationImageModel,
       });
       const result = await generateImage({
-        model: 'gpt-image-2',
-        apiModel: 'gpt-image-2',
+        model: annotationImageModel,
+        apiModel: annotationImageModel,
         prompt: request.prompt,
         images: request.images,
         n: 1,
@@ -678,7 +626,7 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
 
   // ==================== 渲染 ====================
   const handleColor = meta?.color || PORT_COLOR.any;
-  const effectiveHandleColor = rhDuckMode ? '#ff345f' : yyhPortraitUploadMode ? '#ff4fd8' : handleColor;
+  const effectiveHandleColor = handleColor;
   const headerLabel = lockedUploadType === 'model3d' ? '3D素材上传' : meta ? `上传${meta.label}` : '上传素材';
   const totalSize = mediaItems.reduce((sum, item) => sum + (item.size || 0), 0);
   const firstItem = mediaItems[0];
@@ -699,7 +647,37 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
   useEffect(() => {
     if (!useSmartCardUploadNode) return;
     syncUploadNodeGeometry();
-  }, [smartUploadHeight, smartUploadWidth, useSmartCardUploadNode, syncUploadNodeGeometry]);
+  }, [smartUploadHeight, smartUploadWidth, smartComposerOpen, useSmartCardUploadNode, syncUploadNodeGeometry]);
+
+  // Composer open state is session-only; release it when the node unmounts.
+  useEffect(() => () => smartNodeComposerActions.close(id), [id]);
+
+  // Kept alongside the composer-owned dismissal: ignores portalled floating editors.
+  useOutsideClose({
+    enabled: useSmartCardUploadNode && smartComposerOpenLocal,
+    refs: smartNodeRef,
+    onOutside: () => setSmartComposerOpenLocal(false),
+  });
+
+  const smartPanelToggle = useSmartNodePanelToggle({
+    open: smartComposerOpenLocal,
+    dragging,
+    onToggle: setSmartComposerOpenLocal,
+    onDragChange: setSmartCardDragging,
+    onDragClose: () => setSmartComposerOpenLocal(false),
+    ignoreSelector: '.nodrag, .react-flow__resize-control, input, textarea, select, button, [contenteditable="true"], [data-drag-source]',
+    disabled: !useSmartCardUploadNode || dragActive,
+  });
+
+  const switchUploadNodeVariant = (variant: 'smart-card' | 'classic') => {
+    setSmartComposerOpenLocal(false);
+    smartPanelToggle.handledClickRef.current = false;
+    smartPanelToggle.suppressClickRef.current = true;
+    flushSync(() => {
+      update({ uiVariant: variant });
+    });
+    syncUploadNodeGeometry();
+  };
 
   useEffect(() => {
     if (!useSmartCardUploadNode || uploadType !== 'image' || !firstItem?.url || mediaItems.length !== 1) return;
@@ -730,13 +708,53 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
     useSmartCardUploadNode,
   ]);
 
+  const renderTileActions = (i: number) => (
+    <div
+      className="nodrag nopan t8-smart-upload-tile-actions"
+      onPointerDown={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      }}
+      onMouseDown={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      }}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <button
+        type="button"
+        className="t8-smart-upload-tile-action"
+        title={`预览素材 ${i + 1}`}
+        aria-label={`预览素材 ${i + 1}`}
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setPreviewIndex(i);
+        }}
+      >
+        <Eye size={13} />
+      </button>
+      <button
+        type="button"
+        className="t8-smart-upload-tile-action t8-smart-upload-tile-action--danger"
+        title={`删除素材 ${i + 1}`}
+        aria-label={`删除素材 ${i + 1}`}
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          handleRemoveUploadItem(i);
+        }}
+      >
+        <Trash2 size={13} />
+      </button>
+    </div>
+  );
+
   if (!useSmartCardUploadNode) {
     return (
       <div
         data-upload-node-id={id}
-        data-rh-duck-mode={rhDuckMode ? 'true' : undefined}
-        data-yyh-portrait-hidden-upload={yyhPortraitUploadMode ? 'true' : undefined}
-        className={`t8-node t8-upload-node-classic relative transition-all ${selected ? 't8-image-node-classic--selected' : ''}`}
+      className={`t8-node t8-upload-node-classic relative transition-all ${selected ? 'is-selected t8-image-node-classic--selected' : ''}`}
         style={{ width: 280 }}
         onDragOver={(e) => {
           e.preventDefault();
@@ -772,7 +790,6 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
             type="button"
             className="nodrag nopan t8-btn t8-smart-classic-switch"
             onPointerDown={(e) => {
-              e.preventDefault();
               e.stopPropagation();
             }}
             onClick={(e) => {
@@ -832,17 +849,29 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
   }
 
   return (
-    <div
-      data-upload-node-id={id}
-      data-rh-duck-mode={rhDuckMode ? 'true' : undefined}
-      data-yyh-portrait-hidden-upload={yyhPortraitUploadMode ? 'true' : undefined}
-      className="t8-smart-image-node relative overflow-visible"
+    <SmartNodeShell
+      rootRef={smartNodeRef}
+      data-canvas-node-root={true}
+      className={`t8-smart-image-node relative overflow-visible ${selected ? 'is-selected' : ''}`}
       style={{ width: smartUploadWidth }}
+      accessibleLabel="上传节点"
+      smartState={smartUploadCardState}
+      stateAttrs={{ 'upload-node-id': id }}
+      onKeyboardActivate={() => {
+        if (!dragActive) setSmartComposerOpenLocal(true);
+      }}
+      rootProps={{
+        onPointerDown: smartPanelToggle.onPointerDown,
+        onPointerMove: smartPanelToggle.onPointerMove,
+        onPointerUp: smartPanelToggle.onPointerUp,
+        onClick: smartPanelToggle.onClick,
+        onPointerCancel: smartPanelToggle.onPointerCancel,
+      }}
     >
       <div
         className={`t8-node t8-smart-node-card t8-smart-upload-card transition-all ${selected ? 't8-smart-node-card--selected' : ''} ${
           dragActive ? 't8-smart-node-card--accepting' : ''
-        } ${infoOpen ? 't8-smart-upload-card--info-open' : ''}`}
+        }`}
         style={{
           height: smartUploadHeight,
           minHeight: mediaItems.length > 0 ? 180 : 210,
@@ -916,9 +945,7 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
                     <span>
                       {lockedUploadType === 'model3d'
                         ? 'glb / gltf / obj / fbx / stl / usdz / zip'
-                        : rhDuckMode
-                          ? 'RED 模式已锁定图像'
-                          : '图像 / 视频 / 音频 / 3D模型'}
+                        : '图像 / 视频 / 音频 / 3D模型'}
                     </span>
                   </div>
                   <button
@@ -936,9 +963,7 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
                   >
                     {lockedUploadType === 'model3d'
                       ? '选择模型'
-                      : rhDuckMode
-                        ? '上传图像'
-                        : '选择素材'}
+                      : '选择素材'}
                   </button>
                 </div>
                 <button
@@ -947,7 +972,6 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
                   title="切换到经典版节点"
                   aria-label="切换到经典版节点"
                   onPointerDown={(e) => {
-                    e.preventDefault();
                     e.stopPropagation();
                   }}
                   onClick={(e) => {
@@ -990,6 +1014,7 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
                       }}
                       title="双击预览 · Ctrl+拖拽可送到其他节点"
                     />
+                    {renderTileActions(i)}
                     {mediaItems.length > 1 && <span className="t8-smart-upload-count">{i + 1}</span>}
                     <MediaMetadataBadge kind="image" url={item.url} className="t8-smart-upload-metadata" />
                   </div>
@@ -1018,6 +1043,7 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
                         beginMaterialDrag(e, { kind: 'video', url: item.url, sourceNodeId: id, previewUrl: item.url })
                       }
                     />
+                    {renderTileActions(i)}
                     {mediaItems.length > 1 && <span className="t8-smart-upload-count">{i + 1}</span>}
                     <MediaMetadataBadge kind="video" url={item.url} className="t8-smart-upload-metadata" />
                   </div>
@@ -1101,24 +1127,9 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
                     e.preventDefault();
                     e.stopPropagation();
                     setPreviewIndex(0);
-                    setInfoOpen(false);
                   }}
                 >
                   <Eye size={14} />
-                </button>
-                <button
-                  type="button"
-                  className="t8-smart-result-tool"
-                  data-active={infoOpen ? 'true' : 'false'}
-                  title="素材信息"
-                  aria-label="素材信息"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setInfoOpen((open) => !open);
-                  }}
-                >
-                  <Info size={14} />
                 </button>
                 {canEditImage && (
                   <button
@@ -1130,7 +1141,6 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
                       e.preventDefault();
                       e.stopPropagation();
                       openEdit(e);
-                      setInfoOpen(false);
                     }}
                   >
                     <Edit3 size={14} />
@@ -1146,7 +1156,6 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
                       e.preventDefault();
                       e.stopPropagation();
                       splitUploadCollection();
-                      setInfoOpen(false);
                     }}
                   >
                     <Layers2 size={14} />
@@ -1174,50 +1183,11 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
                     e.preventDefault();
                     e.stopPropagation();
                     handleReset();
-                    setInfoOpen(false);
                     setPreviewIndex(null);
                   }}
                 >
                   <Trash2 size={14} />
                 </button>
-              </div>
-            )}
-
-            {infoOpen && (
-              <div
-                className="nodrag nopan t8-smart-result-popover t8-smart-result-popover--info"
-                onPointerDown={(e) => e.stopPropagation()}
-                onMouseDown={(e) => e.stopPropagation()}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="t8-smart-result-popover__title">素材信息</div>
-                <div className="t8-smart-result-info">
-                  {infoRows.map((row) => (
-                    <div key={row.label} className="t8-smart-result-info__row">
-                      <span>{row.label}</span>
-                      <strong title={row.value}>{row.value}</strong>
-                    </div>
-                  ))}
-                </div>
-                {mediaItems.length > 0 && (
-                  <div className="t8-smart-upload-info-actions">
-                    {mediaItems.map((item, i) => (
-                      <button
-                        key={`${item.url}-${i}`}
-                        type="button"
-                        className="t8-smart-result-action group-hover/upload-image:opacity-100"
-                        title={`删除素材 ${uploadMediaTitle(item, `素材 ${i + 1}`)}`}
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          handleRemoveUploadItem(i);
-                        }}
-                      >
-                        删除素材 {i + 1}
-                      </button>
-                    ))}
-                  </div>
-                )}
               </div>
             )}
 
@@ -1231,19 +1201,133 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
         </div>
       </div>
 
-      {(selected || rhCapabilityBusy) && canEditImage && (
-        <RhImageCapabilityRail
-          sourceUrls={imageSourceUrls}
-          accent={effectiveHandleColor}
-          isDark={isDark}
-          isPixel={isPixel}
-          onComplete={(result) => handleProduce(result.imageUrls, { type: 'rh-capability', label: result.tool.title })}
-          onError={setError}
-          onRunningChange={setRhCapabilityBusy}
-        />
+      {smartComposerOpen && (
+        <SmartNodeComposer
+          portal
+          anchorRef={smartNodeRef}
+          style={{ width: smartComposerWidth }}
+          onMouseDown={(e) => e.stopPropagation()}
+          onRequestClose={() => setSmartComposerOpenLocal(false)}
+          ariaLabel="上传节点属性"
+        >
+          <div className="t8-smart-result-popover__title">素材信息</div>
+          <div className="t8-smart-result-info">
+            {infoRows.map((row) => (
+              <div key={row.label} className="t8-smart-result-info__row">
+                <span>{row.label}</span>
+                <strong title={row.value}>{row.value}</strong>
+              </div>
+            ))}
+          </div>
+          {mediaItems.length > 0 && (
+            <>
+              <div className="t8-smart-result-popover__title" style={{ marginTop: 10 }}>素材管理</div>
+              <div className="t8-smart-upload-composer-items">
+                {mediaItems.map((item, i) => (
+                  <div key={`${item.url}-${i}`} className="t8-smart-upload-composer-item">
+                    <div className="t8-smart-upload-composer-item__thumb">
+                      {item.kind === 'image' ? (
+                        <SmartImage
+                          src={item.url}
+                          alt={uploadMediaTitle(item, `图像 ${i + 1}`)}
+                          className="h-full w-full object-cover"
+                          thumbSize={160}
+                        />
+                      ) : item.kind === 'video' ? (
+                        <LoopingVideo src={item.url} className="h-full w-full object-cover" />
+                      ) : item.kind === 'audio' ? (
+                        <Music size={16} />
+                      ) : (
+                        <Box size={16} />
+                      )}
+                    </div>
+                    <div className="t8-smart-upload-composer-item__meta">
+                      <span title={uploadMediaTitle(item, `素材 ${i + 1}`)}>{uploadMediaTitle(item, `素材 ${i + 1}`)}</span>
+                      {item.size ? <small>{formatMediaSize(item.size)}</small> : null}
+                    </div>
+                    <button
+                      type="button"
+                      className="t8-smart-result-action"
+                      title={`预览素材 ${i + 1}`}
+                      aria-label={`预览素材 ${i + 1}`}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setPreviewIndex(i);
+                      }}
+                    >
+                      预览
+                    </button>
+                    <button
+                      type="button"
+                      className="t8-smart-result-action group-hover/upload-image:opacity-100"
+                      title={`删除素材 ${uploadMediaTitle(item, `素材 ${i + 1}`)}`}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        handleRemoveUploadItem(i);
+                      }}
+                    >
+                      删除素材 {i + 1}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+          <div className="t8-smart-result-action-list t8-smart-upload-composer-actions">
+            <button
+              type="button"
+              className="t8-smart-result-action"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                triggerPick();
+              }}
+            >
+              {mediaItems.length === 0 ? '选择素材' : '继续添加'}
+            </button>
+            {mediaItems.length > 1 && (
+              <button
+                type="button"
+                className="t8-smart-result-action"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  splitUploadCollection();
+                }}
+              >
+                拆成独立上传节点
+              </button>
+            )}
+            {mediaItems.length > 0 && (
+              <button
+                type="button"
+                className="t8-smart-result-action"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleReset();
+                  setPreviewIndex(null);
+                }}
+              >
+                清空素材
+              </button>
+            )}
+          </div>
+        </SmartNodeComposer>
       )}
 
-      {previewItem && createPortal(
+      <SmartMediaPreviewModal
+        open={Boolean(previewItem && previewItem.kind === 'image')}
+        url={previewItem?.kind === 'image' ? previewItem.url : ''}
+        title={previewItem ? uploadMediaTitle(previewItem, '上传图片') : '上传图片'}
+        meta={previewItem?.size ? formatMediaSize(previewItem.size) : undefined}
+        infoRows={infoRows}
+        onClose={() => setPreviewIndex(null)}
+      />
+
+      {previewItem && previewItem.kind !== 'image' && createPortal(
         <div
           className="nodrag nopan t8-smart-result-preview-backdrop"
           role="dialog"
@@ -1283,16 +1367,7 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
               </button>
             </div>
             <div className="t8-smart-result-preview__body">
-              {previewItem.kind === 'image' ? (
-                <SmartImage
-                  src={previewItem.url}
-                  alt="上传图片大图预览"
-                  className="t8-smart-result-preview__image"
-                  thumbSize={1400}
-                  draggable={false}
-                  onDragStart={(e) => e.preventDefault()}
-                />
-              ) : previewItem.kind === 'video' ? (
+              {previewItem.kind === 'video' ? (
                 <LoopingVideo src={previewItem.url} controls className="t8-smart-result-preview__image" />
               ) : previewItem.kind === 'audio' ? (
                 <audio src={previewItem.url} controls className="w-full max-w-xl" />
@@ -1332,7 +1407,7 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
           onProduce={handleProduce}
         />
       )}
-    </div>
+    </SmartNodeShell>
   );
 };
 

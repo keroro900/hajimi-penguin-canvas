@@ -53,6 +53,32 @@ function parseNodeRegistry(source) {
   return nodes;
 }
 
+const RUNNABLE_NODE_TYPES = new Set([
+  'image', 'video', 'seedance', 'llm', 'audio', 'batch-processor', 'loop',
+  'apparel-pack', 'apparel-pack-output', 'topaz-image-upscale', 'topaz-video-upscale',
+]);
+
+const EDITABLE_FIELDS_BY_TYPE = {
+  text: ['prompt', 'text', 'label'],
+  image: ['prompt', 'model', 'apiModel', 'aspectRatio', 'size', 'sizeLevel', 'quality', 'referenceImages'],
+  video: ['prompt', 'mainId', 'model', 'apiModel', 'ratio', 'aspectRatio', 'duration', 'resolution', 'referenceImages', 'referenceVideos'],
+  seedance: ['prompt', 'mainId', 'model', 'apiModel', 'ratio', 'aspectRatio', 'duration', 'resolution', 'referenceImages', 'referenceVideos'],
+  upload: ['label', 'uploadType', 'imageUrl', 'videoUrl', 'filename'],
+  'clip-studio': ['project', 'timeline', 'tracks', 'clips', 'captions', 'audio', 'exportSettings'],
+};
+
+function nodeCapabilities(type, ports) {
+  const capabilities = ['node.read', 'node.update', 'node.move'];
+  if ((ports?.inputs || []).length || (ports?.outputs || []).length) capabilities.push('node.connect');
+  if (RUNNABLE_NODE_TYPES.has(type) || ['image', 'video', 'audio'].some((kind) => (ports?.outputs || []).includes(kind))) {
+    capabilities.push('node.run', 'node.result.read');
+  }
+  if (type === 'image') capabilities.push('generation.image.configure');
+  if (type === 'video' || type === 'seedance') capabilities.push('generation.video.configure');
+  if (type === 'clip-studio') capabilities.push('timeline.read', 'timeline.patch', 'preview.render', 'export.video');
+  return capabilities;
+}
+
 export function buildHakimiCanvasCatalog(options = {}) {
   const nodeRegistrySource = options.nodeRegistrySource ?? readProjectFile('src/config/nodeRegistry.ts');
   const portTypesSource = options.portTypesSource ?? readProjectFile('src/config/portTypes.ts');
@@ -70,6 +96,10 @@ export function buildHakimiCanvasCatalog(options = {}) {
       color: byType.get(type)?.color || '',
       hidden: Boolean(byType.get(type)?.hidden),
       ports: ports[type],
+      capabilities: nodeCapabilities(type, ports[type]),
+      editableFields: EDITABLE_FIELDS_BY_TYPE[type] || ['label'],
+      requiredInputs: ports[type]?.inputs || [],
+      resultOutputs: ports[type]?.outputs || [],
     }));
 
   return {
@@ -100,7 +130,6 @@ export function buildHakimiCanvasCatalog(options = {}) {
       '/api/ai-watermark',
       '/api/cloud-uploads',
       '/api/parsehub',
-      '/api/achievements',
       '/api/topaz',
       '/api/clip',
       '/api/anime-tags',

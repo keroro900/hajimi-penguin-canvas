@@ -1,9 +1,10 @@
-import { memo, useState, useEffect, useRef, useCallback } from 'react';
+import { memo, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Handle, Position, useReactFlow, type NodeProps } from '@xyflow/react';
 import { AlertCircle, Loader2, Sparkles, Box, Globe, UserSquare2 } from 'lucide-react';
 import { useUpdateNodeData } from './useUpdateNodeData';
 import { generateImage } from '../../services/generation';
-import { IMAGE_MODELS } from '../../providers/models';
+import { effectiveModelId, modelsForKind } from '../../providers/modelCatalog';
+import { useApiKeysStore } from '../../stores/apiKeys';
 import { useRunTrigger } from '../../hooks/useRunTrigger';
 import SmartImage from '../SmartImage';
 import PromptTextarea from '../PromptTextarea';
@@ -74,6 +75,9 @@ const PresetImageNode = (p: NodeProps) => {
   const localPrompt: string = d?.localPrompt || '';
   const urls: string[] = d?.urls || [];
   const imageUrl: string | undefined = d?.imageUrl;
+  const apiSettings = useApiKeysStore((state) => state.settings);
+  const imageModels = useMemo(() => modelsForKind(apiSettings, 'image'), [apiSettings]);
+  const model = effectiveModelId(d?.apiModel || d?.model, imageModels);
   const abortRef = useRef(false);
 
   useEffect(() => () => { abortRef.current = true; }, []);
@@ -107,15 +111,8 @@ const PresetImageNode = (p: NodeProps) => {
     update({ status: 'running', error: null, urls: [], imageUrl: undefined });
     setProgress({ done: 0, total });
 
-    // 自动选择带 t2i 能力的图像模型(优先 nano-banana-pro)
-    const modelId =
-      d?.model ||
-      IMAGE_MODELS.find((m) => m.id === 'nano-banana-pro' && m.capabilities.includes('t2i'))?.id ||
-      IMAGE_MODELS.find((m) => m.capabilities.includes('t2i'))?.id ||
-      'nano-banana-pro';
-    const modelDef = IMAGE_MODELS.find((m) => m.id === modelId);
-    if (!modelDef) {
-      setError(`未知模型: ${modelId}`);
+    if (!model) {
+      setError('请先拉取或手动填写图片模型');
       update({ status: 'error' });
       return;
     }
@@ -125,7 +122,8 @@ const PresetImageNode = (p: NodeProps) => {
       for (let i = 0; i < prompts.length; i++) {
         if (abortRef.current) break;
         const r = await generateImage({
-          model: modelDef.id,
+          model,
+          apiModel: model,
           prompt: prompts[i],
           size: meta.size || '1024x1024',
         });
@@ -153,15 +151,9 @@ const PresetImageNode = (p: NodeProps) => {
 
   return (
     <div
-      className={`relative rounded-xl border-2 transition-all ${
-        p.selected ? 'shadow-2xl' : 'border-white/15 hover:border-white/30'
-      }`}
+      className={`t8-node relative rounded-xl transition-all ${p.selected ? 'is-selected' : ''}`}
       style={{
-        background: 'rgba(20,20,22,.92)',
-        backdropFilter: 'blur(8px)',
         width: 280,
-        borderColor: p.selected ? COLOR : undefined,
-        boxShadow: p.selected ? `0 0 0 1px ${COLOR}, 0 16px 32px rgba(129,140,248,.2)` : undefined,
       }}
     >
       <Handle type="target" position={Position.Left} style={{ background: COLOR, border: 0 }} />
@@ -190,6 +182,11 @@ const PresetImageNode = (p: NodeProps) => {
           promptTemplateKind="image"
           className="w-full bg-white/5 border border-white/10 rounded px-2 py-1.5 text-xs text-white placeholder-white/30 outline-none focus:border-white/30 resize-none"
         />
+
+        <select value={model} onChange={(event) => update({ model: event.target.value, apiModel: event.target.value })} className="w-full rounded border border-white/10 bg-zinc-900 px-2 py-1.5 text-xs text-white">
+          {model && !imageModels.includes(model) && <option value={model}>{model}</option>}
+          {imageModels.map((item) => <option key={item} value={item}>{item}</option>)}
+        </select>
 
         <button
           onClick={handleGenerate}

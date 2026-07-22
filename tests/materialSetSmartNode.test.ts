@@ -24,6 +24,19 @@ test('material set node exposes smart card and classic variants', () => {
   assert.match(source, /切回卡片版节点/);
 });
 
+test('material set composer visibility comes from the session-only coordinator', () => {
+  const source = read('../src/components/nodes/MaterialSetNode.tsx');
+
+  assert.match(source, /from '\.\.\/\.\.\/stores\/smartNodeComposer'/);
+  assert.match(source, /useIsSmartNodeComposerOpen\(id\)/);
+  assert.match(source, /smartNodeComposerActions\.open\(id\)/);
+  assert.match(source, /smartNodeComposerActions\.close\(id\)/);
+  assert.match(source, /useEffect\(\(\) => \(\) => smartNodeComposerActions\.close\(id\), \[id\]\)/);
+  assert.match(source, /useOutsideClose\(\{[\s\S]*onOutside: \(\) => setSmartComposerOpenLocal\(false\)/);
+  // The composer owns the open flag now: no node-local smartPanelOpen state.
+  assert.doesNotMatch(source, /smartPanelOpen/);
+});
+
 test('material set smart card keeps management controls in composer', () => {
   const source = read('../src/components/nodes/MaterialSetNode.tsx');
 
@@ -34,6 +47,21 @@ test('material set smart card keeps management controls in composer', () => {
   assert.match(source, /t8-smart-material-set-grid/);
   assert.match(source, /Card normal state stays summary-first/);
   assert.match(source, /Material set management lives in the external composer/);
+});
+
+test('material set composer is a portal dialog anchored to the card', () => {
+  const source = read('../src/components/nodes/MaterialSetNode.tsx');
+
+  assert.match(source, /<SmartNodeComposer[\s\S]*portal[\s\S]*anchorRef=\{smartNodeRef\}/);
+  assert.match(source, /onRequestClose=\{\(\) => setSmartComposerOpenLocal\(false\)\}/);
+  assert.match(source, /ariaLabel="素材集节点属性"/);
+  assert.match(source, /style=\{\{ width: smartComposerWidth \}\}/);
+  assert.match(source, /const smartComposerWidth = Math\.max\(smartCardWidth, 520\)/);
+  // The old side-attached, non-portal positioning is gone.
+  assert.doesNotMatch(source, /left:\s*smartCardWidth\s*\+\s*12/);
+  assert.match(source, /accessibleLabel="素材集节点"/);
+  assert.match(source, /smartState=\{smartMaterialSetCardState\}/);
+  assert.match(source, /onKeyboardActivate=/);
 });
 
 test('material set auto collects upstream materials after connection changes', () => {

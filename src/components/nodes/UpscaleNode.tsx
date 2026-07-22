@@ -11,11 +11,17 @@ const UpscaleNode = (p: NodeProps) => {
   const scale = d?.scale || 2;
   return (
     <ImageOpFrame
+      data-canvas-node-root={true}
+      className={`${p.selected ? 'is-selected' : ''}`}
       id={p.id}
       data={p.data}
       selected={p.selected}
+      dragging={p.dragging}
       title="放大"
       subtitle={`${scale}×`}
+      accessibleLabel="放大节点"
+      composerAriaLabel="放大节点属性"
+      emptyHint="连接上游图像后点击卡片"
       icon={<ZoomIn size={13} />}
       colorHex="#fb923c"
       bgRgba="rgba(251,146,60,.2)"

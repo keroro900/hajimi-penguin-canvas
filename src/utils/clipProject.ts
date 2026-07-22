@@ -122,6 +122,10 @@ export interface ClipMaterial {
   y?: number;
   filter?: ClipFilterPreset;
   intensity?: number;
+  hue?: number;
+  saturation?: number;
+  brightness?: number;
+  contrast?: number;
   lutPresetId?: string;
   lutName?: string;
   lutText?: string;
@@ -146,6 +150,7 @@ export interface ClipTimelineVisualMaterial extends ClipMaterial {
   id?: string;
   kind: 'image' | 'video';
   disabled?: boolean;
+  sourceInvalid?: boolean;
   fit?: ClipFit;
 }
 
@@ -216,6 +221,26 @@ export type ClipTrackHeights = Partial<Record<ClipTimelineTrackId, number>>;
 export interface ClipProbeDuration {
   url: string;
   duration?: number;
+}
+
+export interface ClipVisualSourceMetadata {
+  url: string;
+  duration: number;
+}
+
+export interface ReconcileClipVisualSourceDurationsOptions {
+  visuals: ClipTimelineVisualMaterial[];
+  currentDurations?: Record<string, unknown>;
+  currentSourceMetadata?: Record<string, ClipVisualSourceMetadata>;
+  probes?: ClipProbeDuration[];
+}
+
+export interface ClipVisualSourceDurationReconciliationResult {
+  durations: Record<string, unknown>;
+  sourceMetadata: Record<string, ClipVisualSourceMetadata>;
+  invalidIds: string[];
+  durationsChanged: boolean;
+  sourceMetadataChanged: boolean;
 }
 
 export interface ClipRatioPreset {
@@ -307,6 +332,10 @@ export interface ClipItem {
   fit?: ClipFit;
   filter?: ClipFilterPreset;
   intensity?: number;
+  hue?: number;
+  saturation?: number;
+  brightness?: number;
+  contrast?: number;
   lutPresetId?: string;
   lutName?: string;
   lutText?: string;
@@ -364,6 +393,10 @@ export interface QuickClipTemplatePatch {
   clipVisualFilters: Record<string, {
     filter: ClipFilterPreset;
     intensity: number;
+    hue?: number;
+    saturation?: number;
+    brightness?: number;
+    contrast?: number;
     speed: number;
     fadeIn: number;
     fadeOut: number;
@@ -471,6 +504,16 @@ function cleanClipBlendMode(value: unknown): ClipBlendMode {
 
 function clipFilterIntensity(value: unknown, fallback = 65) {
   return Math.round(clampNumber(value, 0, 100, fallback));
+}
+
+function cleanClipHue(value: unknown): number | undefined {
+  if (value == null) return undefined;
+  return Math.round(clampNumber(value, -180, 180, 0));
+}
+
+function cleanClipColorPercent(value: unknown): number | undefined {
+  if (value == null) return undefined;
+  return Math.round(clampNumber(value, 0, 200, 100));
 }
 
 function cleanClipSpeed(value: unknown) {
@@ -846,6 +889,10 @@ export function applyClipTimelineEdits(
       const value = filter as {
         filter?: unknown;
         intensity?: unknown;
+        hue?: unknown;
+        saturation?: unknown;
+        brightness?: unknown;
+        contrast?: unknown;
         lutPresetId?: unknown;
         lutName?: unknown;
         lutText?: unknown;
@@ -860,6 +907,10 @@ export function applyClipTimelineEdits(
       };
       next.filter = cleanClipFilter(value.filter);
       next.intensity = clipFilterIntensity(value.intensity, 65);
+      if (value.hue != null) next.hue = cleanClipHue(value.hue);
+      if (value.saturation != null) next.saturation = cleanClipColorPercent(value.saturation);
+      if (value.brightness != null) next.brightness = cleanClipColorPercent(value.brightness);
+      if (value.contrast != null) next.contrast = cleanClipColorPercent(value.contrast);
       next.lutPresetId = cleanClipLutId(value.lutPresetId);
       next.lutName = cleanClipLutName(value.lutName);
       next.lutText = cleanClipLutText(value.lutText);
@@ -876,6 +927,163 @@ export function applyClipTimelineEdits(
   });
 }
 
+function normalizeClipSourceUrl(value: unknown) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  try {
+    const normalized = new URL(text, 'clip://local/');
+    if (normalized.protocol === 'clip:' && normalized.hostname === 'local') {
+      return `${normalized.pathname}${normalized.search}${normalized.hash}`;
+    }
+    return normalized.href;
+  } catch {
+    return text;
+  }
+}
+
+function validSourceDuration(value: unknown): number | undefined {
+  const duration = Number(value);
+  if (!Number.isFinite(duration) || duration <= 0) return undefined;
+  return roundSeconds(Math.min(duration, 24 * 60 * 60));
+}
+
+function validTimelineDuration(value: unknown): number | undefined {
+  const duration = Number(value);
+  if (!Number.isFinite(duration) || duration <= 0) return undefined;
+  return roundSeconds(Math.min(duration, 24 * 60 * 60));
+}
+
+export function reconcileProbedClipAudioDurations({
+  audios,
+  probes = [],
+}: {
+  audios: ClipMaterial[];
+  probes?: ClipProbeDuration[];
+}): { items: ClipMaterial[]; changed: boolean } {
+  const sourceDurationByUrl = new Map<string, number>();
+  probes.forEach((probe) => {
+    const url = normalizeClipSourceUrl(probe?.url);
+    const duration = validSourceDuration(probe?.duration);
+    if (url && duration != null) sourceDurationByUrl.set(url, duration);
+  });
+
+  let changed = false;
+  const items = audios.map((audio) => {
+    const sourceDuration = sourceDurationByUrl.get(normalizeClipSourceUrl(audio.url));
+    if (sourceDuration == null) return audio;
+    const maximumDuration = roundSeconds(
+      Math.max(0, sourceDuration - clipTrimStart(audio)) / cleanClipSpeed(audio.speed),
+    );
+    const currentDuration = validTimelineDuration(audio.duration);
+    const reconciledDuration = currentDuration == null
+      ? maximumDuration
+      : Math.min(currentDuration, maximumDuration);
+    if (audio.duration === reconciledDuration) return audio;
+    changed = true;
+    return { ...audio, duration: reconciledDuration };
+  });
+
+  return { items, changed };
+}
+
+export function reconcileClipVisualSourceDurations({
+  visuals,
+  currentDurations = {},
+  currentSourceMetadata = {},
+  probes = [],
+}: ReconcileClipVisualSourceDurationsOptions): ClipVisualSourceDurationReconciliationResult {
+  const probeByUrl = new Map<string, number>();
+  probes.forEach((probe) => {
+    const url = normalizeClipSourceUrl(probe?.url);
+    const duration = validSourceDuration(probe?.duration);
+    if (url && duration != null) probeByUrl.set(url, duration);
+  });
+
+  const durations: Record<string, unknown> = { ...currentDurations };
+  const sourceMetadata: Record<string, ClipVisualSourceMetadata> = { ...currentSourceMetadata };
+  const invalidIds: string[] = [];
+  let durationsChanged = false;
+  let sourceMetadataChanged = false;
+
+  visuals.forEach((visual) => {
+    if (visual.kind !== 'video' || !visual.id) return;
+    const visualUrl = normalizeClipSourceUrl(visual.url);
+    if (!visualUrl) return;
+
+    const persisted = currentSourceMetadata[visual.id];
+    const persistedDuration = normalizeClipSourceUrl(persisted?.url) === visualUrl
+      ? validSourceDuration(persisted?.duration)
+      : undefined;
+    const probedDuration = probeByUrl.get(visualUrl);
+    const sourceDuration = probedDuration ?? persistedDuration;
+    if (sourceDuration == null) return;
+
+    if (probedDuration != null && (
+      persistedDuration == null
+      || Math.abs(Math.round(probedDuration * 1000) - Math.round(persistedDuration * 1000)) > 40
+    )) {
+      sourceMetadata[visual.id] = { url: String(visual.url || ''), duration: probedDuration };
+      sourceMetadataChanged = true;
+    }
+
+    const maximumDuration = roundSeconds(
+      Math.max(0, sourceDuration - clipTrimStart(visual)) / cleanClipSpeed(visual.speed),
+    );
+    if (maximumDuration < 0.1) {
+      invalidIds.push(visual.id);
+      return;
+    }
+
+    const rawCurrentDuration = currentDurations[visual.id];
+    const currentDuration = validTimelineDuration(rawCurrentDuration);
+    const visualDuration = validTimelineDuration(visual.duration);
+    const effectiveDuration = currentDuration ?? visualDuration ?? maximumDuration;
+    const reconciledDuration = effectiveDuration > maximumDuration
+      ? maximumDuration
+      : effectiveDuration;
+
+    if (rawCurrentDuration !== reconciledDuration) {
+      durations[visual.id] = reconciledDuration;
+      durationsChanged = true;
+    }
+  });
+
+  return {
+    durations,
+    sourceMetadata,
+    invalidIds,
+    durationsChanged,
+    sourceMetadataChanged,
+  };
+}
+
+export function resolveClipSpeedDuration({
+  timelineDuration,
+  oldSpeed,
+  newSpeed,
+  trimStart = 0,
+  sourceDuration,
+}: {
+  timelineDuration: number;
+  oldSpeed: number;
+  newSpeed: number;
+  trimStart?: number;
+  sourceDuration?: number;
+}): number {
+  const safeTimelineDuration = validTimelineDuration(timelineDuration) ?? 0;
+  const safeOldSpeed = cleanClipSpeed(oldSpeed);
+  const safeNewSpeed = cleanClipSpeed(newSpeed);
+  const inferredSpan = safeTimelineDuration * safeOldSpeed;
+  const validSource = validSourceDuration(sourceDuration);
+
+  if (validSource == null) {
+    return roundSeconds(inferredSpan / safeNewSpeed);
+  }
+
+  const availableSpan = Math.max(0, validSource - clipTrimStart({ trimStart }));
+  return roundSeconds(Math.min(inferredSpan, availableSpan) / safeNewSpeed);
+}
+
 export function mergeProbedClipVisualDurations({
   visuals,
   currentDurations = {},
@@ -885,26 +1093,8 @@ export function mergeProbedClipVisualDurations({
   currentDurations?: Record<string, unknown>;
   probes?: ClipProbeDuration[];
 }): { durations: Record<string, unknown>; changed: boolean } {
-  const durationByUrl = new Map<string, number>();
-  probes.forEach((item) => {
-    const url = String(item?.url || '').trim();
-    const duration = roundSeconds(clampNumber(item?.duration, 0.1, 24 * 60 * 60, 0));
-    if (url && duration > 0) durationByUrl.set(url, duration);
-  });
-
-  const durations: Record<string, unknown> = { ...currentDurations };
-  let changed = false;
-  visuals.forEach((item) => {
-    if (item.kind !== 'video' || !item.id || !item.url) return;
-    const probedDuration = durationByUrl.get(item.url);
-    if (!probedDuration) return;
-    const existing = Number(durations[item.id]);
-    if (Number.isFinite(existing) && existing > 0) return;
-    durations[item.id] = probedDuration;
-    changed = true;
-  });
-
-  return { durations, changed };
+  const result = reconcileClipVisualSourceDurations({ visuals, currentDurations, probes });
+  return { durations: result.durations, changed: result.durationsChanged };
 }
 
 export function deriveClipTimelineTracks({
@@ -942,7 +1132,7 @@ export function sanitizeClipStudioLayout(value: Partial<ClipStudioLayout> = {}):
   return {
     leftWidth: Math.round(clampNumber(value.leftWidth, 300, 620, 470)),
     rightWidth: Math.round(clampNumber(value.rightWidth, 300, 620, 470)),
-    topHeight: Math.round(clampNumber(value.topHeight, 320, 720, 440)),
+    topHeight: Math.round(clampNumber(value.topHeight, 180, 720, 440)),
   };
 }
 
@@ -1215,9 +1405,12 @@ export function splitClipTimelineVisual(
     const firstDuration = roundSeconds(duration / 2);
     const secondDuration = roundSeconds(duration - firstDuration);
     const baseId = item.id || `${item.kind}-${out.length}`;
+    const secondSourceTiming = item.kind === 'video'
+      ? { trimStart: roundSeconds(clipTrimStart(item) + firstDuration * cleanClipSpeed(item.speed)) }
+      : {};
     out.push(
       { ...item, id: `${baseId}-a`, duration: firstDuration },
-      { ...item, id: `${baseId}-b`, duration: secondDuration },
+      { ...item, id: `${baseId}-b`, duration: secondDuration, ...secondSourceTiming },
     );
   }
   return out;
@@ -1255,13 +1448,17 @@ export function splitClipTimelineVisualAtTime(
     }
     const baseId = item.id || `${item.kind}-${out.length}`;
     const trimStart = clipTrimStart(item);
+    const sourceSplitAt = roundSeconds(splitAt * cleanClipSpeed(item.speed));
+    const rightSourceTiming = item.kind === 'video'
+      ? { trimStart: roundSeconds(trimStart + sourceSplitAt) }
+      : {};
     out.push(
       { ...item, id: `${baseId}-left`, duration: splitAt },
       {
         ...item,
         id: `${baseId}-right`,
         duration: roundSeconds(duration - splitAt),
-        trimStart: item.kind === 'video' ? roundSeconds(trimStart + splitAt) : item.trimStart,
+        ...rightSourceTiming,
       },
     );
   }
@@ -1283,14 +1480,18 @@ export function trimClipTimelineVisualSide(
     if (splitAt <= 0 || splitAt >= duration) return item;
     const baseId = item.id || item.kind;
     const nextDuration = side === 'left' ? splitAt : roundSeconds(duration - splitAt);
-    const nextTrimStart = side === 'right' && item.kind === 'video'
-      ? roundSeconds(clipTrimStart(item) + splitAt)
-      : item.trimStart;
+    const sourceTiming = item.kind === 'video'
+      ? {
+          trimStart: side === 'right'
+            ? roundSeconds(clipTrimStart(item) + splitAt * cleanClipSpeed(item.speed))
+            : item.trimStart,
+        }
+      : {};
     return {
       ...item,
       id: side === 'left' ? `${baseId}-left` : `${baseId}-right`,
       duration: nextDuration,
-      trimStart: nextTrimStart,
+      ...sourceTiming,
     };
   });
 }
@@ -1428,9 +1629,18 @@ export function splitClipTimelineMaterialAtTime(
     }
     const leftDuration = roundSeconds(safeTime - start);
     const rightDuration = roundSeconds(end - safeTime);
+    const trimStart = clipTrimStart(item);
     out.push(
       { ...item, id: `${id}-left`, start, duration: leftDuration },
-      { ...item, id: `${id}-right`, start: safeTime, duration: rightDuration },
+      {
+        ...item,
+        id: `${id}-right`,
+        start: safeTime,
+        duration: rightDuration,
+        trimStart: item.url
+          ? roundSeconds(trimStart + leftDuration * cleanClipSpeed(item.speed))
+          : item.trimStart,
+      },
     );
   });
   return out;
@@ -1461,7 +1671,9 @@ function splitClipTimelineMaterialsCrossingTime(
         id: `${id}-right`,
         start: safeTime,
         duration: rightDuration,
-        trimStart: item.url ? roundSeconds(trimStart + leftDuration) : item.trimStart,
+        trimStart: item.url
+          ? roundSeconds(trimStart + leftDuration * cleanClipSpeed(item.speed))
+          : item.trimStart,
       },
     );
   });
@@ -1519,6 +1731,8 @@ export function previewClipTimelineDragTiming({
   clipDuration,
   deltaSeconds,
   rawStart,
+  speed = 1,
+  trimStart,
   snap = false,
   snapTargets = [],
   snapThresholdSeconds = 0.12,
@@ -1528,12 +1742,19 @@ export function previewClipTimelineDragTiming({
   clipDuration: number;
   deltaSeconds: number;
   rawStart: number;
+  speed?: number;
+  trimStart?: number;
   snap?: boolean;
   snapTargets?: ClipSnapTarget[];
   snapThresholdSeconds?: number;
 }): ClipTimelineDragTimingPreview {
   const roundDrag = (value: number) => snap ? Math.round(value * 10) / 10 : roundSeconds(value);
   const duration = roundSeconds(clipDuration);
+  const sourceSpeed = cleanClipSpeed(speed);
+  const sourceTrimStart = trimStart == null ? undefined : clipTrimStart({ trimStart });
+  const clampResizeDelta = (value: number) => mode === 'trim-left' && sourceTrimStart != null
+    ? Math.max(value, -sourceTrimStart / sourceSpeed)
+    : value;
   const threshold = Math.max(0, Number(snapThresholdSeconds || 0));
   const findSnap = (edges: Array<{ time: number; offset: number }>) => {
     if (!snap || snapTargets.length === 0 || threshold <= 0) return undefined;
@@ -1574,7 +1795,7 @@ export function previewClipTimelineDragTiming({
   const next = resizeClipTimelineVisualTiming({
     start: clipStart,
     duration,
-    deltaSeconds: roundDrag(deltaSeconds),
+    deltaSeconds: clampResizeDelta(roundDrag(deltaSeconds)),
     edge: mode === 'trim-left' ? 'left' : 'right',
   });
   const edgeTime = mode === 'trim-left' ? next.start : roundSeconds(next.start + next.duration);
@@ -1583,17 +1804,23 @@ export function previewClipTimelineDragTiming({
     ? resizeClipTimelineVisualTiming({
       start: clipStart,
       duration,
-      deltaSeconds: mode === 'trim-left'
+      deltaSeconds: clampResizeDelta(mode === 'trim-left'
         ? roundSeconds(snapResult.target.time - clipStart)
-        : roundSeconds(snapResult.target.time - (clipStart + duration)),
+        : roundSeconds(snapResult.target.time - (clipStart + duration))),
       edge: mode === 'trim-left' ? 'left' : 'right',
     })
     : next;
+  const snappedEdgeTime = mode === 'trim-left' ? snapped.start : roundSeconds(snapped.start + snapped.duration);
+  const activeSnapResult = snapResult && Math.abs(snappedEdgeTime - snapResult.target.time) <= 0.0005
+    ? snapResult
+    : undefined;
   return {
     ...snapped,
-    trimStartDelta: mode === 'trim-left' ? roundSeconds(Math.max(0, snapped.start - clipStart)) : 0,
-    ...(snapResult ? { snapTarget: snapResult.target } : {}),
-    ...(snapResult ? { snapEdgeTime: snapResult.target.time } : {}),
+    trimStartDelta: mode === 'trim-left'
+      ? roundSeconds((snapped.start - clipStart) * sourceSpeed)
+      : 0,
+    ...(activeSnapResult ? { snapTarget: activeSnapResult.target } : {}),
+    ...(activeSnapResult ? { snapEdgeTime: activeSnapResult.target.time } : {}),
   };
 }
 
@@ -1668,7 +1895,7 @@ export function resolveClipTimelinePlayback(
   if (layout.items.length === 0) return null;
   const safeTime = roundSeconds(clampNumber(playheadTime, 0, layout.duration, 0));
   const ordered = layout.items.slice().sort((a, b) => a.start - b.start);
-  const item = ordered.find((clip) => safeTime >= clip.start && safeTime <= roundSeconds(clip.start + clip.duration));
+  const item = ordered.find((clip) => safeTime >= clip.start && safeTime < roundSeconds(clip.start + clip.duration));
   if (!item) return null;
   return {
     item,
@@ -1887,6 +2114,10 @@ export function buildClipDraftFromTimeline(
       fit: cleanClipFit(item.fit),
       filter: cleanClipFilter(item.filter),
       intensity: clipFilterIntensity(item.intensity, 65),
+      hue: cleanClipHue(item.hue),
+      saturation: cleanClipColorPercent(item.saturation),
+      brightness: cleanClipColorPercent(item.brightness),
+      contrast: cleanClipColorPercent(item.contrast),
       lutPresetId: cleanClipLutId(item.lutPresetId),
       lutName: cleanClipLutName(item.lutName),
       lutText: cleanClipLutText(item.lutText),
@@ -1908,7 +2139,12 @@ export function buildClipDraftFromTimeline(
     { id: 'visual', kind: 'visual', clips: visualClips },
   ];
 
-  const audioItems = (materials.audios || []).filter((item) => mediaUrl(item));
+  const audioItems = (materials.audios || []).filter((item) => {
+    if (!mediaUrl(item)) return false;
+    if (item.duration == null) return true;
+    const explicitDuration = Number(item.duration);
+    return !Number.isFinite(explicitDuration) || explicitDuration >= 0.1;
+  });
   if (audioItems.length > 0) {
     tracks.push({
       id: 'audio',
@@ -1921,6 +2157,7 @@ export function buildClipDraftFromTimeline(
         start: roundSeconds(clampNumber(item.start, 0, 24 * 60 * 60, 0)),
         duration: clipDuration(item, totalDuration),
         trimStart: clipTrimStart(item) || undefined,
+        speed: cleanClipSpeed(item.speed),
         volume: clampNumber(item.volume, 0, 4, 1),
         fadeIn: clampNumber(item.fadeIn, 0, 60, 0),
         fadeOut: clampNumber(item.fadeOut, 0, 60, 0),

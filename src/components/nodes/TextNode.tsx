@@ -90,7 +90,8 @@ const TextNode = ({ id, data, selected }: NodeProps) => {
   return (
     <SmartNodeShell
       rootRef={smartRootRef}
-      className="t8-smart-text-node relative overflow-visible"
+      data-canvas-node-root={true}
+      className={`t8-smart-text-node relative overflow-visible ${selected ? 'is-selected' : ''}`}
       style={{ width: smartCardWidth }}
     >
       <div

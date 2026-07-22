@@ -23,7 +23,6 @@ const deniedPaths = [
   ['backend/data/', privateKeyword].join(''),
   'src/components/nodes/RHToolboxMakerNode.tsx',
   'src/components/nodes/FalToolboxMakerNode.tsx',
-  'src/utils/rhToolboxDeveloper.ts',
   'src/utils/falToolboxDeveloper.ts',
 ];
 const deniedText = [

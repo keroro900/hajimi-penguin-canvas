@@ -1,14 +1,15 @@
-import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Handle,
   Position,
   useNodeConnections,
   useNodesData,
   useReactFlow,
+  useUpdateNodeInternals,
   type NodeProps,
   type Node,
 } from '@xyflow/react';
-import { Box, MonitorPlay, Type as TypeIcon, Image as ImageIcon, Video as VideoIcon, Music, Download, Pencil, Check, Edit3, GitCompare, Trash2, Save, Grid2X2, Clapperboard } from 'lucide-react';
+import { Box, MonitorPlay, Type as TypeIcon, Image as ImageIcon, Video as VideoIcon, Music, Download, Pencil, Check, Edit3, GitCompare, Trash2, Save, Grid2X2, Clapperboard, Layers } from 'lucide-react';
 import { useUpdateNodeData } from './useUpdateNodeData';
 import { useThemeStore } from '../../stores/theme';
 import { logBus } from '../../stores/logs';
@@ -19,14 +20,21 @@ import ImageCompareModal from '../ImageCompareModal';
 import CollectionSplitButton from '../CollectionSplitButton';
 import LoopingVideo from '../LoopingVideo';
 import MediaMetadataBadge from '../MediaMetadataBadge';
-import RhImageCapabilityRail from '../RhImageCapabilityRail';
 import SmartImage from '../SmartImage';
 import SmartMediaPreviewModal from './shared/SmartMediaPreviewModal';
 import { useMaterialDropTarget } from '../../hooks/useMaterialDropTarget';
 import { useDragMaterialStore, type MaterialPayload } from '../../stores/dragMaterial';
 import ResizableCorners from './ResizableCorners';
+import SmartNodeComposer from './shared/SmartNodeComposer';
+import SmartNodeShell from './shared/SmartNodeShell';
+import { useNodeGeometrySync } from './shared/useNodeGeometrySync';
+import { useSmartNodePanelToggle } from './shared/useSmartNodePanelToggle';
+import { useOutsideClose } from './shared/useOutsideClose';
+import { smartNodeComposerActions, useIsSmartNodeComposerOpen } from '../../stores/smartNodeComposer';
 import { addResourceItem, saveAssetToDisk, type ResourceMediaKind } from '../../services/api';
 import { generateImage } from '../../services/generation';
+import { useApiKeysStore } from '../../stores/apiKeys';
+import { effectiveModelId, modelsForKind } from '../../providers/modelCatalog';
 import {
   createOutputMediaRemovalData,
   createOutputDataFromItem,
@@ -110,34 +118,41 @@ interface Collected {
   models: string[];
 }
 
-const OutputNode = ({ id, data, selected }: NodeProps) => {
+const OutputNode = ({ id, data, selected, dragging }: NodeProps) => {
+  const apiSettings = useApiKeysStore((state) => state.settings);
+  const imageModels = useMemo(() => modelsForKind(apiSettings, 'image'), [apiSettings]);
+  const annotationImageModel = effectiveModelId((data as any)?.apiModel || (data as any)?.model, imageModels);
   const update = useUpdateNodeData(id);
   const { theme, templateId, customTemplates } = useThemeStore();
   const isDark = theme === 'dark';
   const d = (data as any) || {};
   const rf = useReactFlow();
-  const [rhCapabilityBusy, setRhCapabilityBusy] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const smartComposerOpenLocal = useIsSmartNodeComposerOpen(id);
+  const setSmartComposerOpenLocal = useCallback(
+    (nextOpen: boolean) => {
+      if (nextOpen) smartNodeComposerActions.open(id);
+      else smartNodeComposerActions.close(id);
+    },
+    [id],
+  );
+  const [smartCardDragging, setSmartCardDragging] = useState(false);
+  const smartNodeRef = useRef<HTMLDivElement>(null);
+  const updateNodeInternals = useUpdateNodeInternals();
+  const syncOutputNodeGeometry = useNodeGeometrySync(id, updateNodeInternals);
   const imageClickTimerRef = useRef<number | null>(null);
   const imagePointerRef = useRef<{ x: number; y: number; moved: boolean } | null>(null);
   const activeTemplate = useMemo(
     () => resolveThemeTemplate(templateId, customTemplates),
     [templateId, customTemplates],
   );
-  const isRhDomVisual =
-    typeof document !== 'undefined' && document.documentElement.dataset.themeVisual === 'rh';
-  const isRhVisual = activeTemplate.visuals?.style === 'rh' || isRhDomVisual;
-  const isRhDuckOutput = Boolean(isRhVisual && d.rhDuckDecoded);
-  const isYyhDomVisual =
-    typeof document !== 'undefined' && document.documentElement.dataset.themeVisual === 'yyh';
-  const isYyhVisual = activeTemplate.visuals?.style === 'yyh' || isYyhDomVisual;
-  const isYyhPortraitOutput = Boolean(isYyhVisual && d.yyhPortraitHidden);
   const previewTitle = previewUrl ? fileNameFromUrl(previewUrl) || previewUrl.split('/').pop() || '输出图片' : '';
 
-  // 节点本地尺寸 state: 默认 (320, 高度由内容撑开)
-  // 拖角后由 ResizableCorners onResize 同步具体 px — 保证节点始终有具体尺寸 → wrapper measured 准确
+  // 节点尺寸持久化在 data: 默认 (320, 高度由内容撑开 — smartCardHeight 仅在手动拖角后写入)
+  // 拖角后由 ResizableCorners onResize/onResizeEnd 同步具体 px — 保证节点始终有具体尺寸 → wrapper measured 准确
   // → keepAspectRatio 生效 (同比例缩放) + handleBounds 准确 (连线稳定)
-  const [size, setSize] = useState<{ w: number; h?: number }>({ w: 320 });
+  const smartCardWidth = Math.max(260, Number(d?.smartCardWidth) || 320);
+  const smartCardHeight = Number(d?.smartCardHeight) > 0 ? Math.max(160, Number(d?.smartCardHeight)) : undefined;
 
   useEffect(() => {
     return () => {
@@ -280,7 +295,7 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
     };
 
     const directSnapshotOnly = d.directOutputSingleSnapshot === true;
-    const directOnlyOutput = Boolean(d.rhDuckDecoded) || directSnapshotOnly;
+    const directOnlyOutput = directSnapshotOnly;
     if (!directOnlyOutput) {
       const list = Array.isArray(upstreamNodes) ? upstreamNodes : [];
       for (const n of list) {
@@ -497,7 +512,7 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
     out.models = out.models.filter((u) => !isMaterialUrlHidden(d, 'model3d', u));
 
     return out;
-  }, [upstreamNodes, upstreamSig, handleMap, d.pickKind, d.pickIndex, d.directOutputSingleSnapshot, d.directImageUrl, d.directImageUrls, d.directVideoUrl, d.directVideoUrls, d.directAudioUrl, d.directAudioUrls, d.directModelUrl, d.directModelUrls, d.modelUrl, d.modelUrls, d.directOutputText, d.directTextSegments, d.hiddenMaterialUrls, d.rhDuckDecoded]);
+  }, [upstreamNodes, upstreamSig, handleMap, d.pickKind, d.pickIndex, d.directOutputSingleSnapshot, d.directImageUrl, d.directImageUrls, d.directVideoUrl, d.directVideoUrls, d.directAudioUrl, d.directAudioUrls, d.directModelUrl, d.directModelUrls, d.modelUrl, d.modelUrls, d.directOutputText, d.directTextSegments, d.hiddenMaterialUrls]);
 
   // 文本编辑
   const overrideText: string = typeof d.outputText === 'string' ? d.outputText : '';
@@ -581,13 +596,16 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
   const isEdited = overrideText !== '' && overrideText !== liveText;
   const HANDLE = PORT_COLOR.any;
   const accent = '#5eead4'; // teal-300, 与 nodeRegistry color: 'teal' 对齐
-  const effectiveAccent = isRhDuckOutput ? '#ff345f' : isYyhPortraitOutput ? '#ff4fd8' : accent;
-  const effectiveHandle = isRhDuckOutput ? '#ff345f' : isYyhPortraitOutput ? '#ff4fd8' : HANDLE;
+  const effectiveAccent = accent;
+  const effectiveHandle = HANDLE;
 
   const total = collected.texts.length + collected.images.length + collected.videos.length + collected.audios.length + collected.models.length;
   const mediaTotal = collected.images.length + collected.videos.length + collected.audios.length + collected.models.length;
   const showTextSection = mediaTotal === 0 && (collected.texts.length > 0 || isEdited);
   const isSingleMediaCard = mediaTotal === 1 && !showTextSection;
+  const smartComposerOpen = smartComposerOpenLocal && !smartCardDragging && !dragging;
+  const smartOutputCardState = total === 0 ? 'empty' : 'result';
+  const smartComposerWidth = Math.max(smartCardWidth, 520);
 
   // === 双击图片 → 裁剪/宫格弹窗 ===
   // 仅针对 collected.images 中的单张图生效; 产物“不”修改本节点, 而是
@@ -752,6 +770,15 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
       });
       return;
     }
+    if (actionId === 'layer-agent') {
+      placeQuickActionNode('layer-agent', url, {
+        sourceImageUrl: url,
+        imageUrl: url,
+        status: 'idle',
+        error: '',
+      });
+      return;
+    }
     if (actionId === 'image-to-video') {
       placeQuickActionNode('video', url, {
         localRefImages: [url],
@@ -784,6 +811,7 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
       url,
       hasImageEditor: true,
       hasGridEditor: true,
+      hasLayerAgent: true,
       hasImageToVideo: true,
       hasClipStudio: true,
       hasDirector: false,
@@ -796,6 +824,7 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
       if (actionId === 'save-resource') return <Save size={13} />;
       if (actionId === 'image-edit') return <Edit3 size={13} />;
       if (actionId === 'grid-edit') return <Grid2X2 size={13} />;
+      if (actionId === 'layer-agent') return <Layers size={13} />;
       if (actionId === 'image-to-video') return <VideoIcon size={13} />;
       if (actionId === 'clip-studio') return <Clapperboard size={13} />;
       return <MonitorPlay size={13} />;
@@ -837,6 +866,7 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
       throw error;
     }
     try {
+      if (!annotationImageModel) throw new Error('请先拉取或手动填写图片模型');
       logBus.info('正在按标注说明生成改图结果', logSource);
       const request = buildAnnotationEditRequest({
         sourceNodeId: id,
@@ -846,11 +876,11 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
         annotationTextCount: meta.annotationTextCount,
         annotationShapeCount: meta.annotationShapeCount,
         providerId: 'default-image',
-        providerModel: 'gpt-image-2',
+        providerModel: annotationImageModel,
       });
       const result = await generateImage({
-        model: 'gpt-image-2',
-        apiModel: 'gpt-image-2',
+        model: annotationImageModel,
+        apiModel: annotationImageModel,
         prompt: request.prompt,
         images: request.images,
         n: 1,
@@ -1038,6 +1068,32 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
     onDrop: handleDrop,
   });
 
+  // Composer open state is session-only; release it when the node unmounts.
+  useEffect(() => () => smartNodeComposerActions.close(id), [id]);
+
+  useEffect(() => {
+    const raf = window.requestAnimationFrame(syncOutputNodeGeometry);
+    return () => {
+      window.cancelAnimationFrame(raf);
+    };
+  }, [id, smartCardHeight, smartCardWidth, smartComposerOpen, syncOutputNodeGeometry]);
+
+  // Kept alongside the composer-owned dismissal: ignores portalled floating editors.
+  useOutsideClose({
+    enabled: smartComposerOpenLocal,
+    refs: smartNodeRef,
+    onOutside: () => setSmartComposerOpenLocal(false),
+  });
+
+  const smartPanelToggle = useSmartNodePanelToggle({
+    open: smartComposerOpenLocal,
+    dragging,
+    onToggle: setSmartComposerOpenLocal,
+    onDragChange: setSmartCardDragging,
+    onDragClose: () => setSmartComposerOpenLocal(false),
+    ignoreSelector: '.nodrag, .react-flow__resize-control, input, textarea, select, button, [contenteditable="true"], [data-drag-source]',
+  });
+
   // === v1.2.9.8: 彻底删除「OutputNode useEffect 自动累积 fresh」机制 (v1.2.9.2/4/7 抩废)
   //   原因: FramePair 等节点每轮多次 update + StrictMode 双调 + 二级链路 OutputNode → OutputNode
   //         + finally 清除 __loopAccumulate 后残留一次 fresh 被重复 push, 跨 useEffect / setNodes 的 race 无法仅由前端隔离。
@@ -1132,15 +1188,24 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
   }, [collected]);
 
   const hasEditableImages = collected.images.length > 0;
-  const showRhCapabilityRail = (selected || rhCapabilityBusy) && hasEditableImages;
 
   return (
-    <div
-      data-rh-duck-output={isRhDuckOutput ? 'true' : undefined}
-      data-yyh-portrait-hidden-output={isYyhPortraitOutput ? 'true' : undefined}
-      className="t8-output-node relative flex flex-col"
-      style={{ width: size.w, height: size.h, minWidth: 260 }}
-      {...dropProps}
+    <SmartNodeShell
+      rootRef={smartNodeRef}
+      data-canvas-node-root={true}
+      className={`t8-output-node relative flex flex-col ${selected ? 'is-selected' : ''}`}
+      style={{ width: smartCardWidth, height: smartCardHeight, minWidth: 260 }}
+      accessibleLabel="输出节点"
+      smartState={smartOutputCardState}
+      onKeyboardActivate={() => setSmartComposerOpenLocal(true)}
+      rootProps={{
+        ...dropProps,
+        onPointerDown: smartPanelToggle.onPointerDown,
+        onPointerMove: smartPanelToggle.onPointerMove,
+        onPointerUp: smartPanelToggle.onPointerUp,
+        onClick: smartPanelToggle.onClick,
+        onPointerCancel: smartPanelToggle.onPointerCancel,
+      }}
     >
       {/* 四角同比例缩放 (仅选中时出现) — 主题色 teal-300 */}
       <ResizableCorners
@@ -1148,53 +1213,26 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
         minWidth={260}
         minHeight={160}
         accent={effectiveAccent}
-        onResize={(_e, p) => setSize({ w: p.width, h: p.height })}
+        onResize={(_e, p) => update({ smartCardWidth: Math.round(p.width), smartCardHeight: Math.round(p.height) })}
+        onResizeEnd={(_e, p) => {
+          update({ smartCardWidth: Math.round(p.width), smartCardHeight: Math.round(p.height) });
+          syncOutputNodeGeometry();
+        }}
       />
-      {showRhCapabilityRail && (
-        <RhImageCapabilityRail
-          sourceUrls={collected.images}
-          accent={effectiveAccent}
-          isDark={isDark}
-          onComplete={(result) => handleProduce(result.imageUrls, { type: 'rh-capability', label: result.tool.title })}
-          onRunningChange={setRhCapabilityBusy}
-        />
-      )}
       {/* target handle (左侧) - 上游任意类型可连入 */}
       <Handle
         type="target"
         position={Position.Left}
-        className="!border-0"
-        style={{
-          background: effectiveHandle,
-          width: 12,
-          height: 12,
-          minWidth: 12,
-          minHeight: 12,
-          top: '50%',
-          left: -6,
-          transform: 'translateY(-50%)',
-          zIndex: 12,
-          pointerEvents: 'all',
-        }}
+        className="t8-smart-node-port !border-0"
+        style={{ top: '50%', background: effectiveHandle }}
         title="文本 / 图像 / 视频 / 音频 / 3D模型 任意类型可连入"
       />
       {/* source handle (右侧) - 作为中继节点可继续向下游透传 (any) */}
       <Handle
         type="source"
         position={Position.Right}
-        className="!border-0"
-        style={{
-          background: effectiveHandle,
-          width: 12,
-          height: 12,
-          minWidth: 12,
-          minHeight: 12,
-          top: '50%',
-          right: -6,
-          transform: 'translateY(-50%)',
-          zIndex: 12,
-          pointerEvents: 'all',
-        }}
+        className="t8-smart-node-port !border-0"
+        style={{ top: '50%', background: effectiveHandle }}
         title="透传 文本 / 图像 / 视频 / 音频 / 3D模型 到下游"
       />
 
@@ -1202,11 +1240,9 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
       {/* 高度逻辑: root 默认 height=auto 时 内层也 auto 跟随内容自然高;
           root 拖角后有具体 px 时, 内层 flex-1 撑满剩余 + min-h-0 允许内容 overflow */}
       <div
-        data-rh-duck-output-frame={isRhDuckOutput ? 'true' : undefined}
-        data-yyh-portrait-hidden-output-frame={isYyhPortraitOutput ? 'true' : undefined}
         className={`t8-node t8-smart-node-card t8-output-card ${selected ? 't8-smart-node-card--selected' : ''} ${
           isAccepting ? 't8-smart-node-card--accepting' : ''
-        } ${isSingleMediaCard ? 't8-output-card--single-media' : ''} ${size.h ? 'flex-1 min-h-0' : ''}`}
+        } ${isSingleMediaCard ? 't8-output-card--single-media' : ''} ${smartCardHeight ? 'flex-1 min-h-0' : ''}`}
         style={{
           ['--t8-output-accent' as any]: effectiveAccent,
           overflow: isSingleMediaCard ? 'hidden' : 'auto',
@@ -1245,83 +1281,23 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
           </div>
         )}
 
-        {/* 文本区 */}
+        {/* 文本区(只读预览 — 点击卡片打开输出节点属性编辑) */}
         {showTextSection && (
           <div className="space-y-1">
             <div className={`flex items-center gap-1.5 text-[10px] ${isDark ? 'text-white/50' : 'text-zinc-500'}`}>
               <TypeIcon size={11} />
               <span className="flex-1">文本{isEdited ? ' · 已编辑' : ''}</span>
-              {!editing && (
-                <button
-                  onClick={enterEdit}
-                  className={`p-0.5 rounded ${isDark ? 'hover:bg-white/10' : 'hover:bg-black/10'}`}
-                  title="双击文本或点此编辑"
-                >
-                  <Pencil size={10} />
-                </button>
-              )}
-              {isEdited && !editing && (
-                <button
-                  onClick={restoreLive}
-                  className={`text-[10px] px-1 rounded ${isDark ? 'hover:bg-white/10 text-white/60' : 'hover:bg-black/10 text-zinc-600'}`}
-                  title="恢复为上游 live 文本"
-                >
-                  恢复
-                </button>
-              )}
             </div>
-            {!editing ? (
-              <div
-                onDoubleClick={enterEdit}
-                onWheelCapture={(e) => e.stopPropagation()}
-                className={`nowheel whitespace-pre-wrap break-words text-[12px] leading-relaxed rounded px-2 py-1.5 cursor-text ${
-                  isDark ? 'bg-white/5 text-white/85' : 'bg-black/5 text-zinc-800'
-                }`}
-                style={{ maxHeight: 200, overflow: 'auto' }}
-                title="双击编辑"
-              >
-                {displayText || <span className="opacity-50">(空)</span>}
-              </div>
-            ) : (
-              <div className="space-y-1">
-                <textarea
-                  ref={taRef}
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                  spellCheck={false}
-                  rows={6}
-                  className={`w-full rounded px-2 py-1.5 text-[12px] outline-none nodrag nowheel ${
-                    isDark
-                      ? 'bg-black/40 text-white border border-teal-400/40'
-                      : 'bg-white text-zinc-900 border border-teal-500/50'
-                  }`}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Escape') cancelEdit();
-                    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) saveEdit();
-                  }}
-                />
-                <div className="flex gap-1.5 justify-end">
-                  <button
-                    onClick={cancelEdit}
-                    className={`text-[10px] px-2 py-0.5 rounded ${
-                      isDark ? 'bg-white/5 hover:bg-white/10 text-white/70' : 'bg-black/5 hover:bg-black/10 text-zinc-700'
-                    }`}
-                  >
-                    取消
-                  </button>
-                  <button
-                    onClick={saveEdit}
-                    className="text-[10px] px-2 py-0.5 rounded flex items-center gap-1 text-zinc-900"
-                    style={{ background: effectiveAccent }}
-                  >
-                    <Check size={10} /> 保存
-                  </button>
-                </div>
-                <div className={`text-[10px] ${isDark ? 'text-white/30' : 'text-zinc-400'}`}>
-                  Ctrl+Enter 保存 / Esc 取消
-                </div>
-              </div>
-            )}
+            <div
+              onWheelCapture={(e) => e.stopPropagation()}
+              className={`nowheel whitespace-pre-wrap break-words text-[12px] leading-relaxed rounded px-2 py-1.5 cursor-pointer ${
+                isDark ? 'bg-white/5 text-white/85' : 'bg-black/5 text-zinc-800'
+              }`}
+              style={{ maxHeight: 96, overflow: 'auto' }}
+              title="点击打开输出节点属性编辑文本"
+            >
+              {displayText || <span className="opacity-50">(空)</span>}
+            </div>
           </div>
         )}
 
@@ -1737,6 +1713,110 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
         )}
       </div>
       </div>
+
+      {smartComposerOpen && (
+        <SmartNodeComposer
+          portal
+          anchorRef={smartNodeRef}
+          style={{ width: smartComposerWidth }}
+          onMouseDown={(e) => e.stopPropagation()}
+          onRequestClose={() => setSmartComposerOpenLocal(false)}
+          ariaLabel="输出节点属性"
+        >
+          {/* 文本区 */}
+          <div className="space-y-1">
+            <div className={`flex items-center gap-1.5 text-[10px] ${isDark ? 'text-white/50' : 'text-zinc-500'}`}>
+              <TypeIcon size={11} />
+              <span className="flex-1">文本{isEdited ? ' · 已编辑' : ''}</span>
+              {!editing && (
+                <button
+                  onClick={enterEdit}
+                  className={`p-0.5 rounded ${isDark ? 'hover:bg-white/10' : 'hover:bg-black/10'}`}
+                  title="双击文本或点此编辑"
+                >
+                  <Pencil size={10} />
+                </button>
+              )}
+              {isEdited && !editing && (
+                <button
+                  onClick={restoreLive}
+                  className={`text-[10px] px-1 rounded ${isDark ? 'hover:bg-white/10 text-white/60' : 'hover:bg-black/10 text-zinc-600'}`}
+                  title="恢复为上游 live 文本"
+                >
+                  恢复
+                </button>
+              )}
+            </div>
+            {!editing ? (
+              <div
+                onDoubleClick={enterEdit}
+                onWheelCapture={(e) => e.stopPropagation()}
+                className={`nowheel whitespace-pre-wrap break-words text-[12px] leading-relaxed rounded px-2 py-1.5 cursor-text ${
+                  isDark ? 'bg-white/5 text-white/85' : 'bg-black/5 text-zinc-800'
+                }`}
+                style={{ maxHeight: 200, overflow: 'auto' }}
+                title="双击编辑"
+              >
+                {displayText || <span className="opacity-50">(空)</span>}
+              </div>
+            ) : (
+              <div className="space-y-1">
+                <textarea
+                  ref={taRef}
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  spellCheck={false}
+                  rows={6}
+                  className={`w-full rounded px-2 py-1.5 text-[12px] outline-none nodrag nowheel ${
+                    isDark
+                      ? 'bg-black/40 text-white border border-teal-400/40'
+                      : 'bg-white text-zinc-900 border border-teal-500/50'
+                  }`}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape') {
+                      e.stopPropagation();
+                      cancelEdit();
+                    }
+                    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                      e.stopPropagation();
+                      saveEdit();
+                    }
+                  }}
+                />
+                <div className="flex gap-1.5 justify-end">
+                  <button
+                    onClick={cancelEdit}
+                    className={`text-[10px] px-2 py-0.5 rounded ${
+                      isDark ? 'bg-white/5 hover:bg-white/10 text-white/70' : 'bg-black/5 hover:bg-black/10 text-zinc-700'
+                    }`}
+                  >
+                    取消
+                  </button>
+                  <button
+                    onClick={saveEdit}
+                    className="text-[10px] px-2 py-0.5 rounded flex items-center gap-1 text-zinc-900"
+                    style={{ background: effectiveAccent }}
+                  >
+                    <Check size={10} /> 保存
+                  </button>
+                </div>
+                <div className={`text-[10px] ${isDark ? 'text-white/30' : 'text-zinc-400'}`}>
+                  Ctrl+Enter 保存 / Esc 取消
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* 素材统计 */}
+          <div className="t8-smart-result-info" style={{ marginTop: 10 }}>
+            <div className="t8-smart-result-info__row">
+              <span>素材统计</span>
+              <strong>{`文本 ${collected.texts.length} · 图像 ${collected.images.length} · 视频 ${collected.videos.length} · 音频 ${collected.audios.length} · 3D模型 ${collected.models.length}`}</strong>
+            </div>
+          </div>
+        </SmartNodeComposer>
+      )}
+
       <SmartMediaPreviewModal
         open={Boolean(previewUrl)}
         url={previewUrl}
@@ -1758,7 +1838,7 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
           onClose={() => setCompareState(null)}
         />
       )}
-    </div>
+    </SmartNodeShell>
   );
 };
 

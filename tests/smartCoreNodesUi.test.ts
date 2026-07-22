@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { resolveVideoDisplaySize } from '../src/utils/videoDisplayAspect.ts';
 
 const root = path.resolve('src/components/nodes');
 
@@ -18,6 +19,48 @@ test('seedance node has smart card shell and classic switch', () => {
   assert.match(source, /切回卡片版节点|切换到经典版节点/);
   assert.match(source, /modelOptions\.map/);
   assert.match(source, /value=\{defaultProviderModel\}/);
+});
+
+test('seedance smart card exposes the same corner resize controls as media cards', () => {
+  const source = read('SeedanceNode.tsx');
+  const smartCardBlock = source.slice(
+    source.indexOf('if (useSmartCardSeedanceNode)'),
+    source.indexOf('{smartComposerOpen && ('),
+  );
+
+  assert.match(source, /import ResizableCorners from '\.\/ResizableCorners';/);
+  assert.match(smartCardBlock, /<ResizableCorners[\s\S]*selected=\{selected\}/);
+  assert.match(smartCardBlock, /onResize=/);
+  assert.match(smartCardBlock, /onResizeEnd=/);
+  assert.match(smartCardBlock, /update\(\{[\s\S]*smartCardWidth:[\s\S]*smartCardHeight:/);
+});
+
+test('smart media resize controls sit above clipped preview cards and avoid repeated geometry work', () => {
+  for (const file of ['ImageNode.tsx', 'VideoNode.tsx', 'SeedanceNode.tsx']) {
+    const source = read(file);
+    assert.match(source, /<\/div>\s*<ResizableCorners[\s\S]*selected=\{selected\}/, file);
+  }
+
+  for (const file of ['VideoNode.tsx', 'SeedanceNode.tsx']) {
+    const source = read(file);
+    const resizeBlock = source.slice(source.indexOf('<ResizableCorners'), source.indexOf('onResizeEnd='));
+    assert.doesNotMatch(resizeBlock, /sync\w+NodeGeometry\(\)/, file);
+  }
+});
+
+test('seedance card variant switch commits before geometry synchronization', () => {
+  const source = read('SeedanceNode.tsx');
+  const switchBlock = source.slice(
+    source.indexOf("const switchSeedanceNodeVariant = (variant: 'smart-card' | 'classic') => {"),
+    source.indexOf('if (useSmartCardSeedanceNode)'),
+  );
+
+  assert.match(source, /import \{ flushSync \} from 'react-dom';/);
+  assert.match(switchBlock, /flushSync\(\(\) => \{[\s\S]*update\(\{ uiVariant: variant \}\);[\s\S]*\}\);/);
+  assert.ok(
+    switchBlock.indexOf('flushSync') < switchBlock.indexOf('syncSeedanceNodeGeometry()'),
+    'Seedance must commit uiVariant before recalculating node geometry',
+  );
 });
 
 test('audio node has smart card shell and classic switch', () => {
@@ -44,6 +87,7 @@ test('image smart card result keeps node drag and panel click after generation',
 
   assert.match(source, /const smartImageUrls = useMemo/);
   assert.match(source, /const imageResultSlots = useMemo/);
+  assert.match(source, /resolveMediaResultSlots\(d\?\.imageResultSlots, smartImageUrls, MAX_IMAGE_OUTPUT_COUNT\)/);
   assert.match(smartCardBlock, /imageResultSlots\.map\(\(slot, index\) =>/);
   assert.match(smartCardBlock, /<SmartImage[\s\S]*data-drag-source[\s\S]*draggable=\{false\}/);
   assert.match(smartCardBlock, /<SmartImage[\s\S]*onMouseDown=\{\(e\) => handleSmartImageMouseDown\(e, url\)\}/);
@@ -59,6 +103,11 @@ test('image smart card parameter composer renders above canvas nodes through a p
   const image = read('ImageNode.tsx');
   const composer = read('shared/SmartNodeComposer.tsx');
   const css = fs.readFileSync(path.resolve('src/styles/theme-core.css'), 'utf8');
+  const portalBlock = css.slice(
+    css.indexOf('.t8-smart-node-composer--portal'),
+    css.indexOf('.t8-smart-rh-node'),
+  );
+  const zIndexMatch = portalBlock.match(/z-index:\s*(\d+)/);
 
   assert.match(composer, /createPortal/);
   assert.match(composer, /portal\?: boolean/);
@@ -66,12 +115,76 @@ test('image smart card parameter composer renders above canvas nodes through a p
   assert.match(composer, /document\.body/);
   assert.match(image, /<SmartNodeComposer[\s\S]*portal[\s\S]*anchorRef=\{smartNodeRef\}/);
   assert.match(css, /\.t8-smart-node-composer--portal/);
-  assert.match(css, /z-index:\s*10080/);
+  assert.ok(zIndexMatch, 'expected smart node composer portal z-index');
+  const zIndex = Number(zIndexMatch?.[1] || '0');
+  assert.ok(zIndex >= 10000, `expected composer portal to stay above canvas nodes, got ${zIndex}`);
+  assert.ok(zIndex < 10050, `expected composer portal to stay below global app overlays, got ${zIndex}`);
   assert.match(css, /position:\s*fixed/);
 });
 
+test('image smart card regeneration does not flash the parameter composer', () => {
+  const image = read('ImageNode.tsx');
+  const composer = read('shared/SmartNodeComposer.tsx');
+  const handleGenerateBlock = image.slice(
+    image.indexOf('const handleGenerate = async () => {'),
+    image.indexOf('try {', image.indexOf('const handleGenerate = async () => {')),
+  );
+  const toggleBlock = image.slice(
+    image.indexOf('const smartPanelToggle = useSmartNodePanelToggle({'),
+    image.indexOf('});', image.indexOf('const smartPanelToggle = useSmartNodePanelToggle({')) + 3,
+  );
+
+  assert.match(handleGenerateBlock, /setSmartComposerOpenLocal\(false\)/);
+  assert.match(handleGenerateBlock, /smartPanelToggle\.suppressClickRef\.current\s*=\s*true/);
+  assert.match(toggleBlock, /disabled:\s*!useSmartCardImageNode\s*\|\|\s*status === 'generating'/);
+  assert.match(composer, /onPointerDown/);
+  assert.match(composer, /onPointerUp/);
+  assert.match(composer, /onClick/);
+}
+);
+
+test('image regeneration isolates new async tasks from stale card outputs', () => {
+  const image = read('ImageNode.tsx');
+  const handleGeneratePrelude = image.slice(
+    image.indexOf('const handleGenerate = async () => {'),
+    image.indexOf('try {', image.indexOf('const handleGenerate = async () => {')),
+  );
+  const resumeBlock = image.slice(
+    image.indexOf('const resumePersistedImageTasks = async () => {'),
+    image.indexOf('const mergedUrls', image.indexOf('const resumePersistedImageTasks = async () => {')),
+  );
+
+  assert.match(handleGeneratePrelude, /imageUrl:\s*''/);
+  assert.match(handleGeneratePrelude, /imageUrls:\s*\[\]/);
+  assert.match(handleGeneratePrelude, /taskId:\s*''/);
+  assert.doesNotMatch(resumeBlock, /baseUrls\s*=\s*\[\.\.\.smartImageUrls\]/);
+  assert.match(resumeBlock, /baseUrls:\s*string\[\]\s*=\s*\[\]/);
+});
+
+test('image edit modal stays above smart card parameter composer portals', () => {
+  const coreCss = fs.readFileSync(path.resolve('src/styles/theme-core.css'), 'utf8');
+  const appCss = fs.readFileSync(path.resolve('src/styles/index.css'), 'utf8');
+  const composerBlock = coreCss.slice(
+    coreCss.indexOf('.t8-smart-node-composer--portal'),
+    coreCss.indexOf('.t8-smart-rh-node'),
+  );
+  const overlayBlock = appCss.slice(
+    appCss.indexOf('.img-edit-overlay'),
+    appCss.indexOf('@keyframes img-edit-fade-in'),
+  );
+  const composerZ = Number(composerBlock.match(/z-index:\s*(\d+)/)?.[1] || '0');
+  const overlayZ = Number(overlayBlock.match(/z-index:\s*(\d+)/)?.[1] || '0');
+
+  assert.ok(composerZ > 0, `expected smart composer portal z-index, got ${composerZ}`);
+  assert.ok(overlayZ > 0, `expected image edit overlay z-index, got ${overlayZ}`);
+  assert.ok(
+    overlayZ > composerZ,
+    `expected image edit overlay (${overlayZ}) to stay above smart composer portal (${composerZ})`,
+  );
+});
+
 test('smart card parameter composers use top-level portals for media and provider nodes', () => {
-  for (const file of ['ImageNode.tsx', 'VideoNode.tsx', 'SeedanceNode.tsx', 'AudioNode.tsx', 'RunningHubNode.tsx', 'RHToolboxNode.tsx', 'FalToolboxNode.tsx']) {
+  for (const file of ['ImageNode.tsx', 'VideoNode.tsx', 'SeedanceNode.tsx', 'AudioNode.tsx']) {
     const source = read(file);
     assert.match(source, /<SmartNodeComposer[\s\S]*portal[\s\S]*anchorRef=\{smartNodeRef\}/, file);
   }
@@ -116,7 +229,7 @@ test('upstream material X disconnects the upstream edge instead of only hiding t
   assert.match(helper, /pruneMaterialOrderForDisconnectedSource/);
   assert.match(helper, /pruneMaterialIdsForDisconnectedSource/);
 
-  for (const file of ['ImageNode.tsx', 'VideoNode.tsx', 'SeedanceNode.tsx', 'AudioNode.tsx', 'LLMNode.tsx', 'RunningHubNode.tsx', 'RHToolboxNode.tsx', 'FalToolboxNode.tsx']) {
+  for (const file of ['ImageNode.tsx', 'VideoNode.tsx', 'SeedanceNode.tsx', 'AudioNode.tsx', 'LLMNode.tsx']) {
     const source = read(file);
     assert.match(source, /useDisconnectUpstreamMaterial\(id\)/, file);
     assert.match(source, /disconnectUpstreamMaterial\(/, file);
@@ -159,6 +272,28 @@ test('image smart composer uses condensed model and prompt rows', () => {
   assert.match(css, /\.t8-smart-prompt-shell--compact/);
   assert.match(css, /\.t8-material-preview-rail-accessory/);
   assert.match(css, /flex-wrap:\s*nowrap/);
+});
+
+test('smart composer variant switch buttons do not cancel their own click activation', () => {
+  for (const file of ['ImageNode.tsx', 'VideoNode.tsx', 'SeedanceNode.tsx', 'AudioNode.tsx', 'MaterialSetNode.tsx', 'UploadNode.tsx']) {
+    const source = read(file);
+    const buttonMatches = source.matchAll(/<button[\s\S]*?<\/button>/g);
+    const switchButtons = [...buttonMatches]
+      .map((match) => match[0])
+      .filter((block) => block.includes('切换到经典版节点') || block.includes('切回卡片版节点'));
+
+    assert.ok(switchButtons.length > 0, `expected ${file} to expose smart/classic switch buttons`);
+
+    for (const block of switchButtons) {
+      const pointerDownMatch = block.match(/onPointerDown=\{[\s\S]*?\}/);
+      if (!pointerDownMatch) continue;
+      assert.doesNotMatch(
+        pointerDownMatch[0],
+        /preventDefault\(/,
+        `${file} should not preventDefault on pointer down because the switch action is bound to click`,
+      );
+    }
+  }
 });
 
 test('audio smart card request uses the same ordered audio material list as the preview', () => {
@@ -244,6 +379,31 @@ test('smart media cards expose shared regeneration animation state', () => {
   assert.doesNotMatch(audio, /status:\s*'submitting',\s*error:\s*null,\s*tracks:\s*\[\],\s*audioUrl:\s*undefined/);
 });
 
+test('upload smart card exposes per-item preview and delete controls', () => {
+  const upload = read('UploadNode.tsx');
+  const css = fs.readFileSync(path.resolve('src/styles/theme-core.css'), 'utf8');
+
+  assert.match(upload, /t8-smart-upload-tile-actions/);
+  assert.match(upload, /aria-label=\{`预览素材 \$\{i \+ 1\}`\}/);
+  assert.match(upload, /aria-label=\{`删除素材 \$\{i \+ 1\}`\}/);
+  assert.match(upload, /setPreviewIndex\(i\)/);
+  assert.match(upload, /handleRemoveUploadItem\(i\)/);
+  assert.match(css, /\.t8-smart-upload-tile-actions/);
+  assert.match(css, /\.t8-smart-upload-tile:hover \.t8-smart-upload-tile-actions/);
+  assert.match(css, /bottom:\s*32px/);
+  assert.doesNotMatch(css, /\.t8-smart-node-card--selected \.t8-smart-upload-tile-actions/);
+});
+
+test('upload image preview uses shared zoomable media modal', () => {
+  const upload = read('UploadNode.tsx');
+
+  assert.match(upload, /SmartMediaPreviewModal/);
+  assert.match(upload, /open=\{Boolean\(previewItem && previewItem\.kind === 'image'\)\}/);
+  assert.match(upload, /url=\{previewItem\?\.kind === 'image' \? previewItem\.url : ''\}/);
+  assert.match(upload, /onClose=\{\(\) => setPreviewIndex\(null\)\}/);
+  assert.match(upload, /previewItem && previewItem\.kind !== 'image' && createPortal/);
+});
+
 test('smart video card surfaces reference thumbnails before generation', () => {
   const video = read('VideoNode.tsx');
   const smartPreviewBlock = video.slice(
@@ -291,7 +451,41 @@ test('video and seedance nodes resume persisted polling with saved protocol mode
     assert.match(source, /protocolModel/);
     assert.match(source, /status === 'polling'/);
     assert.match(source, /startPolling\(taskId\)/);
-    assert.match(source, /protocolModel: r\.protocol \|\| r\.effectiveModel \|\| r\.requestedModel/);
+    assert.match(source, /protocolModel: r\.effectiveModel \|\| r\.requestedModel \|\| effective/);
+  }
+});
+
+test('smart video preview follows the generated video metadata aspect ratio', () => {
+  const video = read('VideoNode.tsx');
+  assert.match(video, /videoNaturalRatio/);
+  assert.match(video, /currentTarget\.videoWidth/);
+  assert.match(video, /currentTarget\.videoHeight/);
+  assert.match(video, /setVideoNaturalRatio/);
+  assert.match(video, /object-contain/);
+});
+
+test('video node opens the shared media preview modal at the video natural ratio', () => {
+  const video = read('VideoNode.tsx');
+  const shared = fs.readFileSync(path.resolve('src/components/nodes/shared/SmartMediaPreviewModal.tsx'), 'utf8');
+  assert.match(video, /import SmartMediaPreviewModal/);
+  assert.match(video, /<SmartMediaPreviewModal[\s\S]*kind="video"/);
+  assert.match(video, /aria-label="预览视频"/);
+  assert.match(shared, /kind\?: 'image' \| 'video'/);
+  assert.match(shared, /kind === 'video'/);
+  assert.match(shared, /videoWidth/);
+  assert.match(shared, /object-contain|t8-smart-media-preview__video/);
+});
+
+test('video and SD2 cards use rotation-aware ffprobe display dimensions', () => {
+  assert.deepEqual(resolveVideoDisplaySize(1232, 1648, 90), { width: 1648, height: 1232, ratio: '1648:1232' });
+  const video = read('VideoNode.tsx');
+  const seedance = read('SeedanceNode.tsx');
+  for (const source of [video, seedance]) {
+    assert.match(source, /probeVideo/);
+    assert.match(source, /resolveVideoDisplaySize/);
+    assert.match(source, /rotation/);
+    assert.match(source, /kind="video"/);
+    assert.match(source, /aria-label="预览视频"/);
   }
 });
 
@@ -301,10 +495,19 @@ test('card mode generated media nodes own outputs without auto output nodes', ()
   assert.match(canvas, /CARD_MODE_OWNS_OUTPUT_TYPES/);
   assert.match(
     canvas,
-    /new Set\(\['image', 'video', 'seedance', 'audio', 'runninghub', 'runninghub-wallet', 'rh-toolbox', 'fal-toolbox'\]\)/,
+    /new Set\(\['image', 'video', 'seedance', 'audio'\]\)/,
   );
   assert.match(canvas, /CARD_MODE_OWNS_OUTPUT_TYPES\.has\(t\) && d\?\.uiVariant !== 'classic'/);
   assert.match(canvas, /target\?\.type === 'output' && target\.id\.startsWith\('output-auto-'\)/);
+});
+
+test('card mode generated media nodes still auto-save outputs to disk', () => {
+  const canvas = fs.readFileSync(path.resolve('src/components/Canvas.tsx'), 'utf8');
+
+  assert.match(canvas, /import \{ saveAssetToDisk \} from '\.\.\/services\/api';/);
+  assert.match(canvas, /cardModeSavedOutputUrlsRef/);
+  assert.match(canvas, /CARD_MODE_OWNS_OUTPUT_TYPES\.has\(t\) && d\?\.uiVariant !== 'classic'/);
+  assert.match(canvas, /saveAssetToDisk\(url\)\.catch/);
 });
 
 test('image node shows pending result slots while batch images finish independently', () => {
@@ -321,7 +524,12 @@ test('image node shows pending result slots while batch images finish independen
   assert.match(image, /setCoreImageSlotSuccess\(task\.requestIndex,\s*q\.urls \|\| \[\]\)/);
   assert.match(image, /setImageSlotFailed\(requestIndex,/);
   assert.match(image, /t8-smart-result-placeholder--\$\{slot\.status\}/);
+  assert.match(image, /const slotErrorText = String\(slot\.error \|\| ''\)\.trim\(\)/);
+  assert.match(image, /slotErrorText && <span className="t8-smart-result-placeholder-error"/);
+  assert.match(image, /slotTaskText && <span className="t8-smart-result-placeholder-task"/);
   assert.match(css, /\.t8-smart-result-placeholder/);
+  assert.match(css, /\.t8-smart-result-placeholder-error/);
+  assert.match(css, /\.t8-smart-result-placeholder-task/);
   assert.match(css, /\.t8-smart-result-placeholder--pending/);
   assert.match(css, /\.t8-smart-result-placeholder--running/);
   assert.match(css, /\.t8-smart-result-placeholder--failed/);
@@ -339,16 +547,18 @@ test('image node resumes persisted async image tasks and reconciles finished url
   assert.match(image, /queryImageStatus\(taskId,\s*effectiveApiModel\)/);
   assert.match(image, /status === 'generating' && smartImageUrls\.length > 0/);
   assert.match(image, /status === 'generating' && taskId/);
+  assert.match(image, /status === 'generating' && !taskId && smartImageUrls\.length === 0/);
+  assert.match(image, /上次生成已中断，请重新生成/);
 });
 
-test('NodeActionBar stop broadcast cancels long-running media nodes', () => {
+test('NodeActionBar broadcasts cancellation to selected long-running media nodes', () => {
   const actionBar = fs.readFileSync(path.resolve('src/components/NodeActionBar.tsx'), 'utf8');
   const image = read('ImageNode.tsx');
   const video = read('VideoNode.tsx');
   const seedance = read('SeedanceNode.tsx');
   const audio = read('AudioNode.tsx');
 
-  assert.match(actionBar, /const onStop[\s\S]*cancelAll\(\[selectedExe\.id\]\)/);
+  assert.match(actionBar, /const onStop[\s\S]*cancelNodes\(selectedExecutableNode\.selectedIds\)/);
   for (const source of [image, video, seedance, audio]) {
     assert.match(source, /useRunBusStore/);
     assert.match(source, /cancelSeq/);
@@ -359,4 +569,44 @@ test('NodeActionBar stop broadcast cancels long-running media nodes', () => {
   assert.match(image, /imageRunSeqRef/);
   assert.match(image, /throwIfImageRunCancelled/);
   assert.match(image, /DOMException\('已停止生成', 'AbortError'\)/);
+});
+
+test('NodeActionBar stops every selected running node in one action', () => {
+  const actionBar = fs.readFileSync(path.resolve('src/components/NodeActionBar.tsx'), 'utf8');
+
+  assert.match(actionBar, /selectedIds:\s*string\[\]/);
+  assert.match(actionBar, /const cancelNodes = useRunBusStore\(\(s\) => s\.cancelNodes\)/);
+  assert.match(actionBar, /cancelNodes\(selectedExecutableNode\.selectedIds\)/);
+  assert.match(actionBar, /s\.runningIds\.some\(\(runningId\) => selectedNodeIds\.includes\(runningId\)\)/);
+});
+
+test('NodeActionBar starts every selected executable node in one action', () => {
+  const actionBar = fs.readFileSync(path.resolve('src/components/NodeActionBar.tsx'), 'utf8');
+
+  assert.match(actionBar, /const triggerRunMany = useRunBusStore\(\(s\) => s\.triggerRunMany\)/);
+  assert.match(actionBar, /triggerRunMany\(selectedExecutableNode\.selectedIds,\s*'batch'\)/);
+});
+
+test('NodeActionBar releases button focus after mouse actions to prevent Enter retriggers', () => {
+  const actionBar = fs.readFileSync(path.resolve('src/components/NodeActionBar.tsx'), 'utf8');
+  const runBlock = actionBar.slice(actionBar.indexOf('const onRun ='), actionBar.indexOf('const onStop ='));
+  const stopBlock = actionBar.slice(actionBar.indexOf('const onStop ='), actionBar.indexOf('const onClose ='));
+  const closeBlock = actionBar.slice(actionBar.indexOf('const onClose ='), actionBar.indexOf('const runColor'));
+
+  assert.match(runBlock, /e\.currentTarget\.blur\(\)/);
+  assert.match(stopBlock, /e\.currentTarget\.blur\(\)/);
+  assert.match(closeBlock, /e\.currentTarget\.blur\(\)/);
+  assert.match(actionBar, /const blockEnterActivation/);
+  assert.match(actionBar, /if \(event\.key === 'Enter'\) event\.preventDefault\(\)/);
+  assert.equal((actionBar.match(/onKeyDown=\{blockEnterActivation\}/g) || []).length, 3);
+});
+
+test('image prompt Enter is reserved for line breaks instead of generation', () => {
+  const image = read('ImageNode.tsx');
+  const smartComposerBlock = image.slice(
+    image.indexOf('<SmartNodeComposer'),
+    image.indexOf('</SmartNodeComposer>') + '</SmartNodeComposer>'.length,
+  );
+
+  assert.doesNotMatch(smartComposerBlock, /onSubmit=/);
 });

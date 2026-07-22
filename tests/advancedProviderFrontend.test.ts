@@ -11,6 +11,7 @@ import {
   advancedProviderModelOptions,
   resolveAdvancedProviderSelection,
   externalImageSizeFor,
+  gptImageSizeFor,
   distributeModelscopeLoraWeights,
   MAX_MODELSCOPE_NODE_LORAS,
   MODELSCOPE_LORA_TOTAL_WEIGHT,
@@ -234,6 +235,14 @@ test('externalImageSizeFor maps T8 ratio and size labels to stable WxH values', 
   assert.equal(externalImageSizeFor('bad', 'unknown'), '1024x1024');
 });
 
+test('gptImageSizeFor maps T8 size labels to GPT image pixel size fields', () => {
+  assert.equal(gptImageSizeFor('3:4', '4K'), '2160x2880');
+  assert.equal(gptImageSizeFor('16:9', '4K'), '3840x2160');
+  assert.equal(gptImageSizeFor('9:16', '4K'), '2160x3840');
+  assert.equal(gptImageSizeFor('Auto', '4K'), 'auto');
+  assert.equal(gptImageSizeFor('bad', 'unknown'), '1024x1024');
+});
+
 test('modelscopeLorasForModel filters enabled LoRA entries for selected image model', () => {
   const provider = {
     id: 'modelscope',
@@ -336,13 +345,13 @@ test('SeedanceNode exposes explicit Jimeng intelligent multiframe mode only for 
   assert.match(source, /智能多帧\(multiframe\)/);
 });
 
-test('SeedanceNode keeps existing Seedance model choices without adding apishu model ids', () => {
+test('SeedanceNode keeps default service model choices settings-driven', () => {
   const source = fs.readFileSync(new URL('../src/components/nodes/SeedanceNode.tsx', import.meta.url), 'utf8');
 
-  assert.match(source, /doubao-seedance-2-0-fast-260128/);
-  assert.match(source, /doubao-seedance-2-0-260128/);
-  assert.doesNotMatch(source, /video-standard-720p-fast/);
-  assert.doesNotMatch(source, /video-standard-720p/);
+  assert.match(source, /SEEDANCE_MODEL_OVERRIDE_KEY = 'seedance-2\.0'/);
+  assert.match(source, /apiSettings\.zhenzhenVideoModelOverrides\?\.\[SEEDANCE_MODEL_OVERRIDE_KEY\]/);
+  assert.match(source, /withUpstreamModelOption\(MODEL_OPTIONS,\s*configuredModelList\.join\('\\n'\)\)/);
+  assert.doesNotMatch(source, /isLegacySeedancePlaceholderModel/);
 });
 
 test('seedance proxy maps existing Seedance choices to apishu standard 720p videos only for video', () => {
@@ -366,9 +375,10 @@ test('seedance proxy maps existing Seedance choices to apishu standard 720p vide
   assert.match(proxy, /function isApishuSeedanceVideoModel\(model\)/);
   assert.match(proxy, /buildApishuSeedancePayload/);
   assert.match(proxy, /\/v1\/videos/);
-  assert.match(proxy, /metadata\?\.result_urls/);
-  assert.match(proxy, /metadata\?\.result_url/);
-  assert.match(proxy, /metadata\?\.url/);
+  assert.match(proxy, /collectMetadataResultUrls/);
+  assert.match(proxy, /extractApishuVideoUrls/);
+  assert.match(proxy, /meta\.result_url/);
+  assert.match(proxy, /meta\.url/);
   assert.match(proxy, /isApishuSeedanceVideoModel\(model\)/);
   assert.match(proxy, /isApishuSeedanceVideoModel\(queryModel\)/);
   assert.match(proxy, /model:\s*apishuSeedanceUpstreamModel\(input\.model\)/);
@@ -376,23 +386,24 @@ test('seedance proxy maps existing Seedance choices to apishu standard 720p vide
   assert.doesNotMatch(imageNode, /nana-banana-pro/);
 });
 
-test('SeedanceNode exposes Zhenzhen mini model and native4K resolution', () => {
+test('SeedanceNode keeps runtime controls while model names come from settings', () => {
   const source = fs.readFileSync(new URL('../src/components/nodes/SeedanceNode.tsx', import.meta.url), 'utf8');
   const generation = fs.readFileSync(new URL('../src/services/generation.ts', import.meta.url), 'utf8');
   const models = fs.readFileSync(new URL('../src/providers/models.ts', import.meta.url), 'utf8');
 
-  assert.match(source, /value: 'doubao-seedance-2\.0-mini'/);
-  assert.match(source, /label: 'seedance-2\.0-mini'/);
+  assert.match(source, /configuredModelOverride/);
+  assert.match(source, /configuredModelList = parseModelList\(configuredModelOverride\)/);
+  assert.match(source, /withUpstreamModelOption\(MODEL_OPTIONS,\s*configuredModelList\.join\('\\n'\)\)/);
+  assert.match(source, /configuredModelDefault = configuredModelList\[0\]/);
   assert.match(source, /SEEDANCE_RATIO_OPTIONS/);
   assert.match(source, /SEEDANCE_RESOLUTION_OPTIONS/);
   assert.match(source, /SEEDANCE_DURATION_OPTIONS/);
   assert.match(models, /export const SEEDANCE_RATIO_OPTIONS = \['16:9', '9:16', '1:1', '4:3', '3:4', '21:9', '9:21', 'adaptive'\]/);
   assert.match(models, /SEEDANCE_RESOLUTION_OPTIONS = \[[^\]]*'native4K'[^\]]*\]/);
-  assert.match(generation, /doubao-seedance-2\.0-mini/);
   assert.match(generation, /native4K/);
 });
 
-test('zhenzhen local group selection extension points are wired without making private code public', () => {
+test('local provider extension slots remain generic while default service ignores local account groups', () => {
   const apiSettings = fs.readFileSync(new URL('../src/components/ApiSettings.tsx', import.meta.url), 'utf8');
   const imageNode = fs.readFileSync(new URL('../src/components/nodes/ImageNode.tsx', import.meta.url), 'utf8');
   const videoNode = fs.readFileSync(new URL('../src/components/nodes/VideoNode.tsx', import.meta.url), 'utf8');
@@ -411,9 +422,11 @@ test('zhenzhen local group selection extension points are wired without making p
   assert.match(generation, /fd\.append\('providerParams', JSON\.stringify\(providerParams\)\)/);
   assert.match(emptyExtensions, /LocalNodeAddonSlot: FC<LocalNodeAddonSlotProps> = \(\) => null/);
   assert.match(emptyExtensions, /LocalSettingsAddonSlot: FC<LocalSettingsAddonSlotProps> = \(\) => null/);
-  assert.match(proxy, /route: 'seedance\/submit'/);
-  assert.match(proxy, /kind: 'seedance'/);
-  assert.match(proxy, /ensureKeyOrSelectedGroup\(settings, res, 'seedance', 'Seedance', providerParams\)/);
+  assert.match(proxy, /ensureKey\(settings, res, 'seedance', 'Seedance'\)/);
+  assert.doesNotMatch(proxy, /ensureKeyOrSelectedGroup/);
+  assert.doesNotMatch(proxy, /applyZhenzhenProviderContext/);
+  assert.doesNotMatch(proxy, /zhenzhen\.resolveApiKey/);
+  assert.doesNotMatch(proxy, /zhenzhen\.invalidateApiKey/);
 });
 
 test('Agnes provider settings and video node controls are exposed', () => {
@@ -444,81 +457,3 @@ test('advanced provider API keys have bounded visibility toggles', () => {
   assert.match(styles, /\.t8-api-settings-secret-toggle\s*\{[\s\S]*right:\s*8px/);
 });
 
-test('local private zhenzhen group extension is opt-in and keeps FAL out when present', () => {
-  const privateFrontendUrl = new URL('../local-private/extensions/frontend/index.tsx', import.meta.url);
-  const privateBackendUrl = new URL('../local-private/extensions/backend/zhenzhenGroups.cjs', import.meta.url);
-  if (!fs.existsSync(privateFrontendUrl) || !fs.existsSync(privateBackendUrl)) return;
-
-  const frontend = fs.readFileSync(privateFrontendUrl, 'utf8');
-  const backend = fs.readFileSync(privateBackendUrl, 'utf8');
-  const proxy = fs.readFileSync(new URL('../backend/src/routes/proxy.js', import.meta.url), 'utf8');
-
-  assert.match(frontend, /const \[enabled, setEnabled\] = useState\(false\)/);
-  assert.match(frontend, /启用 New API 分组令牌高级模式/);
-  assert.match(frontend, /默认使用普通贞贞 API Key/);
-  assert.match(frontend, /API 地址自动使用/);
-  assert.match(frontend, /https:\/\/ai\.t8star\.org \/ https:\/\/ai\.t8star\.cn/);
-  assert.match(frontend, /令牌名默认/);
-  assert.match(frontend, /生成全套 API Key 大约需要 3 分钟/);
-  assert.match(frontend, /个人中心 - 安全设置/);
-  assert.match(frontend, /昵称右边的数字 ID/);
-  assert.doesNotMatch(frontend, /手动令牌池/);
-  assert.doesNotMatch(frontend, /saveManual/);
-  assert.match(frontend, /isFalChannel/);
-  assert.match(frontend, /if \(!status\?\.enabled\) return null/);
-  assert.match(frontend, /\/api\/local\/zhenzhen-groups\/enabled/);
-  assert.match(frontend, /const GROUP_STATUS_EVENT = 't8:zhenzhen-groups-status-changed'/);
-  assert.match(frontend, /function notifyGroupStatusChanged/);
-  assert.match(frontend, /notifyGroupStatusChanged\(nextStatus\)/);
-  assert.match(frontend, /window\.addEventListener\(GROUP_STATUS_EVENT, handleStatusChanged\)/);
-  assert.match(frontend, /const GROUP_PREFERENCES_STORAGE_KEY = 't8:zhenzhen-group-preferences:v1'/);
-  assert.match(frontend, /const GROUP_PREFERENCES_EVENT = 't8:zhenzhen-group-preferences-changed'/);
-  assert.match(frontend, /schema: 't8-zhenzhen-group-preferences'/);
-  assert.match(frontend, /function readGroupPreferences/);
-  assert.match(frontend, /function writeGroupPreferences/);
-  assert.match(frontend, /function rememberPreferredGroup/);
-  assert.match(frontend, /function groupPreferenceKeysForNode/);
-  assert.match(frontend, /function preferredGroupForNode/);
-  assert.match(frontend, /applyRememberedGroup/);
-  assert.match(frontend, /导出习惯/);
-  assert.match(frontend, /导入习惯/);
-  assert.match(frontend, /不包含令牌密钥/);
-  assert.match(frontend, /const \[statusRevision, setStatusRevision\] = useState\(0\)/);
-  assert.match(frontend, /fetchGroupStatus\(model, statusRevision > 0\)/);
-  assert.match(frontend, /JSON\.stringify\(\{ userId, accessToken, enabled: true, bootstrap: true \}\)/);
-  assert.match(frontend, /正在后台建立分组令牌/);
-  assert.match(frontend, /status\?\.bootstrapJob\?\.status !== 'running'/);
-  assert.match(frontend, /补齐分组令牌/);
-
-  assert.match(backend, /enabled: false/);
-  assert.match(backend, /const DEFAULT_NEWAPI_BASE_URL = 'https:\/\/ai\.t8star\.org'/);
-  assert.match(backend, /const NEWAPI_BASE_URLS = \['https:\/\/ai\.t8star\.org', 'https:\/\/ai\.t8star\.cn'\]/);
-  assert.match(backend, /const DEFAULT_TOKEN_NAME_PREFIX = 'T8'/);
-  assert.match(backend, /const CACHE_TTL_MS = 6 \* 60 \* 60 \* 1000/);
-  assert.match(backend, /const PRICING_PATH = '\/api\/pricing'/);
-  assert.match(backend, /const TOKEN_BOOTSTRAP_DELAY_MS = 8500/);
-  assert.match(backend, /function isFalGroup\(group\)/);
-  assert.match(backend, /managedGroupList\(data\.usable_group\)/);
-  assert.match(backend, /\['seedance-2\.0', 'doubao-seedance-2-0-fast-260128'\]/);
-  assert.match(backend, /let pricingFetchPromise = null/);
-  assert.match(backend, /let bootstrapPromise = null/);
-  assert.match(backend, /apiPathJson\(secret, apiPath/);
-  assert.match(backend, /getTokenKeysBatch/);
-  assert.match(backend, /function cleanTokenKey\(value\)/);
-  assert.match(backend, /function newApiBearerKey\(value\)/);
-  assert.match(backend, /apiKey: newApiBearerKey\(entry\.key\)|const apiKey = newApiBearerKey\(entry\.key\)/);
-  assert.match(backend, /function invalidateGroupToken\(payload = \{\}\)/);
-  assert.match(backend, /zhenzhen\.invalidateApiKey/);
-  assert.match(backend, /groups: group/);
-  assert.match(backend, /async function fetchJsonWithRetry/);
-  assert.match(backend, /接口返回非 JSON/);
-  assert.match(backend, /router\.post\('\/enabled'/);
-  assert.match(backend, /boolValue\(secret\.enabled, false\) && !readCachedPricingOnly\(\)/);
-  assert.match(backend, /if \(!boolValue\(secret\.enabled, false\)\) return \{\}/);
-  assert.match(backend, /startBootstrapJob\(next, cache\.groups, 'bind'\)/);
-  assert.match(backend, /startBootstrapJob\(secret, groups, 'manual'\)/);
-
-  assert.match(proxy, /function isInvalidApiKeyError\(errorText\)/);
-  assert.match(proxy, /async function invalidateZhenzhenProviderKey\(providerContext, apiKey, errorText\)/);
-  assert.match(proxy, /runLocalHooks\('zhenzhen\.invalidateApiKey'/);
-});

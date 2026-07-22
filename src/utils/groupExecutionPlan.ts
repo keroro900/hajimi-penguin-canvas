@@ -30,11 +30,6 @@ export const DEFAULT_GROUP_EXECUTABLE_NODE_TYPES = new Set([
   'video',
   'seedance',
   'audio',
-  'runninghub',
-  'rh-toolbox',
-  'fal-toolbox',
-  'codex-image-conjure',
-  'codex-cli-agent',
 ]);
 
 export function createGroupExecutionPlan(input: GroupExecutionPlanInput): GroupExecutionPlan {
@@ -93,4 +88,3 @@ export function createGroupExecutionPlan(input: GroupExecutionPlanInput): GroupE
 
   return { stages, skipped, cycleNodeIds };
 }
-

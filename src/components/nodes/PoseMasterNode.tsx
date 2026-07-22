@@ -3096,10 +3096,7 @@ const PoseMasterNode = (props: NodeProps) => {
 
   return (
     <div
-      className={[
-        't8-node relative w-[1220px] overflow-visible rounded-[var(--t8-radius-lg)] border border-[var(--t8-border)] bg-[var(--t8-node-bg)] text-[var(--t8-text)] shadow-[var(--t8-node-shadow)]',
-        selected ? 'ring-2 ring-[var(--t8-accent)]' : '',
-      ].join(' ')}
+      className={`t8-node relative w-[1220px] overflow-visible rounded-[var(--t8-radius-lg)] border border-[var(--t8-border)] bg-[var(--t8-node-bg)] text-[var(--t8-text)] shadow-[var(--t8-node-shadow)] ${selected ? 'is-selected' : ''}`}
       data-node-kind="pose-master"
     >
       <Handle

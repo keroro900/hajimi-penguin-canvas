@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from 'react';
 import { BookmarkPlus, CloudUpload, Copy, FolderPlus, Library, Palette, Plus, Save, Tags, WandSparkles, X } from 'lucide-react';
 import { useThemeStore } from '../stores/theme';
 import { useCanvasStore } from '../stores/canvas';
-import { trackAchievementEvent } from '../stores/achievements';
 import * as api from '../services/api';
 import type { CloudUploadTargetConfig } from '../types/canvas';
 import type { ResourceCategory, ResourceKind, ResourceMaterialSetKind, ResourceMediaKind } from '../services/api';
@@ -240,13 +239,6 @@ export default function MaterialContextMenu() {
         });
     if (r.success) {
       const duplicate = (r as any).duplicate;
-      if (!duplicate) {
-        trackAchievementEvent({
-          type: 'resource.saved',
-          kind: menu.kind === 'set' ? `${menu.materialSetKind || 'material'}-set` : menu.kind,
-          category: categoryId,
-        });
-      }
       setMessage(duplicate ? '已存在，已定位到该分类' : '已加入资源库');
       window.dispatchEvent(new CustomEvent('penguin:resources-changed'));
       window.setTimeout(close, 650);
@@ -505,35 +497,20 @@ export default function MaterialContextMenu() {
 
   if (!menu) return null;
 
-  const itemCls = isPixel
-    ? 'w-full text-left px-3 py-2 text-[12px] flex items-center gap-2 hover:bg-[var(--px-yellow)]'
-    : `w-full text-left px-3 py-2 text-[12px] flex items-center gap-2 ${
-        isDark ? 'text-zinc-100 hover:bg-white/10' : 'text-zinc-800 hover:bg-black/5'
-      }`;
+  const itemCls = 't8-context-menu__item';
 
   return (
     <>
     <div
       data-resource-context-menu
-      className="fixed z-[80] overflow-hidden"
+      className="fixed z-[80] overflow-hidden t8-context-menu t8-context-menu--material"
       style={{
         left: Math.min(menu.x, window.innerWidth - 240),
         top: Math.min(menu.y, window.innerHeight - 360),
         width: 220,
-        background: isPixel ? '#FFFFFF' : isDark ? 'rgba(20,20,22,.98)' : 'rgba(255,255,255,.98)',
-        color: isPixel ? '#1A1410' : isDark ? '#fff' : '#18181b',
-        border: isPixel ? '2px solid #1A1410' : `1px solid ${isDark ? 'rgba(255,255,255,.12)' : 'rgba(0,0,0,.1)'}`,
-        borderRadius: isPixel ? 12 : 8,
-        boxShadow: isPixel ? '4px 4px 0 #1A1410' : '0 18px 50px rgba(0,0,0,.35)',
       }}
     >
-      <div
-        className="px-3 py-2 text-[11px] font-semibold flex items-center gap-2"
-        style={{
-          borderBottom: isPixel ? '2px solid #1A1410' : `1px solid ${isDark ? 'rgba(255,255,255,.08)' : 'rgba(0,0,0,.06)'}`,
-          background: isPixel ? '#A8E6C9' : 'transparent',
-        }}
-      >
+      <div className="t8-context-menu__header">
         <Library size={13} />
         <span className="flex-1 truncate">{menu.kind === 'set' ? '保存素材集' : '加入资源库'}</span>
         <button onClick={close} title="关闭">
@@ -554,7 +531,7 @@ export default function MaterialContextMenu() {
         <div
           className="space-y-1 py-1 px-2"
           style={{
-            borderBottom: isPixel ? '2px solid #1A1410' : `1px solid ${isDark ? 'rgba(255,255,255,.08)' : 'rgba(0,0,0,.06)'}`,
+            borderBottom: 'var(--t8-context-menu-divider, 1px solid rgba(255, 255, 255, 0.08))',
           }}
         >
           {menu.kind === 'image' && (
@@ -629,7 +606,7 @@ export default function MaterialContextMenu() {
         <div
           className="py-1"
           style={{
-            borderTop: isPixel ? '2px solid #1A1410' : `1px solid ${isDark ? 'rgba(255,255,255,.08)' : 'rgba(0,0,0,.06)'}`,
+            borderTop: 'var(--t8-context-menu-divider, 1px solid rgba(255, 255, 255, 0.08))',
           }}
         >
           <div className={`px-3 py-1.5 text-[10px] font-bold flex items-center gap-1.5 ${isDark && !isPixel ? 'text-white/65' : ''}`}>

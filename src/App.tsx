@@ -1,23 +1,14 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Moon, PanelLeftClose, PanelLeftOpen, Settings, Sun, Wifi, WifiOff, Sparkles, Cloud, Library, Palette, Skull, Sailboat, Shield, Crown, Terminal } from 'lucide-react';
-import { useThemeStore } from './stores/theme';
-import { seedDragonBallRadarForShenronTest, useDragonBallRadarStore } from './stores/dragonBallRadar';
-import { seedSaintSeiyaGoldClothsForHadesTest, useSaintSeiyaSanctuaryStore } from './stores/saintSeiyaSanctuary';
-import { trackAchievementEvent } from './stores/achievements';
+import { startSystemThemeSync, useThemeStore } from './stores/theme';
 import { useApiKeysStore } from './stores/apiKeys';
 import { useShortcutStore } from './stores/shortcuts';
-import Sidebar from './components/Sidebar';
+import { useCanvasStore } from './stores/canvas';
+import AppRail, { type ShellPanelKind } from './components/shell/AppRail';
+import ShellPanel from './components/shell/ShellPanel';
 import type { AddNodeFn, InsertWorkflowFn } from './components/Canvas';
-import AppUpdaterButton from './components/AppUpdaterButton';
 import MaterialContextMenu from './components/MaterialContextMenu';
 import ErrorBoundary from './components/ErrorBoundary';
-import AchievementButton from './components/AchievementButton';
-import AchievementCeremonyLayer from './components/AchievementCeremonyLayer';
-import AchievementDrawer from './components/AchievementDrawer';
-import AchievementToast from './components/AchievementToast';
-import AchievementTracker from './components/AchievementTracker';
 import CodexAgentSidebar from './components/CodexAgentSidebar';
-import { RHToolsProvider } from './providers/RHToolsProvider';
 import * as api from './services/api';
 import { getCodexCliStatus } from './services/codexCli';
 import type { NodeType } from './types/canvas';
@@ -29,15 +20,16 @@ import { workflowManifestToFragment } from './utils/workflowResource';
 import { matchesAnyShortcut } from './utils/keyboardShortcuts';
 import { portraitResourceToNodeData } from './utils/portraitResource';
 import { applyUiFontPreference } from './utils/uiFont';
-import { LocalModalSlot, LocalTopbarSlot } from 'virtual:t8-local-extensions';
+import { LocalModalSlot } from 'virtual:t8-local-extensions';
 
 const Canvas = lazy(() => import('./components/Canvas'));
 const ApiSettingsModal = lazy(() => import('./components/ApiSettings'));
 const ResourceLibraryDrawer = lazy(() => import('./components/ResourceLibraryDrawer'));
 const ThemeTemplateManager = lazy(() => import('./components/ThemeTemplateManager'));
+const HandleGeometryAuditFixture = lazy(() => import('./components/HandleGeometryAuditFixture'));
 
-// vite.config 注入的编译期常量（与 package.json 同步），勿硬编码 v1.x.x
-declare const __APP_VERSION__: string;
+const handleGeometryAuditEnabled = typeof window !== 'undefined'
+  && new URLSearchParams(window.location.search).get('ux-handle-audit') === '1';
 
 function isShortcutTypingTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -51,11 +43,19 @@ function isShortcutTypingTarget(target: EventTarget | null): boolean {
   );
 }
 
-const SIDEBAR_COLLAPSED_STORAGE_KEY = 't8-sidebar-collapsed';
+const SHELL_PANEL_STORAGE_KEY = 't8-shell-panel';
+const LEGACY_SIDEBAR_COLLAPSED_STORAGE_KEY = 't8-sidebar-collapsed';
 
-function readSidebarCollapsedPreference(): boolean {
-  if (typeof window === 'undefined') return false;
-  return window.localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY) === '1';
+type StoredShellPanelPreference = ShellPanelKind | 'collapsed' | null;
+
+function readShellPanelPreference(): StoredShellPanelPreference {
+  if (typeof window === 'undefined') return null;
+  const raw = window.localStorage.getItem(SHELL_PANEL_STORAGE_KEY);
+  if (raw === 'nodes' || raw === 'canvases' || raw === 'collapsed') return raw;
+  // 旧版「隐藏侧边栏」偏好迁移：收起过侧栏的用户从「仅轨道」开始
+  const legacy = window.localStorage.getItem(LEGACY_SIDEBAR_COLLAPSED_STORAGE_KEY);
+  if (legacy === '1' || legacy === 'true') return 'collapsed';
+  return null;
 }
 
 function poseBackupToNodeData(value: unknown): Record<string, any> | null {
@@ -192,7 +192,7 @@ function InfiniteCanvasBootLoading() {
     <div className="t8-boot-screen" role="status" aria-label="正在打开画布工作台">
       <img className="t8-boot-art" src="/infinite-canvas-loading.png" alt="" aria-hidden="true" />
       <div className="t8-boot-progress-shell" aria-hidden="true">
-        <span className="t8-boot-progress-label">正在启动...</span>
+        <span className="t8-boot-progress-label">JIMI AI 正在启动…</span>
         <div className="t8-boot-progress-track">
           <span className="t8-boot-progress-fill" />
           <span className="t8-boot-progress-spark" />
@@ -205,11 +205,12 @@ function InfiniteCanvasBootLoading() {
 
 /**
  * T8-penguin-canvas 应用根组件 (Phase 1)
- * 布局: [侧边栏(画布管理 + 节点列表)] [画布主体] + 头部状态栏
+ * 布局: [应用轨道 + 可折叠外壳面板] [画布主体（无顶栏，画布顶到窗口上沿）]
  */
 function App() {
   const {
     theme,
+    appearancePreference,
     style,
     templateId,
     customTemplates,
@@ -231,14 +232,22 @@ function App() {
   const [resourceOpen, setResourceOpen] = useState(false);
   const [codexSidebarOpen, setCodexSidebarOpen] = useState(false);
   const [themeManagerOpen, setThemeManagerOpen] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(readSidebarCollapsedPreference);
+  const storedShellPanelPref = useMemo(readShellPanelPreference, []);
+  const [activePanel, setActivePanel] = useState<ShellPanelKind | null>(() =>
+    storedShellPanelPref === 'collapsed' ? null : (storedShellPanelPref ?? 'nodes'),
+  );
   // 画布接收节点添加的 ref(从 Sidebar -> Canvas)
   const addNodeRef = useRef<AddNodeFn | null>(null);
   const insertWorkflowRef = useRef<InsertWorkflowFn | null>(null);
 
-  const toggleSidebarCollapsed = useCallback(() => {
-    setSidebarCollapsed((collapsed) => !collapsed);
+  // 记录最近一次打开的面板，供 H 快捷键恢复
+  const lastOpenPanelRef = useRef<ShellPanelKind>(
+    storedShellPanelPref === 'nodes' || storedShellPanelPref === 'canvases' ? storedShellPanelPref : 'nodes',
+  );
+  const toggleShellPanel = useCallback(() => {
+    setActivePanel((panel) => (panel === null ? lastOpenPanelRef.current : null));
   }, []);
+  const activeCanvasId = useCanvasStore((s) => s.activeId);
 
   useEffect(() => {
     if (!resourceOpen) return;
@@ -247,14 +256,14 @@ function App() {
       const target = e.target;
       if (!(target instanceof HTMLElement)) return;
       if (
-        target.closest('.t8-topbar') ||
+        target.closest('.t8-app-rail') ||
+        target.closest('.t8-shell-panel') ||
         target.closest('.resource-library-drawer') ||
         target.closest('.codex-agent-sidebar') ||
         target.closest('[data-canvas-floating-ui]') ||
         target.closest('.react-flow__node') ||
         target.closest('.react-flow__edge') ||
         target.closest('.react-flow__controls') ||
-        target.closest('.react-flow__minimap') ||
         target.closest('.t8-control-rail')
       ) {
         return;
@@ -279,6 +288,9 @@ function App() {
     root.setAttribute('spellcheck', 'false');
     document.body.setAttribute('spellcheck', 'false');
   }, [currentTemplate, customUiFont, theme, uiFontPreset]);
+
+  // 跟随系统外观：订阅 OS 深浅色变化（仅 appearancePreference==='system' 时生效）
+  useEffect(() => startSystemThemeSync(), []);
 
   // 全局 MutationObserver: 为动态挂载的 textarea / input 自动设置 spellcheck=false
   // (Chromium 对 textarea 默认 spellcheck=true,不会从祖先继承 → 需逐个设置)
@@ -366,83 +378,43 @@ function App() {
   }, [shortcuts]);
 
   useEffect(() => {
-    window.localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, sidebarCollapsed ? '1' : '0');
-  }, [sidebarCollapsed]);
+    if (activePanel !== null) lastOpenPanelRef.current = activePanel;
+    window.localStorage.setItem(SHELL_PANEL_STORAGE_KEY, activePanel ?? 'collapsed');
+  }, [activePanel]);
 
-  // 侧边栏快捷键：H 隐藏 / 恢复左侧栏。输入框内不拦截，避免影响 Prompt 和搜索。
+  // 首次运行（无任何面板偏好）且尚无激活画布 → 引导到画布切换器
+  useEffect(() => {
+    if (storedShellPanelPref === null && !activeCanvasId) {
+      setActivePanel((panel) => (panel === null ? panel : 'canvases'));
+    }
+  }, [storedShellPanelPref, activeCanvasId]);
+
+  // 外壳面板快捷键：H 收起 / 恢复左侧面板。输入框内不拦截，避免影响 Prompt 和搜索。
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!matchesAnyShortcut(shortcuts['global.sidebar-toggle'], e)) return;
       if (e.repeat) return;
       if (isShortcutTypingTarget(e.target)) return;
       e.preventDefault();
-      toggleSidebarCollapsed();
+      toggleShellPanel();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [shortcuts, toggleSidebarCollapsed]);
+  }, [shortcuts, toggleShellPanel]);
 
   const isDark = theme === 'dark';
+  const themeToggleTitle =
+    appearancePreference === 'system'
+      ? `跟随系统（当前${isDark ? '深色' : '浅色'}），点击切换为${isDark ? '浅色' : '深色'}`
+      : `切换到${isDark ? '浅色' : '深色'}主题`;
+  // 轨道底部状态点：中文状态文案在 App 侧计算，AppRail 只渲染 8px 圆点
+  const backendStatusTitle =
+    backendStatus === 'ok' ? '后端已连接' : backendStatus === 'error' ? '后端未连接' : '后端检测中';
+  const codexStatusTitle = `${
+    codexStatus === 'ok' ? 'Codex已连接' : codexStatus === 'error' ? 'Codex未连接' : 'Codex检测中'
+  }：${codexStatusDetail}`;
   const isPixel = style === 'pixel';
-  const isOp = currentTemplate.visuals?.style === 'op';
   const isRh = currentTemplate.visuals?.style === 'rh';
-  const isNaruto = currentTemplate.visuals?.style === 'naruto';
-  const isEva = currentTemplate.visuals?.style === 'eva';
-  const isYyh = currentTemplate.visuals?.style === 'yyh';
-  const isSlamdunk = currentTemplate.visuals?.style === 'slamdunk';
-  const isSoccer = currentTemplate.visuals?.style === 'soccer-hero';
-  const isDragonBall = currentTemplate.visuals?.style === 'dragon-ball';
-  const isSaintSeiya = currentTemplate.visuals?.style === 'saint-seiya';
-  const shenronUnlockedAt = useDragonBallRadarStore((state) => state.shenronUnlockedAt);
-  const shenronModeActive = useDragonBallRadarStore((state) => state.shenronModeActive);
-  const setShenronModeActive = useDragonBallRadarStore((state) => state.setShenronModeActive);
-  const hadesUnlockedAt = useSaintSeiyaSanctuaryStore((state) => state.hadesUnlockedAt);
-  const hadesModeActive = useSaintSeiyaSanctuaryStore((state) => state.hadesModeActive);
-  const setHadesModeActive = useSaintSeiyaSanctuaryStore((state) => state.setHadesModeActive);
-
-  useEffect(() => {
-    if (!import.meta.env.DEV || typeof window === 'undefined') return;
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('t8DragonBalls') !== '6') return;
-    seedDragonBallRadarForShenronTest(7);
-    params.delete('t8DragonBalls');
-    const query = params.toString();
-    window.history.replaceState(null, document.title, `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`);
-  }, []);
-
-  useEffect(() => {
-    if (!import.meta.env.DEV || typeof window === 'undefined') return;
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('t8SaintSeiya') !== 'hades') return;
-    seedSaintSeiyaGoldClothsForHadesTest();
-    params.delete('t8SaintSeiya');
-    const query = params.toString();
-    window.history.replaceState(null, document.title, `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`);
-  }, []);
-
-  const handleDragonBallModeSwitch = (active: boolean) => {
-    setShenronModeActive(active);
-    if (active && !shenronModeActive) {
-      trackAchievementEvent({
-        type: 'hidden_mode.enabled',
-        theme: 'dragon-ball',
-        kind: 'dragon-ball-shenron',
-        mode: 'enabled',
-      });
-    }
-  };
-
-  const handleSaintSeiyaModeSwitch = (active: boolean) => {
-    setHadesModeActive(active);
-    if (active && !hadesModeActive) {
-      trackAchievementEvent({
-        type: 'hidden_mode.enabled',
-        theme: 'saint-seiya',
-        kind: 'saint-seiya-hades',
-        mode: 'enabled',
-      });
-    }
-  };
 
   const handleAddNode = (type: NodeType) => {
     addNodeRef.current?.(type);
@@ -495,382 +467,37 @@ function App() {
     addNodeRef.current?.('upload', { data });
   };
 
+  if (handleGeometryAuditEnabled) {
+    return <Suspense fallback={null}><HandleGeometryAuditFixture /></Suspense>;
+  }
+
   return (
-    <RHToolsProvider>
-    <AchievementTracker />
     <div
       className={`t8-app-shell h-screen flex flex-col overflow-hidden ${
         isPixel ? '' : isDark ? 'bg-zinc-950 text-white' : 'bg-zinc-50 text-zinc-900'
-      } ${isOp ? 't8-app-shell--op' : ''} ${isRh ? 't8-app-shell--rh' : ''} ${isNaruto ? 't8-app-shell--naruto' : ''} ${isEva ? 't8-app-shell--eva' : ''} ${isYyh ? 't8-app-shell--yyh' : ''} ${isSlamdunk ? 't8-app-shell--slamdunk' : ''} ${isSoccer ? 't8-app-shell--soccer' : ''} ${isDragonBall ? 't8-app-shell--dragon-ball' : ''} ${isSaintSeiya ? 't8-app-shell--saint-seiya' : ''}`}
+      } ${isRh ? 't8-app-shell--rh' : ''}`}
       style={{ background: 'var(--t8-bg-app)', color: 'var(--t8-text-main)' }}
     >
-      {/* 头部状态栏 */}
-      <header
-        className={`t8-topbar flex items-center justify-between px-4 py-2 border-b ${
-          isPixel
-            ? 'px-panel'
-            : isDark
-              ? 'bg-zinc-900 border-white/10'
-              : 'bg-white border-black/10'
-        }`}
-      >
-        <div className="flex items-center gap-3">
-          {isOp ? (
-            <div className="t8-op-brand flex items-center gap-2">
-              <span className="t8-op-brand__mark">
-                <Skull size={16} />
-              </span>
-              <div className="min-w-0">
-                <h1 className="t8-op-brand__title text-[14px] font-black leading-none">
-                  ONE PIECE · 无限画布
-                </h1>
-                <div className="t8-op-brand__sub text-[9px] font-bold tracking-wide leading-none mt-0.5">
-                  GRAND LINE CANVAS
-                </div>
-              </div>
-              <Sailboat className="t8-op-brand__ship" size={15} />
-            </div>
-          ) : isRh ? (
-            <div className="t8-rh-brand flex items-center gap-2">
-              <span className="t8-rh-brand__mark">
-                <Cloud size={16} />
-              </span>
-              <div className="min-w-0">
-                <h1 className="t8-rh-brand__title text-[14px] font-black leading-none">
-                  RH · 无限画布
-                </h1>
-                <div className="t8-rh-brand__sub text-[9px] font-bold tracking-wide leading-none mt-0.5">
-                  RUNNINGHUB WORKSPACE
-                </div>
-              </div>
-            </div>
-          ) : isNaruto ? (
-            <div className="t8-naruto-brand flex items-center gap-2">
-              <span className="t8-naruto-brand__mark" aria-hidden="true">
-                <span className="t8-naruto-brand__leaf" />
-              </span>
-              <div className="min-w-0">
-                <h1 className="t8-naruto-brand__title text-[14px] font-black leading-none">
-                  火影 · 无限画布
-                </h1>
-                <div className="t8-naruto-brand__sub text-[9px] font-bold tracking-wide leading-none mt-0.5">
-                  SHINOBI CHAKRA CANVAS
-                </div>
-              </div>
-            </div>
-          ) : isEva ? (
-            <div className="t8-eva-brand flex items-center gap-2">
-              <span className="t8-eva-brand__mark" aria-hidden="true">
-                <span className="t8-eva-brand__core" />
-              </span>
-              <div className="min-w-0">
-                <h1 className="t8-eva-brand__title text-[14px] font-black leading-none">
-                  EVA · 无限画布
-                </h1>
-                <div className="t8-eva-brand__sub text-[9px] font-bold tracking-wide leading-none mt-0.5">
-                  NERV HQ - TOKYO-3 / MAGI SYSTEM ONLINE
-                </div>
-              </div>
-              <span className="t8-eva-brand__sync" aria-hidden="true">SYSTEM STATUS: ONLINE</span>
-            </div>
-          ) : isYyh ? (
-            <div className="t8-yyh-brand flex items-center gap-2">
-              <span className="t8-yyh-brand__mark" aria-hidden="true">
-                <Sparkles size={16} />
-              </span>
-              <div className="min-w-0">
-                <h1 className="t8-yyh-brand__title text-[14px] font-black leading-none">
-                  幽游白书 · 无限画布
-                </h1>
-                <div className="t8-yyh-brand__sub text-[9px] font-bold tracking-wide leading-none mt-0.5">
-                  SPIRIT DETECTIVE CANVAS / REI MAP ONLINE
-                </div>
-              </div>
-              <span className="t8-yyh-brand__status" aria-hidden="true">REI GUN READY</span>
-            </div>
-          ) : isSlamdunk ? (
-            <div className="t8-slamdunk-brand flex items-center gap-2">
-              <span className="t8-slamdunk-brand__mark" aria-hidden="true">
-                <span className="t8-slamdunk-brand__ball" />
-              </span>
-              <div className="min-w-0">
-                <h1 className="t8-slamdunk-brand__title text-[14px] font-black leading-none">
-                  灌篮高手 · 无限画布
-                </h1>
-                <div className="t8-slamdunk-brand__sub text-[9px] font-bold tracking-wide leading-none mt-0.5">
-                  FULL COURT CANVAS / BUZZER BEATER READY
-                </div>
-              </div>
-              <span className="t8-slamdunk-brand__score" aria-hidden="true">10 : 08 AI</span>
-            </div>
-          ) : isSoccer ? (
-            <div className="t8-soccer-brand flex items-center gap-2">
-              <span className="t8-soccer-brand__mark" aria-hidden="true">
-                <span className="t8-soccer-brand__jersey" />
-              </span>
-              <div className="min-w-0">
-                <h1 className="t8-soccer-brand__title text-[14px] font-black leading-none">
-                  足球小将 · 无限画布
-                </h1>
-                <div className="t8-soccer-brand__sub text-[9px] font-bold tracking-wide leading-none mt-0.5">
-                  CAPTAIN TSUBASA CANVAS / GOLDEN GOAL READY
-                </div>
-              </div>
-              <span className="t8-soccer-brand__score" aria-hidden="true">Japan 3:2 Brazil</span>
-            </div>
-          ) : isDragonBall ? (
-            <div className="t8-dragonball-brand flex items-center gap-2">
-              <span className="t8-dragonball-brand__mark" aria-hidden="true">
-                <span className="t8-dragonball-brand__orb" />
-              </span>
-              <div className="min-w-0">
-                <h1 className="t8-dragonball-brand__title text-[14px] font-black leading-none">
-                  {shenronModeActive ? '神龙模式 · 无限画布' : '七龙珠 · 无限画布'}
-                </h1>
-                <div className="t8-dragonball-brand__sub text-[9px] font-bold tracking-wide leading-none mt-0.5">
-                  {shenronModeActive ? 'SHENRON MODE ONLINE / DRAGON RADAR LOCKED' : 'CAPSULE CORP CANVAS / DRAGON RADAR ONLINE'}
-                </div>
-              </div>
-              <span className="t8-dragonball-brand__stars" aria-hidden="true">
-                <span />
-                <span />
-                <span />
-                <span />
-                <span />
-                <span />
-                <span />
-              </span>
-            </div>
-          ) : isSaintSeiya ? (
-            <div className="t8-saint-brand flex items-center gap-2">
-              <span className="t8-saint-brand__mark" aria-hidden="true">
-                {hadesModeActive ? <Crown size={16} /> : <Shield size={16} />}
-              </span>
-              <div className="min-w-0">
-                <h1 className="t8-saint-brand__title text-[14px] font-black leading-none">
-                  {hadesModeActive ? '冥界篇 · 无限画布' : '圣斗士 · 十二宫'}
-                </h1>
-                <div className="t8-saint-brand__sub text-[9px] font-bold tracking-wide leading-none mt-0.5">
-                  {hadesModeActive ? 'HADES CHAPTER / ATHENA RESCUED' : 'SANCTUARY CANVAS / COSMO READY'}
-                </div>
-              </div>
-              <span className="t8-saint-brand__zodiac" aria-hidden="true">
-                <span />
-                <span />
-                <span />
-              </span>
-            </div>
-          ) : isPixel ? (
-            <>
-              <h1 className="px-title text-[14px] font-bold tracking-wide leading-none">
-                无限画布
-              </h1>
-            </>
-          ) : (
-            <h1 className="text-sm font-semibold">无限画布</h1>
-          )}
-          <span
-            className={
-              isPixel
-                ? 'px-chip px-chip--mint text-[10px]'
-                : `t8-topbar-status-chip text-[10px] px-1.5 py-0.5 rounded ${
-                    isDark ? 'bg-white/10 text-white/60' : 'bg-black/5 text-zinc-500'
-                  }`
-            }
-          >
-            v{__APP_VERSION__}
-          </span>
-          {isPixel ? (
-            <>
-              <span className={`px-chip ${backendStatus === 'ok' ? 'px-chip--mint' : backendStatus === 'error' ? 'px-chip--pink' : 'px-chip--yellow'}`}>
-                {backendStatus === 'ok' ? <Wifi size={11} /> : <WifiOff size={11} />}
-                {backendStatus === 'ok' && '后端已连接'}
-                {backendStatus === 'error' && '后端未连接'}
-                {backendStatus === 'checking' && '后端检测中'}
-              </span>
-              <span
-                className={`px-chip ${codexStatus === 'ok' ? 'px-chip--mint' : codexStatus === 'error' ? 'px-chip--pink' : 'px-chip--yellow'}`}
-                title={codexStatusDetail}
-              >
-                {codexStatus === 'ok' ? <Terminal size={11} /> : <WifiOff size={11} />}
-                {codexStatus === 'ok' && 'Codex已连接'}
-                {codexStatus === 'error' && 'Codex未连接'}
-                {codexStatus === 'checking' && 'Codex检测中'}
-              </span>
-            </>
-          ) : (
-            <>
-              {[
-                { status: backendStatus, ok: '后端已连接', error: '后端未连接', checking: '后端检测中', icon: 'wifi', detail: '' },
-                { status: codexStatus, ok: 'Codex已连接', error: 'Codex未连接', checking: 'Codex检测中', icon: 'terminal', detail: codexStatusDetail },
-              ].map((item) => (
-                <div
-                  key={item.ok}
-                  title={item.detail}
-                  className={`t8-topbar-status-chip flex items-center gap-1.5 text-[11px] ${
-                    item.status === 'ok'
-                      ? 'text-emerald-400'
-                      : item.status === 'error'
-                        ? 'text-red-400'
-                        : 'text-yellow-400'
-                  }`}
-                >
-                  {item.status === 'ok'
-                    ? item.icon === 'terminal' ? <Terminal size={12} /> : <Wifi size={12} />
-                    : <WifiOff size={12} />}
-                  {item.status === 'ok' && item.ok}
-                  {item.status === 'error' && item.error}
-                  {item.status === 'checking' && item.checking}
-                </div>
-              ))}
-            </>
-          )}
-        </div>
-        <div className="flex items-center gap-1">
-          {/* 主题模板 */}
-          <button
-            onClick={() => setThemeManagerOpen(true)}
-            className={
-              isPixel
-                ? 'px-btn px-btn--sm px-btn--pink max-w-[150px]'
-                : `flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors border ${
-                    isDark
-                      ? 'bg-sky-500/10 border-sky-500/30 text-sky-300 hover:bg-sky-500/20'
-                      : 'bg-sky-50 border-sky-300 text-sky-700 hover:bg-sky-100'
-                  }`
-            }
-            title="主题模板"
-          >
-            <Palette size={14} />
-            <span className="text-[11px] truncate">{currentTemplate.name}</span>
-          </button>
-          {isDragonBall && shenronUnlockedAt && (
-            <div className="t8-dragonball-mode-switch" role="group" aria-label="七龙珠主题模式">
-              <button
-                type="button"
-                className={`t8-dragonball-mode-switch__option ${!shenronModeActive ? 'is-active' : ''}`}
-                aria-pressed={!shenronModeActive}
-                onClick={() => handleDragonBallModeSwitch(false)}
-                title="切回七龙珠普通模式"
-              >
-                七龙珠
-              </button>
-              <button
-                type="button"
-                className={`t8-dragonball-mode-switch__option ${shenronModeActive ? 'is-active' : ''}`}
-                aria-pressed={shenronModeActive}
-                onClick={() => handleDragonBallModeSwitch(true)}
-                title="切换到神龙隐藏模式"
-              >
-                <Sparkles size={12} />
-                神龙
-              </button>
-            </div>
-          )}
-          {isSaintSeiya && hadesUnlockedAt && (
-            <div className="t8-saint-mode-switch" role="group" aria-label="圣斗士主题模式">
-              <button
-                type="button"
-                className={`t8-saint-mode-switch__option ${!hadesModeActive ? 'is-active' : ''}`}
-                aria-pressed={!hadesModeActive}
-                onClick={() => handleSaintSeiyaModeSwitch(false)}
-                title="切回十二宫模式"
-              >
-                十二宫
-              </button>
-              <button
-                type="button"
-                className={`t8-saint-mode-switch__option ${hadesModeActive ? 'is-active' : ''}`}
-                aria-pressed={hadesModeActive}
-                onClick={() => handleSaintSeiyaModeSwitch(true)}
-                title="切换到冥界篇"
-              >
-                <Sparkles size={12} />
-                冥界篇
-              </button>
-            </div>
-          )}
-          <LocalTopbarSlot isPixel={isPixel} isDark={isDark} />
-          <AchievementButton isPixel={isPixel} isDark={isDark} />
-          <button
-            onClick={() => setCodexSidebarOpen((open) => !open)}
-            className={
-              isPixel
-                ? 'px-btn px-btn--sm px-btn--mint'
-                : `flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors border ${
-                    codexSidebarOpen
-                      ? isDark
-                        ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
-                        : 'bg-emerald-50 border-emerald-300 text-emerald-700'
-                      : isDark
-                        ? 'bg-white/5 border-white/10 text-white/70 hover:bg-white/10'
-                        : 'bg-white border-black/10 text-zinc-700 hover:bg-black/5'
-                  }`
-            }
-            title="Codex 侧边栏"
-            aria-pressed={codexSidebarOpen}
-          >
-            <Terminal size={14} />
-            <span className="text-[11px]">Codex</span>
-          </button>
-          <button
-            onClick={() => setResourceOpen(true)}
-            className={
-              isPixel
-                ? 'px-btn px-btn--sm px-btn--mint'
-                : `flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors border ${
-                    isDark
-                      ? 'bg-fuchsia-500/10 border-fuchsia-500/30 text-fuchsia-300 hover:bg-fuchsia-500/20'
-                      : 'bg-fuchsia-50 border-fuchsia-300 text-fuchsia-700 hover:bg-fuchsia-100'
-                  }`
-            }
-            title="资源库"
-          >
-            <Library size={14} />
-            <span className="text-[11px]">资源库</span>
-          </button>
-          <AppUpdaterButton isPixel={isPixel} isDark={isDark} />
-          <button
-            onClick={() => setSettingsOpen(true)}
-            className={
-              isPixel
-                ? 'px-btn px-btn--icon px-btn--ghost'
-                : `p-2 rounded-md ${isDark ? 'hover:bg-white/10' : 'hover:bg-black/5'}`
-            }
-            title="API 设置"
-          >
-            <Settings size={isPixel ? 14 : 16} />
-          </button>
-          <button
-            onClick={toggleTheme}
-            className={
-              isPixel
-                ? 'px-btn px-btn--icon px-btn--ghost'
-                : `p-2 rounded-md ${isDark ? 'hover:bg-white/10' : 'hover:bg-black/5'}`
-            }
-            title={`切换到${isDark ? '浅色' : '深色'}主题`}
-          >
-            {isDark ? <Sun size={isPixel ? 14 : 16} /> : <Moon size={isPixel ? 14 : 16} />}
-          </button>
-        </div>
-      </header>
-
-      {/* 主体两栏布局 */}
-      <div
-        className={`t8-main-layout flex-1 flex overflow-hidden relative${sidebarCollapsed ? ' t8-main-layout--sidebar-collapsed' : ''}`}
-        data-sidebar-collapsed={sidebarCollapsed ? 'true' : 'false'}
-      >
-        {!sidebarCollapsed && <Sidebar onAddNode={handleAddNode} />}
-        <button
-          type="button"
-          className={`t8-sidebar-toggle t8-mini-icon-button${sidebarCollapsed ? ' is-collapsed' : ''}`}
-          aria-label={sidebarCollapsed ? '显示侧边栏' : '隐藏侧边栏'}
-          title={sidebarCollapsed ? '显示侧边栏 (H)' : '隐藏侧边栏 (H)'}
-          aria-pressed={sidebarCollapsed}
-          onClick={toggleSidebarCollapsed}
-        >
-          {sidebarCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
-        </button>
+      {/* 主体：应用轨道 + 可折叠外壳面板 + 画布 */}
+      <div className="t8-main-layout flex-1 flex overflow-hidden relative">
+        <AppRail
+          activePanel={activePanel}
+          onSelectPanel={(panel) => setActivePanel((cur) => (cur === panel ? null : panel))}
+          onOpenResource={() => setResourceOpen(true)}
+          onToggleAgent={() => setCodexSidebarOpen((open) => !open)}
+          agentOpen={codexSidebarOpen}
+          onOpenSettings={() => setSettingsOpen(true)}
+          onToggleTheme={toggleTheme}
+          theme={theme}
+          themeTitle={themeToggleTitle}
+          isPixel={isPixel}
+          onOpenThemeTemplates={() => setThemeManagerOpen(true)}
+          backendStatus={backendStatus}
+          backendStatusTitle={backendStatusTitle}
+          codexStatus={codexStatus}
+          codexStatusTitle={codexStatusTitle}
+        />
+        <ShellPanel panel={activePanel} onCollapse={() => setActivePanel(null)} onAddNode={handleAddNode} />
         <ErrorBoundary fallbackTitle="画布渲染出错了，已被错误边界捕获">
           <Suspense fallback={<InfiniteCanvasBootLoading />}>
             <Canvas onAddNodeRef={addNodeRef} onInsertWorkflowRef={insertWorkflowRef} />
@@ -896,11 +523,7 @@ function App() {
         )}
       </Suspense>
       <MaterialContextMenu />
-      <AchievementDrawer />
-      <AchievementCeremonyLayer />
-      <AchievementToast />
     </div>
-    </RHToolsProvider>
   );
 }
 

@@ -2234,7 +2234,7 @@ const ToolboxParamNode = (p: NodeProps) => {
   if (kind === 'multi-angle-visual') {
     return (
       <div
-        className={`t8-node relative transition-all ${p.selected ? 'ring-2 ring-cyan-300' : ''}`}
+        className={`t8-node relative transition-all ${p.selected ? 'is-selected' : ''}`}
         style={{ width: 760, maxWidth: 760 }}
       >
         <Handle type="target" position={Position.Left} style={{ background: 'var(--t8-secondary)', border: 0 }} />
@@ -2492,7 +2492,7 @@ const ToolboxParamNode = (p: NodeProps) => {
 
     return (
       <div
-        className={`t8-node relative transition-all ${p.selected ? 'ring-2 ring-violet-300' : ''}`}
+        className={`t8-node relative transition-all ${p.selected ? 'is-selected' : ''}`}
         style={{ width: 720, maxWidth: 720 }}
       >
         <Handle type="source" position={Position.Right} style={{ background: 'var(--t8-accent)', border: 0 }} />
@@ -2670,7 +2670,7 @@ const ToolboxParamNode = (p: NodeProps) => {
 
   return (
     <div
-      className={`t8-node relative transition-all ${p.selected ? 'ring-2 ring-pink-300' : ''}`}
+      className={`t8-node relative transition-all ${p.selected ? 'is-selected' : ''}`}
       style={{ width: 720, maxWidth: 720 }}
     >
       <Handle type="source" position={Position.Right} style={{ background: 'var(--t8-accent)', border: 0 }} />

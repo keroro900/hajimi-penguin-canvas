@@ -49,8 +49,8 @@ test('backend exposes generic agent canvas action protocol', () => {
   assert.match(planUtil, /function layoutCanvasPlan/);
   assert.match(planUtil, /function createPlanDiff/);
   assert.match(planUtil, /function scoreNodeQuality/);
-  assert.match(planUtil, /IMAGE_MODEL_REGISTRY/);
-  assert.match(planUtil, /VIDEO_MODEL_REGISTRY/);
+  assert.doesNotMatch(planUtil, /IMAGE_MODEL_REGISTRY/);
+  assert.doesNotMatch(planUtil, /VIDEO_MODEL_REGISTRY/);
   assert.match(planUtil, /function canvasPlanToActions/);
   assert.match(planUtil, /function verifyCanvasPlan/);
   assert.match(planUtil, /runNodeIds/);
@@ -174,18 +174,23 @@ test('frontend renders agent activity stream from realtime events', () => {
   assert.match(styles, /\.t8-agent-cursor/);
 });
 
-test('CanvasPlan utilities validate, lock model params, layout, diff, and score quality', () => {
+test('frontend auto-dismisses transient agent activity cards', () => {
+  const canvas = read('../src/components/Canvas.tsx');
+
+  assert.match(canvas, /AGENT_ACTIVITY_DISMISS_MS/);
+  assert.match(canvas, /setAgentActivityItems\(\(items\) => items\.filter/);
+  assert.match(canvas, /item\.status === 'waiting'/);
+  assert.match(canvas, /window\.setTimeout/);
+  assert.match(canvas, /window\.clearTimeout/);
+});
+
+test('CanvasPlan utilities preserve real model ids, layout, diff, and score quality', () => {
   const {
-    IMAGE_MODEL_REGISTRY,
-    VIDEO_MODEL_REGISTRY,
     normalizeCanvasPlan,
     createPlanDiff,
     scoreNodeQuality,
     verifyCanvasPlan,
   } = require('../backend/src/utils/canvasPlan.js');
-
-  assert.ok(IMAGE_MODEL_REGISTRY['gpt-image-2']);
-  assert.ok(VIDEO_MODEL_REGISTRY['seedance-2.0']);
 
   const canvas = {
     nodes: [{ id: 'source-1', type: 'upload', position: { x: 100, y: 80 }, data: { label: '参考图', imageUrl: '/a.png' } }],
@@ -240,16 +245,16 @@ test('CanvasPlan utilities validate, lock model params, layout, diff, and score 
   });
 
   assert.equal(normalized.ok, true);
-  assert.equal(normalized.plan.nodes[0].data.model, 'gpt-image-2');
-  assert.equal(normalized.plan.nodes[0].data.apiModel, 'gpt-image-2-all');
-  assert.equal(normalized.plan.nodes[0].data.aspectRatio, '1:1');
+  assert.equal(normalized.plan.nodes[0].data.model, 'bad-api');
+  assert.equal(normalized.plan.nodes[0].data.apiModel, 'bad-api');
+  assert.equal(normalized.plan.nodes[0].data.aspectRatio, 'bad-ratio');
   assert.ok(normalized.plan.nodes[0].position.x > 100);
-  assert.equal(normalized.plan.nodes[2].data.mainId, 'veo3.1');
-  assert.equal(normalized.plan.nodes[2].data.model, 'veo-omni-flash');
-  assert.equal(normalized.plan.nodes[2].data.apiModel, 'veo-omni-flash');
-  assert.equal(normalized.plan.nodes[2].data.ratio, '16:9');
-  assert.equal(normalized.plan.nodes[2].data.duration, 10);
-  assert.ok(normalized.warnings.length > 0);
+  assert.equal(normalized.plan.nodes[2].data.mainId, '');
+  assert.equal(normalized.plan.nodes[2].data.model, 'bad-video-api');
+  assert.equal(normalized.plan.nodes[2].data.apiModel, 'bad-video-api');
+  assert.equal(normalized.plan.nodes[2].data.ratio, '1:1');
+  assert.equal(normalized.plan.nodes[2].data.duration, 99);
+  assert.equal(normalized.warnings.length, 0);
 
   const diff = createPlanDiff(canvas, normalized.plan);
   assert.equal(diff.addNodes.length, 3);
@@ -267,6 +272,137 @@ test('CanvasPlan utilities validate, lock model params, layout, diff, and score 
   assert.equal(verification.ok, true);
   assert.ok(verification.quality.find((item: any) => item.nodeId === 'variant-a'));
   assert.ok(verification.checks.find((item: any) => item.id === 'skill:review-score'));
+});
+
+test('CanvasPlan preserves exact generation parameters on updates', () => {
+  const { normalizeCanvasPlan } = require('../backend/src/utils/canvasPlan.js');
+  const normalized = normalizeCanvasPlan({
+    updates: [{
+      nodeId: 'image-existing',
+      data: { model: 'missing', apiModel: 'missing', aspectRatio: 'missing', prompt: '更新提示词' },
+    }],
+  }, {
+    beforeSnapshot: {
+      nodes: [{ id: 'image-existing', type: 'image' }],
+    },
+  });
+
+  assert.equal(normalized.ok, true);
+  assert.equal(normalized.plan.updates[0].data.model, 'missing');
+  assert.equal(normalized.plan.updates[0].data.apiModel, 'missing');
+  assert.equal(normalized.plan.updates[0].data.aspectRatio, 'missing');
+});
+
+test('CanvasPlan verification distinguishes pending, completed, and broken generation output', () => {
+  const { verifyCanvasPlan } = require('../backend/src/utils/canvasPlan.js');
+  const plan = { runNodeIds: ['image-a'] };
+  const pending = verifyCanvasPlan({
+    nodes: [{ id: 'image-a', type: 'image', data: { prompt: 'a', model: 'gpt-image-2', status: 'running' } }],
+    edges: [],
+  }, plan, null);
+  assert.equal(pending.checks.find((item: any) => item.id === 'result:image-a')?.pending, true);
+  assert.equal(pending.ok, true);
+
+  const completed = verifyCanvasPlan({
+    nodes: [{ id: 'image-a', type: 'image', data: { prompt: 'a', model: 'gpt-image-2', status: 'success', imageUrl: '/result.png' } }],
+    edges: [],
+  }, plan, null);
+  assert.equal(completed.checks.find((item: any) => item.id === 'result:image-a')?.ok, true);
+
+  const broken = verifyCanvasPlan({
+    nodes: [{ id: 'image-a', type: 'image', data: { prompt: 'a', model: 'gpt-image-2', status: 'success' } }],
+    edges: [],
+  }, plan, null);
+  assert.equal(broken.checks.find((item: any) => item.id === 'result:image-a')?.ok, false);
+  assert.equal(broken.ok, false);
+});
+
+test('agent canvas apply persists an undoable operation batch', () => {
+  const route = read('../backend/src/routes/agentCanvas.js');
+
+  assert.match(route, /function persistOperationBatch/);
+  assert.match(route, /operationBatchId/);
+  assert.match(route, /router\.post\('\/operations\/:operationBatchId\/undo'/);
+  assert.match(route, /agent:operation_undone/);
+  assert.match(route, /beforeCanvas/);
+});
+
+test('node results trigger asynchronous plan verification and at most one targeted repair', () => {
+  const {
+    shouldAutoRepairNodeResult,
+  } = require('../backend/src/utils/canvasPlan.js');
+  const route = read('../backend/src/routes/agentCanvas.js');
+  const canvas = read('../src/components/Canvas.tsx');
+
+  assert.equal(shouldAutoRepairNodeResult({
+    ok: true,
+    node: { type: 'image', data: { status: 'success' } },
+  }, { alreadyRetried: false }).repair, true);
+  assert.equal(shouldAutoRepairNodeResult({
+    ok: false,
+    error: 'unsupported aspect ratio',
+    node: { type: 'video', data: { status: 'error' } },
+  }, { alreadyRetried: false }).repair, true);
+  assert.equal(shouldAutoRepairNodeResult({
+    ok: false,
+    error: 'user cancelled generation',
+    node: { type: 'image', data: { status: 'error' } },
+  }, { alreadyRetried: false }).repair, false);
+  assert.equal(shouldAutoRepairNodeResult({
+    ok: true,
+    node: { type: 'image', data: { status: 'success' } },
+  }, { alreadyRetried: true }).repair, false);
+
+  assert.match(route, /findOperationBatchByRunId/);
+  assert.match(route, /agent:verification/);
+  assert.match(route, /agent:repair_started/);
+  assert.match(route, /retryNodeIds/);
+  assert.match(route, /plan:\s*normalized\.plan/);
+  assert.match(route, /agent-node-result-sync/);
+  assert.match(canvas, /agent:repair_started/);
+  assert.match(canvas, /agent:verification/);
+});
+
+test('frontend exposes one-click undo for a completed Codex operation batch', () => {
+  const api = read('../src/services/api.ts');
+  const canvas = read('../src/components/Canvas.tsx');
+  const styles = read('../src/styles/index.css');
+
+  assert.match(api, /undoAgentCanvasOperationBatch/);
+  assert.match(api, /operations\/\$\{encodeURIComponent\(operationBatchId\)\}\/undo/);
+  assert.match(canvas, /operationBatchId/);
+  assert.match(canvas, /handleAgentOperationUndo/);
+  assert.match(canvas, /撤销本轮/);
+  assert.match(styles, /\.t8-agent-activity__undo/);
+});
+
+test('frontend coalesces agent events into a stable item timeline', () => {
+  const canvas = read('../src/components/Canvas.tsx');
+
+  assert.match(canvas, /timelineKey/);
+  assert.match(canvas, /agentActivityTimelineKey/);
+  assert.match(canvas, /item\.timelineKey === nextItem\.timelineKey/);
+  assert.match(canvas, /agent:operation_undone/);
+  assert.match(canvas, /agent:verification_error/);
+});
+
+test('CanvasPlan layout reserves measured space and supports explicit layout intent', () => {
+  const { layoutCanvasPlan } = require('../backend/src/utils/canvasPlan.js');
+  const plan = layoutCanvasPlan({
+    layoutIntent: { direction: 'left-to-right', columnGap: 420, rowGap: 280 },
+    nodes: [
+      { id: 'source-a', type: 'upload', data: { variantLane: 'source' } },
+      { id: 'variant-a', type: 'image', data: { variantLane: 'variant' } },
+      { id: 'variant-b', type: 'image', data: { variantLane: 'variant' } },
+    ],
+  }, {
+    bounds: { minX: 0, minY: 0, maxX: 900, maxY: 500 },
+  }, { autoLayout: true });
+
+  assert.ok(plan.nodes[0].position.x >= 1320);
+  assert.ok(plan.nodes[1].position.x - plan.nodes[0].position.x >= 420);
+  assert.ok(plan.nodes[2].position.y - plan.nodes[1].position.y >= 280);
+  assert.equal(plan.layoutResolved.direction, 'left-to-right');
 });
 
 test('project ships reusable Hakimi skills for non-Codex agents', () => {

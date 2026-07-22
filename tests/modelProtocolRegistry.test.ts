@@ -124,6 +124,5 @@ test('packaged app includes the shared model protocol registry', () => {
   const shared = pkg.build.extraResources.find((item: any) => item.to === 'shared');
 
   assert.ok(shared);
-  assert.ok(shared.filter.includes('achievementManifest.json'));
   assert.ok(shared.filter.includes('modelProtocolRegistry.json'));
 });

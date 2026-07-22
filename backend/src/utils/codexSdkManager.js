@@ -248,27 +248,49 @@ function compactRuntimeValue(value, max = 12000) {
   return String(text || '').trim().slice(0, max);
 }
 
-function buildCanvasRuntimeInstructions(body = {}) {
+function buildCanvasRuntimeSections(body = {}) {
   const explicit = compactRuntimeValue(body.canvasRuntimeContext || '', 16000);
-  if (explicit) return explicit;
+  if (explicit) return [{ key: 'canvasRuntimeContext', label: '画布上下文', text: explicit }];
   const sections = [];
-  const add = (label, value, max) => {
+  const add = (key, label, value, max) => {
     const text = compactRuntimeValue(value, max);
-    if (text) sections.push(`${label}：${text}`);
+    if (text) sections.push({ key, label, text });
   };
-  add('画布摘要', Array.isArray(body.referenceTexts) ? body.referenceTexts.join('\n') : '', 5000);
-  add('CanvasIntent', body.canvasIntent, 4000);
-  add('CanvasPlanPreference', body.canvasPlanPreference, 3000);
-  add('生成偏好', body.generationPreferences, 4000);
-  add('Mentions', body.mentions, 3000);
-  add('RecordReplay', body.recordReplay, 4000);
-  add('ResearchSummary', body.researchSummary, 3000);
-  add('TaskPreview', body.taskPreview, 3000);
-  return sections.join('\n\n');
+  add('canvasSummary', '画布摘要', Array.isArray(body.referenceTexts) ? body.referenceTexts.join('\n') : '', 5000);
+  add('canvasIntent', 'CanvasIntent', body.canvasIntent, 4000);
+  add('canvasPlanPreference', 'CanvasPlanPreference', body.canvasPlanPreference, 3000);
+  add('generationPreferences', '生成偏好', body.generationPreferences, 4000);
+  add('mentions', 'Mentions', body.mentions, 3000);
+  add('recordReplay', 'RecordReplay', body.recordReplay, 4000);
+  add('researchSummary', 'ResearchSummary', body.researchSummary, 3000);
+  add('taskPreview', 'TaskPreview', body.taskPreview, 3000);
+  return sections;
+}
+
+function buildCanvasRuntimeInstructions(body = {}) {
+  return buildCanvasRuntimeSections(body).map((section) => `${section.label}：${section.text}`).join('\n\n');
 }
 
 function contextHashForText(text) {
   return crypto.createHash('sha1').update(String(text || '')).digest('hex');
+}
+
+function buildRuntimeContextItemIndex(body = {}) {
+  return Object.fromEntries(buildCanvasRuntimeSections(body).map((section) => [section.key, {
+    label: section.label,
+    hash: contextHashForText(section.text),
+    text: section.text,
+  }]));
+}
+
+function buildRuntimeContextDelta(currentItems = {}, previousItems = {}) {
+  const changed = Object.entries(currentItems)
+    .filter(([key, item]) => item?.hash !== previousItems?.[key]?.hash)
+    .map(([, item]) => `${item.label}：${item.text}`);
+  const removed = Object.entries(previousItems)
+    .filter(([key]) => !currentItems[key])
+    .map(([, item]) => `${item?.label || '上下文'}：已移除`);
+  return [...changed, ...removed].join('\n\n');
 }
 
 function selectedSkillNamesForBody(body = {}) {
@@ -344,9 +366,9 @@ function buildThreadInstructions(body = {}) {
     '控制画布必须优先使用已配置的 Hakimi MCP 和画布事件；不要使用 Codex 自身 image_generation 直接生图。',
     hakimiCli,
     'Hakimi MCP 画布工具默认拥有当前会话内最大画布权限：普通读取、预演、应用、验证和运行节点都不要请求工具审批；只有关键创作决策、不可逆动作或成本风险才显式 ask_user。',
-    '复杂画布流程优先走 hakimi_canvas_snapshot -> hakimi_canvas_diff_plan -> hakimi_canvas_apply_plan -> hakimi_canvas_verify_plan；小修小补可用 hakimi_agent_run_actions。',
+    '复杂画布流程优先走 hakimi_canvas_snapshot -> hakimi_canvas_diff_plan -> hakimi_canvas_apply_plan -> hakimi_canvas_verify_plan。小任务优先使用原子工具：hakimi_canvas_node_capabilities、hakimi_canvas_configure_generation、hakimi_canvas_run_node、hakimi_canvas_read_node_result；需要撤销时使用 hakimi_canvas_undo_batch。',
     '图像生成必须创建或更新画布 type:"image" 节点，并写入 data.prompt、data.model、data.apiModel、referenceImages，然后触发 run_node。',
-    'CanvasPlan 应包含稳定 node id、nodes、updates、edges、runNodeIds、focusViewport；执行前先 diff 预演，执行后必须回读验证节点、连线、模型参数、结果 URL 和视口。',
+    'CanvasPlan 应包含稳定 node id、nodes、updates、edges、runNodeIds、focusViewport；批量流程用 layoutIntent 指定 direction、columnGap、rowGap，让布局服务避开已有节点，不要自行猜密集坐标；执行前先 diff 预演，执行后必须回读验证节点、连线、模型参数、结果 URL 和视口。',
     '只有关键生成决策、不可逆修改、模型成本或用户意图确实不明确时，才给用户 2-3 个短选项；选项必须来自本轮 Skill 的 Sidebar Questions、当前画布和用户上下文的动态判断，不要把普通读取画布、MCP 工具审批或过程确认变成问题。',
     '复用当前 thread 和 record 的上下文；不要反复询问已经在历史、recordReplay、画布摘要或用户回复里出现过的信息。',
     '当用户明确说直接做时，可以按权限预设执行。',
@@ -361,7 +383,15 @@ function buildSdkPrompt(body = {}, record = {}) {
   const workspaceSkills = buildWorkspaceSkillInstructions(body);
   const runtimeHashSource = [runtimeContext, workspaceSkills].filter(Boolean).join('\n\n');
   const runtimeHash = runtimeHashSource ? contextHashForText(runtimeHashSource) : '';
-  const shouldSendFullInstructions = !record.codexThreadId || !record.threadInitialized || (runtimeHash && runtimeHash !== record.nativeContextHash);
+  const contextItems = buildRuntimeContextItemIndex(body);
+  const workspaceSkillsHash = workspaceSkills ? contextHashForText(workspaceSkills) : '';
+  const firstTurn = !record.codexThreadId || !record.threadInitialized;
+  const workspaceSkillsChanged = workspaceSkillsHash !== String(record.nativeWorkspaceSkillsHash || '');
+  const shouldSendFullInstructions = firstTurn || workspaceSkillsChanged;
+  const contextChanged = runtimeHash !== String(record.nativeContextHash || '');
+  const contextDelta = !shouldSendFullInstructions && contextChanged
+    ? buildRuntimeContextDelta(contextItems, record.nativeContextItems || {})
+    : '';
   const selectedSkillNames = Array.isArray(body.selectedSkillNames)
     ? body.selectedSkillNames.map((item) => String(item || '').trim()).filter(Boolean)
     : [];
@@ -373,11 +403,14 @@ function buildSdkPrompt(body = {}, record = {}) {
   ].filter(Boolean).join('\n');
   const parts = [
     shouldSendFullInstructions ? buildThreadInstructions(body) : shortHeader,
+    contextDelta ? `画布上下文增量（只更新以下部分）：\n${contextDelta}` : '',
     `用户消息：\n${userPrompt}`,
   ].filter(Boolean);
   return {
     text: parts.join('\n\n'),
     runtimeHash,
+    contextItems,
+    workspaceSkillsHash,
     sentFullInstructions: shouldSendFullInstructions,
   };
 }
@@ -431,6 +464,10 @@ function canvasToolDisplayName(toolName = '', itemType = '') {
   if (/hakimi_canvas_diff_plan|diff_plan/i.test(key)) return '预演画布计划';
   if (/hakimi_canvas_apply_plan|apply_plan/i.test(key)) return '应用画布动作';
   if (/hakimi_canvas_verify_plan|verify_plan/i.test(key)) return '验证画布结果';
+  if (/hakimi_canvas_node_capabilities|node_capabilities/i.test(key)) return '读取节点能力';
+  if (/hakimi_canvas_configure_generation|configure_generation/i.test(key)) return '配置生成节点';
+  if (/hakimi_canvas_read_node_result|read_node_result/i.test(key)) return '回读节点结果';
+  if (/hakimi_canvas_undo_batch|undo_batch/i.test(key)) return '撤销本轮画布操作';
   if (/hakimi_agent_run_actions|run_actions/i.test(key)) return '执行可视化动作';
   if (/hakimi_canvas_generate_image|generate_image/i.test(key)) return '提交图像生成';
   if (/hakimi_canvas_generate_video|generate_video/i.test(key)) return '提交视频生成';
@@ -821,6 +858,8 @@ async function runGlobalCodexSessionMessage(body = {}, options = {}) {
           status: 'running',
           threadInitialized: true,
           nativeContextHash: sdkInput.prompt.runtimeHash || remembered.nativeContextHash || '',
+          nativeContextItems: sdkInput.prompt.contextItems || remembered.nativeContextItems || {},
+          nativeWorkspaceSkillsHash: sdkInput.prompt.workspaceSkillsHash || '',
           updatedAt: Date.now(),
         });
         updateSession({ codexThreadId });
@@ -859,6 +898,8 @@ async function runGlobalCodexSessionMessage(body = {}, options = {}) {
       status: 'success',
       threadInitialized: true,
       nativeContextHash: sdkInput.prompt.runtimeHash || finalRecord.nativeContextHash || '',
+      nativeContextItems: sdkInput.prompt.contextItems || finalRecord.nativeContextItems || {},
+      nativeWorkspaceSkillsHash: sdkInput.prompt.workspaceSkillsHash || '',
       updatedAt: Date.now(),
     });
     appendRecordMessage(recordId, { role: 'assistant', text: fullText.trim(), turnId });
@@ -1221,6 +1262,7 @@ module.exports = {
   listGlobalCodexSessionRecords,
   listGlobalCodexSessionThreadTurns,
   buildCanvasRuntimeInstructionsForTests: buildCanvasRuntimeInstructions,
+  buildSdkPromptForTests: buildSdkPrompt,
   buildThreadInstructionsForTests: buildThreadInstructions,
   mapSdkEventForTests: mapSdkEvent,
   openGlobalCodexSession,

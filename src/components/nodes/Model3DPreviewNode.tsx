@@ -366,7 +366,7 @@ const Model3DPreviewNode = ({ id, data, selected }: NodeProps) => {
 
   return (
     <div
-      className="relative flex flex-col"
+      className={`t8-node relative flex flex-col ${selected ? 'is-selected' : ''}`}
       style={{
         width: size.w,
         height: size.h,
@@ -374,9 +374,9 @@ const Model3DPreviewNode = ({ id, data, selected }: NodeProps) => {
         minHeight: 300,
         background: bg,
         color: text,
-        border: `2px solid ${selected ? accent : border}`,
+        border: `2px solid ${border}`,
         borderRadius: isPixel ? 8 : 14,
-        boxShadow: isPixel ? (selected ? '5px 5px 0 var(--px-ink)' : '3px 3px 0 var(--px-ink)') : 'var(--t8-node-shadow, 0 12px 30px rgba(0,0,0,0.28))',
+        boxShadow: isPixel ? '3px 3px 0 var(--px-ink)' : 'var(--t8-node-shadow, 0 12px 30px rgba(0,0,0,0.28))',
         overflow: 'visible',
       }}
     >

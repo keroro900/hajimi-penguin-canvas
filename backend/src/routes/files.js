@@ -30,24 +30,10 @@ const storage = multer.diskStorage({
 });
 const upload = multer({
   storage,
-  limits: { fileSize: config.MAX_FILE_SIZE },
 });
-
-function formatUploadLimit(bytes) {
-  const mb = bytes / (1024 * 1024);
-  return `${Number.isInteger(mb) ? mb : mb.toFixed(1)}MB`;
-}
 
 function sendUploadError(res, err) {
   if (err instanceof multer.MulterError) {
-    if (err.code === 'LIMIT_FILE_SIZE') {
-      return res.status(413).json({
-        success: false,
-        code: 'file_too_large',
-        error: `文件超过上传上限 ${formatUploadLimit(config.MAX_FILE_SIZE)}，请压缩后重试`,
-        limit: config.MAX_FILE_SIZE,
-      });
-    }
     return res.status(400).json({
       success: false,
       code: err.code || 'upload_error',

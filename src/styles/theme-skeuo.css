@@ -1,0 +1,856 @@
+/*
+ * Skeuomorphism (拟物化) visual skin
+ * 金属面板拟物：节点像录音棚设备面板（冷色金属拉丝渐变 + 顶部高光 + 外阴影），
+ * 凸起按键按下回弹有重量感，
+ * 选中节点用琥珀 LED 指示灯呼吸发光。SHIFT 切断用黄铜刻刀。
+ */
+
+html[data-theme-visual="skeuo"] {
+  /* === 材质母题 === */
+  /* 金属面板渐变（深色：冷灰拉丝；浅色由 [data-theme-mode="light"] 覆盖） */
+  --skeuo-metal-bg: linear-gradient(180deg, #2a2e36, #1f232b);
+  --skeuo-metal-bg-elev: linear-gradient(180deg, #3a3e46, #2a2e36);
+  --skeuo-metal-bg-hover: linear-gradient(180deg, #32363e, #252931);
+  /* 琥珀指示灯 / LED 绿 / 黄铜配件 */
+  --skeuo-amber: var(--t8-accent);
+  --skeuo-amber-hover: var(--t8-accent-hover);
+  --skeuo-amber-soft: color-mix(in srgb, var(--t8-accent) 16%, transparent);
+  --skeuo-amber-line: color-mix(in srgb, var(--t8-accent) 40%, transparent);
+  --skeuo-amber-glow: 0 0 12px color-mix(in srgb, var(--t8-accent) 60%, transparent);
+  --skeuo-led-green: var(--t8-secondary);
+  --skeuo-brass: #d4a574;
+  --skeuo-card-bg: var(--t8-bg-panel);
+  --skeuo-card-bg-elev: var(--t8-bg-panel-elevated);
+  --skeuo-muted-bg: var(--t8-bg-panel-muted);
+  --skeuo-border: color-mix(in srgb, var(--t8-text-main) 8%, transparent);
+  --skeuo-border-dark: rgba(0,0,0,0.45);
+  --skeuo-ink: var(--t8-text-main);
+  --skeuo-ink-muted: var(--t8-text-muted);
+  --skeuo-ink-dim: var(--t8-text-dim);
+  --skeuo-radius: 6px;
+  --skeuo-radius-pill: 9999px;
+  /* 凸起：外阴影 + 顶部高光 + 底部暗边（三层组合，像真实按键凸起） */
+  --skeuo-raised:
+    0 4px 12px rgba(0,0,0,0.4),
+    inset 0 1px 0 rgba(255,255,255,0.12),
+    inset 0 -1px 0 rgba(0,0,0,0.3);
+  --skeuo-raised-sm:
+    0 2px 6px rgba(0,0,0,0.4),
+    inset 0 1px 0 rgba(255,255,255,0.15),
+    inset 0 -1px 0 rgba(0,0,0,0.25);
+  --skeuo-raised-lg:
+    0 8px 20px rgba(0,0,0,0.5),
+    inset 0 1px 0 rgba(255,255,255,0.14),
+    inset 0 -1px 0 rgba(0,0,0,0.35);
+  /* 压入：内阴影（按下/选中槽） */
+  --skeuo-inset:
+    inset 0 2px 4px rgba(0,0,0,0.5),
+    inset 0 -1px 0 rgba(255,255,255,0.05);
+  --skeuo-inset-sm:
+    inset 0 1px 3px rgba(0,0,0,0.45),
+    inset 0 -1px 0 rgba(255,255,255,0.04);
+  /* 1px 高光边（金属面板边缘倒角） */
+  --skeuo-bevel: inset 0 0 0 1px rgba(255,255,255,0.08);
+  /* 机械回弹动效：带轻微回弹的 cubic-bezier */
+  --skeuo-transition: 140ms cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* SHIFT 划线断连：黄铜刻刀——暖色细线 + 阴影双色偏移。 */
+  --t8-cut-cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23d4a574' stroke-width='1.8' stroke-linecap='round' opacity='0.9'><path d='M4 12h16'/><path d='M4 12h16' stroke='%23f59e0b' stroke-width='0.6' transform='translate(0.5 0.5)'/></svg>") 12 12, crosshair;
+  --t8-cut-color: var(--skeuo-amber);
+  --t8-cut-track: var(--skeuo-brass);
+  --t8-cut-button-bg: var(--skeuo-card-bg);
+  --t8-cut-button-fg: var(--skeuo-amber);
+  --t8-cut-button-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect fill='black' x='3' y='11' width='18' height='2' rx='1'/></svg>");
+}
+
+/* 浅色模式：金属面板走暖奶油色（非纯白，保留拟物温度）。
+   关键修正：header 与 body 分离（header 更深一档），text-shadow 减弱，边框加深。 */
+html[data-theme-visual="skeuo"][data-theme-mode="light"] {
+  /* 金属面板：暖奶油渐变（#fbf8f3 → #ece4d6），非纯白，保留黄铜温度感 */
+  --skeuo-metal-bg: linear-gradient(180deg, #fbf8f3, #ece4d6);
+  /* 凸起金属：更亮的暖白，用于浮层/选中 */
+  --skeuo-metal-bg-elev: linear-gradient(180deg, #ffffff, #f5efe5);
+  /* hover：略亮一档 */
+  --skeuo-metal-bg-hover: linear-gradient(180deg, #fffdf8, #f0e9da);
+  /* 节点 header 渐变：比 body 更深一档（#e8dfcf → #d5c9b0），形成面板与标题槽分离 */
+  --skeuo-metal-header-bg: linear-gradient(180deg, #e8dfcf, #d5c9b0);
+  /* 凸起：外阴影 + 顶部高光（更强）+ 底部暗边 */
+  --skeuo-raised:
+    0 4px 12px rgba(43,31,23,0.18),
+    inset 0 1px 0 rgba(255,255,255,0.85),
+    inset 0 -1px 0 rgba(43,31,23,0.14);
+  --skeuo-raised-sm:
+    0 2px 6px rgba(43,31,23,0.16),
+    inset 0 1px 0 rgba(255,255,255,0.9),
+    inset 0 -1px 0 rgba(43,31,23,0.12);
+  --skeuo-raised-lg:
+    0 8px 20px rgba(43,31,23,0.24),
+    inset 0 1px 0 rgba(255,255,255,0.85),
+    inset 0 -1px 0 rgba(43,31,23,0.16);
+  /* 压入：内阴影 */
+  --skeuo-inset:
+    inset 0 2px 4px rgba(43,31,23,0.22),
+    inset 0 -1px 0 rgba(255,255,255,0.5);
+  --skeuo-inset-sm:
+    inset 0 1px 3px rgba(43,31,23,0.2),
+    inset 0 -1px 0 rgba(255,255,255,0.45);
+  /* 1px 高光边：浅色模式更强 */
+  --skeuo-bevel: inset 0 0 0 1px rgba(255,255,255,0.6);
+  /* 边框：浅色模式加深，保证可见性 */
+  --skeuo-border-dark: rgba(43,31,23,0.28);
+  /* 浅色模式 text-shadow：上亮下暗双线，强化金属凹刻雕刻感 */
+  --skeuo-text-engrave: 0 1px 0 rgba(255,255,255,0.8), 0 -1px 0 rgba(43,31,23,0.10);
+}
+
+/* 深色模式 text-shadow（雕刻在金属面板上的凹刻文字） */
+html[data-theme-visual="skeuo"][data-theme-mode="dark"] {
+  --skeuo-text-engrave: 0 1px 0 rgba(0,0,0,0.5);
+}
+
+html[data-theme-visual="skeuo"] body,
+html[data-theme-visual="skeuo"] #root {
+  background: var(--t8-bg-app);
+  color: var(--skeuo-ink);
+  font-family: var(--t8-font-family);
+}
+
+/* 应用外壳：金属深灰底，极轻顶部高光。 */
+html[data-theme-visual="skeuo"] .t8-app-shell {
+  background: var(--t8-bg-app) !important;
+}
+
+/* === 顶栏：金属面板 + 底部 1px 暗边 + 小凸起 === */
+html[data-theme-visual="skeuo"] .t8-topbar {
+  min-height: 48px;
+  background: var(--skeuo-metal-bg) !important;
+  border-bottom: 1px solid var(--skeuo-border-dark) !important;
+  box-shadow: var(--skeuo-raised-sm) !important;
+}
+
+/* 顶栏标题：Nunito 圆润粗体 + 雕刻文字（text-shadow 暗边），强化拟物字形识别度。 */
+html[data-theme-visual="skeuo"] .t8-topbar h1 {
+  font-family: var(--t8-display-font) !important;
+  font-weight: 700 !important;
+  color: var(--skeuo-ink) !important;
+  text-shadow: var(--skeuo-text-engrave);
+  letter-spacing: 0.02em;
+}
+
+/* 顶栏状态芯片：金属 inset 槽 + 状态色 LED 辉光。 */
+html[data-theme-visual="skeuo"] .t8-topbar-status-chip {
+  background: var(--skeuo-muted-bg) !important;
+  border: 1px solid var(--skeuo-border-dark) !important;
+  border-radius: var(--skeuo-radius) !important;
+  color: var(--skeuo-ink-muted) !important;
+  padding: 2px 8px !important;
+  box-shadow: var(--skeuo-inset-sm) !important;
+  transition: color var(--skeuo-transition), box-shadow var(--skeuo-transition) !important;
+}
+
+html[data-theme-visual="skeuo"] .t8-topbar-status-chip[class*="text-emerald"],
+html[data-theme-visual="skeuo"] .t8-topbar-status-chip[class*="emerald-"] {
+  color: var(--skeuo-led-green) !important;
+  box-shadow: var(--skeuo-inset-sm), 0 0 8px color-mix(in srgb, var(--skeuo-led-green) 40%, transparent) !important;
+}
+
+html[data-theme-visual="skeuo"] .t8-topbar-status-chip[class*="text-red"],
+html[data-theme-visual="skeuo"] .t8-topbar-status-chip[class*="red-"] {
+  color: var(--t8-danger) !important;
+  box-shadow: var(--skeuo-inset-sm), 0 0 8px color-mix(in srgb, var(--t8-danger) 40%, transparent) !important;
+}
+
+html[data-theme-visual="skeuo"] .t8-topbar-status-chip[class*="text-yellow"],
+html[data-theme-visual="skeuo"] .t8-topbar-status-chip[class*="yellow-"] {
+  color: var(--skeuo-amber) !important;
+  box-shadow: var(--skeuo-inset-sm), 0 0 8px color-mix(in srgb, var(--skeuo-amber) 40%, transparent) !important;
+}
+
+/* 顶栏工具按钮：金属凸起按键。 */
+html[data-theme-visual="skeuo"] .t8-topbar button:not(.px-btn):not(.t8-topbar-status-chip) {
+  background: var(--skeuo-metal-bg) !important;
+  border: 1px solid var(--skeuo-border-dark) !important;
+  border-radius: var(--skeuo-radius) !important;
+  color: var(--skeuo-ink) !important;
+  box-shadow: var(--skeuo-raised-sm) !important;
+  transition: box-shadow var(--skeuo-transition), background var(--skeuo-transition), transform var(--skeuo-transition), color var(--skeuo-transition) !important;
+}
+
+html[data-theme-visual="skeuo"] .t8-topbar button:not(.px-btn):not(.t8-topbar-status-chip):hover {
+  background: var(--skeuo-metal-bg-hover) !important;
+  color: var(--skeuo-amber) !important;
+  box-shadow: var(--skeuo-raised-sm), 0 0 0 1px var(--skeuo-amber-line) !important;
+}
+
+html[data-theme-visual="skeuo"] .t8-topbar button:not(.px-btn):not(.t8-topbar-status-chip):active {
+  box-shadow: var(--skeuo-inset-sm) !important;
+  transform: translateY(1px);
+}
+
+/* 顶栏激活态按钮：琥珀金属渐变 + LED 辉光。 */
+html[data-theme-visual="skeuo"] .t8-topbar button[aria-pressed="true"],
+html[data-theme-visual="skeuo"] .t8-topbar button[class*="emerald-"]:not(:hover) {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--skeuo-amber) 90%, #fff 10%), var(--skeuo-amber)) !important;
+  color: var(--t8-accent-text) !important;
+  border-color: var(--skeuo-amber) !important;
+  box-shadow: var(--skeuo-raised-sm), var(--skeuo-amber-glow) !important;
+}
+
+/* === 侧栏：金属面板 + 右边 1px 暗边 === */
+html[data-theme-visual="skeuo"] .t8-sidebar,
+html[data-theme-visual="skeuo"] .t8-sidebar-scroll {
+  background: var(--skeuo-metal-bg) !important;
+  border-right: 1px solid var(--skeuo-border-dark) !important;
+}
+
+/* 侧栏分隔线统一走暗边。 */
+html[data-theme-visual="skeuo"] .t8-sidebar .border-b,
+html[data-theme-visual="skeuo"] .t8-sidebar .border-t {
+  border-color: var(--skeuo-border-dark) !important;
+}
+
+/* 侧栏分组标题：雕刻文字 + Nunito displayFont + hover 琥珀。 */
+html[data-theme-visual="skeuo"] .t8-sidebar button[class*="uppercase tracking-wider"] {
+  color: var(--skeuo-ink-muted) !important;
+  letter-spacing: 0.1em;
+  font-family: var(--t8-display-font) !important;
+  text-shadow: var(--skeuo-text-engrave);
+  transition: color var(--skeuo-transition) !important;
+}
+
+html[data-theme-visual="skeuo"] .t8-sidebar button[class*="uppercase tracking-wider"]:hover {
+  color: var(--skeuo-amber) !important;
+}
+
+/* 侧栏小工具按钮：金属凸起小按键。 */
+html[data-theme-visual="skeuo"] .t8-sidebar button:not(.t8-sidebar-node):not(.px-btn):not([class*="uppercase tracking-wider"]) {
+  background: var(--skeuo-metal-bg) !important;
+  border: 1px solid var(--skeuo-border-dark) !important;
+  border-radius: var(--skeuo-radius) !important;
+  color: var(--skeuo-ink-muted) !important;
+  box-shadow: var(--skeuo-raised-sm) !important;
+  transition: box-shadow var(--skeuo-transition), color var(--skeuo-transition), transform var(--skeuo-transition) !important;
+}
+
+html[data-theme-visual="skeuo"] .t8-sidebar button:not(.t8-sidebar-node):not(.px-btn):not([class*="uppercase tracking-wider"]):hover {
+  color: var(--skeuo-amber) !important;
+  box-shadow: var(--skeuo-raised-sm), 0 0 0 1px var(--skeuo-amber-line) !important;
+}
+
+html[data-theme-visual="skeuo"] .t8-sidebar button:not(.t8-sidebar-node):not(.px-btn):not([class*="uppercase tracking-wider"]):active {
+  box-shadow: var(--skeuo-inset-sm) !important;
+  transform: translateY(1px);
+}
+
+/* 侧栏搜索框：金属 inset 槽。 */
+html[data-theme-visual="skeuo"] .t8-sidebar-search-box {
+  background: var(--skeuo-muted-bg) !important;
+  border: 1px solid var(--skeuo-border-dark) !important;
+  border-radius: var(--skeuo-radius) !important;
+  box-shadow: var(--skeuo-inset-sm) !important;
+  transition: box-shadow var(--skeuo-transition) !important;
+}
+
+html[data-theme-visual="skeuo"] .t8-sidebar-search-box:focus-within {
+  box-shadow: var(--skeuo-inset-sm), 0 0 0 1px var(--skeuo-amber) !important;
+}
+
+html[data-theme-visual="skeuo"] .t8-sidebar-search-box input {
+  background: transparent !important;
+  color: var(--skeuo-ink) !important;
+}
+
+html[data-theme-visual="skeuo"] .t8-sidebar-search-box input::placeholder {
+  color: var(--skeuo-ink-dim) !important;
+  opacity: 0.7;
+}
+
+/* 侧栏画布列表行：hover 琥珀淡底。 */
+html[data-theme-visual="skeuo"] .t8-sidebar-canvas-row {
+  border-radius: var(--skeuo-radius) !important;
+  transition: background var(--skeuo-transition) !important;
+}
+
+html[data-theme-visual="skeuo"] .t8-sidebar-canvas-row:hover {
+  background: var(--skeuo-amber-soft) !important;
+}
+
+html[data-theme-visual="skeuo"] .t8-sidebar-canvas-title {
+  color: var(--skeuo-ink) !important;
+  font-family: var(--t8-display-font) !important;
+}
+
+/* 侧栏更新提示点：琥珀 LED 辉光。 */
+html[data-theme-visual="skeuo"] .t8-sidebar-canvas-update-dot {
+  background: var(--skeuo-amber) !important;
+  border-color: color-mix(in srgb, var(--skeuo-amber) 60%, var(--skeuo-card-bg)) !important;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--skeuo-amber) 18%, transparent), var(--skeuo-amber-glow) !important;
+}
+
+html[data-theme-visual="skeuo"] .t8-sidebar-canvas-update-dot::after {
+  border-color: color-mix(in srgb, var(--skeuo-amber) 40%, transparent) !important;
+}
+
+/* 侧栏底栏版本信息：弱色。 */
+html[data-theme-visual="skeuo"] .t8-sidebar > div:last-child {
+  color: var(--skeuo-ink-dim) !important;
+}
+
+/* 侧栏滚动条：黄铜色，hover 琥珀。 */
+html[data-theme-visual="skeuo"] .t8-sidebar ::-webkit-scrollbar,
+html[data-theme-visual="skeuo"] .t8-sidebar-scroll ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+html[data-theme-visual="skeuo"] .t8-sidebar ::-webkit-scrollbar-thumb,
+html[data-theme-visual="skeuo"] .t8-sidebar-scroll ::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--skeuo-brass) 50%, transparent) !important;
+  border-radius: var(--skeuo-radius) !important;
+}
+
+html[data-theme-visual="skeuo"] .t8-sidebar ::-webkit-scrollbar-thumb:hover,
+html[data-theme-visual="skeuo"] .t8-sidebar-scroll ::-webkit-scrollbar-thumb:hover {
+  background: var(--skeuo-amber) !important;
+}
+
+html[data-theme-visual="skeuo"] .t8-sidebar ::-webkit-scrollbar-track,
+html[data-theme-visual="skeuo"] .t8-sidebar-scroll ::-webkit-scrollbar-track {
+  background: var(--skeuo-muted-bg) !important;
+  box-shadow: var(--skeuo-inset-sm) !important;
+}
+
+/* === 通用卡片/面板：金属面板 + 凸起 + 高光边 === */
+html[data-theme-visual="skeuo"] .t8-card,
+html[data-theme-visual="skeuo"] .t8-sidebar-node {
+  background: var(--skeuo-metal-bg) !important;
+  border: 1px solid var(--skeuo-border-dark) !important;
+  border-radius: var(--skeuo-radius) !important;
+  box-shadow: var(--skeuo-raised-sm) !important;
+  transition: box-shadow var(--skeuo-transition), background var(--skeuo-transition) !important;
+}
+
+html[data-theme-visual="skeuo"] .t8-panel {
+  background: var(--t8-bg-panel-elevated) !important;
+  border: 1px solid var(--t8-border) !important;
+  border-radius: var(--t8-radius-panel) !important;
+  box-shadow: var(--t8-shadow-panel) !important;
+}
+
+html[data-theme-visual="skeuo"] .t8-card:hover,
+html[data-theme-visual="skeuo"] .t8-sidebar-node:hover {
+  background: var(--skeuo-metal-bg-hover) !important;
+  box-shadow: var(--skeuo-raised) !important;
+}
+
+/* 节点标题：金属拉丝渐变 + 底部 1px 暗边 + Nunito 圆润粗体 + 雕刻文字。
+   浅色模式用 --skeuo-metal-header-bg（比 body 更深一档），形成面板与标题槽分离。 */
+html[data-theme-visual="skeuo"] .react-flow__node:not(.react-flow__node-groupBox) .t8-node-header,
+html[data-theme-visual="skeuo"] .t8-node-header {
+  background: var(--t8-bg-node-header) !important;
+  border-bottom: 1px solid var(--skeuo-border-dark) !important;
+  border-radius: var(--skeuo-radius) var(--skeuo-radius) 0 0 !important;
+  font-family: var(--t8-display-font) !important;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--skeuo-ink) !important;
+  text-shadow: var(--skeuo-text-engrave);
+}
+
+/* 深色模式：header 用 token 的金属拉丝渐变（--t8-node-header-bg 已是金属渐变）。 */
+html[data-theme-visual="skeuo"][data-theme-mode="dark"] .react-flow__node:not(.react-flow__node-groupBox) .t8-node-header,
+html[data-theme-visual="skeuo"][data-theme-mode="dark"] .t8-node-header {
+  background: var(--t8-node-header-bg) !important;
+}
+
+/* GroupBox (打组容器)：保留组色身份，外壳补高光边 + 小凸起；选中加琥珀 LED 外环。 */
+html[data-theme-visual="skeuo"] .react-flow__node-groupBox > div:first-child,
+html[data-theme-visual="skeuo"] .t8-group-box {
+  border-radius: var(--skeuo-radius) !important;
+  box-shadow: var(--skeuo-raised-sm) !important;
+}
+
+html[data-theme-visual="skeuo"] .react-flow__node-groupBox.selected > div:first-child,
+html[data-theme-visual="skeuo"] .t8-group-box[data-selected="true"] {
+  box-shadow: var(--skeuo-raised-sm), 0 0 0 1px var(--skeuo-amber-line), var(--skeuo-amber-glow) !important;
+}
+
+/* 组标题栏：保持组色识别度，仅圆角对齐 + 雕刻文字。
+   浅色模式覆盖组件内联的 zinc 白色 header，改用暖奶油金属渐变。 */
+html[data-theme-visual="skeuo"] .t8-group-box__header {
+  border-top-left-radius: var(--skeuo-radius) !important;
+  border-top-right-radius: var(--skeuo-radius) !important;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  background: var(--skeuo-metal-header-bg, var(--skeuo-metal-bg-elev)) !important;
+  border-bottom: 1px solid var(--skeuo-border-dark) !important;
+  color: var(--skeuo-ink) !important;
+  text-shadow: var(--skeuo-text-engrave);
+}
+
+html[data-theme-visual="skeuo"] .t8-group-box__title,
+html[data-theme-visual="skeuo"] .t8-group-box__count {
+  color: var(--skeuo-ink) !important;
+  text-shadow: var(--skeuo-text-engrave);
+}
+
+/* 组内操作按钮（重命名/删除）：金属凸起小按键；执行按钮保留组色。 */
+html[data-theme-visual="skeuo"] .t8-group-box__button:not(.t8-group-box__button--run) {
+  background: var(--skeuo-metal-bg) !important;
+  border: 1px solid var(--skeuo-border-dark) !important;
+  border-radius: var(--skeuo-radius) !important;
+  color: var(--skeuo-ink-muted) !important;
+  box-shadow: var(--skeuo-raised-sm) !important;
+  transition: box-shadow var(--skeuo-transition), color var(--skeuo-transition), transform var(--skeuo-transition) !important;
+}
+
+html[data-theme-visual="skeuo"] .t8-group-box__button:not(.t8-group-box__button--run):hover {
+  color: var(--skeuo-amber) !important;
+  box-shadow: var(--skeuo-raised-sm), 0 0 0 1px var(--skeuo-amber-line) !important;
+}
+
+html[data-theme-visual="skeuo"] .t8-group-box__button:not(.t8-group-box__button--run):active {
+  box-shadow: var(--skeuo-inset-sm) !important;
+  transform: translateY(1px);
+}
+
+/* 组颜色选择器浮层：金属面板。 */
+html[data-theme-visual="skeuo"] .t8-group-box ~ div[class*="grid"] {
+  background: var(--skeuo-metal-bg-elev) !important;
+  border: 1px solid var(--skeuo-border-dark) !important;
+  border-radius: var(--skeuo-radius) !important;
+  box-shadow: var(--skeuo-raised) !important;
+}
+
+/* === 按钮：金属凸起按键（核心拟物手感） === */
+html[data-theme-visual="skeuo"] .react-flow__node:not(.react-flow__node-groupBox) button:not(.react-flow__controls-button):not([class*="text-red"]):not([class*="bg-red"]):not([title*="删除"]):not([aria-label*="删除"]),
+html[data-theme-visual="skeuo"] .t8-btn,
+html[data-theme-visual="skeuo"] .t8-mini-icon-button {
+  background: var(--skeuo-metal-bg) !important;
+  border: 1px solid var(--skeuo-border-dark) !important;
+  border-radius: var(--skeuo-radius) !important;
+  box-shadow: var(--skeuo-raised-sm) !important;
+  color: var(--skeuo-ink) !important;
+  transition: box-shadow var(--skeuo-transition), background var(--skeuo-transition), transform var(--skeuo-transition), color var(--skeuo-transition) !important;
+}
+
+html[data-theme-visual="skeuo"] .react-flow__node:not(.react-flow__node-groupBox) button:not(.react-flow__controls-button):not([class*="text-red"]):not([class*="bg-red"]):not([title*="删除"]):not([aria-label*="删除"]):hover,
+html[data-theme-visual="skeuo"] .t8-btn:hover,
+html[data-theme-visual="skeuo"] .t8-mini-icon-button:hover {
+  background: var(--skeuo-metal-bg-hover) !important;
+  color: var(--skeuo-amber) !important;
+  box-shadow: var(--skeuo-raised-sm), 0 0 0 1px var(--skeuo-amber-line) !important;
+}
+
+/* 按下：转内阴影 + translateY(1px) 模拟压入面板。 */
+html[data-theme-visual="skeuo"] .react-flow__node:not(.react-flow__node-groupBox) button:not(.react-flow__controls-button):not([class*="text-red"]):not([class*="bg-red"]):not([title*="删除"]):not([aria-label*="删除"]):active,
+html[data-theme-visual="skeuo"] .t8-btn:active,
+html[data-theme-visual="skeuo"] .t8-mini-icon-button:active {
+  box-shadow: var(--skeuo-inset-sm) !important;
+  transform: translateY(1px);
+}
+
+/* 主按钮：琥珀金属渐变 + LED 辉光。 */
+html[data-theme-visual="skeuo"] .t8-btn--primary,
+html[data-theme-visual="skeuo"] button[class*="bg-"][class*="--accent"],
+html[data-theme-visual="skeuo"] .px-btn--mint {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--skeuo-amber) 90%, #fff 10%), var(--skeuo-amber)) !important;
+  color: var(--t8-accent-text) !important;
+  border: 1px solid var(--skeuo-amber) !important;
+  box-shadow: var(--skeuo-raised-sm), var(--skeuo-amber-glow) !important;
+}
+
+html[data-theme-visual="skeuo"] .t8-btn--primary:hover {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--skeuo-amber-hover) 90%, #fff 10%), var(--skeuo-amber-hover)) !important;
+  box-shadow: var(--skeuo-raised-sm), 0 0 18px color-mix(in srgb, var(--skeuo-amber) 70%, transparent) !important;
+}
+
+html[data-theme-visual="skeuo"] .t8-btn--primary:active {
+  box-shadow: var(--skeuo-inset-sm), 0 0 8px color-mix(in srgb, var(--skeuo-amber) 50%, transparent) !important;
+  transform: translateY(1px);
+}
+
+/* === 输入框/选择框：金属 inset 槽 + focus 琥珀边 === */
+html[data-theme-visual="skeuo"] .react-flow__node:not(.react-flow__node-groupBox) input,
+html[data-theme-visual="skeuo"] .react-flow__node:not(.react-flow__node-groupBox) select,
+html[data-theme-visual="skeuo"] .react-flow__node:not(.react-flow__node-groupBox) textarea,
+html[data-theme-visual="skeuo"] .t8-input,
+html[data-theme-visual="skeuo"] .t8-select,
+html[data-theme-visual="skeuo"] textarea {
+  background: var(--skeuo-muted-bg) !important;
+  border: 1px solid var(--skeuo-border-dark) !important;
+  border-radius: var(--skeuo-radius) !important;
+  box-shadow: var(--skeuo-inset-sm) !important;
+  color: var(--skeuo-ink) !important;
+  transition: box-shadow var(--skeuo-transition), border-color var(--skeuo-transition) !important;
+}
+
+html[data-theme-visual="skeuo"] .react-flow__node:not(.react-flow__node-groupBox) input:focus,
+html[data-theme-visual="skeuo"] .react-flow__node:not(.react-flow__node-groupBox) select:focus,
+html[data-theme-visual="skeuo"] .react-flow__node:not(.react-flow__node-groupBox) textarea:focus,
+html[data-theme-visual="skeuo"] .t8-input:focus,
+html[data-theme-visual="skeuo"] .t8-select:focus,
+html[data-theme-visual="skeuo"] textarea:focus {
+  outline: none !important;
+  border-color: var(--skeuo-amber) !important;
+  box-shadow: var(--skeuo-inset-sm), 0 0 0 1px var(--skeuo-amber) !important;
+}
+
+/* select option：下拉项可读性兜底。 */
+html[data-theme-visual="skeuo"] select option {
+  background: var(--skeuo-card-bg-elev) !important;
+  color: var(--skeuo-ink) !important;
+}
+
+html[data-theme-visual="skeuo"] select option:checked {
+  background: var(--skeuo-amber-soft) !important;
+  color: var(--skeuo-ink) !important;
+}
+
+/* === 端口（Handle）：12px 圆 + 黄铜边 + 金属底 + 微辉光 === */
+html[data-theme-visual="skeuo"] .react-flow__handle {
+  border-radius: 50% !important;
+  border: 1px solid var(--skeuo-brass) !important;
+  background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--t8-accent) 80%, #fff 20%), var(--t8-accent)) !important;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.25), 0 0 6px color-mix(in srgb, var(--t8-accent) 36%, transparent) !important;
+  transition: box-shadow var(--skeuo-transition) !important;
+}
+
+html[data-theme-visual="skeuo"] .react-flow__handle:hover {
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.35), 0 0 12px color-mix(in srgb, var(--t8-accent) 60%, transparent) !important;
+}
+
+html[data-theme-visual="skeuo"] .react-flow__handle.react-flow__handle-connecting {
+  background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--t8-warning) 80%, #fff 20%), var(--t8-warning)) !important;
+  border-color: var(--t8-warning) !important;
+}
+
+html[data-theme-visual="skeuo"] .react-flow__handle.react-flow__handle-valid {
+  background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--t8-success) 80%, #fff 20%), var(--t8-success)) !important;
+  border-color: var(--t8-success) !important;
+}
+
+/* === 连线：暗棕细线，选中琥珀 + 辉光 === */
+html[data-theme-visual="skeuo"] .react-flow__edge-path {
+  stroke: var(--t8-edge) !important;
+  stroke-width: 1.8 !important;
+  stroke-linecap: round !important;
+  transition: stroke 140ms ease, stroke-width 140ms ease;
+}
+
+html[data-theme-visual="skeuo"] .react-flow__edge.selected .react-flow__edge-path,
+html[data-theme-visual="skeuo"] .react-flow__edge:hover .react-flow__edge-path {
+  stroke: var(--t8-edge-selected) !important;
+  stroke-width: 2.4 !important;
+  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--skeuo-amber) 60%, transparent));
+}
+
+/* 主题激活边（选中/悬停相关）：琥珀流动光（遵守 36 边上限 + viewport-moving 暂停）。 */
+html[data-theme-visual="skeuo"] .react-flow__edge.t8-edge-theme-active .react-flow__edge-path {
+  stroke: var(--skeuo-amber) !important;
+  stroke-width: 2.2 !important;
+  stroke-dasharray: 8 4;
+  animation: t8-skeuo-edge-flow 1.8s linear infinite;
+  filter: drop-shadow(0 0 3px color-mix(in srgb, var(--skeuo-amber) 50%, transparent));
+}
+
+@keyframes t8-skeuo-edge-flow {
+  to { stroke-dashoffset: -24; }
+}
+
+/* 框选：琥珀淡底 + 琥珀边。 */
+html[data-theme-visual="skeuo"] .react-flow__selection {
+  background: var(--t8-selection-bg) !important;
+  border: 1px solid var(--t8-selection-border) !important;
+  border-radius: var(--skeuo-radius) !important;
+}
+
+/* === MiniMap / 音乐按钮：金属面板 + 小凸起（controls 面板透明） === */
+html[data-theme-visual="skeuo"] .t8-theme-music-toggle {
+  background: var(--skeuo-metal-bg) !important;
+  border: 1px solid var(--skeuo-border-dark) !important;
+  border-radius: var(--skeuo-radius) !important;
+  box-shadow: var(--skeuo-raised-sm) !important;
+}
+
+/* controls 面板容器透明，只给内部按钮走金属凸起。 */
+html[data-theme-visual="skeuo"] .react-flow__controls {
+  background: var(--t8-bg-panel-elevated) !important;
+  border: 1px solid var(--t8-border) !important;
+  border-radius: var(--t8-radius-panel) !important;
+  box-shadow: var(--t8-shadow-panel) !important;
+}
+
+html[data-theme-visual="skeuo"] .react-flow__controls-button {
+  background: var(--skeuo-metal-bg) !important;
+  border: 1px solid var(--skeuo-border-dark) !important;
+  border-radius: var(--skeuo-radius) !important;
+  box-shadow: var(--skeuo-raised-sm) !important;
+  color: var(--skeuo-ink) !important;
+  margin: 2px 0 !important;
+  transition: box-shadow var(--skeuo-transition), color var(--skeuo-transition) !important;
+}
+
+html[data-theme-visual="skeuo"] .react-flow__controls-button:hover {
+  color: var(--skeuo-amber) !important;
+  box-shadow: var(--skeuo-raised-sm), 0 0 0 1px var(--skeuo-amber-line) !important;
+}
+/* === 右键菜单 / 弹窗 / 抽屉：金属面板 + 凸起 + 高光边 === */
+html[data-theme-visual="skeuo"] .t8-modal,
+html[data-theme-visual="skeuo"] .t8-drawer {
+  background: var(--skeuo-metal-bg-elev) !important;
+  border: 1px solid var(--skeuo-border-dark) !important;
+  border-radius: var(--skeuo-radius) !important;
+  box-shadow: var(--skeuo-raised-lg) !important;
+}
+
+html[data-theme-visual="skeuo"] .t8-context-menu {
+  background: var(--t8-bg-panel-elevated) !important;
+  border: 1px solid var(--t8-border) !important;
+  border-radius: var(--t8-radius-panel) !important;
+  box-shadow: var(--t8-shadow-panel) !important;
+}
+
+/* 弹窗/抽屉标题：Nunito 圆润粗体 + 雕刻文字 + 金属拉丝底。 */
+html[data-theme-visual="skeuo"] .t8-modal h1,
+html[data-theme-visual="skeuo"] .t8-modal h2,
+html[data-theme-visual="skeuo"] .t8-modal h3,
+html[data-theme-visual="skeuo"] .t8-drawer h1,
+html[data-theme-visual="skeuo"] .t8-drawer h2,
+html[data-theme-visual="skeuo"] .t8-drawer h3 {
+  font-family: var(--t8-display-font) !important;
+  font-weight: 700 !important;
+  color: var(--skeuo-ink) !important;
+  text-shadow: var(--skeuo-text-engrave);
+}
+
+html[data-theme-visual="skeuo"] .t8-modal .border-b,
+html[data-theme-visual="skeuo"] .t8-drawer .border-b,
+html[data-theme-visual="skeuo"] .t8-context-menu .border-b {
+  border-color: var(--skeuo-border-dark) !important;
+}
+
+/* === Chip / Badge：金属 inset 槽 === */
+html[data-theme-visual="skeuo"] .t8-chip {
+  background: var(--skeuo-muted-bg) !important;
+  border: 1px solid var(--skeuo-border-dark) !important;
+  border-radius: var(--skeuo-radius) !important;
+  color: var(--skeuo-ink) !important;
+  box-shadow: var(--skeuo-inset-sm) !important;
+}
+
+html[data-theme-visual="skeuo"] .t8-chip--active,
+html[data-theme-visual="skeuo"] .t8-chip[class*="active"] {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--skeuo-amber) 80%, #fff 20%), var(--skeuo-amber)) !important;
+  border-color: var(--skeuo-amber) !important;
+  color: var(--t8-accent-text) !important;
+  box-shadow: var(--skeuo-raised-sm), var(--skeuo-amber-glow) !important;
+}
+
+/* 智能节点状态 chip：状态色 LED 辉光。 */
+html[data-theme-visual="skeuo"] .t8-smart-mini-status {
+  border-radius: var(--skeuo-radius) !important;
+}
+
+html[data-theme-visual="skeuo"] .t8-smart-node-status--success {
+  color: var(--skeuo-led-green) !important;
+  border-color: color-mix(in srgb, var(--skeuo-led-green) 36%, transparent) !important;
+  box-shadow: var(--skeuo-inset-sm), 0 0 6px color-mix(in srgb, var(--skeuo-led-green) 40%, transparent) !important;
+}
+
+html[data-theme-visual="skeuo"] .t8-smart-node-status--error,
+html[data-theme-visual="skeuo"] .t8-smart-node-status--danger {
+  color: var(--t8-danger) !important;
+  border-color: color-mix(in srgb, var(--t8-danger) 36%, transparent) !important;
+  box-shadow: var(--skeuo-inset-sm), 0 0 6px color-mix(in srgb, var(--t8-danger) 40%, transparent) !important;
+}
+
+html[data-theme-visual="skeuo"] .t8-smart-node-status--warning,
+html[data-theme-visual="skeuo"] .t8-smart-node-status--pending {
+  color: var(--skeuo-amber) !important;
+  border-color: var(--skeuo-amber-line) !important;
+  box-shadow: var(--skeuo-inset-sm), 0 0 6px color-mix(in srgb, var(--skeuo-amber) 40%, transparent) !important;
+}
+
+/* === Tooltip / 通用浮层提示：金属面板 === */
+html[data-theme-visual="skeuo"] [role="tooltip"],
+html[data-theme-visual="skeuo"] .t8-tooltip {
+  background: var(--skeuo-metal-bg-elev) !important;
+  border: 1px solid var(--skeuo-border-dark) !important;
+  border-radius: var(--skeuo-radius) !important;
+  color: var(--skeuo-ink) !important;
+  box-shadow: var(--skeuo-raised) !important;
+}
+
+/* === SHIFT 划线轨迹：黄铜刻刀 + 双色偏移 === */
+html[data-theme-visual="skeuo"] .t8-cut-track {
+  stroke: var(--t8-cut-track) !important;
+  stroke-width: 1.8 !important;
+  stroke-dasharray: none !important;
+  opacity: 0.85;
+  filter: drop-shadow(0.5px 0.5px 0 var(--skeuo-amber)) drop-shadow(-0.5px 0 0 rgba(0,0,0,0.3));
+}
+
+html[data-theme-visual="skeuo"] .t8-cut-button {
+  background: var(--skeuo-metal-bg) !important;
+  color: var(--skeuo-amber) !important;
+  border: 1px solid var(--skeuo-border-dark) !important;
+  border-radius: var(--skeuo-radius) !important;
+  box-shadow: var(--skeuo-raised-sm) !important;
+}
+
+/* === 浮层操作栏：金属面板 === */
+html[data-theme-visual="skeuo"] .t8-node-action-bar {
+  background: var(--skeuo-metal-bg-elev) !important;
+  border: 1px solid var(--skeuo-border-dark) !important;
+  border-radius: var(--skeuo-radius) !important;
+  box-shadow: var(--skeuo-raised) !important;
+}
+
+/* === legacy 内部控件兜底：浅色模式下把节点里残留的暗色/白色工具类映射回 skeuo 调色 ===
+   关键修正：覆盖表单控件（input/textarea/select）及其 placeholder，
+   因为节点组件大量使用 text-white / placeholder:text-white/NN / bg-white/5 等暗色模式工具类。 */
+
+/* 1. 所有 text-white* 元素（含 div/span/p 等）→ 主文字色 */
+html[data-theme-visual="skeuo"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) [class*="text-white"]:not(input):not(textarea):not(select) {
+  color: var(--skeuo-ink) !important;
+}
+
+/* 1b. 浅色模式 svg 图标：跟随父级焦墨色，不被 text-white/NN 冲淡 */
+html[data-theme-visual="skeuo"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) svg,
+html[data-theme-visual="skeuo"][data-theme-mode="light"] .t8-node svg {
+  color: var(--skeuo-ink) !important;
+}
+
+/* 2. 表单控件本身的 text-white → 主文字色（不再排除 input/textarea/select） */
+html[data-theme-visual="skeuo"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) input[class*="text-white"],
+html[data-theme-visual="skeuo"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) textarea[class*="text-white"],
+html[data-theme-visual="skeuo"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) select[class*="text-white"] {
+  color: var(--skeuo-ink) !important;
+}
+
+/* 3. placeholder 文字色（暗色模式 placeholder:text-white/30 在浅色底上不可见） */
+html[data-theme-visual="skeuo"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) input::placeholder,
+html[data-theme-visual="skeuo"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) textarea::placeholder {
+  color: var(--skeuo-ink-dim) !important;
+  opacity: 0.7 !important;
+}
+
+/* 4. bg-white/ 透明底（暗色模式是亮底叠加，浅色模式无意义）→ 浮层底色 */
+html[data-theme-visual="skeuo"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) [class*="bg-white/"]:not(input):not(textarea):not(select):not(img):not(video):not(canvas) {
+  background: var(--skeuo-card-bg-elev) !important;
+}
+
+/* 5. 表单控件的 bg-white/ → muted 底（inset 槽） */
+html[data-theme-visual="skeuo"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) input[class*="bg-white/"],
+html[data-theme-visual="skeuo"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) textarea[class*="bg-white/"],
+html[data-theme-visual="skeuo"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) select[class*="bg-white/"] {
+  background: var(--skeuo-muted-bg) !important;
+}
+
+/* 6. bg-zinc-900/950（暗色模式硬底）→ muted 底 */
+html[data-theme-visual="skeuo"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) [class*="bg-zinc-900"]:not(input):not(textarea):not(select):not(img):not(video):not(canvas),
+html[data-theme-visual="skeuo"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) [class*="bg-zinc-950"]:not(input):not(textarea):not(select):not(img):not(video):not(canvas) {
+  background: var(--skeuo-muted-bg) !important;
+}
+
+/* 7. select/option 的 bg-zinc-900 → 浮层底色（下拉项可读性） */
+html[data-theme-visual="skeuo"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) select[class*="bg-zinc-900"],
+html[data-theme-visual="skeuo"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) select[class*="bg-zinc-950"],
+html[data-theme-visual="skeuo"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) option[class*="bg-zinc-900"],
+html[data-theme-visual="skeuo"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) option[class*="bg-zinc-950"] {
+  background: var(--skeuo-card-bg-elev) !important;
+  color: var(--skeuo-ink) !important;
+}
+
+/* 8. bg-black/ 透明底（暗色模式微暗叠加，浅色模式会变脏）→ 移除 */
+html[data-theme-visual="skeuo"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) [class*="bg-black/"]:not(input):not(textarea):not(select):not(img):not(video):not(canvas) {
+  background: transparent !important;
+}
+
+/* 9. border-white/ → skeuo 暗边 */
+html[data-theme-visual="skeuo"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) [class*="border-white/"] {
+  border-color: var(--skeuo-border-dark) !important;
+}
+
+/* 10. focus:border-white/ → focus 琥珀边 */
+html[data-theme-visual="skeuo"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) [class*="focus:border-white"]:focus {
+  border-color: var(--skeuo-amber) !important;
+}
+
+/* 11. 残留的浅色文字工具类（text-amber-100 等低对比色）→ 主文字色 */
+html[data-theme-visual="skeuo"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) [class*="text-amber-100"],
+html[data-theme-visual="skeuo"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) [class*="text-cyan-300"],
+html[data-theme-visual="skeuo"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) [class*="text-sky-300"] {
+  color: var(--skeuo-ink-muted) !important;
+}
+
+/* 12. hover:text-white → hover 主文字色（覆盖 hover 状态） */
+html[data-theme-visual="skeuo"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) [class*="hover:text-white"]:hover {
+  color: var(--skeuo-amber) !important;
+}
+
+/* 13. 节点内 select 下拉框统一走金属 inset 槽 + 主文字色（兜底） */
+html[data-theme-visual="skeuo"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) select {
+  background: var(--skeuo-muted-bg) !important;
+  color: var(--skeuo-ink) !important;
+  border-color: var(--skeuo-border-dark) !important;
+}
+
+html[data-theme-visual="skeuo"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) select option {
+  background: var(--skeuo-card-bg-elev) !important;
+  color: var(--skeuo-ink) !important;
+}
+
+/* 14. 节点内 input/textarea 统一兜底（即使没有 legacy class 也保证可读） */
+html[data-theme-visual="skeuo"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+html[data-theme-visual="skeuo"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) textarea {
+  background: var(--skeuo-muted-bg) !important;
+  color: var(--skeuo-ink) !important;
+  border-color: var(--skeuo-border-dark) !important;
+  box-shadow: var(--skeuo-inset-sm) !important;
+}
+
+html[data-theme-visual="skeuo"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) input::placeholder,
+html[data-theme-visual="skeuo"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) textarea::placeholder {
+  color: var(--skeuo-ink-dim) !important;
+  opacity: 0.7 !important;
+}
+
+/* 顶栏/侧栏残留硬底工具类兜底：深色模式收敛为金属面板。 */
+html[data-theme-visual="skeuo"][data-theme-mode="dark"] .t8-topbar button[class*="bg-sky-"],
+html[data-theme-visual="skeuo"][data-theme-mode="dark"] .t8-topbar button[class*="bg-emerald-"],
+html[data-theme-visual="skeuo"][data-theme-mode="dark"] .t8-topbar button[class*="bg-white/"] {
+  background: var(--skeuo-metal-bg) !important;
+  border-color: var(--skeuo-border-dark) !important;
+}
+
+/* === 视口拖动 / 节点拖拽时：暂停 LED 呼吸与边流动，避免性能拖累 === */
+html[data-theme-visual="skeuo"] .t8-canvas-shell.t8-viewport-moving .react-flow__node.selected:not(.react-flow__node-groupBox) > div:first-child,
+html[data-theme-visual="skeuo"] .t8-canvas-shell.t8-node-dragging .react-flow__node.selected:not(.react-flow__node-groupBox) > div:first-child {
+  animation: none !important;
+}
+
+html[data-theme-visual="skeuo"] .t8-canvas-shell.t8-viewport-moving .react-flow__node.selected:not(.react-flow__node-groupBox) > div:first-child::after,
+html[data-theme-visual="skeuo"] .t8-canvas-shell.t8-node-dragging .react-flow__node.selected:not(.react-flow__node-groupBox) > div:first-child::after {
+  animation: none !important;
+}
+
+html[data-theme-visual="skeuo"] .t8-canvas-shell.t8-viewport-moving .react-flow__edge.t8-edge-theme-active .react-flow__edge-path,
+html[data-theme-visual="skeuo"] .t8-canvas-shell.t8-node-dragging .react-flow__edge.t8-edge-theme-active .react-flow__edge-path {
+  animation: none !important;
+}
+
+/* 减少动态效果偏好：关掉所有动画/辉光/呼吸。 */
+@media (prefers-reduced-motion: reduce) {
+  html[data-theme-visual="skeuo"] .t8-card,
+  html[data-theme-visual="skeuo"] .t8-btn,
+  html[data-theme-visual="skeuo"] .react-flow__handle,
+  html[data-theme-visual="skeuo"] .react-flow__edge-path,
+  html[data-theme-visual="skeuo"] .t8-topbar button,
+  html[data-theme-visual="skeuo"] .t8-sidebar button {
+    transition: none !important;
+    animation: none !important;
+    box-shadow: var(--skeuo-raised-sm) !important;
+    filter: none !important;
+  }
+}

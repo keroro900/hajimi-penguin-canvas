@@ -148,56 +148,19 @@ html[data-theme-visual="rh"] .t8-sidebar .px-group-title {
 }
 
 html[data-theme-visual="rh"] .t8-canvas-shell {
-  position: relative;
   overflow: hidden;
-  background:
-    radial-gradient(circle at 50% 42%, color-mix(in srgb, var(--rh-lime) 8%, transparent), transparent 30%),
-    var(--t8-bg-canvas) !important;
 }
 
-html[data-theme-visual="rh"] .t8-canvas-shell::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  background-image:
-    radial-gradient(circle, var(--t8-grid-dot) 1.2px, transparent 1.4px),
-    linear-gradient(90deg, transparent 0 58px, color-mix(in srgb, var(--rh-lime) 10%, transparent) 59px 60px),
-    linear-gradient(180deg, transparent 0 58px, color-mix(in srgb, var(--rh-lime) 10%, transparent) 59px 60px);
-  background-size: 20px 20px, 60px 60px, 60px 60px;
-  opacity: 0.92;
-}
-
-html[data-theme-visual="rh"] .react-flow {
+html[data-theme-visual="rh"] .t8-card {
   position: relative;
-  z-index: 1;
-}
-
-html[data-theme-visual="rh"] .react-flow__background {
-  background: transparent !important;
-}
-
-html[data-theme-visual="rh"] .react-flow__background-pattern circle {
-  fill: var(--t8-grid-dot) !important;
-  opacity: 0.65;
-}
-
-html[data-theme-visual="rh"] .react-flow__node:not(.react-flow__node-groupBox) > div:first-child,
-html[data-theme-visual="rh"] .t8-node,
-html[data-theme-visual="rh"] .t8-card,
-html[data-theme-visual="rh"] .t8-panel {
-  position: relative;
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--rh-card) 94%, var(--rh-lime) 6%), var(--rh-card)) !important;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--rh-card) 94%, var(--rh-lime) 6%), var(--rh-card)) !important;
   border: 1px solid var(--rh-card-border) !important;
   border-radius: var(--t8-radius-node) !important;
   box-shadow: var(--rh-card-shadow) !important;
   color: var(--t8-text-main) !important;
 }
 
-html[data-theme-visual="rh"] .react-flow__node:not(.react-flow__node-groupBox) > div:first-child::before,
-html[data-theme-visual="rh"] .t8-node::before,
+html[data-theme-visual="rh"] .t8-node:not(.t8-smart-node-card--regenerating)::before,
 html[data-theme-visual="rh"] .t8-card::before {
   content: "";
   position: absolute;
@@ -209,32 +172,6 @@ html[data-theme-visual="rh"] .t8-card::before {
   background: linear-gradient(90deg, transparent, var(--rh-lime), var(--rh-cyan), transparent);
   opacity: 0.72;
   pointer-events: none;
-}
-
-html[data-theme-visual="rh"] .react-flow__node.selected:not(.react-flow__node-groupBox) > div:first-child {
-  outline: 1px solid var(--rh-lime) !important;
-  outline-offset: 5px !important;
-  box-shadow:
-    var(--rh-card-shadow),
-    0 0 0 7px color-mix(in srgb, var(--rh-lime) 12%, transparent),
-    0 0 34px color-mix(in srgb, var(--rh-lime) 22%, transparent) !important;
-}
-
-html[data-theme-visual="rh"] .react-flow__node:not(.react-flow__node-groupBox) > [data-rh-duck-mode="true"],
-html[data-theme-visual="rh"] .react-flow__node.selected:not(.react-flow__node-groupBox) > [data-rh-duck-mode="true"] {
-  --rh-duck-red: #ff345f;
-  border-color: var(--rh-duck-red) !important;
-  outline-color: var(--rh-duck-red) !important;
-  box-shadow:
-    var(--rh-card-shadow),
-    0 0 0 5px color-mix(in srgb, var(--rh-duck-red) 18%, transparent),
-    0 0 34px color-mix(in srgb, var(--rh-duck-red) 34%, transparent) !important;
-}
-
-html[data-theme-visual="rh"] .react-flow__node:not(.react-flow__node-groupBox) > [data-rh-duck-mode="true"]::before,
-html[data-theme-visual="rh"] .react-flow__node.selected:not(.react-flow__node-groupBox) > [data-rh-duck-mode="true"]::before {
-  background: linear-gradient(90deg, transparent, #ff345f, #ff6b8a, transparent) !important;
-  opacity: 0.92 !important;
 }
 
 /*
@@ -373,8 +310,6 @@ html[data-theme-visual="rh"] .t8-group-box::before {
 }
 
 html[data-theme-visual="rh"] .react-flow__handle {
-  width: 15px !important;
-  height: 15px !important;
   border: 2px solid var(--t8-bg-canvas) !important;
   border-radius: 999px !important;
   background: var(--rh-lime) !important;
@@ -448,9 +383,7 @@ html[data-theme-visual="rh"] .t8-canvas-toolbar {
   top: 14px !important;
 }
 
-html[data-theme-visual="rh"] .t8-toolbar-panel,
-html[data-theme-visual="rh"] .react-flow__controls,
-html[data-theme-visual="rh"] .react-flow__minimap {
+html[data-theme-visual="rh"] .t8-toolbar-panel {
   background: color-mix(in srgb, var(--rh-card) 88%, transparent) !important;
   border: 1px solid var(--rh-card-border) !important;
   border-radius: 14px !important;
@@ -468,34 +401,6 @@ html[data-theme-visual="rh"] .t8-toolbar-button:hover,
 html[data-theme-visual="rh"] .react-flow__controls-button:hover {
   color: var(--rh-lime) !important;
   background: var(--rh-lime-soft) !important;
-}
-
-html[data-theme-visual="rh"] .react-flow__minimap {
-  width: 168px !important;
-  height: 116px !important;
-  overflow: hidden !important;
-}
-
-html[data-theme-visual="rh"] .react-flow__minimap::before {
-  content: "RUNNING MAP";
-  position: absolute;
-  left: 10px;
-  top: 8px;
-  z-index: 2;
-  font-size: 9px;
-  font-weight: 800;
-  color: var(--rh-lime);
-  letter-spacing: 0.08em;
-  pointer-events: none;
-}
-
-html[data-theme-visual="rh"] .react-flow__minimap-mask {
-  fill: color-mix(in srgb, var(--rh-lime) 18%, transparent) !important;
-}
-
-html[data-theme-visual="rh"] .react-flow__minimap-node {
-  fill: var(--rh-lime) !important;
-  stroke: transparent !important;
 }
 
 html[data-theme-visual="rh"] .react-flow__selection,
@@ -526,10 +431,16 @@ html[data-theme-visual="rh"] .t8-theme-music-toggle.is-playing {
     var(--t8-bg-canvas) !important;
 }
 
-.t8-theme-preview[data-theme-visual="rh"] .t8-panel,
-.t8-theme-preview[data-theme-visual="rh"] .t8-node {
-  border: 1px solid var(--rh-card-border) !important;
-  box-shadow: 0 14px 34px color-mix(in srgb, #000 22%, transparent) !important;
+.t8-theme-preview[data-theme-visual="rh"] .t8-panel {
+  border: 1px solid var(--t8-border) !important;
+  box-shadow: var(--t8-shadow-panel) !important;
+}
+
+html[data-theme-visual="rh"] .react-flow__controls {
+  background: var(--t8-bg-panel-elevated) !important;
+  border: 1px solid var(--t8-border) !important;
+  border-radius: var(--t8-radius-panel) !important;
+  box-shadow: var(--t8-shadow-panel) !important;
 }
 
 .t8-theme-preview[data-theme-visual="rh"] .t8-node::before {
@@ -541,117 +452,6 @@ html[data-theme-visual="rh"] .t8-theme-music-toggle.is-playing {
   height: 2px;
   border-radius: 999px;
   background: linear-gradient(90deg, transparent, var(--rh-lime), var(--rh-cyan), transparent);
-}
-
-/*
- * RH hidden duck decode mode.
- * Keep this block after the generic RH adapters: those adapters intentionally
- * normalize legacy controls to lime, while hidden decode must switch the whole
- * upload/output affordance to red only when the explicit data flag is present.
- */
-html[data-theme-visual="rh"] .react-flow__node:not(.react-flow__node-groupBox) > [data-rh-duck-mode="true"],
-html[data-theme-visual="rh"] .react-flow__node.selected:not(.react-flow__node-groupBox) > [data-rh-duck-mode="true"],
-html[data-theme-visual="rh"] .react-flow__node:not(.react-flow__node-groupBox) > [data-rh-duck-output="true"],
-html[data-theme-visual="rh"] .react-flow__node.selected:not(.react-flow__node-groupBox) > [data-rh-duck-output="true"],
-html[data-theme-visual="rh"] [data-rh-duck-output-frame="true"] {
-  --rh-duck-red: #ff345f;
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--rh-card) 90%, var(--rh-duck-red) 10%), var(--rh-card)) !important;
-  border-color: color-mix(in srgb, var(--rh-duck-red) 82%, transparent) !important;
-  outline: 1px solid var(--rh-duck-red) !important;
-  outline-offset: 5px !important;
-  box-shadow:
-    0 18px 42px rgba(0, 0, 0, 0.42),
-    0 0 0 5px color-mix(in srgb, var(--rh-duck-red) 18%, transparent),
-    0 0 34px color-mix(in srgb, var(--rh-duck-red) 34%, transparent) !important;
-}
-
-html[data-theme-visual="rh"] .react-flow__node:not(.react-flow__node-groupBox) > [data-rh-duck-mode="true"]::before,
-html[data-theme-visual="rh"] .react-flow__node:not(.react-flow__node-groupBox) > [data-rh-duck-output="true"]::before {
-  background: linear-gradient(90deg, transparent, #ff345f, #ff6b8a, transparent) !important;
-  opacity: 0.94 !important;
-}
-
-html[data-theme-visual="rh"] .react-flow__node:not(.react-flow__node-groupBox) > [data-rh-duck-mode="true"] .react-flow__handle,
-html[data-theme-visual="rh"] .react-flow__node:not(.react-flow__node-groupBox) > [data-rh-duck-output="true"] .react-flow__handle {
-  background: var(--rh-duck-red) !important;
-  border-color: var(--t8-bg-canvas) !important;
-  box-shadow:
-    0 0 0 4px color-mix(in srgb, var(--rh-duck-red) 18%, transparent),
-    0 0 20px color-mix(in srgb, var(--rh-duck-red) 44%, transparent) !important;
-}
-
-html[data-theme-visual="rh"] .react-flow__node:not(.react-flow__node-groupBox) > [data-rh-duck-mode="true"] [class~="w-6"][class~="h-6"][class~="items-center"][class~="justify-center"]:not(button):not(.react-flow__handle),
-html[data-theme-visual="rh"] .react-flow__node:not(.react-flow__node-groupBox) > [data-rh-duck-output="true"] [class~="w-6"][class~="h-6"][class~="items-center"][class~="justify-center"]:not(button):not(.react-flow__handle),
-html[data-theme-visual="rh"] .react-flow__node:not(.react-flow__node-groupBox) > [data-rh-duck-mode="true"] [class~="w-7"][class~="h-7"][class~="items-center"][class~="justify-center"]:not(button):not(.react-flow__handle),
-html[data-theme-visual="rh"] .react-flow__node:not(.react-flow__node-groupBox) > [data-rh-duck-output="true"] [class~="w-7"][class~="h-7"][class~="items-center"][class~="justify-center"]:not(button):not(.react-flow__handle),
-html[data-theme-visual="rh"] .react-flow__node:not(.react-flow__node-groupBox) > [data-rh-duck-mode="true"] [class~="w-8"][class~="h-8"][class~="items-center"][class~="justify-center"]:not(button):not(.react-flow__handle),
-html[data-theme-visual="rh"] .react-flow__node:not(.react-flow__node-groupBox) > [data-rh-duck-output="true"] [class~="w-8"][class~="h-8"][class~="items-center"][class~="justify-center"]:not(button):not(.react-flow__handle),
-html[data-theme-visual="rh"] .react-flow__node:not(.react-flow__node-groupBox) > [data-rh-duck-mode="true"] [style*="width: 24px"][style*="height: 24px"][style*="justify-content: center"],
-html[data-theme-visual="rh"] .react-flow__node:not(.react-flow__node-groupBox) > [data-rh-duck-output="true"] [style*="width: 24px"][style*="height: 24px"][style*="justify-content: center"] {
-  background: color-mix(in srgb, var(--rh-duck-red) 18%, var(--rh-card)) !important;
-  border-color: color-mix(in srgb, var(--rh-duck-red) 60%, transparent) !important;
-  color: var(--rh-duck-red) !important;
-  box-shadow:
-    inset 0 0 0 1px color-mix(in srgb, var(--rh-duck-red) 18%, transparent),
-    0 0 16px color-mix(in srgb, var(--rh-duck-red) 22%, transparent) !important;
-}
-
-html[data-theme-visual="rh"] .react-flow__node:not(.react-flow__node-groupBox) > [data-rh-duck-mode="true"] [class~="w-6"][class~="h-6"][class~="items-center"][class~="justify-center"]:not(button):not(.react-flow__handle) svg,
-html[data-theme-visual="rh"] .react-flow__node:not(.react-flow__node-groupBox) > [data-rh-duck-output="true"] [class~="w-6"][class~="h-6"][class~="items-center"][class~="justify-center"]:not(button):not(.react-flow__handle) svg,
-html[data-theme-visual="rh"] .react-flow__node:not(.react-flow__node-groupBox) > [data-rh-duck-mode="true"] [class~="w-7"][class~="h-7"][class~="items-center"][class~="justify-center"]:not(button):not(.react-flow__handle) svg,
-html[data-theme-visual="rh"] .react-flow__node:not(.react-flow__node-groupBox) > [data-rh-duck-output="true"] [class~="w-7"][class~="h-7"][class~="items-center"][class~="justify-center"]:not(button):not(.react-flow__handle) svg,
-html[data-theme-visual="rh"] .react-flow__node:not(.react-flow__node-groupBox) > [data-rh-duck-mode="true"] [class~="w-8"][class~="h-8"][class~="items-center"][class~="justify-center"]:not(button):not(.react-flow__handle) svg,
-html[data-theme-visual="rh"] .react-flow__node:not(.react-flow__node-groupBox) > [data-rh-duck-output="true"] [class~="w-8"][class~="h-8"][class~="items-center"][class~="justify-center"]:not(button):not(.react-flow__handle) svg,
-html[data-theme-visual="rh"] .react-flow__node:not(.react-flow__node-groupBox) > [data-rh-duck-mode="true"] [style*="width: 24px"][style*="height: 24px"][style*="justify-content: center"] svg,
-html[data-theme-visual="rh"] .react-flow__node:not(.react-flow__node-groupBox) > [data-rh-duck-output="true"] [style*="width: 24px"][style*="height: 24px"][style*="justify-content: center"] svg {
-  color: var(--rh-duck-red) !important;
-  stroke: currentColor !important;
-}
-
-html[data-theme-visual="rh"] .react-flow__node:not(.react-flow__node-groupBox) > [data-rh-duck-mode="true"] button:not(.react-flow__controls-button):not([class*="text-red"]):not([class*="bg-red"]):not([title*="删除"]):not([aria-label*="删除"]),
-html[data-theme-visual="rh"] .react-flow__node:not(.react-flow__node-groupBox) > [data-rh-duck-output="true"] button:not(.react-flow__controls-button):not([class*="text-red"]):not([class*="bg-red"]):not([title*="删除"]):not([aria-label*="删除"]) {
-  background: color-mix(in srgb, var(--rh-duck-red) 16%, var(--rh-card)) !important;
-  border-color: color-mix(in srgb, var(--rh-duck-red) 56%, transparent) !important;
-  color: color-mix(in srgb, var(--rh-duck-red) 86%, #fff 14%) !important;
-  box-shadow: 0 0 16px color-mix(in srgb, var(--rh-duck-red) 18%, transparent) !important;
-}
-
-html[data-theme-visual="rh"] .react-flow__node:not(.react-flow__node-groupBox) > [data-rh-duck-mode="true"] [class*="text-green"],
-html[data-theme-visual="rh"] .react-flow__node:not(.react-flow__node-groupBox) > [data-rh-duck-mode="true"] [class*="text-emerald"],
-html[data-theme-visual="rh"] .react-flow__node:not(.react-flow__node-groupBox) > [data-rh-duck-output="true"] [class*="text-green"],
-html[data-theme-visual="rh"] .react-flow__node:not(.react-flow__node-groupBox) > [data-rh-duck-output="true"] [class*="text-emerald"] {
-  color: var(--rh-duck-red) !important;
-}
-
-html[data-theme-visual="rh"] .react-flow__node.selected:not(.react-flow__node-groupBox):has(> [data-rh-duck-mode="true"]) > div:first-child,
-html[data-theme-visual="rh"] .react-flow__node.selected:not(.react-flow__node-groupBox):has(> [data-rh-duck-output="true"]) > div:first-child {
-  --rh-duck-red: #ff345f;
-  outline: 1px solid var(--rh-duck-red) !important;
-  outline-offset: 5px !important;
-  box-shadow:
-    0 18px 42px rgba(0, 0, 0, 0.42),
-    0 0 0 7px color-mix(in srgb, var(--rh-duck-red) 18%, transparent),
-    0 0 36px color-mix(in srgb, var(--rh-duck-red) 38%, transparent) !important;
-}
-
-html[data-theme-visual="rh"] .react-flow__node.selected:not(.react-flow__node-groupBox):has(> [data-rh-duck-mode="true"]) .react-flow__resize-control.handle.t8-resize-handle,
-html[data-theme-visual="rh"] .react-flow__node.selected:not(.react-flow__node-groupBox):has(> [data-rh-duck-output="true"]) .react-flow__resize-control.handle.t8-resize-handle {
-  --rh-duck-red: #ff345f;
-  --t8-resize-accent: var(--rh-duck-red) !important;
-  border-color: var(--rh-duck-red) !important;
-  box-shadow:
-    0 0 0 1px rgba(0, 0, 0, 0.55),
-    0 0 14px color-mix(in srgb, var(--rh-duck-red) 42%, transparent) !important;
-}
-
-html[data-theme-visual="rh"] .react-flow__edge.rh-duck-edge .react-flow__edge-path,
-html[data-theme-visual="rh"] .react-flow__edge-path.rh-duck-edge,
-html[data-theme-visual="rh"] .react-flow__edge.selected.rh-duck-edge .react-flow__edge-path,
-html[data-theme-visual="rh"] .react-flow__edge.rh-duck-edge:hover .react-flow__edge-path {
-  --rh-duck-red: #ff345f;
-  stroke: var(--rh-duck-red) !important;
-  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--rh-duck-red) 62%, transparent)) !important;
 }
 
 html[data-theme-visual="rh"] .t8-context-menu {

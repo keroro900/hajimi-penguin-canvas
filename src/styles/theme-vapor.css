@@ -1,0 +1,695 @@
+/*
+ * Vaporwave (蒸汽波) visual skin
+ * 80/90s 赛博怀旧：紫黑霓虹底、粉青双色霓虹描边与极轻辉光。
+ * 克制霓虹：仅边与选中节点辉光呼吸（240ms）。
+ * SHIFT 切断：故障色块——紫粉青三色偏移的小色条 mask。
+ */
+
+html[data-theme-visual="vapor"] {
+  --vapor-accent: var(--t8-accent);
+  --vapor-accent-hover: var(--t8-accent-hover);
+  --vapor-secondary: var(--t8-secondary);
+  --vapor-accent-soft: color-mix(in srgb, var(--vapor-accent) 16%, transparent);
+  --vapor-accent-line: color-mix(in srgb, var(--vapor-accent) 38%, transparent);
+  --vapor-secondary-line: color-mix(in srgb, var(--vapor-secondary) 36%, transparent);
+  --vapor-card-bg: var(--t8-bg-panel);
+  --vapor-card-bg-elev: var(--t8-bg-panel-elevated);
+  --vapor-muted-bg: var(--t8-bg-panel-muted);
+  --vapor-border: color-mix(in srgb, var(--vapor-accent) 24%, transparent);
+  --vapor-border-soft: color-mix(in srgb, var(--t8-text-main) 8%, transparent);
+  --vapor-ink: var(--t8-text-main);
+  --vapor-ink-muted: var(--t8-text-muted);
+  --vapor-radius: 10px;
+  --vapor-radius-pill: 9999px;
+  --vapor-glow-sm: 0 0 0 1px var(--vapor-accent-line), 0 0 12px color-mix(in srgb, var(--vapor-accent) 28%, transparent);
+  --vapor-glow-md: 0 0 0 1px var(--vapor-accent), 0 0 18px color-mix(in srgb, var(--vapor-accent) 40%, transparent);
+  --vapor-glow-secondary: 0 0 0 1px var(--vapor-secondary-line), 0 0 14px color-mix(in srgb, var(--vapor-secondary) 30%, transparent);
+  --vapor-transition: 240ms cubic-bezier(0.4, 0, 0.2, 1);
+  /* SHIFT 切断符号：故障色块——紫粉青三色偏移的小色条 mask。 */
+  --t8-cut-cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'><g opacity='0.9'><rect x='4' y='9' width='16' height='2' fill='%234dffd2' transform='translate(-1 0)'/><rect x='4' y='11' width='16' height='2' fill='%23ff57d1'/><rect x='4' y='13' width='16' height='2' fill='%237c5cf0' transform='translate(1 0)'/></g></svg>") 12 12, crosshair;
+  --t8-cut-color: var(--vapor-accent);
+  --t8-cut-track: var(--vapor-secondary);
+  --t8-cut-button-bg: var(--vapor-card-bg);
+  --t8-cut-button-fg: var(--vapor-accent);
+  --t8-cut-button-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><g><rect x='3' y='9' width='18' height='2' fill='black' transform='translate(-1 0)'/><rect x='3' y='11' width='18' height='2' fill='black'/><rect x='3' y='13' width='18' height='2' fill='black' transform='translate(1 0)'/></g></svg>");
+}
+
+/* 浅色模式增强：粉色调在白底上易显淡，加强边线/辉光让蒸汽波识别度不丢。 */
+html[data-theme-visual="vapor"][data-theme-mode="light"] {
+  --vapor-border: color-mix(in srgb, var(--vapor-accent) 42%, transparent);
+  --vapor-border-soft: color-mix(in srgb, var(--t8-text-main) 16%, transparent);
+  --vapor-accent-line: color-mix(in srgb, var(--vapor-accent) 52%, transparent);
+  --vapor-glow-sm: 0 0 0 1px var(--vapor-accent-line), 0 0 14px color-mix(in srgb, var(--vapor-accent-hover) 32%, transparent);
+  --vapor-glow-md: 0 0 0 1.5px var(--vapor-accent-hover), 0 0 20px color-mix(in srgb, var(--vapor-accent-hover) 42%, transparent);
+}
+
+html[data-theme-visual="vapor"] body,
+html[data-theme-visual="vapor"] #root {
+  background: var(--t8-bg-app);
+  color: var(--vapor-ink);
+  font-family: var(--t8-font-family);
+}
+
+/* 应用外壳：紫黑渐变 + 极轻霓虹光晕。 */
+html[data-theme-visual="vapor"] .t8-app-shell {
+  background:
+    radial-gradient(circle at 18% 8%, color-mix(in srgb, var(--vapor-accent) 10%, transparent), transparent 38%),
+    radial-gradient(circle at 84% 92%, color-mix(in srgb, var(--vapor-secondary) 8%, transparent), transparent 42%),
+    linear-gradient(180deg, var(--t8-bg-app), var(--t8-bg-canvas)) !important;
+}
+
+/* 顶栏：深紫半透明 + 粉色下边线。 */
+html[data-theme-visual="vapor"] .t8-topbar {
+  min-height: 48px;
+  background: color-mix(in srgb, var(--vapor-card-bg) 88%, transparent) !important;
+  border-bottom: 1px solid var(--vapor-border) !important;
+  box-shadow: 0 1px 0 var(--vapor-accent-line), 0 6px 18px color-mix(in srgb, var(--vapor-accent) 8%, transparent) !important;
+  backdrop-filter: blur(8px);
+}
+
+/* 顶栏标题：霓虹粉显示字体，保留蒸汽波识别度。 */
+html[data-theme-visual="vapor"] .t8-topbar h1 {
+  font-family: var(--t8-display-font) !important;
+  letter-spacing: 0.08em;
+  color: var(--vapor-ink) !important;
+  text-shadow: 0 0 12px color-mix(in srgb, var(--vapor-accent) 40%, transparent);
+}
+
+/* 顶栏状态芯片（版本/后端/Codex）：胶囊 + 粉/青描边，状态色保留但走霓虹。 */
+html[data-theme-visual="vapor"] .t8-topbar-status-chip {
+  background: color-mix(in srgb, var(--vapor-card-bg) 70%, transparent) !important;
+  border: 1px solid var(--vapor-border) !important;
+  border-radius: var(--vapor-radius-pill) !important;
+  color: var(--vapor-ink-muted) !important;
+  padding: 2px 8px !important;
+  transition: border-color var(--vapor-transition), box-shadow var(--vapor-transition) !important;
+}
+
+html[data-theme-visual="vapor"] .t8-topbar-status-chip:hover {
+  border-color: var(--vapor-accent-line) !important;
+  box-shadow: var(--vapor-glow-sm) !important;
+}
+
+/* 状态色：成功走青、错误走粉红、检测走金，但都用霓虹弱描边而非硬底。 */
+html[data-theme-visual="vapor"] .t8-topbar-status-chip[class*="text-emerald"],
+html[data-theme-visual="vapor"] .t8-topbar-status-chip[class*="emerald-"] {
+  color: var(--vapor-secondary) !important;
+  border-color: var(--vapor-secondary-line) !important;
+  box-shadow: 0 0 8px color-mix(in srgb, var(--vapor-secondary) 20%, transparent) !important;
+}
+
+html[data-theme-visual="vapor"] .t8-topbar-status-chip[class*="text-red"],
+html[data-theme-visual="vapor"] .t8-topbar-status-chip[class*="red-"] {
+  color: var(--t8-danger) !important;
+  border-color: color-mix(in srgb, var(--t8-danger) 36%, transparent) !important;
+  box-shadow: 0 0 8px color-mix(in srgb, var(--t8-danger) 20%, transparent) !important;
+}
+
+html[data-theme-visual="vapor"] .t8-topbar-status-chip[class*="text-yellow"],
+html[data-theme-visual="vapor"] .t8-topbar-status-chip[class*="yellow-"] {
+  color: var(--t8-warning) !important;
+  border-color: color-mix(in srgb, var(--t8-warning) 36%, transparent) !important;
+  box-shadow: 0 0 8px color-mix(in srgb, var(--t8-warning) 20%, transparent) !important;
+}
+
+/* 顶栏工具按钮（主题/Codex/资源库）：覆盖 sky/emerald/zinc 等硬底，统一走霓虹卡。 */
+html[data-theme-visual="vapor"] .t8-topbar button:not(.px-btn):not(.t8-topbar-status-chip) {
+  background: color-mix(in srgb, var(--vapor-card-bg) 70%, transparent) !important;
+  border: 1px solid var(--vapor-border) !important;
+  border-radius: var(--vapor-radius-pill) !important;
+  color: var(--vapor-ink) !important;
+  box-shadow: none !important;
+  transition: border-color var(--vapor-transition), color var(--vapor-transition), box-shadow var(--vapor-transition), transform 120ms ease-out !important;
+}
+
+html[data-theme-visual="vapor"] .t8-topbar button:not(.px-btn):not(.t8-topbar-status-chip):hover {
+  border-color: var(--vapor-accent) !important;
+  color: var(--vapor-accent) !important;
+  box-shadow: var(--vapor-glow-sm) !important;
+}
+
+html[data-theme-visual="vapor"] .t8-topbar button:not(.px-btn):not(.t8-topbar-status-chip):active {
+  transform: scale(0.98);
+}
+
+/* 顶栏激活态按钮（Codex 开启/资源库激活）：粉色填充。 */
+html[data-theme-visual="vapor"] .t8-topbar button[aria-pressed="true"],
+html[data-theme-visual="vapor"] .t8-topbar button[class*="emerald-"]:not(:hover) {
+  background: var(--vapor-accent) !important;
+  color: var(--t8-accent-text) !important;
+  border-color: var(--vapor-accent) !important;
+  box-shadow: 0 0 14px color-mix(in srgb, var(--vapor-accent) 36%, transparent) !important;
+}
+
+/* 侧栏：深紫半透明 + 粉色右边线。 */
+html[data-theme-visual="vapor"] .t8-sidebar,
+html[data-theme-visual="vapor"] .t8-sidebar-scroll {
+  background: var(--vapor-card-bg) !important;
+  border-right: 1px solid var(--vapor-border) !important;
+  backdrop-filter: blur(6px);
+}
+
+/* 侧栏分隔线、分组标题统一走霓虹粉弱线。 */
+html[data-theme-visual="vapor"] .t8-sidebar .border-b,
+html[data-theme-visual="vapor"] .t8-sidebar .border-t {
+  border-color: var(--vapor-border) !important;
+}
+
+/* 侧栏分组标题：粉青弱色，悬停亮起。浅色模式补 displayFont 强化蒸汽波字形识别度。 */
+html[data-theme-visual="vapor"] .t8-sidebar button[class*="uppercase tracking-wider"] {
+  color: var(--vapor-ink-muted) !important;
+  letter-spacing: 0.12em;
+  font-family: var(--t8-display-font) !important;
+  transition: color var(--vapor-transition) !important;
+}
+
+html[data-theme-visual="vapor"] .t8-sidebar button[class*="uppercase tracking-wider"]:hover {
+  color: var(--vapor-accent) !important;
+}
+
+/* 侧栏小工具按钮（折叠/创建等）走霓虹卡。 */
+html[data-theme-visual="vapor"] .t8-sidebar button:not(.t8-sidebar-node):not(.px-btn):not([class*="uppercase tracking-wider"]) {
+  background: color-mix(in srgb, var(--vapor-card-bg) 70%, transparent) !important;
+  border: 1px solid var(--vapor-border) !important;
+  border-radius: var(--vapor-radius-pill) !important;
+  color: var(--vapor-ink-muted) !important;
+  transition: border-color var(--vapor-transition), color var(--vapor-transition), box-shadow var(--vapor-transition) !important;
+}
+
+html[data-theme-visual="vapor"] .t8-sidebar button:not(.t8-sidebar-node):not(.px-btn):not([class*="uppercase tracking-wider"]):hover {
+  border-color: var(--vapor-accent-line) !important;
+  color: var(--vapor-accent) !important;
+  box-shadow: var(--vapor-glow-sm) !important;
+}
+
+/* 侧栏搜索框：深紫底 + 粉色描边 + 青 focus。 */
+html[data-theme-visual="vapor"] .t8-sidebar-search-box {
+  background: var(--vapor-muted-bg) !important;
+  border: 1px solid var(--vapor-border) !important;
+  border-radius: var(--vapor-radius-pill) !important;
+  box-shadow: none !important;
+  transition: border-color var(--vapor-transition), box-shadow var(--vapor-transition) !important;
+}
+
+html[data-theme-visual="vapor"] .t8-sidebar-search-box:focus-within {
+  border-color: var(--vapor-secondary) !important;
+  box-shadow: 0 0 0 1px var(--vapor-secondary), 0 0 12px color-mix(in srgb, var(--vapor-secondary) 26%, transparent) !important;
+}
+
+html[data-theme-visual="vapor"] .t8-sidebar-search-box input {
+  background: transparent !important;
+  color: var(--vapor-ink) !important;
+}
+
+html[data-theme-visual="vapor"] .t8-sidebar-search-box input::placeholder {
+  color: var(--vapor-ink-muted) !important;
+  opacity: 0.7;
+}
+
+/* 侧栏画布列表行：悬停走粉色淡底。 */
+html[data-theme-visual="vapor"] .t8-sidebar-canvas-row {
+  border-radius: var(--vapor-radius) !important;
+  transition: background var(--vapor-transition), box-shadow var(--vapor-transition) !important;
+}
+
+html[data-theme-visual="vapor"] .t8-sidebar-canvas-row:hover {
+  background: color-mix(in srgb, var(--vapor-accent) 8%, transparent) !important;
+}
+
+html[data-theme-visual="vapor"] .t8-sidebar-canvas-title {
+  color: var(--vapor-ink) !important;
+  font-family: var(--t8-display-font) !important;
+}
+
+/* 侧栏更新提示点：用霓虹粉替代默认红，与主题呼应。 */
+html[data-theme-visual="vapor"] .t8-sidebar-canvas-update-dot {
+  background: var(--vapor-accent) !important;
+  border-color: color-mix(in srgb, var(--vapor-accent) 60%, var(--vapor-card-bg)) !important;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--vapor-accent) 22%, transparent), 0 0 8px color-mix(in srgb, var(--vapor-accent) 50%, transparent) !important;
+}
+
+html[data-theme-visual="vapor"] .t8-sidebar-canvas-update-dot::after {
+  border-color: color-mix(in srgb, var(--vapor-accent) 40%, transparent) !important;
+}
+
+/* 侧栏底栏版本信息：弱青色。 */
+html[data-theme-visual="vapor"] .t8-sidebar > div:last-child {
+  color: var(--vapor-ink-muted) !important;
+}
+
+/* 侧栏滚动条：细霓虹粉青。 */
+html[data-theme-visual="vapor"] .t8-sidebar ::-webkit-scrollbar,
+html[data-theme-visual="vapor"] .t8-sidebar-scroll ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+html[data-theme-visual="vapor"] .t8-sidebar ::-webkit-scrollbar-thumb,
+html[data-theme-visual="vapor"] .t8-sidebar-scroll ::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--vapor-accent) 28%, transparent) !important;
+  border-radius: var(--vapor-radius-pill) !important;
+}
+
+html[data-theme-visual="vapor"] .t8-sidebar ::-webkit-scrollbar-thumb:hover,
+html[data-theme-visual="vapor"] .t8-sidebar-scroll ::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--vapor-accent) 50%, transparent) !important;
+}
+
+html[data-theme-visual="vapor"] .t8-sidebar ::-webkit-scrollbar-track,
+html[data-theme-visual="vapor"] .t8-sidebar-scroll ::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+
+
+/* 通用卡片/面板：半透明深紫卡 + 1px 霓虹描边 + 极轻辉光。 */
+html[data-theme-visual="vapor"] .t8-card,
+html[data-theme-visual="vapor"] .t8-sidebar-node {
+  background: var(--vapor-card-bg) !important;
+  border: 1px solid var(--vapor-border) !important;
+  border-radius: var(--vapor-radius) !important;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--vapor-accent) 6%, transparent), 0 8px 20px color-mix(in srgb, var(--vapor-accent) 10%, transparent) !important;
+  transition: border-color var(--vapor-transition), box-shadow var(--vapor-transition) !important;
+}
+
+html[data-theme-visual="vapor"] .t8-panel {
+  background: var(--t8-bg-panel-elevated) !important;
+  border: 1px solid var(--t8-border) !important;
+  border-radius: var(--t8-radius-panel) !important;
+  box-shadow: var(--t8-shadow-panel) !important;
+}
+
+html[data-theme-visual="vapor"] .t8-card:hover,
+html[data-theme-visual="vapor"] .t8-sidebar-node:hover {
+  border-color: var(--vapor-accent-line) !important;
+  box-shadow: var(--vapor-glow-sm) !important;
+}
+
+/* 节点标题：粉色淡底 + 复古显示字体。 */
+html[data-theme-visual="vapor"] .react-flow__node:not(.react-flow__node-groupBox) .t8-node-header,
+html[data-theme-visual="vapor"] .t8-node-header {
+  background: var(--t8-node-header-bg) !important;
+  border-bottom: 1px solid var(--vapor-border) !important;
+  border-radius: var(--vapor-radius) var(--vapor-radius) 0 0 !important;
+  font-family: var(--t8-display-font) !important;
+  letter-spacing: 0.06em;
+}
+
+/* GroupBox (打组容器)：保留每组的 color 身份（用于边框/标题/角点），
+   只覆盖“容器外壳”的视觉语言：圆角、半透明深紫底、backdrop-blur、克制辉光。
+   组件内联 style 设置的 border/background 不 !important 覆盖，仅作风格补充。 */
+html[data-theme-visual="vapor"] .react-flow__node-groupBox > div:first-child,
+html[data-theme-visual="vapor"] .t8-group-box {
+  border-radius: var(--vapor-radius) !important;
+  backdrop-filter: blur(4px);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--vapor-accent) 5%, transparent),
+              0 8px 28px color-mix(in srgb, var(--vapor-accent) 8%, transparent) !important;
+}
+
+/* 选中态：在原有组色边外再加一层霓虹粉外环，与普通节点选中一致。 */
+html[data-theme-visual="vapor"] .react-flow__node-groupBox.selected > div:first-child,
+html[data-theme-visual="vapor"] .t8-group-box[data-selected="true"] {
+  box-shadow: 0 0 0 2px var(--vapor-accent),
+              0 0 18px color-mix(in srgb, var(--vapor-accent) 40%, transparent),
+              0 8px 28px color-mix(in srgb, var(--vapor-accent) 10%, transparent) !important;
+}
+
+/* 组标题栏：半透明深紫，叠加在组色之上；保持组色识别度。 */
+html[data-theme-visual="vapor"] .t8-group-box__header {
+  border-top-left-radius: var(--vapor-radius) !important;
+  border-top-right-radius: var(--vapor-radius) !important;
+  font-family: var(--t8-display-font) !important;
+  letter-spacing: 0.06em;
+}
+
+/* 组标题文字 / 节点计数：用主文字色，保证可读性。 */
+html[data-theme-visual="vapor"] .t8-group-box__title,
+html[data-theme-visual="vapor"] .t8-group-box__count {
+  color: var(--vapor-ink) !important;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.4);
+}
+
+/* 组颜色指示点 / Handle / 角点：保持组件内联组色，仅叠加霓虹辉光增强识别。 */
+html[data-theme-visual="vapor"] .t8-group-box__swatch,
+html[data-theme-visual="vapor"] .t8-group-box__handle {
+  box-shadow: 0 0 8px color-mix(in srgb, var(--vapor-accent) 30%, transparent) !important;
+}
+
+/* 组内操作按钮（重命名/删除/执行）：走 vapor 霓虹卡，不破坏组色执行按钮。 */
+html[data-theme-visual="vapor"] .t8-group-box__button:not(.t8-group-box__button--run) {
+  background: color-mix(in srgb, var(--vapor-card-bg) 72%, transparent) !important;
+  border: 1px solid var(--vapor-border) !important;
+  border-radius: var(--vapor-radius-pill) !important;
+  color: var(--vapor-ink-muted) !important;
+  transition: border-color var(--vapor-transition), color var(--vapor-transition), box-shadow var(--vapor-transition) !important;
+}
+
+html[data-theme-visual="vapor"] .t8-group-box__button:not(.t8-group-box__button--run):hover {
+  border-color: var(--vapor-accent-line) !important;
+  color: var(--vapor-accent) !important;
+  box-shadow: var(--vapor-glow-sm) !important;
+}
+
+/* 组颜色选择器浮层：与右键菜单/弹窗一致的霓虹卡。 */
+html[data-theme-visual="vapor"] .t8-group-box ~ div[class*="grid"] {
+  background: var(--vapor-card-bg-elev) !important;
+  border: 1px solid var(--vapor-accent-line) !important;
+  border-radius: var(--vapor-radius) !important;
+  box-shadow: var(--vapor-glow-md) !important;
+  backdrop-filter: blur(10px);
+}
+
+/* === 按钮：胶囊 9999px === */
+html[data-theme-visual="vapor"] .react-flow__node:not(.react-flow__node-groupBox) button:not(.react-flow__controls-button):not([class*="text-red"]):not([class*="bg-red"]):not([title*="删除"]):not([aria-label*="删除"]),
+html[data-theme-visual="vapor"] .t8-btn,
+html[data-theme-visual="vapor"] .t8-mini-icon-button {
+  background: color-mix(in srgb, var(--vapor-card-bg) 72%, transparent) !important;
+  border: 1px solid var(--vapor-accent-line) !important;
+  border-radius: var(--vapor-radius-pill) !important;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--vapor-accent) 4%, transparent) !important;
+  color: var(--vapor-ink) !important;
+  transition: border-color var(--vapor-transition), box-shadow var(--vapor-transition), transform 120ms ease-out !important;
+}
+
+html[data-theme-visual="vapor"] .react-flow__node:not(.react-flow__node-groupBox) button:not(.react-flow__controls-button):not([class*="text-red"]):not([class*="bg-red"]):not([title*="删除"]):not([aria-label*="删除"]):hover,
+html[data-theme-visual="vapor"] .t8-btn:hover,
+html[data-theme-visual="vapor"] .t8-mini-icon-button:hover {
+  border-color: var(--vapor-accent) !important;
+  box-shadow: var(--vapor-glow-sm) !important;
+}
+
+html[data-theme-visual="vapor"] .react-flow__node:not(.react-flow__node-groupBox) button:not(.react-flow__controls-button):not([class*="text-red"]):not([class*="bg-red"]):not([title*="删除"]):not([aria-label*="删除"]):active,
+html[data-theme-visual="vapor"] .t8-btn:active,
+html[data-theme-visual="vapor"] .t8-mini-icon-button:active {
+  transform: scale(0.98);
+  box-shadow: var(--vapor-glow-secondary) !important;
+}
+
+/* 主按钮：粉色填充 + 青色 hover 描边。 */
+html[data-theme-visual="vapor"] .t8-btn--primary,
+html[data-theme-visual="vapor"] button[class*="bg-"][class*="--accent"],
+html[data-theme-visual="vapor"] .px-btn--mint {
+  background: var(--vapor-accent) !important;
+  color: var(--t8-accent-text) !important;
+  border: 1px solid var(--vapor-accent) !important;
+  box-shadow: 0 0 16px color-mix(in srgb, var(--vapor-accent) 36%, transparent) !important;
+}
+
+html[data-theme-visual="vapor"] .t8-btn--primary:hover {
+  border-color: var(--vapor-secondary) !important;
+  box-shadow: 0 0 0 1px var(--vapor-secondary), 0 0 18px color-mix(in srgb, var(--vapor-accent) 48%, transparent) !important;
+}
+
+/* === 输入框/选择框：深紫底 + 青色 focus 描边 === */
+html[data-theme-visual="vapor"] .react-flow__node:not(.react-flow__node-groupBox) input,
+html[data-theme-visual="vapor"] .react-flow__node:not(.react-flow__node-groupBox) select,
+html[data-theme-visual="vapor"] .react-flow__node:not(.react-flow__node-groupBox) textarea,
+html[data-theme-visual="vapor"] .t8-input,
+html[data-theme-visual="vapor"] .t8-select,
+html[data-theme-visual="vapor"] textarea {
+  background: var(--vapor-muted-bg) !important;
+  border: 1px solid var(--vapor-border) !important;
+  border-radius: var(--vapor-radius) !important;
+  box-shadow: none !important;
+  color: var(--vapor-ink) !important;
+  transition: border-color var(--vapor-transition), box-shadow var(--vapor-transition) !important;
+}
+
+html[data-theme-visual="vapor"] .react-flow__node:not(.react-flow__node-groupBox) input:focus,
+html[data-theme-visual="vapor"] .react-flow__node:not(.react-flow__node-groupBox) select:focus,
+html[data-theme-visual="vapor"] .react-flow__node:not(.react-flow__node-groupBox) textarea:focus,
+html[data-theme-visual="vapor"] .t8-input:focus,
+html[data-theme-visual="vapor"] .t8-select:focus,
+html[data-theme-visual="vapor"] textarea:focus {
+  outline: none !important;
+  border-color: var(--vapor-secondary) !important;
+  box-shadow: 0 0 0 1px var(--vapor-secondary), 0 0 12px color-mix(in srgb, var(--vapor-secondary) 28%, transparent) !important;
+}
+
+/* select option：下拉项可读性兜底。 */
+html[data-theme-visual="vapor"] select option {
+  background: var(--vapor-card-bg-elev) !important;
+  color: var(--vapor-ink) !important;
+}
+
+html[data-theme-visual="vapor"] select option:checked {
+  background: var(--vapor-accent-soft) !important;
+  color: var(--vapor-ink) !important;
+}
+
+/* === 端口（Handle）：12px 圆，粉色边 + 按 token 着色，hover 辉光放大 === */
+html[data-theme-visual="vapor"] .react-flow__handle {
+  border-radius: 50% !important;
+  border: 1px solid var(--vapor-accent) !important;
+  background: var(--t8-accent) !important;
+  box-shadow: 0 0 6px color-mix(in srgb, var(--vapor-accent) 36%, transparent) !important;
+  transition: box-shadow var(--vapor-transition) !important;
+}
+
+html[data-theme-visual="vapor"] .react-flow__handle:hover {
+  box-shadow: 0 0 12px color-mix(in srgb, var(--vapor-accent) 56%, transparent) !important;
+}
+
+html[data-theme-visual="vapor"] .react-flow__handle.react-flow__handle-connecting {
+  background: var(--t8-warning) !important;
+  border-color: var(--t8-warning) !important;
+}
+
+html[data-theme-visual="vapor"] .react-flow__handle.react-flow__handle-valid {
+  background: var(--t8-success) !important;
+  border-color: var(--t8-success) !important;
+}
+
+/* === 连线：粉紫细线；选中/悬停青色加粗 === */
+html[data-theme-visual="vapor"] .react-flow__edge-path {
+  stroke: var(--t8-edge) !important;
+  stroke-width: 1.8 !important;
+  stroke-linecap: round !important;
+  transition: stroke 200ms ease, stroke-width 200ms ease;
+}
+
+html[data-theme-visual="vapor"] .react-flow__edge.selected .react-flow__edge-path,
+html[data-theme-visual="vapor"] .react-flow__edge:hover .react-flow__edge-path {
+  stroke: var(--t8-edge-selected) !important;
+  stroke-width: 2.4 !important;
+}
+
+/* 主题激活边（选中/悬停相关）：克制流动虚线。
+   仅在 viewport 静止、节点非拖拽、激活边数 ≤ 36 时由 DeletableEdge 注入 class。 */
+html[data-theme-visual="vapor"] .react-flow__edge.t8-edge-theme-active .react-flow__edge-path {
+  stroke: var(--vapor-secondary) !important;
+  stroke-width: 2.2 !important;
+  stroke-dasharray: 6 4;
+  animation: t8-vapor-edge-flow 1.6s linear infinite;
+}
+
+@keyframes t8-vapor-edge-flow {
+  to { stroke-dashoffset: -20; }
+}
+
+/* 框选：青色淡填充。 */
+html[data-theme-visual="vapor"] .react-flow__selection {
+  background: var(--t8-selection-bg) !important;
+  border: 1px solid var(--t8-selection-border) !important;
+  border-radius: var(--vapor-radius) !important;
+}
+
+/* === MiniMap / 音乐按钮：浮起控件，深紫底 + 粉色描边（controls 面板透明，仅按钮走霓虹卡） === */
+html[data-theme-visual="vapor"] .t8-theme-music-toggle {
+  background: var(--vapor-card-bg) !important;
+  border: 1px solid var(--vapor-accent-line) !important;
+  border-radius: var(--vapor-radius) !important;
+  box-shadow: var(--vapor-glow-sm) !important;
+  backdrop-filter: blur(6px);
+}
+
+/* controls 面板容器透明，只给内部按钮走霓虹卡。 */
+html[data-theme-visual="vapor"] .react-flow__controls {
+  background: var(--t8-bg-panel-elevated) !important;
+  border: 1px solid var(--t8-border) !important;
+  border-radius: var(--t8-radius-panel) !important;
+  box-shadow: var(--t8-shadow-panel) !important;
+}
+
+html[data-theme-visual="vapor"] .react-flow__controls-button {
+  background: var(--vapor-card-bg) !important;
+  border: 1px solid var(--vapor-border) !important;
+  border-radius: var(--vapor-radius) !important;
+  box-shadow: 0 0 8px color-mix(in srgb, var(--vapor-accent) 14%, transparent) !important;
+  color: var(--vapor-ink) !important;
+  margin: 2px 0 !important;
+  backdrop-filter: blur(6px);
+}
+
+html[data-theme-visual="vapor"] .react-flow__controls-button:hover {
+  background: var(--vapor-accent-soft) !important;
+  border-color: var(--vapor-accent) !important;
+  color: var(--vapor-accent) !important;
+}
+/* === 右键菜单 / 弹窗 / 抽屉 === */
+html[data-theme-visual="vapor"] .t8-modal,
+html[data-theme-visual="vapor"] .t8-drawer {
+  background: var(--vapor-card-bg-elev) !important;
+  border: 1px solid var(--vapor-accent-line) !important;
+  border-radius: var(--vapor-radius) !important;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--vapor-accent) 6%, transparent), 0 12px 36px color-mix(in srgb, var(--vapor-accent) 16%, transparent) !important;
+  backdrop-filter: blur(10px);
+}
+
+html[data-theme-visual="vapor"] .t8-context-menu {
+  background: var(--t8-bg-panel-elevated) !important;
+  border: 1px solid var(--t8-border) !important;
+  border-radius: var(--t8-radius-panel) !important;
+  box-shadow: var(--t8-shadow-panel) !important;
+}
+
+/* 弹窗/抽屉内部分隔线、标题走霓虹粉弱线。 */
+html[data-theme-visual="vapor"] .t8-modal h1,
+html[data-theme-visual="vapor"] .t8-modal h2,
+html[data-theme-visual="vapor"] .t8-modal h3,
+html[data-theme-visual="vapor"] .t8-drawer h1,
+html[data-theme-visual="vapor"] .t8-drawer h2,
+html[data-theme-visual="vapor"] .t8-drawer h3 {
+  font-family: var(--t8-display-font) !important;
+  letter-spacing: 0.06em;
+  color: var(--vapor-ink) !important;
+}
+
+html[data-theme-visual="vapor"] .t8-modal .border-b,
+html[data-theme-visual="vapor"] .t8-drawer .border-b,
+html[data-theme-visual="vapor"] .t8-context-menu .border-b {
+  border-color: var(--vapor-border) !important;
+}
+
+/* === Chip / Badge：胶囊 + 粉色描边 === */
+html[data-theme-visual="vapor"] .t8-chip {
+  background: color-mix(in srgb, var(--vapor-card-bg) 72%, transparent) !important;
+  border: 1px solid var(--vapor-border) !important;
+  border-radius: var(--vapor-radius-pill) !important;
+  color: var(--vapor-ink) !important;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--vapor-accent) 4%, transparent) !important;
+}
+
+html[data-theme-visual="vapor"] .t8-chip--active,
+html[data-theme-visual="vapor"] .t8-chip[class*="active"] {
+  background: var(--vapor-accent-soft) !important;
+  border-color: var(--vapor-accent) !important;
+  color: var(--vapor-accent) !important;
+  box-shadow: var(--vapor-glow-sm) !important;
+}
+
+/* 智能节点状态 chip：状态色保留，叠加霓虹弱辉光。 */
+html[data-theme-visual="vapor"] .t8-smart-mini-status {
+  border-radius: var(--vapor-radius-pill) !important;
+  backdrop-filter: blur(4px);
+}
+
+html[data-theme-visual="vapor"] .t8-smart-node-status--success {
+  border-color: var(--vapor-secondary-line) !important;
+  box-shadow: 0 0 6px color-mix(in srgb, var(--vapor-secondary) 28%, transparent) !important;
+}
+
+html[data-theme-visual="vapor"] .t8-smart-node-status--error,
+html[data-theme-visual="vapor"] .t8-smart-node-status--danger {
+  border-color: color-mix(in srgb, var(--t8-danger) 36%, transparent) !important;
+  box-shadow: 0 0 6px color-mix(in srgb, var(--t8-danger) 26%, transparent) !important;
+}
+
+html[data-theme-visual="vapor"] .t8-smart-node-status--warning,
+html[data-theme-visual="vapor"] .t8-smart-node-status--pending {
+  border-color: color-mix(in srgb, var(--t8-warning) 36%, transparent) !important;
+  box-shadow: 0 0 6px color-mix(in srgb, var(--t8-warning) 26%, transparent) !important;
+}
+
+/* === Tooltip / 通用浮层提示：霓虹卡 === */
+html[data-theme-visual="vapor"] [role="tooltip"],
+html[data-theme-visual="vapor"] .t8-tooltip {
+  background: var(--vapor-card-bg-elev) !important;
+  border: 1px solid var(--vapor-accent-line) !important;
+  border-radius: var(--vapor-radius) !important;
+  color: var(--vapor-ink) !important;
+  box-shadow: var(--vapor-glow-sm) !important;
+  backdrop-filter: blur(8px);
+}
+
+/* === 顶栏/侧栏中残留的硬底工具类兜底：把 sky/emerald/zinc 等彩色按钮底色收敛为霓虹卡 ===
+   仅在深色模式生效，浅色模式保留原色保证可读性。 */
+html[data-theme-visual="vapor"][data-theme-mode="dark"] .t8-topbar button[class*="bg-sky-"],
+html[data-theme-visual="vapor"][data-theme-mode="dark"] .t8-topbar button[class*="bg-emerald-"],
+html[data-theme-visual="vapor"][data-theme-mode="dark"] .t8-topbar button[class*="bg-white/"] {
+  background: color-mix(in srgb, var(--vapor-card-bg) 70%, transparent) !important;
+  border-color: var(--vapor-border) !important;
+}
+
+/* === SHIFT 划线轨迹：故障色块三色偏移 === */
+html[data-theme-visual="vapor"] .t8-cut-track {
+  stroke: var(--t8-cut-track) !important;
+  stroke-width: 2.4 !important;
+  stroke-dasharray: none !important;
+  opacity: 0.8;
+  filter: drop-shadow(1px 0 0 var(--vapor-secondary)) drop-shadow(-1px 0 0 var(--vapor-accent));
+}
+
+html[data-theme-visual="vapor"] .t8-cut-button {
+  background: var(--t8-cut-button-bg) !important;
+  color: var(--t8-cut-button-fg) !important;
+  border: 1px solid var(--vapor-accent-line) !important;
+  border-radius: var(--vapor-radius-pill) !important;
+  box-shadow: var(--vapor-glow-sm) !important;
+}
+
+/* === 浮层操作栏：霓虹卡 === */
+html[data-theme-visual="vapor"] .t8-node-action-bar {
+  background: var(--vapor-card-bg-elev) !important;
+  border: 1px solid var(--vapor-accent-line) !important;
+  border-radius: var(--vapor-radius-pill) !important;
+  box-shadow: var(--vapor-glow-sm) !important;
+  backdrop-filter: blur(8px);
+}
+
+/* === legacy 内部控件兜底：浅色模式下把节点里残留的暗色工具类映射回 vapor 调色 === */
+html[data-theme-visual="vapor"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) [class*="text-white"]:not(input):not(textarea):not(select) {
+  color: var(--vapor-ink) !important;
+}
+
+/* 浅色模式 svg 图标：跟随父级焦墨色，不被 text-white/NN 冲淡成淡白 */
+html[data-theme-visual="vapor"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) svg,
+html[data-theme-visual="vapor"][data-theme-mode="light"] .t8-node svg {
+  color: var(--vapor-ink) !important;
+}
+
+html[data-theme-visual="vapor"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) [class*="bg-white/"]:not(input):not(textarea):not(select):not(img):not(video):not(canvas) {
+  background: var(--vapor-card-bg-elev) !important;
+}
+
+html[data-theme-visual="vapor"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) [class*="bg-zinc-900"]:not(input):not(textarea):not(select):not(img):not(video):not(canvas),
+html[data-theme-visual="vapor"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) [class*="bg-zinc-950"]:not(input):not(textarea):not(select):not(img):not(video):not(canvas) {
+  background: var(--vapor-muted-bg) !important;
+}
+
+html[data-theme-visual="vapor"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) [class*="border-white/"] {
+  border-color: var(--vapor-border) !important;
+}
+
+/* === 视口拖动 / 节点拖拽时：暂停霓虹呼吸与边流动，避免性能拖累 === */
+html[data-theme-visual="vapor"] .t8-canvas-shell.t8-viewport-moving .react-flow__node.selected:not(.react-flow__node-groupBox) > div:first-child,
+html[data-theme-visual="vapor"] .t8-canvas-shell.t8-node-dragging .react-flow__node.selected:not(.react-flow__node-groupBox) > div:first-child {
+  animation: none !important;
+}
+
+html[data-theme-visual="vapor"] .t8-canvas-shell.t8-viewport-moving .react-flow__edge.t8-edge-theme-active .react-flow__edge-path,
+html[data-theme-visual="vapor"] .t8-canvas-shell.t8-node-dragging .react-flow__edge.t8-edge-theme-active .react-flow__edge-path {
+  animation: none !important;
+}
+
+/* 减少动态效果偏好：关掉所有过渡/辉光/呼吸。 */
+@media (prefers-reduced-motion: reduce) {
+  html[data-theme-visual="vapor"] .t8-card,
+  html[data-theme-visual="vapor"] .t8-btn,
+  html[data-theme-visual="vapor"] .react-flow__handle,
+  html[data-theme-visual="vapor"] .react-flow__edge-path {
+    transition: none !important;
+    animation: none !important;
+    box-shadow: none !important;
+    filter: none !important;
+  }
+}

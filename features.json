@@ -1,7 +1,7 @@
 {
   "$schema": "本文件为 T8-penguin-canvas 节点清单防丢失锁,任何节点删减都需要在 roadmap.md 中说明并更新本文件。",
   "version": "2.3.8",
-  "lastUpdated": "2026-06-25-v238-electron-release",
+  "lastUpdated": "2026-07-05-ink-shuimo-theme",
   "electronReleaseV238": {
     "version": "2.3.8",
     "status": "electron-release",
@@ -940,12 +940,9 @@
       "src/utils/farmSound.ts",
       "backend/src/routes/canvas.js",
       "backend/src/routes/themes.js",
-      "backend/src/achievements/store.js",
-      "shared/achievementManifest.json",
       "tests/farmCanvas.test.ts",
       "tests/themeRegistry.test.ts",
-      "tests/themeRoutes.test.ts",
-      "tests/achievements.test.ts"
+      "tests/themeRoutes.test.ts"
     ],
     "packaging": {
       "script": "T8_RELEASE_APPROVAL=release-2.3.0 npm run dist:release（仅在用户明确要求发布时使用）",
@@ -972,7 +969,7 @@
     ],
     "verification": [
       "2026-06-22 R498: node --test tests\\electronPackaging.test.ts tests\\resourceLibraryDrawer.test.ts (7/7 pass)",
-      "2026-06-22 R498: node --test tests\\farmCanvas.test.ts tests\\themeRegistry.test.ts tests\\themeRoutes.test.ts tests\\achievements.test.ts (38/38 pass)",
+      "2026-06-22 R498: node --test tests\\farmCanvas.test.ts tests\\themeRegistry.test.ts tests\\themeRoutes.test.ts (38/38 pass)",
       "2026-06-22 R498: npm run rh-toolbox:check (pass: 11 tools / 9 categories)",
       "2026-06-22 R498: npm run public:check (pass)",
       "2026-06-22 R498: npm run type-check (pass)",
@@ -1009,9 +1006,8 @@
       "2026-06-21 R488: npm run type-check (pass)",
       "node --test --test-name-pattern \"Farm Story phase 5 acceptance guard|Farm Story browser QA keeps top quick actions\" tests\\themeRegistry.test.ts",
       "node --test tests\\farmCanvas.test.ts tests\\themeRegistry.test.ts tests\\themeRoutes.test.ts (28/28 pass)",
-      "node --test tests\\achievements.test.ts (10/10 pass)",
       "node --test tests\\electronPackaging.test.ts (6/6 pass)",
-      "node -c backend\\src\\routes\\canvas.js && node -c backend\\src\\routes\\themes.js && node -c backend\\src\\achievements\\store.js",
+      "node -c backend\\src\\routes\\canvas.js && node -c backend\\src\\routes\\themes.js",
       "npm run rh-toolbox:check",
       "npm run public:check",
       "npm run type-check",
@@ -1786,7 +1782,7 @@
       "真实 Grok OAuth 私有调用、New API 分组令牌等私有能力继续通过本机 ignored local-private 扩展 / 加密链路处理。"
     ],
     "verification": [
-      "node --test tests\\tetrisEngine.test.ts tests\\themeRegistry.test.ts tests\\batchProcessor.test.ts tests\\codexCliAgent.test.ts tests\\codexImageConjure.test.ts tests\\grokOAuthAgent.test.ts tests\\grokVideo15.test.ts tests\\aiWatermarkRunner.test.ts tests\\achievements.test.ts tests\\updateMdRegressions.test.ts tests\\electronPackaging.test.ts tests\\falToolbox.test.ts",
+      "node --test tests\\tetrisEngine.test.ts tests\\themeRegistry.test.ts tests\\batchProcessor.test.ts tests\\codexCliAgent.test.ts tests\\codexImageConjure.test.ts tests\\grokOAuthAgent.test.ts tests\\grokVideo15.test.ts tests\\aiWatermarkRunner.test.ts tests\\updateMdRegressions.test.ts tests\\electronPackaging.test.ts tests\\falToolbox.test.ts",
       "node -c backend\\src\\routes\\codexCli.js",
       "node -c backend\\src\\utils\\codexCliRunner.js",
       "node -c backend\\src\\routes\\grokOAuth.js",
@@ -1835,7 +1831,7 @@
       "真实 Grok OAuth 私有调用、New API 分组令牌等私有能力继续通过本机 ignored local-private 扩展 / 加密链路处理。"
     ],
     "verification": [
-      "node --test tests\\tetrisEngine.test.ts tests\\themeRegistry.test.ts tests\\batchProcessor.test.ts tests\\codexCliAgent.test.ts tests\\codexImageConjure.test.ts tests\\grokOAuthAgent.test.ts tests\\grokVideo15.test.ts tests\\aiWatermarkRunner.test.ts tests\\achievements.test.ts tests\\updateMdRegressions.test.ts tests\\electronPackaging.test.ts",
+      "node --test tests\\tetrisEngine.test.ts tests\\themeRegistry.test.ts tests\\batchProcessor.test.ts tests\\codexCliAgent.test.ts tests\\codexImageConjure.test.ts tests\\grokOAuthAgent.test.ts tests\\grokVideo15.test.ts tests\\aiWatermarkRunner.test.ts tests\\updateMdRegressions.test.ts tests\\electronPackaging.test.ts",
       "node -c backend\\src\\routes\\codexCli.js",
       "node -c backend\\src\\utils\\codexCliRunner.js",
       "node -c backend\\src\\routes\\grokOAuth.js",
@@ -1886,7 +1882,7 @@
       "node -c backend\\src\\cloudUploads\\settings.js",
       "node -c backend\\src\\cloudUploads\\uploader.js",
       "node -c backend\\src\\providers\\comfyui.js",
-      "node --test tests\\cloudUploads.test.ts tests\\comfyuiProvider.test.ts tests\\comfyuiImageNode.test.ts tests\\comfyuiAppsManifest.test.ts tests\\comfyuiAppNodes.test.ts tests\\grokVideo15.test.ts tests\\modelUsageHelp.test.ts tests\\saintSeiyaBattle.test.ts tests\\achievements.test.ts",
+      "node --test tests\\cloudUploads.test.ts tests\\comfyuiProvider.test.ts tests\\comfyuiImageNode.test.ts tests\\comfyuiAppsManifest.test.ts tests\\comfyuiAppNodes.test.ts tests\\grokVideo15.test.ts tests\\modelUsageHelp.test.ts tests\\saintSeiyaBattle.test.ts",
       "npm run type-check",
       "npm run build",
       "npm run public:check",
@@ -1902,8 +1898,7 @@
       "新增 visualStyle=tetris、iconPack=tetromino-well、canvasPattern=tetris-stack、nodeFrame=arcade-cabinet-card 和 block-drop 合成主题音乐 preset。",
       "TetrisPanel 挂在 CanvasToolbar 子扩展位，默认展开、可折叠，展开面板相对按钮定位 right:0，不使用 fixed 大遮罩，避免挡住 RUN 和核心工具栏。",
       "小游戏使用纯逻辑 tetrisEngine：10x20 棋盘、7-bag、公平出块、墙踢旋转、幽灵落点、暂存、硬降、消行计分、99 级速度递增和本地最高分/局面恢复。",
-      "键盘只在 Tetris 面板 hover 或 focus 且目标不是 input/textarea/select/contenteditable 时截获方向键、空格、Shift/C、P、R；鼠标离开、窗口失焦、画布移动或节点拖动时自动暂停。",
-      "成就系统新增 tetris 主题轨道和 tetris.game_started / line_clear / tetris_clear / level_reached / game_over 摘要事件，只保存计数与等级，不保存棋盘、Prompt 或资源 URL。"
+      "键盘只在 Tetris 面板 hover 或 focus 且目标不是 input/textarea/select/contenteditable 时截获方向键、空格、Shift/C、P、R；鼠标离开、窗口失焦、画布移动或节点拖动时自动暂停。"
     ],
     "files": [
       "src/utils/tetrisEngine.ts",
@@ -1915,16 +1910,11 @@
       "src/components/ThemeTemplateManager.tsx",
       "src/components/ThemeMusicToggle.tsx",
       "src/components/Canvas.tsx",
-      "shared/achievementManifest.json",
-      "backend/src/achievements/store.js",
       "tests/tetrisEngine.test.ts",
-      "tests/themeRegistry.test.ts",
-      "tests/achievements.test.ts"
+      "tests/themeRegistry.test.ts"
     ],
     "verification": [
       "node --test tests\\tetrisEngine.test.ts tests\\themeRegistry.test.ts",
-      "node --test tests\\achievements.test.ts",
-      "node -c backend\\src\\achievements\\store.js",
       "npm run type-check",
       "npm run build"
     ]
@@ -1974,16 +1964,13 @@
       "src/utils/farmSound.ts",
       "backend/src/routes/canvas.js",
       "backend/src/routes/themes.js",
-      "backend/src/achievements/store.js",
-      "shared/achievementManifest.json",
       "tests/farmCanvas.test.ts",
       "tests/themeRegistry.test.ts",
-      "tests/themeRoutes.test.ts",
-      "tests/achievements.test.ts"
+      "tests/themeRoutes.test.ts"
     ],
     "verification": [
       "2026-06-22 R498: node --test tests\\electronPackaging.test.ts tests\\resourceLibraryDrawer.test.ts (7/7 pass)",
-      "2026-06-22 R498: node --test tests\\farmCanvas.test.ts tests\\themeRegistry.test.ts tests\\themeRoutes.test.ts tests\\achievements.test.ts (38/38 pass)",
+      "2026-06-22 R498: node --test tests\\farmCanvas.test.ts tests\\themeRegistry.test.ts tests\\themeRoutes.test.ts (38/38 pass)",
       "2026-06-22 R498: npm run rh-toolbox:check (pass: 11 tools / 9 categories)",
       "2026-06-22 R498: npm run public:check (pass)",
       "2026-06-22 R498: npm run type-check (pass)",
@@ -2021,10 +2008,8 @@
       "2026-06-21 R487: node --test --test-name-pattern \"farm render layer\" tests\\farmCanvas.test.ts (pass, ~240s)",
       "2026-06-21 R487: node --test tests\\farmCanvas.test.ts tests\\themeRegistry.test.ts tests\\themeRoutes.test.ts (28/28 pass, ~318s)",
       "node --test tests\\farmCanvas.test.ts tests\\themeRegistry.test.ts tests\\themeRoutes.test.ts",
-      "node --test tests\\achievements.test.ts",
       "node -c backend\\src\\routes\\canvas.js",
       "node -c backend\\src\\routes\\themes.js",
-      "node -c backend\\src\\achievements\\store.js",
       "npm run type-check (2026-06-21 R487 pass)",
       "2026-06-22 R498: 发布前确认 gh 已登录 T8mars、远端 v2.3.0 tag 不存在、GitHub latest 为 v2.2.9；本轮将按用户授权发布 v2.3.0。"
     ],
@@ -2415,7 +2400,7 @@
       "真实 Grok OAuth 私有调用继续通过本机 ignored local-private 扩展 / 加密链路处理，公开仓库只保留安全外壳。"
     ],
     "verification": [
-      "node --test tests\\saintSeiyaBattle.test.ts tests\\grokOAuthAgent.test.ts tests\\achievements.test.ts",
+      "node --test tests\\saintSeiyaBattle.test.ts tests\\grokOAuthAgent.test.ts",
       "npm run type-check",
       "npm run build",
       "npm run public:check",
@@ -2445,7 +2430,7 @@
       "本次不运行 npm run dist:release，不生成安装包、blockmap、latest.yml，也不创建 GitHub Release。"
     ],
     "verification": [
-      "node --test tests\\rhToolbox.test.ts tests\\falToolbox.test.ts tests\\grokOAuthAgent.test.ts tests\\radialMenu.test.ts tests\\saintSeiyaBattle.test.ts tests\\achievements.test.ts tests\\updateMdRegressions.test.ts",
+      "node --test tests\\rhToolbox.test.ts tests\\falToolbox.test.ts tests\\grokOAuthAgent.test.ts tests\\radialMenu.test.ts tests\\saintSeiyaBattle.test.ts tests\\updateMdRegressions.test.ts",
       "npm run type-check",
       "npm run build",
       "npm run public:check"
@@ -2523,10 +2508,7 @@
       "src/App.tsx",
       "src/components/Canvas.tsx",
       "src/components/Sidebar.tsx",
-      "shared/achievementManifest.json",
-      "backend/src/achievements/store.js",
       "tests/saintSeiyaBattle.test.ts",
-      "tests/achievements.test.ts",
       "features.json"
     ],
     "capabilities": [
@@ -2553,7 +2535,7 @@
       "首批数据包含 5 件青铜、12 件白银、12 件黄金圣衣；黄金圣衣包含原作常用招式名。"
     ],
     "verification": [
-      "node --test tests\\saintSeiyaBattle.test.ts tests\\achievements.test.ts",
+      "node --test tests\\saintSeiyaBattle.test.ts",
       "npm run type-check",
       "npm run build"
     ]
@@ -3172,7 +3154,7 @@
       "Electron 用户包可在本机 dist:release 时包含 ignored local-private 加密扩展；GitHub Source code zip/tar.gz 不包含这些源码。"
     ],
     "verification": [
-      "node --test tests\\volcengineProvider.test.ts tests\\achievements.test.ts tests\\dragonBallRadar.test.ts tests\\advancedProviderFrontend.test.ts tests\\apiSettingsTheme.test.ts",
+      "node --test tests\\volcengineProvider.test.ts tests\\dragonBallRadar.test.ts tests\\advancedProviderFrontend.test.ts tests\\apiSettingsTheme.test.ts",
       "npm run type-check",
       "npm run build",
       "npm run public:check",
@@ -3487,23 +3469,12 @@
       "qualityUtil": "src/utils/panorama3d.ts::estimatePanoramaImageQuality",
       "developerRule": "3D 全景只做轻量客户端质量提示，不阻断用户继续使用；保存资源库仍必须保留原图 URL、panorama metadata 和全景分类，接缝检测失败时要给 unknown 状态而不是报错。"
     },
-    "achievementRetentionContract": {
-      "events": [
-        "resource.saved",
-        "workflow.saved"
-      ],
-      "ui": [
-        "成就导入 JSON",
-        "今日主题建议"
-      ],
-      "developerRule": "新增留存事件只能记录非内容字段，例如 kind/category/nodeType/计数；严禁记录 prompt、短链、Cookie、完整文件名、资源 URL 或用户正文。重复保存、重复导入、重复运行导致的刷计数必须有去重或业务 guard。"
-    },
     "aggregateParserAuthContract": {
       "ui": "src/components/nodes/AggregateParserNode.tsx::authSteps",
       "developerRule": "聚合解析授权体验默认面向不懂 Cookie 的普通用户：优先引导打开官方登录页、回到节点检测授权、直接解析或保存授权；Web 模式只提供手动兜底，不得暗示可以自动读取浏览器 Cookie。"
     },
     "verification": [
-      "node --test tests\\promptEditor.test.ts tests\\panorama3d.test.ts tests\\achievements.test.ts tests\\aggregateParser.test.ts",
+      "node --test tests\\promptEditor.test.ts tests\\panorama3d.test.ts tests\\aggregateParser.test.ts",
       "npm run type-check",
       "npm run build"
     ]
@@ -3644,10 +3615,9 @@
       "backend/src/ 任何文件修改后必须重新 npm run encrypt 再打包",
       "main.cjs 的窗口标题 / log 窗口 / IPC version 三处版本号，以及 backend/src/config.js APP_VERSION 必须与 package.json 同步",
       "安装包必须创建桌面和开始菜单快捷方式：createDesktopShortcut=\"always\"、createStartMenuShortcut=true，installer.nsh customInstall 兜底 CreateShortCut 不得删除",
-      "_post_build.cjs 验证后端 .t8c 必存在: server/config + routes/{canvas,settings,proxy,externalProviders,files,imageOps,resources,themes,eagle,figma,aiWatermark,cloudUploads,parseHub,achievements} + achievements/store + providers/{registry,mediaResolver,llmMedia,adapters,openaiCompatible,modelscope,volcengine,comfyui,jimengCli} + cloudUploads/{settings,uploader} + tools/aiWatermark/{runner,media} + utils/duckPayload/parseHubBridge",
+      "_post_build.cjs 验证后端 .t8c 必存在: server/config + routes/{canvas,settings,proxy,externalProviders,files,imageOps,resources,themes,eagle,figma,aiWatermark,cloudUploads,parseHub} + providers/{registry,mediaResolver,llmMedia,adapters,openaiCompatible,modelscope,volcengine,comfyui,jimengCli} + cloudUploads/{settings,uploader} + tools/aiWatermark/{runner,media} + utils/duckPayload/parseHubBridge",
       "_post_build.cjs 必须验证 providers/llmMedia.t8c 与 resources/tools/ffmpeg/ffmpeg.exe；LLM 视频输入默认使用内置 ffmpeg sidecar 按整段视频均匀抽取可配置数量的关键帧发送给 LLM，native-base64 / compressed-base64 模式才缩放压缩后转原生 video_url Base64，用户包不得依赖系统 PATH 自带 ffmpeg",
       "_post_build.cjs 验证 resources/frontend/index.html + assets/ 必存在",
-      "_post_build.cjs 必须检查 resources/shared/achievementManifest.json；成就后端加密包会从该共享 manifest 读取规则，Electron extraResources 不能漏带 shared/achievementManifest.json",
       "_post_build.cjs 必须让 src/assets/theme-music/*.mp3 / *.mid 经 Vite 输出到 resources/frontend/assets，主题音乐默认静音且随前端资源一起打包",
       "_post_build.cjs 必须检查 resources/tools/runtime-archives/remove-ai-watermarks-runtime.zip 与 runtime-archives-manifest.json；旧展开目录 resources/tools/remove-ai-watermarks 仅保留兼容，不得作为默认打包方式",
       "_post_build.cjs 必须检查 resources/tools/parsehub-bridge/parsehub_bridge.py、resources/tools/runtime-archives/parsehub-pythonlibs.zip、backend-enc/routes/parseHub.t8c、backend-enc/utils/parseHubBridge.t8c 与 backend-enc/utils/runtimeArchive.t8c；正式发布脚本设置 T8_REQUIRE_PARSEHUB_RUNTIME=1 与 T8_REQUIRE_RUNTIME_ARCHIVES=1，缺少 ParseHub 依赖归档时必须失败",
@@ -3718,85 +3688,6 @@
       "node --test tests\\canvasPersistence.test.ts",
       "node -c backend\\src\\routes\\files.js",
       "node -c backend\\src\\routes\\canvas.js",
-      "npm run type-check",
-      "npm run build"
-    ]
-  },
-  "achievementSystem": {
-    "version": "2.0.4",
-    "status": "first-stage-implemented",
-    "description": "十二套系统主题独立成就、有效创作时长、隐藏模式勋章与奖励影片系统。未提供素材的影片仍使用“待解锁 / 影片素材待提供”占位；已接入的圣斗士隐藏奖励以本地加密媒体解锁播放，俄罗斯方块主题记录小游戏摘要成就。",
-    "manifest": {
-      "sharedJson": "shared/achievementManifest.json",
-      "frontendWrapper": "src/data/achievementManifest.ts",
-      "themeTracks": [
-        "tech",
-        "pixel",
-        "op",
-        "rh",
-        "naruto",
-        "eva",
-        "yyh",
-        "slamdunk",
-        "soccer-hero",
-        "dragon-ball",
-        "saint-seiya",
-        "tetris"
-      ],
-      "perThemeRules": "每个主题 5 条时长线(10m/1h/3h/10h/30h) + 3 条首批特色成就；定义由 manifest 展开，前后端共用同一 JSON，避免规则漂移。"
-    },
-    "storage": {
-      "file": "data/achievements.json",
-      "route": "/api/achievements",
-      "privacy": "只保存主题、节点类型、隐藏模式 kind、计数与最近摘要事件；不得保存 prompt、分享链接、资源 URL 或用户输入全文。"
-    },
-    "frontend": {
-      "store": "src/stores/achievements.ts",
-      "tracker": "src/components/AchievementTracker.tsx",
-      "entry": "src/components/AchievementButton.tsx",
-      "drawer": "src/components/AchievementDrawer.tsx",
-      "toast": "src/components/AchievementToast.tsx",
-      "effectiveTimePolicy": "应用前台、document visible、窗口 focus、最近 90 秒内有 pointer/key/wheel/drag 操作才每 15 秒上报 theme.active_tick；单次最多累计 30 秒。"
-    },
-    "events": [
-      "theme.active_tick",
-      "theme.switched",
-      "node.created",
-      "node.run_success",
-      "panorama.generated",
-      "parsehub.resolved",
-      "hidden_mode.enabled",
-      "hidden_mode.used",
-      "resource.saved",
-      "workflow.saved",
-      "tetris.game_started",
-      "tetris.line_clear",
-      "tetris.tetris_clear",
-      "tetris.level_reached",
-      "tetris.game_over"
-    ],
-    "hiddenModes": {
-      "rh-duck": "NodeActionBar 长按 RUN 开启；UploadNode 鸭鸭解码成功产出时记录 used。",
-      "yyh-portrait": "NodeActionBar 长按 RUN 开启；PortraitMasterNode 隐藏模式成功输出 Prompt 时记录 used，不能绕过现有未成年保护。"
-    },
-    "filmPlaceholders": {
-      "implemented": true,
-      "lockedText": "待解锁",
-      "unavailableText": "影片素材待提供",
-      "nextPhase": "用户提供影片后再接 scripts/pack-achievement-films.cjs、tools/achievement-media/films、后端解密缓存与 Range 播放接口。"
-    },
-    "developmentContract": [
-      "新增系统主题必须在 shared/achievementManifest.json 增加主题轨道、时长线可自动展开，特色成就必须用 condition 配置表达，避免散落 if 分支。",
-      "新增隐藏模式必须同时补 hidden_mode.enabled 与 hidden_mode.used 两个真实事件源；开启事件只在切到启用状态时记录，关闭不刷成就。",
-      "新增节点若要参与特色成就，只记录 nodeType / kind / category 等非内容字段；严禁把 prompt、短链、Cookie、资源 URL、用户文件名全文写入 achievements.json。",
-      "成就 UI 必须保持轻量：顶部入口、右侧抽屉、小 toast，不弹全屏强打断，不阻塞节点运行或批量运行。",
-      "修改成就规则、事件、UI 或后端路由后至少跑 node --test tests\\achievements.test.ts、node -c backend\\src\\achievements\\store.js、node -c backend\\src\\routes\\achievements.js、npm run type-check、npm run build。"
-    ],
-    "verification": [
-      "node --test tests\\achievements.test.ts",
-      "node -c backend\\src\\achievements\\store.js",
-      "node -c backend\\src\\routes\\achievements.js",
-      "node -c backend\\src\\server.js",
       "npm run type-check",
       "npm run build"
     ]
@@ -4171,76 +4062,6 @@
       "上游更新后先同步 ParseHub clone，再重新执行 refreshCommand 刷新 tools/parsehub-pythonlibs。",
       "若 ParseHub 返回结构变化，优先只改 tools/parsehub-bridge/parsehub_bridge.py 与 backend/src/utils/parseHubBridge.js 的归一化层，不改画布节点协议。",
       "每次更新至少跑 bridge status 自检、node --test tests/aggregateParser.test.ts、npm run type-check、npm run build；正式发布还需 dist:release 后置检查通过。"
-    ]
-  },
-  "achievementSystemRoadmap": {
-    "status": "planned",
-    "reference": "roadmap.md::主题成就 / 勋章 / 加密影片解锁系统路线（规划中，2026-06-04）",
-    "scope": "十二套系统主题分别累计有效使用时长、隐藏模式探索、节点运行、资源库沉淀或主题小游戏摘要事件，并解锁主题勋章与影片馆内容。",
-    "themeTracks": [
-      "tech",
-      "pixel",
-      "op",
-      "rh",
-      "naruto",
-      "eva",
-      "yyh",
-      "slamdunk",
-      "soccer-hero",
-      "dragon-ball",
-      "saint-seiya"
-    ],
-    "dataModel": {
-      "localFile": "data/achievements.json",
-      "manifest": "src/data/achievementManifest.ts",
-      "profile": "本机匿名 profileId，仅本地使用；默认不接账号云同步。",
-      "themeStatsFields": [
-        "activeSeconds",
-        "lastActiveAt",
-        "sessions",
-        "nodesCreated",
-        "runsSucceeded",
-        "resourcesSaved",
-        "hiddenModeActivations"
-      ],
-      "unlockState": [
-        "unlockedAchievements",
-        "claimedMedals",
-        "unlockedFilms",
-        "preferences"
-      ]
-    },
-    "activeTimeRule": [
-      "只在应用窗口前台、document visible、最近 90 秒有 pointer/key/drag/wheel/canvas 操作时累计有效时长。",
-      "心跳建议 15-30 秒合并上报，单次最多累计 30 秒，避免睡眠或后台一次补刷。",
-      "切换主题时先结算旧 themeTrack，再进入新主题。"
-    ],
-    "hiddenModeHooks": [
-      "RH 主题 UploadNode 鸭鸭解码隐藏模式：长按 RUN 开启，解码成功后记录 hidden_mode.used。",
-      "幽游白书主题肖像大师隐藏模式：长按 RUN 开启，成功输出隐藏肖像 prompt 后记录 hidden_mode.used。",
-      "圣斗士主题集齐 12 黄金圣衣后开启冥界篇隐藏模式：切换进入冥界篇记录 hidden_mode.used。",
-      "成就事件只记录类型、主题、计数和节点类型，不记录用户链接、Cookie、完整 prompt 或隐私内容。"
-    ],
-    "filmUnlockPlan": {
-      "sourcePolicy": "影片原始文件放 private/achievement-films-src/ 并保持 ignored，不进入公开仓库。",
-      "encryptedSlot": "tools/achievement-media/films/*.t8film + manifest.json",
-      "packScript": "scripts/pack-achievement-films.cjs",
-      "encryption": "AES-256-GCM，manifest 记录 filmId、主题、解锁规则、sha256、mime、时长与封面。",
-      "playback": "解锁后后端解密到用户数据目录临时缓存，并复用 Range 播放逻辑供 video 标签拖动进度条。",
-      "strictPackagingEnv": "T8_REQUIRE_ACHIEVEMENT_MEDIA=1"
-    },
-    "retentionIdeas": [
-      "今日主题任务：每个主题给 1-3 个轻任务，只奖励成就经验，不阻塞画布。",
-      "周常创作护照：一周内在 3 个不同主题各完成一次创作，解锁跨主题勋章或影片碎片。",
-      "影片碎片机制：高价值影片用主题时长 + 特色成就 + 连续使用组合解锁，降低纯挂机收益。",
-      "本地创作回顾：用户打开成就页时生成周报，展示主题时长、产出数量、常用节点和已获勋章。"
-    ],
-    "acceptance": [
-      "十二套主题分别累计时长，后台/无焦点/无交互不刷时长。",
-      "每个主题至少 5 个时长成就、3 个特色成就、1 个主题大师勋章。",
-      "未解锁影片无法播放；解锁后可播放、拖动进度条、继续播放和清缓存。",
-      "加密影片原始素材不得进入 git、build 明文目录或 Electron resources。",
-      "自动更新到带新影片的版本后，旧成就数据仍能解锁并播放新资源。"
     ]
   },
   "totalNodes": 53,
@@ -5195,13 +5016,6 @@
       "label": "RH 隐藏鸭鸭解码模式收尾 (v1.5.4)",
       "status": "complete",
       "items": [
-        "RH 主题下选中已上传图像的 UploadNode 后，长按顶部浮动 RUN 3 秒切换红色隐藏模式；其他主题、非图像上传和未上传节点不触发。",
-        "隐藏模式运行时批量调用 /api/files/duck-decode 尝试 SS_tools 无密码鸭鸭图解码，成功后按真实 kind 输出 image / video / audio；非鸭鸭图或解码失败静默回退普通上传输出，不打扰用户。",
-        "解码成功的 OutputNode 写入 rhDuckDecoded direct-only 标记，OutputNode 不再通过上游连线重新收集解码前鸭鸭原图，只展示解码后的真实素材。",
-        "RH 主题隐藏态覆盖上传节点、输出节点、端口、选中外圈、Edit/RUN 按钮、缩放角点与隐藏解码连线，统一使用荧光红，与普通 RH 荧光绿状态明确区分。",
-        "DeletableEdge 会根据 edge.data.rhDuckEdge 或目标 OutputNode 的 rhDuckDecoded 自动补 rh-duck-edge 类名，避免隐藏模式连线在重渲染后回到绿色。",
-        "RH 风格默认音乐改为 src/assets/theme-music/rh-tide.mp3；隐藏模式启用后 ThemeMusicToggle 自动切换到 rh-hidden-saya.mp3 并解除静音播放，隐藏模式关闭后若原本未手动播放则自动停止。",
-        "后端 duck-decode 仅允许 /files/input/* 与 /files/output/* 本地文件，不暴露任意路径读取；hiddenFeatures.ts 只保存会话态，不持久化进画布 JSON。",
         "公开版本同步到 1.5.4：package.json、package-lock.json、vite.config.ts/js、electron/main.cjs、backend/src/config.js APP_VERSION、features.json、README.md 全部同步；skill.md 仅本地更新，继续禁止推送 GitHub。"
       ]
     },
@@ -5211,7 +5025,6 @@
       "items": [
         "RH 风格默认音乐正式替换为 src/assets/theme-music/rh-tide.mp3，对应用户提供的潮鸣音频；隐藏模式音乐新增 src/assets/theme-music/rh-hidden-saya.mp3，对应用户提供的沙耶之歌主题音频。",
         "ThemeMusic 类型新增 hiddenTitle / hiddenUrl / hiddenVolume，defaultTemplates 内置 RH 模板改为 URL 音频源并声明隐藏模式备用曲目。",
-        "ThemeMusicToggle 监听 hiddenFeatures.rhDuckUploadIds：RH 隐藏模式开启时自动切换隐藏音乐并解除静音播放；关闭隐藏模式时，如果不是用户手动播放，则自动停止，避免普通 RH 主题意外继续响。",
         "ThemeTemplateManager 与 backend/src/routes/themes.js 保留隐藏音乐字段，主题模板编辑、保存、导入、导出不会丢失 hiddenTitle / hiddenUrl / hiddenVolume。",
         "_post_build.cjs 校验五首内置主题音乐 mp3，包含 classic-one-summer-day、pixel-theme-of-sss、op-battle-scars、rh-tide、rh-hidden-saya，防止 Electron 用户包漏带音频资源。",
         "公开版本同步到 1.5.5：package.json、package-lock.json、vite.config.ts/js、electron/main.cjs、backend/src/config.js APP_VERSION、features.json、README.md 全部同步；skill.md 仅本地更新，继续禁止推送 GitHub。"
@@ -5542,7 +5355,7 @@
       "status": "complete",
       "items": [
         "幽游白书主题新增内置隐藏曲目 src/assets/theme-music/yyh-hidden-tonight.mp3，普通主题音乐仍使用 yyh-unbalanced-kiss-piano.mp3。",
-        "defaultTemplates 的 YYH 模板声明 hiddenTitle / hiddenUrl / hiddenVolume，肖像大师隐藏模式触发 yyhPortraitIds 后 ThemeMusicToggle 会自动切换隐藏音乐并解除静音。",
+        "defaultTemplates 的 YYH 模板声明 hiddenTitle / hiddenUrl / hiddenVolume，主题模板编辑、保存、导入、导出不会丢失隐藏音乐字段。",
         "electron/_post_build.cjs 增加 yyh-hidden-tonight-*.mp3 前端资源校验，确保正式打包时不会漏带该隐藏音乐。",
         "公开版本同步到 1.7.6：package.json、package-lock.json、vite.config.ts/js、electron/main.cjs、backend/src/config.js APP_VERSION、features.json、README.md 同步；skill.md 仅本地更新，继续禁止推送 GitHub。"
       ]
@@ -6011,19 +5824,6 @@
         "新增前端服务 src/services/parseHub.ts 与节点组件 src/components/nodes/AggregateParserNode.tsx；运行成功后写出 outputText/textSegments/imageUrls/videoUrls/audioUrls，并为文本摘要创建或更新下游 OutputNode，媒体仍走通用 autoOutput。",
         "Electron 打包增加 tools/parsehub-bridge 与 tools/parsehub-pythonlibs extraResources；scripts/dist-release.cjs 注入 T8_REQUIRE_PARSEHUB_RUNTIME=1，electron/_post_build.cjs 校验 bridge、parsehub 依赖、parseHub 路由和 parseHubBridge 工具的加密产物。",
         "新增 tests/aggregateParser.test.ts，覆盖节点注册、端口、前端合规 UI、后端挂载、Electron 打包资源和 ParseHub 结果归一；已验证 bridge status 返回 ParseHub 2.0.24 / Python 3.12.9 / 17 平台，npm run type-check 与 npm run build 通过。"
-      ]
-    },
-    "phase141": {
-      "label": "主题成就 / 勋章 / 加密影片解锁系统规划 (planned)",
-      "status": "planned",
-      "items": [
-        "roadmap.md 已在本地新增主题成就路线：九套系统主题分别拥有独立使用时长、成就、勋章和影片解锁轨道；公开仓库通过 features.json.achievementSystemRoadmap 记录摘要，roadmap.md 仍按项目规则不随 GitHub 推送。",
-        "第一版成就数据建议落在 data/achievements.json，规则走 src/data/achievementManifest.ts，事件由统一 AchievementProvider / useAchievementStore 汇总，避免节点组件直接写成就状态。",
-        "有效时长只在窗口前台、页面可见、近期有用户交互时累计；心跳合并上报且单次最多累计 30 秒，避免后台、睡眠和挂机刷时长。",
-        "隐藏模式成就优先接入两条现有能力：RH 主题 UploadNode 鸭鸭解码隐藏模式、幽游白书主题肖像大师隐藏模式；事件只记录类型、主题和计数，不记录用户链接、Cookie、完整 prompt 或隐私内容。",
-        "影片由用户后续提供，原始文件规划放入 private/achievement-films-src/ 并 ignored；加密产物规划为 tools/achievement-media/films/*.t8film + manifest，打包时可通过 T8_REQUIRE_ACHIEVEMENT_MEDIA=1 严格校验。",
-        "解锁影片第一版建议后端解密到用户数据目录临时缓存，并复用资源库 Range 播放逻辑；该方案是轻量本地解锁保护，不宣称 DRM 级防破解。",
-        "留存增强规划包括今日主题任务、周常创作护照、影片碎片、主题代表作、主题大师外观奖励和本地创作回顾；所有提醒必须可关闭或弱化，不打断画布主流程。"
       ]
     },
     "phase142": {
@@ -7500,6 +7300,66 @@
     ],
     "verification": [
       "node --test tests\\placementShelf.test.ts tests\\themeRegistry.test.ts"
+    ]
+  },
+  "retroOsTheme": {
+    "version": "2.3.8-dev",
+    "status": "implemented-dev",
+    "date": "2026-07-05",
+    "description": "新增第 14 套内置视觉皮肤「复古 OS (Retro OS)」：90 年代桌面操作系统审美，青绿色桌面背景 + 灰色窗口/任务栏 + 深蓝标题栏渐变 + 经典 3D 凸起 bevel 边框（上亮下暗双线）。按钮按下边框翻转成凹陷 + 1px 位移，端口是方角小方块，连线深蓝选中变红虚线，几乎无动效（80ms linear），让用户有正在使用老电脑的代入感。",
+    "sourceFiles": [
+      "src/theme/types.ts",
+      "src/theme/defaultTemplates.ts",
+      "backend/src/routes/themes.js",
+      "src/components/ThemeTemplateManager.tsx",
+      "src/components/ThemeMusicToggle.tsx",
+      "src/styles/index.css",
+      "src/styles/theme-retro.css",
+      "docs/theme-design-guide.md"
+    ],
+    "capabilities": [
+      "新增 visualStyle=retro、canvasPattern=retro-desktop、nodeFrame=retro-window 和 retro-chime 合成主题音乐 preset；前端类型、内置模板、主题管理器、主题音乐、后端主题导入白名单和路由行为均已覆盖。",
+      "节点外壳改为灰色窗口体 + 深蓝标题栏渐变 + 3D bevel 边框，选中态边框反色为红 + 1px 内陷，无辉光无呼吸。",
+      "按钮按下时边框翻转（凹陷）+ 1px 位移，像真实按键被压下；hover 反色描边，80ms linear 直给。",
+      "端口改为方角 8x8 小方块 + 黑边（非圆形），连线深蓝 1.6px 选中变红 2.2px + 虚线高亮。",
+      "画布背景固定 teal 纯色（深/浅分模式），拖动视口期间冻结背景层杜绝色闪；桌面极轻 1px 网格点阵静态不闪烁。",
+      "retro-chime 主题音乐用 square 波 4 音上行琶音 + 末尾低频 sine 收尾，模拟 90 年代开机 POST 蜂鸣。"
+    ],
+    "verification": [
+      "npm run type-check (pass)",
+      "npm test (无新增失败；基线已有 7 个无关失败)"
+    ]
+  },
+  "inkTheme": {
+    "version": "2.3.8-dev",
+    "status": "implemented-dev",
+    "date": "2026-07-05",
+    "description": "新增第 15 套内置视觉皮肤「水墨意境 (Ink / Shuimo)」：中国传统水墨美学，墨分五色（焦浓重淡清）+ 朱红印章 + 青绿山水 + 金箔点缀 + 书法字体（Ma Shan Zheng 行书 / ZCOOL XiaoWei 楷书 / Zhi Mang Xing 行草 / ZCOOL KuaiLe 篆刻 / Noto Serif SC 衬线）+ 墨晕泼墨动效。画布如宣纸册页，节点如手卷题跋，连线如书法笔触，选中态盖朱红方印，SHIFT 切断用毛笔枯笔飞白。",
+    "sourceFiles": [
+      "src/theme/types.ts",
+      "src/theme/defaultTemplates.ts",
+      "backend/src/routes/themes.js",
+      "src/components/ThemeTemplateManager.tsx",
+      "src/components/ThemeMusicToggle.tsx",
+      "src/styles/index.css",
+      "src/styles/theme-ink.css",
+      "docs/theme-design-guide.md"
+    ],
+    "capabilities": [
+      "新增 visualStyle=ink、canvasPattern=ink-paper、nodeFrame=ink-scroll 和 ink-drift 合成主题音乐 preset；前端类型、内置模板、主题管理器、主题音乐、后端主题导入白名单和路由行为均已覆盖。",
+      "画布固定纯色宣纸底（深熟绢 #2a2520 / 浅米色 #F0EAE0），::before 叠加 6 层 radial-gradient 宣纸纤维纹理 + 双层墨晕渐变（静态，拖动期间冻结避免色闪）。",
+      "节点外壳改为宣纸册页：纸纤维底 + 淡墨边 + 朱红淡晕标题栏（rgba(196,30,58,0.06~0.10)）+ 行书字体标题；选中态朱红边 + 1px 朱红 ring + 右上角 ::after 朱红方印（10x10 圆角方块，模拟印章）。",
+      "节点 hover 墨晕扩散：filter brightness(1.04) + box-shadow 加深，模拟墨开效果，320ms ease-out 缓入缓出。",
+      "端口改为朱红 10x10 圆点 + 宣纸边（1.5px card-bg 边）+ 朱红 ring，像印章纽；hover brightness + scale(1.15)。",
+      "连线浓墨 1.6px round cap（书法笔触），选中朱红 2.2px；主题激活边走朱红干笔飞白虚线流动 2s（dasharray 0.5 4）。",
+      "按钮宣纸卡 + 淡墨边，hover 朱红淡底 + 朱红字，active brightness(0.95) 墨色加深（无位移，气韵内敛）；主按钮朱红淡底 + 朱红字 + 朱红边（印章式）。",
+      "Google Fonts @import 追加 5 款书法字体族（Ma Shan Zheng / ZCOOL XiaoWei / ZCOOL KuaiLe / Zhi Mang Xing / Noto Serif SC），单请求置顶加载。",
+      "ink-drift 主题音乐用 4 个 sine 长音（146→220→196→294 Hz，缓入缓出 1.0-1.2s），模拟古琴泛音，4.0s 循环，气韵悠远。",
+      "14 条浅色模式 legacy 适配器（text-white / bg-white / bg-zinc-900/950 / border-white / focus:border-white / placeholder / select option / input/textarea 兜底）+ 视口拖动暂停墨晕动效 + prefers-reduced-motion 关掉所有动画。"
+    ],
+    "verification": [
+      "npm run type-check (pass)",
+      "npm test (无新增失败；基线已有 12 个无关失败)"
     ]
   }
 }

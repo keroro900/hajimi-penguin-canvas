@@ -1,93 +1,21 @@
 /* 像素风主题(可切换) - @import 必须置顶 */
-@import url('https://fonts.googleapis.com/css2?family=DotGothic16&family=M+PLUS+Rounded+1c:wght@400;500;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DotGothic16&family=M+PLUS+Rounded+1c:wght@400;500;700;800&family=Ma+Shan+Zheng&family=ZCOOL+XiaoWei&family=ZCOOL+KuaiLe&family=Zhi+Mang+Xing&family=Noto+Serif+SC:wght@400;500;700&family=Nunito:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap');
+@import './jimi-foundation.css';
 @import './theme-pixel.css';
 @import './theme-core.css';
-@import './theme-op.css';
 @import './theme-rh.css';
-@import './theme-naruto.css';
-@import './theme-eva.css';
-@import './theme-yyh.css';
-@import './theme-slamdunk.css';
-@import './theme-soccer.css';
-@import './theme-dragonball.css';
-@import './theme-saintseiya.css';
-@import './theme-tetris.css';
-@import './theme-farm-story.css';
+@import './theme-soft.css';
+@import './theme-wabi.css';
+@import './theme-vapor.css';
+@import './theme-utility.css';
+@import './theme-skeuo.css';
+@import './theme-retro.css';
+@import './theme-ink.css';
+@import './theme-tap-studio.css';
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
-/* RH工具箱应用按钮必须避开强主题的全局节点按钮覆盖。 */
-html[data-theme-template] .react-flow__node .rh-toolbox-app-grid button.rh-toolbox-app-button,
-html[data-theme-style] .react-flow__node .rh-toolbox-app-grid button.rh-toolbox-app-button,
-html[data-theme-visual] .react-flow__node .rh-toolbox-app-grid button.rh-toolbox-app-button,
-.react-flow__node .rh-toolbox-app-grid button.rh-toolbox-app-button {
-  width: 100% !important;
-  height: auto !important;
-  min-height: 42px !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: flex-start !important;
-  padding: 7px 30px 7px 10px !important;
-  border: 1px solid var(--rh-toolbox-app-border, var(--t8-border, rgba(0, 0, 0, .18))) !important;
-  border-radius: 6px !important;
-  background: var(--rh-toolbox-app-bg, var(--t8-bg-panel-elevated, #fff7ed)) !important;
-  color: var(--rh-toolbox-app-text, var(--t8-text-main, #111827)) !important;
-  box-shadow: none !important;
-  transform: none !important;
-  font-size: 11px !important;
-  font-weight: 600 !important;
-  line-height: 1.15 !important;
-  text-align: left !important;
-  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease !important;
-}
-
-html[data-theme-template] .react-flow__node .rh-toolbox-app-grid button.rh-toolbox-app-button .rh-toolbox-app-title,
-html[data-theme-style] .react-flow__node .rh-toolbox-app-grid button.rh-toolbox-app-button .rh-toolbox-app-title,
-html[data-theme-visual] .react-flow__node .rh-toolbox-app-grid button.rh-toolbox-app-button .rh-toolbox-app-title,
-.react-flow__node .rh-toolbox-app-grid button.rh-toolbox-app-button .rh-toolbox-app-title {
-  min-width: 0 !important;
-  width: 100% !important;
-  display: -webkit-box !important;
-  overflow: hidden !important;
-  -webkit-box-orient: vertical !important;
-  -webkit-line-clamp: 2 !important;
-  white-space: normal !important;
-  word-break: break-word !important;
-}
-
-html[data-theme-template] .react-flow__node .rh-toolbox-app-grid button.rh-toolbox-app-button:hover,
-html[data-theme-style] .react-flow__node .rh-toolbox-app-grid button.rh-toolbox-app-button:hover,
-html[data-theme-visual] .react-flow__node .rh-toolbox-app-grid button.rh-toolbox-app-button:hover,
-.react-flow__node .rh-toolbox-app-grid button.rh-toolbox-app-button:hover {
-  background: var(--rh-toolbox-app-hover-bg, var(--t8-bg-panel-muted, #f8fafc)) !important;
-  color: var(--rh-toolbox-app-text, var(--t8-text-main, #111827)) !important;
-  box-shadow: none !important;
-  transform: none !important;
-}
-
-html[data-theme-template] .react-flow__node .rh-toolbox-app-grid button.rh-toolbox-app-edit-button,
-html[data-theme-style] .react-flow__node .rh-toolbox-app-grid button.rh-toolbox-app-edit-button,
-html[data-theme-visual] .react-flow__node .rh-toolbox-app-grid button.rh-toolbox-app-edit-button,
-.react-flow__node .rh-toolbox-app-grid button.rh-toolbox-app-edit-button {
-  position: absolute !important;
-  top: 50% !important;
-  right: 4px !important;
-  width: 20px !important;
-  height: 20px !important;
-  min-height: 20px !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  padding: 0 !important;
-  border: 1px solid var(--rh-toolbox-app-border, var(--t8-border, rgba(0, 0, 0, .18))) !important;
-  border-radius: 5px !important;
-  background: var(--rh-toolbox-app-bg, var(--t8-bg-panel-elevated, #fff7ed)) !important;
-  color: var(--rh-toolbox-app-text, var(--t8-text-main, #111827)) !important;
-  box-shadow: none !important;
-  transform: translateY(-50%) !important;
-}
 
 /* API settings semantic theme adapter */
 html[data-ui-font]:not([data-ui-font="theme"]) {
@@ -403,6 +331,15 @@ html[data-theme-template] .t8-api-settings-modal .t8-api-settings-guide {
   --t8-cut-button-bg: #ffffff;
   --t8-cut-button-fg: #ef4444;
   --t8-cut-button-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='black' d='M17 2 7 13h6l-3 9 10-12h-6l3-8Z'/></svg>");
+  --t8-z-canvas-decor: 0;
+  --t8-z-edge: 10;
+  --t8-z-node: 20;
+  --t8-z-node-ui: 30;
+  --t8-z-canvas-chrome: 100;
+  --t8-z-composer: 200;
+  --t8-z-modal-backdrop: 300;
+  --t8-z-modal-dialog: 310;
+  --t8-z-system-overlay: 1000;
 }
 
 * {
@@ -418,9 +355,7 @@ body,
   height: 100%;
 }
 
-/* Theme canvas contract:
-   - theme watermarks live on the shell background layer, never above nodes
-   - theme music and ReactFlow controls share one left rail and vertical stack */
+/* Theme canvas contract: one solid shared surface; controls keep their existing rail. */
 .t8-canvas-shell {
   --t8-floating-control-left: 14px;
   --t8-floating-control-bottom: 12px;
@@ -438,69 +373,139 @@ body,
   --t8-flow-controls-accent: var(--t8-accent, #38bdf8);
   position: relative;
   isolation: isolate;
+  background: var(--t8-bg-canvas);
 }
 
 .t8-main-layout {
-  --t8-sidebar-width: 256px;
-  --t8-sidebar-toggle-size: 32px;
-  --t8-sidebar-toggle-gap: 12px;
-  --t8-sidebar-toggle-left: var(--t8-sidebar-width);
-  --t8-sidebar-toggle-top: 12px;
-  --t8-sidebar-toggle-x: 0;
-  --t8-sidebar-toggle-y: 0;
-  --t8-sidebar-collapsed-content-left: 12px;
-}
-
-.t8-main-layout--sidebar-collapsed {
-  --t8-sidebar-toggle-left: 10px;
-  --t8-sidebar-toggle-top: 10px;
-  --t8-sidebar-toggle-x: 0;
-  --t8-sidebar-collapsed-content-left: calc(var(--t8-sidebar-toggle-left) + var(--t8-sidebar-toggle-size) + var(--t8-sidebar-toggle-gap));
+  --t8-app-rail-width: 44px;
+  --t8-shell-panel-width: 264px;
+  /* 兼容旧引用：轨道 + 面板的总展开宽度 */
+  --t8-sidebar-width: calc(var(--t8-app-rail-width) + var(--t8-shell-panel-width));
 }
 
 .t8-main-layout > .t8-canvas-shell {
   min-width: 0;
 }
 
-.t8-sidebar-toggle {
-  position: absolute !important;
-  left: var(--t8-sidebar-toggle-left) !important;
-  top: var(--t8-sidebar-toggle-top) !important;
-  z-index: 86;
+/* Slice 2 应用外壳：44px 常驻轨道 + 264px 可折叠面板 */
+.t8-app-rail {
+  width: var(--t8-app-rail-width);
+  flex: 0 0 var(--t8-app-rail-width);
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 6px;
+  background: var(--t8-bg-panel, rgba(20, 20, 22, 0.92));
+  border-right: 1px solid var(--t8-border, rgba(255, 255, 255, 0.14));
+  position: relative;
+  z-index: 40;
+}
+
+.t8-app-rail__brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+}
+
+.t8-app-rail__section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.t8-app-rail__section--bottom {
+  margin-top: auto;
+}
+
+.t8-app-rail__button {
   width: 32px;
   height: 32px;
   min-width: 32px;
   min-height: 32px;
-  transform: translate(var(--t8-sidebar-toggle-x), var(--t8-sidebar-toggle-y));
-  color: var(--t8-text-main, #f8fafc);
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--t8-bg-panel, #141416) 92%, var(--t8-accent, #38bdf8) 8%),
-      var(--t8-bg-panel, #141416)
-    );
-  border: 1px solid color-mix(in srgb, var(--t8-border-strong, var(--t8-border, rgba(255, 255, 255, 0.18))) 72%, var(--t8-accent, #38bdf8) 28%);
-  border-radius: 8px;
-  box-shadow:
-    var(--t8-shadow-button, 0 10px 24px rgba(0, 0, 0, 0.28)),
-    0 0 0 2px color-mix(in srgb, var(--t8-bg-app, #09090b) 68%, transparent);
-  transition:
-    left 180ms ease,
-    top 180ms ease,
-    color 140ms ease,
-    background-color 140ms ease,
-    border-color 140ms ease,
-    transform 140ms ease;
+  border-radius: 12px;
+  color: var(--t8-text-muted, rgba(244, 244, 245, 0.58));
+  background: transparent;
+  border: none;
+  cursor: pointer;
 }
 
-.t8-sidebar-toggle:hover,
-.t8-sidebar-toggle.is-collapsed {
-  color: var(--t8-accent, #38bdf8);
-  border-color: color-mix(in srgb, var(--t8-border-strong, var(--t8-border, rgba(255, 255, 255, 0.18))) 42%, var(--t8-accent, #38bdf8) 58%);
+.t8-app-rail__button:hover {
+  color: var(--t8-text-main, #f4f4f5);
+  background: color-mix(in srgb, var(--t8-text-main, #f4f4f5) 8%, transparent);
 }
 
-.t8-sidebar-toggle:active {
-  transform: translate(var(--t8-sidebar-toggle-x), calc(var(--t8-sidebar-toggle-y) + 1px)) scale(0.97);
+.t8-app-rail__button.is-active {
+  color: var(--t8-accent, #5f8dff);
+  background: color-mix(in srgb, var(--t8-accent, #5f8dff) 14%, transparent);
+}
+
+/* 轨道底部连接状态点：8px 圆点，绿=已连接 / 琥珀=检测中（降级）/ 灰=未连接 */
+.t8-app-rail__status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding-top: 2px;
+}
+
+.t8-app-rail__status-dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 8px;
+  border-radius: 9999px;
+  background: #6b7280;
+  transition: background-color 0.2s ease;
+}
+
+.t8-app-rail__status-dot--ok {
+  background: #34d399;
+  box-shadow: 0 0 6px rgba(52, 211, 153, 0.55);
+}
+
+.t8-app-rail__status-dot--checking {
+  background: #fbbf24;
+}
+
+.t8-app-rail__status-dot--error {
+  background: #6b7280;
+}
+
+.t8-shell-panel {
+  width: var(--t8-shell-panel-width);
+  flex: 0 0 var(--t8-shell-panel-width);
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--t8-bg-panel, rgba(20, 20, 22, 0.92));
+  border-right: 1px solid var(--t8-border, rgba(255, 255, 255, 0.14));
+}
+
+.t8-shell-panel__header {
+  height: 44px;
+  flex: 0 0 44px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px 0 12px;
+  border-bottom: 1px solid var(--t8-border, rgba(255, 255, 255, 0.14));
+}
+
+.t8-shell-panel__title {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--t8-text-main, #f4f4f5);
 }
 
 .t8-sidebar-canvas-row {
@@ -536,33 +541,39 @@ body,
 
 .t8-canvas-shell::before,
 .t8-canvas-shell::after {
+  content: none;
+  display: none;
   pointer-events: none;
-  z-index: 0;
-}
-
-html[data-theme-visual] .t8-canvas-shell::before,
-html[data-theme-visual] .t8-canvas-shell::after,
-.t8-canvas-shell[data-theme-visual]::before,
-.t8-canvas-shell[data-theme-visual]::after {
-  z-index: 0 !important;
-  pointer-events: none !important;
+  z-index: var(--t8-z-canvas-decor);
 }
 
 .t8-canvas-shell > .react-flow {
   position: relative;
   z-index: 2 !important;
+  background: var(--t8-bg-canvas);
+}
+
+.t8-canvas-shell .react-flow__pane {
+  background: var(--t8-bg-canvas);
+}
+
+.t8-canvas-shell .react-flow__renderer,
+.t8-canvas-shell .react-flow__viewport {
+  background: var(--t8-bg-canvas);
 }
 
 .t8-canvas-shell .react-flow__background {
-  z-index: 0 !important;
+  display: none;
+  background: transparent;
+  z-index: var(--t8-z-canvas-decor) !important;
 }
 
 .t8-canvas-shell .react-flow__edges {
-  z-index: 2 !important;
+  z-index: var(--t8-z-edge) !important;
 }
 
 .t8-canvas-shell .react-flow__nodes {
-  z-index: 3 !important;
+  z-index: var(--t8-z-node) !important;
 }
 
 .t8-canvas-shell .react-flow__node {
@@ -570,10 +581,34 @@ html[data-theme-visual] .t8-canvas-shell::after,
   overflow: visible !important;
 }
 
+/* === 节点内图标可见度全局兜底 ===
+   lucide / heroicons 等 SVG 图标用 currentColor 继承父级文字色，
+   但节点组件大量使用 text-white/NN 等暗色模式工具类，在浅色主题下图标会变成淡白色不可见。
+   这里强制节点内 svg 的 stroke/fill 跟随 currentColor，并设最小 stroke-width 提升清晰度。
+   各主题 CSS 可用更高优先级规则覆盖为特定颜色。 */
+.t8-canvas-shell .react-flow__node:not(.react-flow__node-groupBox) svg,
+.t8-canvas-shell .t8-node svg {
+  flex-shrink: 0;
+  pointer-events: none;
+}
+.t8-canvas-shell .react-flow__node:not(.react-flow__node-groupBox) svg [stroke],
+.t8-canvas-shell .t8-node svg [stroke] {
+  stroke: currentColor !important;
+}
+.t8-canvas-shell .react-flow__node:not(.react-flow__node-groupBox) svg [fill]:not([fill="none"]),
+.t8-canvas-shell .t8-node svg [fill]:not([fill="none"]) {
+  fill: currentColor !important;
+}
+/* 小尺寸图标 stroke 不低于 1.5，避免缩放后线条消失 */
+.t8-canvas-shell .react-flow__node:not(.react-flow__node-groupBox) svg [stroke-width],
+.t8-canvas-shell .t8-node svg [stroke-width] {
+  stroke-width: inherit;
+}
+
 /* Large graph rendering guard: keep node components mounted for runBus/cross-canvas logic,
    while the browser lazily paints offscreen heavy media on 100+ node canvases. */
 @supports (content-visibility: auto) {
-  .t8-canvas-shell[data-canvas-surface-load="heavy"] .react-flow__node:not(.selected):not(:focus-within) :where(img, video, iframe, canvas) {
+  .t8-canvas-shell[data-canvas-surface-load="heavy"] .react-flow__node:not(.selected):not(:focus-within) :where(iframe, canvas) {
     content-visibility: auto;
     contain-intrinsic-size: 320px 260px;
   }
@@ -602,8 +637,12 @@ html[data-theme-visual] .t8-canvas-shell::after,
 
 .t8-canvas-shell .react-flow__node > .react-flow__handle,
 .t8-canvas-shell .react-flow__node .react-flow__handle {
-  z-index: 60 !important;
+  z-index: var(--t8-z-node-ui) !important;
   pointer-events: all;
+}
+
+.t8-canvas-shell .react-flow__resize-control {
+  z-index: var(--t8-z-node-ui) !important;
 }
 
 .t8-canvas-shell .react-flow__node-grok-oauth-agent,
@@ -642,7 +681,7 @@ html[data-theme-visual] .t8-canvas-shell .t8-theme-music-toggle,
   position: absolute;
   left: var(--t8-floating-control-left, 14px);
   bottom: var(--t8-floating-control-bottom, 12px);
-  z-index: 78;
+  z-index: var(--t8-z-canvas-chrome);
   display: flex;
   flex-direction: row;
   align-items: flex-end;
@@ -711,10 +750,17 @@ html[data-theme-visual] .t8-canvas-shell .t8-control-rail .react-flow__controls,
 
 .t8-canvas-shell .t8-control-rail .react-flow__controls {
   overflow: hidden !important;
-  background: var(--t8-flow-controls-bg) !important;
-  border: 1px solid var(--t8-flow-controls-border) !important;
-  border-radius: 10px !important;
-  box-shadow: var(--t8-shadow-button, 0 8px 22px rgba(0, 0, 0, 0.24)) !important;
+  background: var(--t8-bg-panel-elevated) !important;
+  border: 1px solid var(--t8-border) !important;
+  border-radius: var(--t8-radius-panel) !important;
+  box-shadow: var(--t8-shadow-panel) !important;
+}
+
+.t8-canvas-toolbar {
+  background: var(--t8-bg-panel-elevated);
+  border: 1px solid var(--t8-border);
+  border-radius: var(--t8-radius-panel);
+  box-shadow: var(--t8-shadow-panel);
 }
 
 .t8-canvas-shell .t8-control-rail .react-flow__controls-button {
@@ -731,6 +777,12 @@ html[data-theme-visual] .t8-canvas-shell .t8-control-rail .react-flow__controls,
   color: var(--t8-flow-controls-fg) !important;
   border: 0 !important;
   border-bottom: 1px solid var(--t8-flow-controls-border) !important;
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    color 120ms ease,
+    box-shadow 160ms ease,
+    opacity 160ms ease;
 }
 
 .t8-canvas-shell .t8-control-rail .react-flow__controls-button:last-child {
@@ -767,6 +819,16 @@ html[data-theme-visual] .t8-canvas-shell .t8-control-rail .react-flow__controls,
   width: max-content;
   max-width: min(392px, calc(100vw - var(--t8-floating-control-left, 14px) - 78px));
   pointer-events: all;
+  z-index: var(--t8-z-canvas-chrome);
+  background: var(--t8-bg-panel-elevated) !important;
+  border: 1px solid var(--t8-border) !important;
+  box-shadow: var(--t8-shadow-panel) !important;
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    color 120ms ease,
+    box-shadow 160ms ease,
+    opacity 160ms ease;
 }
 
 .t8-placement-shelf[data-placement-shelf-hidden="false"] {
@@ -917,7 +979,7 @@ body.t8-file-drag-out-active * {
   cursor: pointer;
   transition:
     transform 160ms ease,
-    background 160ms ease,
+    background-color 160ms ease,
     border-color 160ms ease,
     color 160ms ease,
     box-shadow 160ms ease;
@@ -1974,111 +2036,6 @@ body.t8-file-drag-out-active * {
   }
 }
 
-.t8-model-help-panel {
-  position: absolute;
-  left: calc(var(--t8-floating-control-left, 14px) + var(--t8-theme-music-size, 32px) + 14px);
-  bottom: var(--t8-floating-control-bottom, 12px);
-  z-index: 70;
-  width: min(760px, calc(100vw - var(--t8-floating-control-left, 14px) - 84px));
-  max-height: min(74vh, 680px);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  color: var(--t8-text-main, #f4f4f5);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--t8-bg-panel, #141416) 96%, var(--t8-accent, #38bdf8) 4%), var(--t8-bg-panel, #141416));
-  border: 1px solid color-mix(in srgb, var(--t8-border-strong, var(--t8-border, rgba(255, 255, 255, 0.2))) 78%, var(--t8-accent, #38bdf8) 22%);
-  border-radius: var(--t8-radius-lg, 16px);
-  box-shadow: var(--t8-shadow-node, 0 22px 60px rgba(0, 0, 0, 0.42));
-}
-
-.t8-model-help-panel__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 16px 18px 14px;
-  border-bottom: 1px solid var(--t8-border, rgba(255, 255, 255, 0.14));
-  background: linear-gradient(90deg, color-mix(in srgb, var(--t8-accent, #38bdf8) 18%, transparent), transparent);
-}
-
-.t8-model-help-panel__eyebrow {
-  margin-bottom: 4px;
-  color: var(--t8-accent, #38bdf8);
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0;
-  text-transform: uppercase;
-}
-
-.t8-model-help-panel__header h2 {
-  margin: 0;
-  font-size: 18px;
-  line-height: 1.2;
-  font-weight: 800;
-}
-
-.t8-model-help-panel__close {
-  width: 34px;
-  height: 34px;
-  min-width: 34px;
-  min-height: 34px;
-  padding: 0;
-  border: 1px solid var(--t8-border-strong, var(--t8-border, rgba(255, 255, 255, 0.2)));
-  border-radius: 999px;
-  color: var(--t8-text-main, #f4f4f5);
-  background: color-mix(in srgb, var(--t8-bg-panel, #141416) 88%, transparent);
-  cursor: pointer;
-}
-
-.t8-model-help-panel__close:hover {
-  color: var(--t8-accent, #38bdf8);
-  border-color: var(--t8-accent, #38bdf8);
-  background: var(--t8-flow-controls-button-hover-bg);
-}
-
-.t8-model-help-panel__body {
-  overflow: auto;
-  padding: 16px 18px 18px;
-}
-
-.t8-model-help-panel__text {
-  color: var(--t8-text-main, #f4f4f5);
-  font-size: 14px;
-  line-height: 1.72;
-}
-
-.t8-model-help-panel__section + .t8-model-help-panel__section {
-  margin-top: 18px;
-  padding-top: 16px;
-  border-top: 1px solid var(--t8-border, rgba(255, 255, 255, 0.14));
-}
-
-.t8-model-help-panel__section h3 {
-  margin: 0 0 10px;
-  color: var(--t8-text-main, #f4f4f5);
-  font-size: 15px;
-  line-height: 1.35;
-  font-weight: 900;
-}
-
-.t8-model-help-panel__section p {
-  margin: 0;
-  color: var(--t8-text-main, #f4f4f5);
-}
-
-.t8-model-help-panel__section ul {
-  display: grid;
-  gap: 8px;
-  margin: 0;
-  padding-left: 18px;
-}
-
-.t8-model-help-panel__section li {
-  padding-left: 2px;
-  color: var(--t8-text-main, #f4f4f5);
-}
-
 .t8-radial-settings-panel {
   position: absolute;
   left: calc(var(--t8-floating-control-left, 14px) + var(--t8-theme-music-size, 32px) + 14px);
@@ -2683,21 +2640,16 @@ html[data-theme-visual="tech"][data-theme-mode="light"] .react-flow__node:not(.r
   /* hover 亦保持 crosshair, 避免 xyflow 内置 :hover 样式反转为 grab */
   cursor: crosshair !important;
 }
-/* 2. 扩大 hit area: 透明 ::before 伪元素定位到四周外扩 12px,
-      接收鼠标事件 (点击 / hover / 拖拽起点), 视觉 handle 本体不变
-      (.react-flow__handle 本身已是 position:absolute, 伪元素以其为定位基准) */
-.react-flow__handle::before {
-  content: '';
-  position: absolute;
-  top: -12px;
-  left: -12px;
-  right: -12px;
-  bottom: -12px;
-  border-radius: 9999px;
-  background: transparent;
-  /* 不设 pointer-events: 默认继承 auto, 与本体一起接收事件 */
+/* Legacy custom-property fallback. Modern browsers use theme-core's concentric
+   variable-sized target; this inactive branch retains the old static contract. */
+@supports not (width: var(--t8-handle-hit-size)) {
+  .react-flow__handle::before {
+    top: -12px;
+    left: -12px;
+    right: -12px;
+    bottom: -12px;
+  }
 }
-
 /* === SHIFT 批量移线交互反馈 === */
 /* 按住 SHIFT 时,所有 handle 显示 grab 光标,提示可批量拖拽迁移连线 */
 body.shift-mode .react-flow__handle {
@@ -2837,6 +2789,12 @@ body.cut-mode .react-flow__edge .react-flow__edge-interaction {
   fill: none;
 }
 
+.t8-edge-action-cluster {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .t8-edge-cut-button {
   width: 26px;
   height: 26px;
@@ -2857,6 +2815,45 @@ body.cut-mode .react-flow__edge .react-flow__edge-interaction {
   background: var(--t8-cut-button-fg, #ef4444);
   color: var(--t8-cut-button-bg, #ffffff);
   transform: scale(1.15);
+}
+
+.t8-edge-insert-button {
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  background: var(--t8-insert-button-bg, #ffffff);
+  border: 1.5px solid var(--t8-insert-button-fg, #38bdf8);
+  color: var(--t8-insert-button-fg, #38bdf8);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+  padding: 0;
+  transition: transform 0.15s, background 0.15s, color 0.15s, box-shadow 0.15s;
+}
+
+.t8-edge-insert-button:hover {
+  background: var(--t8-insert-button-fg, #38bdf8);
+  color: var(--t8-insert-button-bg, #ffffff);
+  transform: scale(1.15);
+}
+
+.t8-edge-insert-glyph {
+  width: 15px;
+  height: 15px;
+  display: block;
+  background: currentColor;
+  -webkit-mask: var(--t8-insert-button-mask, url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='black' d='M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6z'/></svg>")) center / contain no-repeat;
+  mask: var(--t8-insert-button-mask, url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='black' d='M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6z'/></svg>")) center / contain no-repeat;
+}
+
+html[data-theme-visual="pixel"] .t8-edge-insert-button {
+  --t8-insert-button-bg: var(--px-surface, #ffffff);
+  --t8-insert-button-fg: var(--px-ink, #1A1410);
+  border-width: 2px;
+  border-radius: 6px;
+  box-shadow: 2px 2px 0 var(--px-ink, #1A1410);
 }
 
 .t8-edge-cut-glyph {
@@ -3057,22 +3054,10 @@ html[data-t8-edge-motion="reduced"] .t8-edge-soccer-ball,
   transition: none !important;
 }
 
-.t8-canvas-shell.t8-viewport-moving .react-flow__minimap,
-.t8-canvas-shell.t8-viewport-moving .react-flow__background {
-  opacity: 0.35;
-  transition: none !important;
-}
-
 .t8-canvas-shell.t8-viewport-moving .react-flow__node:not(.selected) > div,
 .t8-canvas-shell.t8-node-dragging .react-flow__node:not(.selected) > div {
   box-shadow: none !important;
   filter: none !important;
-}
-
-.t8-canvas-shell.t8-viewport-moving :where(video, iframe),
-.t8-canvas-shell.t8-node-dragging :where(video, iframe) {
-  opacity: 0 !important;
-  pointer-events: none !important;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -3106,7 +3091,7 @@ html[data-t8-edge-motion="reduced"] .t8-edge-soccer-ball,
 .img-edit-overlay {
   position: fixed;
   inset: 0;
-  z-index: 9000;
+  z-index: 10100;
   background: rgba(0, 0, 0, 0.6);
   backdrop-filter: blur(4px);
   display: flex;
@@ -3173,7 +3158,7 @@ html[data-t8-edge-motion="reduced"] .t8-edge-soccer-ball,
   border-radius: 0;
   z-index: 22;
   opacity: 0.5;
-  transition: opacity 0.14s ease, transform 0.14s ease, box-shadow 0.14s ease, background 0.14s ease;
+  transition: opacity 0.14s ease, transform 0.14s ease, box-shadow 0.14s ease, background-color 0.14s ease;
   /* 命中区域放大 (避免精准命中难) — 利用伪元素扩展 8px hit-box, 但视觉仍 14x14 */
   position: absolute;
 }
@@ -3596,11 +3581,11 @@ html[data-theme-visual="op"] .t8-group-box__handle {
 }
 
 .t8-context-menu {
-  background: var(--t8-context-menu-bg, color-mix(in srgb, var(--t8-bg-panel-elevated, #111827) 96%, transparent));
+  background: var(--t8-bg-panel-elevated);
   color: var(--t8-text-main, #f8fafc);
-  border: var(--t8-context-menu-border, 1.5px solid var(--t8-border-strong, rgba(255, 255, 255, 0.16)));
-  border-radius: var(--t8-context-menu-radius, 10px);
-  box-shadow: var(--t8-context-menu-shadow, var(--t8-shadow-panel, 0 18px 50px rgba(0, 0, 0, 0.36)));
+  border: 1px solid var(--t8-border);
+  border-radius: var(--t8-radius-panel);
+  box-shadow: var(--t8-shadow-panel);
   backdrop-filter: var(--t8-context-menu-backdrop, blur(10px));
 }
 
@@ -3721,6 +3706,7 @@ html[data-theme-visual="op"] .t8-group-box__handle {
 
 .t8-radial-node-menu__slot {
   position: absolute;
+  padding: 0;
   width: 70px;
   height: 58px;
   transform: translate(-50%, -50%);
@@ -3734,6 +3720,9 @@ html[data-theme-visual="op"] .t8-group-box__handle {
   border: 1px solid var(--t8-radial-slot-border);
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
   color: var(--t8-radial-fg, var(--t8-text-main, #f8fafc));
+  font: inherit;
+  cursor: pointer;
+  pointer-events: auto;
   transition: transform 0.12s ease, background 0.12s ease, color 0.12s ease, border-color 0.12s ease, opacity 0.12s ease;
 }
 
@@ -3767,10 +3756,12 @@ html[data-theme-visual="op"] .t8-group-box__handle {
 
 .t8-radial-node-menu__slot.is-disabled {
   opacity: 0.34;
+  cursor: not-allowed;
 }
 
 .t8-radial-node-menu__center {
   position: absolute;
+  padding: 0;
   left: 50%;
   top: 50%;
   width: 88px;
@@ -3786,6 +3777,10 @@ html[data-theme-visual="op"] .t8-group-box__handle {
   background: var(--t8-radial-bg);
   border: 1.5px solid var(--t8-radial-border);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, #fff 10%, transparent), 0 12px 30px rgba(0, 0, 0, 0.36);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  pointer-events: auto;
 }
 
 .t8-radial-node-menu__center strong {
@@ -3816,6 +3811,30 @@ html[data-theme-visual="op"] .t8-group-box__handle {
   --t8-actionbar-bg: color-mix(in srgb, var(--t8-bg-panel-elevated, #111827) 94%, transparent);
   --t8-actionbar-border: 1px solid var(--t8-border-strong, rgba(255, 255, 255, 0.18));
   --t8-actionbar-shadow: var(--t8-shadow-button, 0 8px 24px rgba(0, 0, 0, 0.34));
+  z-index: var(--t8-z-node-ui);
+}
+
+.t8-canvas-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--t8-z-modal-backdrop);
+}
+
+.t8-canvas-modal-dialog {
+  position: relative;
+  z-index: var(--t8-z-modal-dialog);
+  background: var(--t8-bg-panel-elevated);
+  border: 1px solid var(--t8-border);
+  border-radius: var(--t8-radius-panel);
+  box-shadow: var(--t8-shadow-panel);
+}
+
+.t8-canvas-modal-dialog__body {
+  background: var(--t8-bg-panel-elevated);
+}
+
+[data-t8-system-overlay] {
+  z-index: var(--t8-z-system-overlay);
 }
 
 .llm-chat-message {
@@ -3895,20 +3914,6 @@ html[data-theme-visual="pixel"] .t8-radial-node-menu__center {
   backdrop-filter: none;
 }
 
-html[data-theme-visual="dragon-ball"] .t8-radial-node-menu {
-  --t8-radial-bg: color-mix(in srgb, var(--db-panel, #fff1b8) 88%, transparent);
-  --t8-radial-border: var(--db-orange, #f97316);
-  --t8-radial-glow: color-mix(in srgb, var(--db-gold, #facc15) 60%, transparent);
-  --t8-radial-slot-bg: color-mix(in srgb, var(--db-paper, #fff6d4) 92%, transparent);
-  --t8-radial-slot-border: var(--db-ink, #271606);
-  --t8-radial-fg: var(--db-ink, #271606);
-}
-
-html[data-theme-visual="dragon-ball"] .t8-radial-node-menu__ring {
-  border-width: 2px;
-  box-shadow: 0 0 0 3px var(--db-ink, #271606), 0 0 34px var(--t8-radial-glow);
-}
-
 html[data-theme-visual="rh"] .t8-radial-node-menu {
   --t8-radial-bg: color-mix(in srgb, var(--rh-card, #102310) 86%, transparent);
   --t8-radial-border: var(--rh-lime, #9cff4d);
@@ -3986,1528 +3991,18 @@ html[data-theme-visual="op"] .t8-theme-music-toggle:hover {
 }
 
 html[data-theme-visual="op"] .t8-theme-music-toggle.is-playing {
-  background:
-    radial-gradient(circle at 50% 52%, var(--op-paper, #fff3cf) 0 38%, transparent 39%),
-    var(--op-ocean, #0f7c8c);
-  color: #fff7dc;
-}
-
-.t8-achievement-button,
-.t8-achievement-button--pixel {
-  white-space: nowrap;
-}
-
-.t8-achievement-button__badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  min-height: 18px;
-  padding: 1px 6px;
-  border-radius: 999px;
-  background: color-mix(in srgb, currentColor 15%, transparent);
-  font-size: 10px;
-  line-height: 1;
-}
-
-.t8-achievement-drawer {
-  position: fixed;
-  inset: 0;
-  z-index: 10020;
-  pointer-events: none;
-}
-
-.t8-achievement-drawer__backdrop {
-  position: absolute;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.24);
-  pointer-events: auto;
-}
-
-.t8-achievement-drawer__panel {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  bottom: 12px;
-  width: min(520px, calc(100vw - 24px));
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  pointer-events: auto;
-  color: var(--t8-text-main, #f8fafc);
-  background: color-mix(in srgb, var(--t8-bg-panel, #111827) 96%, transparent);
-  border: 1.5px solid var(--t8-border-strong, rgba(255, 255, 255, 0.18));
-  border-radius: 10px;
-  box-shadow: 0 22px 70px rgba(0, 0, 0, 0.38);
-}
-
-.t8-achievement-drawer__header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 16px;
-  border-bottom: 1px solid var(--t8-border, rgba(255, 255, 255, 0.12));
-  background: color-mix(in srgb, var(--t8-accent, #38bdf8) 13%, transparent);
-}
-
-.t8-achievement-drawer__title {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 16px;
-  font-weight: 900;
-}
-
-.t8-achievement-drawer__subtitle {
-  margin-top: 4px;
-  font-size: 11px;
-  line-height: 1.45;
-  color: var(--t8-text-muted, rgba(226, 232, 240, 0.72));
-}
-
-.t8-achievement-tabs {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 6px;
-  padding: 10px;
-  border-bottom: 1px solid var(--t8-border, rgba(255, 255, 255, 0.12));
-}
-
-.t8-achievement-tabs button {
-  min-height: 32px;
-  border: 1px solid var(--t8-border, rgba(255, 255, 255, 0.14));
-  border-radius: 8px;
-  background: var(--t8-bg-panel-muted, rgba(255, 255, 255, 0.05));
-  color: var(--t8-text-main, #f8fafc);
-  font-size: 12px;
-  font-weight: 800;
-  cursor: pointer;
-}
-
-.t8-achievement-tabs button.is-active {
-  background: var(--t8-accent, #38bdf8);
-  color: var(--t8-accent-text, #07111f);
-  border-color: var(--t8-border-strong, rgba(255, 255, 255, 0.28));
-}
-
-.t8-achievement-drawer__body {
-  min-height: 0;
-  flex: 1;
-  overflow-y: auto;
-  padding: 12px;
-}
-
-.t8-achievement-section,
-.t8-achievement-medal-list,
-.t8-achievement-film-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.t8-achievement-kpis {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.t8-achievement-kpis > div,
-.t8-achievement-card,
-.t8-achievement-theme-card,
-.t8-achievement-medal,
-.t8-achievement-film {
-  border: 1px solid var(--t8-border, rgba(255, 255, 255, 0.14));
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--t8-bg-panel-elevated, #172033) 88%, transparent);
-}
-
-.t8-achievement-kpis > div {
-  min-height: 70px;
-  padding: 10px;
-}
-
-.t8-achievement-kpis span,
-.t8-achievement-theme-card__next,
-.t8-achievement-film__condition {
-  display: block;
-  font-size: 11px;
-  color: var(--t8-text-muted, rgba(226, 232, 240, 0.72));
-}
-
-.t8-achievement-kpis strong {
-  display: block;
-  margin-top: 6px;
-  font-size: 18px;
-  line-height: 1.1;
-}
-
-.t8-achievement-card {
-  padding: 12px;
-}
-
-.t8-achievement-card__title {
-  margin-bottom: 8px;
-  font-weight: 900;
-}
-
-.t8-achievement-toggle {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 34px;
-  gap: 12px;
-  font-size: 12px;
-}
-
-.t8-achievement-actions {
-  display: flex;
-  gap: 8px;
-}
-
-.t8-achievement-task-list {
-  display: grid;
-  gap: 8px;
-}
-
-.t8-achievement-task {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  min-height: 38px;
-  width: 100%;
-  border: 1px solid color-mix(in srgb, var(--achievement-accent, var(--t8-accent)) 38%, var(--t8-border));
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--achievement-accent, var(--t8-accent)) 10%, var(--t8-bg-panel));
-  padding: 8px 10px;
-  color: var(--t8-text-main);
-  text-align: left;
-}
-
-.t8-achievement-task strong {
-  flex: 0 0 auto;
-  font-size: 12px;
-}
-
-.t8-achievement-task span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 11px;
-  color: var(--t8-text-muted);
-}
-
-.t8-achievement-passport,
-.t8-achievement-review {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.t8-achievement-card__title {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-}
-
-.t8-achievement-passport__top {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.t8-achievement-passport__top strong {
-  color: var(--t8-accent, #38bdf8);
-  font-size: 24px;
-  line-height: 1;
-}
-
-.t8-achievement-passport__top span,
-.t8-achievement-review p {
-  color: var(--t8-text-muted, rgba(226, 232, 240, .72));
-  font-size: 11px;
-}
-
-.t8-achievement-passport__themes {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 7px;
-}
-
-.t8-achievement-passport__themes button {
-  --achievement-accent: var(--t8-accent, #38bdf8);
-  min-width: 0;
-  min-height: 46px;
-  padding: 7px 8px;
-  border: 1px solid color-mix(in srgb, var(--achievement-accent) 42%, var(--t8-border, transparent));
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--achievement-accent) 10%, transparent);
-  color: var(--t8-text-main, #f8fafc);
-  text-align: left;
-}
-
-.t8-achievement-passport__themes button.is-complete {
-  background: color-mix(in srgb, var(--achievement-accent) 22%, transparent);
-}
-
-.t8-achievement-passport__themes span,
-.t8-achievement-passport__themes strong {
-  display: block;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.t8-achievement-passport__themes span {
-  font-size: 11px;
-  font-weight: 900;
-}
-
-.t8-achievement-passport__themes strong {
-  margin-top: 3px;
-  color: var(--achievement-accent);
-  font-size: 10px;
-}
-
-.t8-achievement-review__grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.t8-achievement-review__grid > div {
-  min-height: 54px;
-  padding: 8px;
-  border: 1px solid var(--t8-border, rgba(255, 255, 255, .14));
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--t8-bg-panel-elevated, #172033) 72%, transparent);
-}
-
-.t8-achievement-review__grid span {
-  display: block;
-  color: var(--t8-text-muted, rgba(226, 232, 240, .72));
-  font-size: 11px;
-}
-
-.t8-achievement-review__grid strong {
-  display: block;
-  min-width: 0;
-  margin-top: 5px;
-  overflow: hidden;
-  color: var(--t8-text-main, #f8fafc);
-  font-size: 14px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.t8-achievement-review p {
-  margin: 0;
-  line-height: 1.45;
-}
-
-.t8-achievement-theme-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.t8-achievement-theme-card {
-  --achievement-accent: var(--t8-accent, #38bdf8);
-  padding: 12px;
-  border-color: color-mix(in srgb, var(--achievement-accent) 45%, var(--t8-border, transparent));
-  color: var(--t8-text-main, #f8fafc);
-  text-align: left;
-  cursor: pointer;
-}
-
-.t8-achievement-theme-card:hover {
-  transform: translateY(-1px);
-  border-color: color-mix(in srgb, var(--achievement-accent) 72%, var(--t8-border, transparent));
-  box-shadow: 0 10px 28px color-mix(in srgb, var(--achievement-accent) 16%, transparent);
-}
-
-.t8-achievement-theme-card__top,
-.t8-achievement-medal__title {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.t8-achievement-theme-card__top span,
-.t8-achievement-medal__title span {
-  flex: 0 0 auto;
-  font-size: 10px;
-  color: var(--t8-text-muted, rgba(226, 232, 240, 0.72));
-}
-
-.t8-achievement-theme-card__time {
-  margin: 8px 0;
-  color: var(--achievement-accent);
-  font-size: 20px;
-  font-weight: 900;
-}
-
-.t8-achievement-theme-card__next {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-top: 8px;
-}
-
-.t8-achievement-theme-card__next span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.t8-achievement-progress {
-  height: 7px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--t8-text-main, #fff) 10%, transparent);
-}
-
-.t8-achievement-progress span {
-  display: block;
-  height: 100%;
-  min-width: 4px;
-  border-radius: inherit;
-  background: var(--achievement-accent, var(--t8-accent, #38bdf8));
-}
-
-.t8-achievement-medal,
-.t8-achievement-film {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px;
-}
-
-.t8-achievement-medal:not(.is-unlocked),
-.t8-achievement-film:not(.is-unlocked) {
-  opacity: 0.72;
-}
-
-.t8-achievement-medal__icon,
-.t8-achievement-film__poster,
-.t8-achievement-toast__icon {
-  width: 42px;
-  height: 42px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
-  border-radius: 8px;
-  color: var(--t8-accent, #38bdf8);
-  background: color-mix(in srgb, var(--t8-accent, #38bdf8) 17%, transparent);
-  border: 1px solid color-mix(in srgb, var(--t8-accent, #38bdf8) 42%, transparent);
-}
-
-.t8-achievement-medal__body,
-.t8-achievement-film__body,
-.t8-achievement-toast__body {
-  min-width: 0;
-  flex: 1;
-}
-
-.t8-achievement-medal__body p {
-  margin: 4px 0 8px;
-  font-size: 11px;
-  line-height: 1.45;
-  color: var(--t8-text-muted, rgba(226, 232, 240, 0.72));
-}
-
-.t8-achievement-film__title {
-  font-size: 13px;
-  font-weight: 900;
-}
-
-.t8-achievement-film__status {
-  margin-top: 3px;
-  font-size: 12px;
-  color: var(--t8-accent, #38bdf8);
-}
-
-.t8-achievement-film__player {
-  display: block;
-  width: 100%;
-  max-height: 190px;
-  margin-top: 8px;
-  border: 1px solid var(--t8-border, rgba(255, 255, 255, 0.14));
-  border-radius: 8px;
-  background: #020617;
-}
-
-.t8-achievement-theme-film .t8-achievement-film__player {
-  max-height: 150px;
-}
-
-.t8-achievement-film__stage-card {
-  width: 100%;
-  min-height: 72px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  margin-top: 8px;
-  border: 1px solid color-mix(in srgb, var(--achievement-accent, var(--t8-accent, #38bdf8)) 46%, var(--t8-border, transparent));
-  border-radius: 8px;
-  background:
-    radial-gradient(circle at 50% 20%, color-mix(in srgb, var(--achievement-accent, var(--t8-accent, #38bdf8)) 22%, transparent), transparent 46%),
-    color-mix(in srgb, var(--t8-bg-panel-muted, rgba(255, 255, 255, 0.05)) 92%, transparent);
-  color: var(--t8-text-main, #f8fafc);
-  font-size: 12px;
-  font-weight: 900;
-  cursor: pointer;
-}
-
-.t8-achievement-film__stage-card:hover {
-  border-color: color-mix(in srgb, var(--achievement-accent, var(--t8-accent, #38bdf8)) 72%, var(--t8-border, transparent));
-  transform: translateY(-1px);
-}
-
-.t8-achievement-film__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
-  margin-top: 8px;
-}
-
-.t8-achievement-film-stage {
-  position: fixed;
-  inset: 0;
-  z-index: 10080;
-  display: grid;
-  place-items: center;
-  padding: 28px;
-  pointer-events: auto;
-  background:
-    radial-gradient(circle at 50% 46%, color-mix(in srgb, var(--t8-accent, #38bdf8) 20%, transparent), transparent 34%),
-    rgba(2, 6, 23, 0.9);
-}
-
-.t8-achievement-film-stage__panel {
-  position: relative;
-  width: min(1120px, calc(100vw - 56px));
-  max-height: calc(100vh - 56px);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  border: 1.5px solid var(--t8-border-strong, rgba(255, 255, 255, 0.2));
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--t8-bg-panel-elevated, #0f172a) 96%, transparent);
-  color: var(--t8-text-main, #f8fafc);
-  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.52);
-}
-
-.t8-achievement-film-stage__aura {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background:
-    radial-gradient(circle at 20% 0%, color-mix(in srgb, var(--t8-accent, #38bdf8) 22%, transparent), transparent 34%),
-    radial-gradient(circle at 82% 100%, color-mix(in srgb, var(--t8-warning, #facc15) 14%, transparent), transparent 34%);
-  opacity: 0.88;
-}
-
-.t8-achievement-film-stage__header,
-.t8-achievement-film-stage__footer {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 14px 16px;
-  border-color: var(--t8-border, rgba(255, 255, 255, 0.12));
-}
-
-.t8-achievement-film-stage__header {
-  border-bottom: 1px solid var(--t8-border, rgba(255, 255, 255, 0.12));
-}
-
-.t8-achievement-film-stage__footer {
-  border-top: 1px solid var(--t8-border, rgba(255, 255, 255, 0.12));
-}
-
-.t8-achievement-film-stage__header span,
-.t8-achievement-film-stage__header em,
-.t8-achievement-film-stage__footer span {
-  display: block;
-  color: var(--t8-text-muted, rgba(226, 232, 240, 0.72));
-  font-size: 11px;
-  font-style: normal;
-}
-
-.t8-achievement-film-stage__header strong {
-  display: block;
-  margin-top: 3px;
-  font-size: clamp(18px, 2.2vw, 28px);
-  font-weight: 1000;
-}
-
-.t8-achievement-film-stage__player {
-  position: relative;
-  z-index: 1;
-  width: 100%;
-  max-height: min(68vh, 720px);
-  background: #020617;
-}
-
-.t8-achievement-film-stage[data-film-theme]::before,
-.t8-achievement-film-stage[data-film-theme]::after {
-  content: "";
-  position: absolute;
-  pointer-events: none;
-}
-
-.t8-achievement-film-stage[data-film-theme="tetris"] {
-  background:
-    linear-gradient(rgba(103, 232, 249, 0.1) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(103, 232, 249, 0.1) 1px, transparent 1px),
-    radial-gradient(circle at 74% 20%, rgba(255, 205, 61, 0.2), transparent 20%),
-    radial-gradient(circle at 22% 78%, rgba(164, 92, 255, 0.18), transparent 24%),
-    #06101f;
-  background-size: 34px 34px, 34px 34px, auto, auto, auto;
-}
-
-.t8-achievement-film-stage[data-film-theme="tetris"]::before {
-  left: max(22px, 4vw);
-  top: max(28px, 8vh);
-  width: 164px;
-  height: 164px;
-  background:
-    linear-gradient(#67e8f9 0 0) 0 0 / 38px 38px,
-    linear-gradient(#67e8f9 0 0) 40px 0 / 38px 38px,
-    linear-gradient(#4ade80 0 0) 80px 0 / 38px 38px,
-    linear-gradient(#ffcf3a 0 0) 40px 40px / 38px 38px,
-    linear-gradient(#a855f7 0 0) 80px 40px / 38px 38px,
-    linear-gradient(#fb7185 0 0) 120px 40px / 38px 38px,
-    linear-gradient(#fb923c 0 0) 80px 80px / 38px 38px,
-    linear-gradient(#3b82f6 0 0) 120px 80px / 38px 38px;
-  background-repeat: no-repeat;
-  filter: drop-shadow(0 0 20px rgba(103, 232, 249, 0.38));
-  opacity: 0.62;
-  transform: rotate(-8deg);
-}
-
-.t8-achievement-film-stage[data-film-theme="tetris"]::after {
-  right: max(18px, 5vw);
-  bottom: max(30px, 7vh);
-  width: 210px;
-  height: 110px;
-  border: 2px solid rgba(255, 207, 58, 0.55);
-  background:
-    linear-gradient(#22d3ee 0 0) 12px 60px / 26px 26px,
-    linear-gradient(#22d3ee 0 0) 40px 60px / 26px 26px,
-    linear-gradient(#22d3ee 0 0) 68px 60px / 26px 26px,
-    linear-gradient(#f97316 0 0) 116px 34px / 26px 26px,
-    linear-gradient(#f97316 0 0) 144px 34px / 26px 26px,
-    linear-gradient(#f97316 0 0) 144px 62px / 26px 26px,
-    linear-gradient(rgba(255, 255, 255, 0.12) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.12) 1px, transparent 1px);
-  background-repeat: no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, repeat, repeat;
-  background-size: 26px 26px, 26px 26px, 26px 26px, 26px 26px, 26px 26px, 26px 26px, 14px 14px, 14px 14px;
-  border-radius: 10px;
-  box-shadow: 0 0 32px rgba(255, 207, 58, 0.24);
-  opacity: 0.58;
-}
-
-.t8-achievement-film-stage[data-film-theme="tetris"] .t8-achievement-film-stage__panel {
-  border-width: 3px;
-  border-color: #ffcf3a;
-  background:
-    linear-gradient(rgba(148, 163, 184, 0.12) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(148, 163, 184, 0.12) 1px, transparent 1px),
-    linear-gradient(180deg, #0b1220, #111827 46%, #060b16);
-  background-size: 24px 24px, 24px 24px, auto;
-  box-shadow:
-    0 0 0 5px rgba(6, 182, 212, 0.24),
-    0 0 62px rgba(255, 207, 58, 0.22),
-    0 28px 110px rgba(0, 0, 0, 0.72);
-}
-
-.t8-achievement-film-stage[data-film-theme="tetris"] .t8-achievement-film-stage__header,
-.t8-achievement-film-stage[data-film-theme="tetris"] .t8-achievement-film-stage__footer {
-  border-color: rgba(103, 232, 249, 0.42);
-  background: linear-gradient(90deg, rgba(34, 211, 238, 0.14), rgba(255, 207, 58, 0.13), rgba(168, 85, 247, 0.13));
-}
-
-.t8-achievement-film-stage[data-film-theme="tetris"] .t8-achievement-film-stage__header strong {
-  color: #ffcf3a;
-  text-shadow: 0 0 14px rgba(255, 207, 58, 0.34);
-}
-
-.t8-achievement-film-stage[data-film-theme="tetris"] .t8-achievement-film-stage__player {
-  min-height: min(58vw, 580px);
-  border-top: 2px solid rgba(103, 232, 249, 0.42);
-  border-bottom: 2px solid rgba(103, 232, 249, 0.42);
-}
-
-.t8-achievement-film-stage[data-film-theme="rh"] {
-  background:
-    radial-gradient(circle at 20% 18%, rgba(34, 211, 238, 0.18), transparent 25%),
-    linear-gradient(rgba(45, 212, 191, 0.1) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(45, 212, 191, 0.1) 1px, transparent 1px),
-    #041418;
-  background-size: auto, 38px 38px, 38px 38px, auto;
-}
-
-.t8-achievement-film-stage[data-film-theme="yyh"] {
-  background:
-    radial-gradient(circle at 54% 46%, rgba(16, 185, 129, 0.22), transparent 28%),
-    radial-gradient(circle at 80% 80%, rgba(59, 130, 246, 0.16), transparent 28%),
-    #07130f;
-}
-
-.t8-achievement-film-stage[data-film-theme="dragon-ball"] {
-  background:
-    radial-gradient(circle at 50% 50%, rgba(251, 191, 36, 0.2), transparent 24%),
-    radial-gradient(circle at 24% 78%, rgba(239, 68, 68, 0.18), transparent 24%),
-    #130c05;
-}
-
-.t8-achievement-film-stage[data-film-theme="tech"] {
-  background:
-    linear-gradient(rgba(96, 165, 250, 0.12) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(96, 165, 250, 0.12) 1px, transparent 1px),
-    radial-gradient(circle at 78% 12%, rgba(56, 189, 248, 0.18), transparent 28%),
-    #040b17;
-  background-size: 42px 42px, 42px 42px, auto, auto;
-}
-
-html[data-theme-visual="saint-seiya"] .t8-achievement-drawer__panel,
-html[data-theme-visual="saint-seiya"] .t8-achievement-film-stage__panel {
-  --saint-achievement-ink: #211607;
-  --saint-achievement-muted: rgba(33, 22, 7, 0.72);
-  --saint-achievement-panel: #fff7dc;
-  --saint-achievement-card: rgba(255, 251, 235, 0.96);
-  --saint-achievement-card-strong: #fff1b7;
-  --saint-achievement-line: rgba(33, 22, 7, 0.62);
-  --saint-achievement-accent: #bf7f14;
-  --saint-achievement-cosmo: #087b86;
-  --t8-text-main: var(--saint-achievement-ink);
-  --t8-text-muted: var(--saint-achievement-muted);
-  --t8-bg-panel: var(--saint-achievement-panel);
-  --t8-bg-panel-elevated: var(--saint-achievement-card);
-  --t8-bg-panel-muted: rgba(255, 238, 180, 0.82);
-  --t8-border: var(--saint-achievement-line);
-  --t8-border-strong: #211607;
-  --t8-accent: var(--saint-achievement-accent);
-  --t8-accent-text: #211607;
-  --t8-warning: #d49d2d;
-  color: var(--saint-achievement-ink) !important;
-  border-color: #211607 !important;
-  background:
-    radial-gradient(circle at 80% 7%, rgba(255, 230, 138, 0.62), transparent 27%),
-    radial-gradient(circle at 14% 98%, rgba(39, 214, 223, 0.16), transparent 26%),
-    linear-gradient(180deg, #fff9df, #f3d989 48%, #fff5cf) !important;
-}
-
-html[data-theme-visual="saint-seiya"][data-theme-mode="dark"] .t8-achievement-drawer__panel,
-html[data-theme-visual="saint-seiya"][data-theme-mode="dark"] .t8-achievement-film-stage__panel {
-  --saint-achievement-ink: #fff7db;
-  --saint-achievement-muted: rgba(255, 247, 219, 0.78);
-  --saint-achievement-panel: #071226;
-  --saint-achievement-card: rgba(12, 24, 46, 0.96);
-  --saint-achievement-card-strong: #142744;
-  --saint-achievement-line: rgba(255, 230, 138, 0.54);
-  --saint-achievement-accent: #ffe68a;
-  --saint-achievement-cosmo: #67e8f9;
-  --t8-border-strong: #ffe68a;
-  --t8-accent-text: #071226;
-  color: var(--saint-achievement-ink) !important;
-  background:
-    radial-gradient(circle at 50% 0%, rgba(248, 200, 74, 0.22), transparent 30%),
-    radial-gradient(circle at 82% 94%, rgba(103, 232, 249, 0.16), transparent 28%),
-    linear-gradient(180deg, #081125, #0d1e38 48%, #071226) !important;
-}
-
-html[data-theme-visual="saint-seiya"][data-saint-mode="hades"] .t8-achievement-drawer__panel,
-html[data-theme-visual="saint-seiya"][data-saint-mode="hades"] .t8-achievement-film-stage__panel {
-  --saint-achievement-accent: #ffe68a;
-  --saint-achievement-cosmo: #67e8f9;
-  background:
-    radial-gradient(circle at 50% 18%, rgba(255, 230, 138, 0.2), transparent 27%),
-    radial-gradient(circle at 50% 100%, rgba(183, 42, 89, 0.28), transparent 34%),
-    linear-gradient(180deg, #080b19, #16102a 50%, #090817) !important;
-}
-
-html[data-theme-visual="saint-seiya"][data-saint-mode="hades"]:not([data-theme-mode="dark"]) .t8-achievement-drawer__panel,
-html[data-theme-visual="saint-seiya"][data-saint-mode="hades"]:not([data-theme-mode="dark"]) .t8-achievement-film-stage__panel {
-  --saint-achievement-ink: #211607;
-  --saint-achievement-muted: rgba(33, 22, 7, 0.74);
-  --saint-achievement-card: rgba(255, 250, 229, 0.96);
-  --saint-achievement-line: rgba(33, 22, 7, 0.64);
-  --saint-achievement-accent: #9a5f09;
-  --saint-achievement-cosmo: #087b86;
-  --t8-accent-text: #211607;
-  background:
-    radial-gradient(circle at 50% 12%, rgba(255, 255, 255, 0.58), transparent 22%),
-    radial-gradient(circle at 70% 70%, rgba(222, 74, 112, 0.18), transparent 28%),
-    linear-gradient(180deg, #fff8dd, #efd27b 52%, #fff1c3) !important;
-}
-
-html[data-theme-visual="saint-seiya"] .t8-achievement-drawer__header,
-html[data-theme-visual="saint-seiya"] .t8-achievement-tabs,
-html[data-theme-visual="saint-seiya"] .t8-achievement-film-stage__header,
-html[data-theme-visual="saint-seiya"] .t8-achievement-film-stage__footer {
-  border-color: var(--saint-achievement-line) !important;
-}
-
-html[data-theme-visual="saint-seiya"] .t8-achievement-drawer__header {
-  color: var(--saint-achievement-ink) !important;
-  background:
-    linear-gradient(90deg, color-mix(in srgb, var(--saint-achievement-accent) 64%, #fff8dc), color-mix(in srgb, var(--saint-achievement-cosmo) 22%, #fff1b7)) !important;
-}
-
-html[data-theme-visual="saint-seiya"][data-theme-mode="dark"] .t8-achievement-drawer__header,
-html[data-theme-visual="saint-seiya"][data-theme-mode="dark"] .t8-achievement-film-stage__header {
-  background:
-    linear-gradient(90deg, rgba(248, 200, 74, 0.2), rgba(103, 232, 249, 0.08), rgba(248, 200, 74, 0.14)) !important;
-}
-
-html[data-theme-visual="saint-seiya"] .t8-achievement-drawer__title,
-html[data-theme-visual="saint-seiya"] .t8-achievement-drawer__subtitle,
-html[data-theme-visual="saint-seiya"] .t8-achievement-card__title,
-html[data-theme-visual="saint-seiya"] .t8-achievement-theme-task-group h4,
-html[data-theme-visual="saint-seiya"] .t8-achievement-film__title,
-html[data-theme-visual="saint-seiya"] .t8-achievement-theme-task__top strong,
-html[data-theme-visual="saint-seiya"] .t8-achievement-medal__title strong,
-html[data-theme-visual="saint-seiya"] .t8-achievement-film-stage__header strong {
-  color: var(--saint-achievement-ink) !important;
-  text-shadow: none !important;
-}
-
-html[data-theme-visual="saint-seiya"] .t8-achievement-drawer__subtitle,
-html[data-theme-visual="saint-seiya"] .t8-achievement-kpis span,
-html[data-theme-visual="saint-seiya"] .t8-achievement-theme-card__next,
-html[data-theme-visual="saint-seiya"] .t8-achievement-film__condition,
-html[data-theme-visual="saint-seiya"] .t8-achievement-passport__top span,
-html[data-theme-visual="saint-seiya"] .t8-achievement-review p,
-html[data-theme-visual="saint-seiya"] .t8-achievement-review__grid span,
-html[data-theme-visual="saint-seiya"] .t8-achievement-theme-detail__kpis span,
-html[data-theme-visual="saint-seiya"] .t8-achievement-theme-task__body p,
-html[data-theme-visual="saint-seiya"] .t8-achievement-theme-task__meta,
-html[data-theme-visual="saint-seiya"] .t8-achievement-theme-task__hint,
-html[data-theme-visual="saint-seiya"] .t8-achievement-theme-showcase p,
-html[data-theme-visual="saint-seiya"] .t8-achievement-theme-showcase__head span,
-html[data-theme-visual="saint-seiya"] .t8-achievement-theme-showcase__foot,
-html[data-theme-visual="saint-seiya"] .t8-achievement-film-stage__header span,
-html[data-theme-visual="saint-seiya"] .t8-achievement-film-stage__header em,
-html[data-theme-visual="saint-seiya"] .t8-achievement-film-stage__footer span {
-  color: var(--saint-achievement-muted) !important;
-  text-shadow: none !important;
-}
-
-html[data-theme-visual="saint-seiya"] .t8-achievement-kpis > div,
-html[data-theme-visual="saint-seiya"] .t8-achievement-card,
-html[data-theme-visual="saint-seiya"] .t8-achievement-theme-card,
-html[data-theme-visual="saint-seiya"] .t8-achievement-medal,
-html[data-theme-visual="saint-seiya"] .t8-achievement-film,
-html[data-theme-visual="saint-seiya"] .t8-achievement-theme-detail__kpis > div,
-html[data-theme-visual="saint-seiya"] .t8-achievement-theme-next,
-html[data-theme-visual="saint-seiya"] .t8-achievement-theme-task,
-html[data-theme-visual="saint-seiya"] .t8-achievement-theme-film,
-html[data-theme-visual="saint-seiya"] .t8-achievement-theme-showcase,
-html[data-theme-visual="saint-seiya"] .t8-achievement-theme-showcase__grid > div,
-html[data-theme-visual="saint-seiya"] .t8-achievement-review__grid > div {
-  color: var(--saint-achievement-ink) !important;
-  border-color: var(--saint-achievement-line) !important;
-  background: var(--saint-achievement-card) !important;
-}
-
-html[data-theme-visual="saint-seiya"] .t8-achievement-tabs button,
-html[data-theme-visual="saint-seiya"] .t8-achievement-back,
-html[data-theme-visual="saint-seiya"] .t8-achievement-film__stage-card,
-html[data-theme-visual="saint-seiya"] .t8-achievement-passport__themes button,
-html[data-theme-visual="saint-seiya"] .t8-achievement-task {
-  color: var(--saint-achievement-ink) !important;
-  border-color: var(--saint-achievement-line) !important;
-  background: color-mix(in srgb, var(--saint-achievement-card-strong) 78%, transparent) !important;
-}
-
-html[data-theme-visual="saint-seiya"] .t8-achievement-tabs button.is-active,
-html[data-theme-visual="saint-seiya"] .t8-achievement-task:hover,
-html[data-theme-visual="saint-seiya"] .t8-achievement-passport__themes button.is-complete {
-  color: var(--t8-accent-text, #211607) !important;
-  border-color: var(--saint-achievement-line) !important;
-  background: linear-gradient(180deg, var(--saint-achievement-cosmo), var(--saint-achievement-accent)) !important;
-}
-
-html[data-theme-visual="saint-seiya"] .t8-achievement-progress {
-  background: color-mix(in srgb, var(--saint-achievement-ink) 12%, transparent) !important;
-  border: 1px solid color-mix(in srgb, var(--saint-achievement-line) 70%, transparent);
-}
-
-html[data-theme-visual="saint-seiya"] .t8-achievement-progress span,
-html[data-theme-visual="saint-seiya"] .t8-achievement-theme-showcase__grid strong,
-html[data-theme-visual="saint-seiya"] .t8-achievement-theme-detail__kpis strong,
-html[data-theme-visual="saint-seiya"] .t8-achievement-passport__top strong,
-html[data-theme-visual="saint-seiya"] .t8-achievement-film__status {
-  color: var(--saint-achievement-accent) !important;
-}
-
-html[data-theme-visual="saint-seiya"] .t8-achievement-film-stage {
-  background:
-    radial-gradient(circle at 50% 47%, rgba(248, 200, 74, 0.24), transparent 22%),
-    radial-gradient(circle at 50% 48%, transparent 0 30%, rgba(103, 232, 249, 0.13) 31% 36%, transparent 37%),
-    linear-gradient(rgba(255, 230, 138, 0.12) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 230, 138, 0.12) 1px, transparent 1px),
-    rgba(2, 5, 18, 0.92);
-  background-size: auto, auto, 52px 52px, 52px 52px, auto;
-}
-
-html[data-theme-visual="saint-seiya"] .t8-achievement-film-stage__panel {
-  box-shadow:
-    0 0 0 3px rgba(255, 247, 219, 0.16),
-    0 0 70px rgba(248, 200, 74, 0.28),
-    0 30px 110px rgba(0, 0, 0, 0.62);
-}
-
-html[data-theme-visual="saint-seiya"] .t8-achievement-film-stage__aura {
-  background:
-    conic-gradient(from -20deg at 50% 50%, transparent 0 18deg, rgba(248, 200, 74, 0.18) 20deg 24deg, transparent 26deg 56deg, rgba(103, 232, 249, 0.12) 58deg 62deg, transparent 64deg 100deg),
-    radial-gradient(circle at 50% 48%, rgba(248, 200, 74, 0.18), transparent 32%);
-  animation: t8-achievement-saint-cosmo 8s linear infinite;
-}
-
-html[data-theme-visual="saint-seiya"] .t8-achievement-film-stage__player {
-  min-height: min(58vw, 580px);
-  border-top: 1px solid var(--saint-achievement-line);
-  border-bottom: 1px solid var(--saint-achievement-line);
-  background: #020617;
-}
-
-@keyframes t8-achievement-saint-cosmo {
   from {
     transform: rotate(0deg) scale(1.02);
   }
   to {
     transform: rotate(360deg) scale(1.02);
   }
-}
-
-.t8-achievement-back {
-  min-height: 30px;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 10px;
-  padding: 0 10px;
-  border: 1px solid var(--t8-border, rgba(255, 255, 255, 0.14));
-  border-radius: 999px;
-  background: var(--t8-bg-panel-muted, rgba(255, 255, 255, 0.05));
-  color: var(--t8-text-main, #f8fafc);
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.t8-achievement-theme-detail {
-  --achievement-accent: var(--t8-accent, #38bdf8);
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.t8-achievement-theme-hero {
-  min-height: 84px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 14px;
-  border: 1px solid color-mix(in srgb, var(--achievement-accent) 52%, var(--t8-border, transparent));
-  border-radius: 8px;
-  background:
-    radial-gradient(circle at 12% 0%, color-mix(in srgb, var(--achievement-accent) 28%, transparent), transparent 36%),
-    color-mix(in srgb, var(--t8-bg-panel-elevated, #172033) 90%, transparent);
-}
-
-.t8-achievement-theme-hero span {
-  display: inline-flex;
-  min-height: 20px;
-  align-items: center;
-  padding: 0 8px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--achievement-accent) 20%, transparent);
-  color: var(--achievement-accent);
-  font-size: 10px;
-  font-weight: 900;
-}
-
-.t8-achievement-theme-hero h3 {
-  margin: 8px 0 0;
-  font-size: 20px;
-  line-height: 1.05;
-}
-
-.t8-achievement-theme-hero strong {
-  min-width: 64px;
-  text-align: right;
-  color: var(--achievement-accent);
-  font-size: 24px;
-  line-height: 1;
-}
-
-.t8-achievement-theme-detail__kpis {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.t8-achievement-theme-detail__kpis > div,
-.t8-achievement-theme-next,
-.t8-achievement-theme-task,
-.t8-achievement-theme-film,
-.t8-achievement-theme-showcase {
-  border: 1px solid var(--t8-border, rgba(255, 255, 255, 0.14));
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--t8-bg-panel-elevated, #172033) 88%, transparent);
-}
-
-.t8-achievement-theme-detail__kpis > div {
-  min-height: 62px;
-  padding: 9px;
-}
-
-.t8-achievement-theme-detail__kpis span,
-.t8-achievement-theme-task__meta,
-.t8-achievement-theme-task__hint {
-  color: var(--t8-text-muted, rgba(226, 232, 240, 0.72));
-  font-size: 11px;
-}
-
-.t8-achievement-theme-detail__kpis strong {
-  display: block;
-  min-width: 0;
-  margin-top: 6px;
-  overflow: hidden;
-  color: var(--t8-text-main, #f8fafc);
-  font-size: 15px;
-  line-height: 1.15;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.t8-achievement-theme-next {
-  min-height: 42px;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 8px;
-  padding: 9px 10px;
-  border-color: color-mix(in srgb, var(--achievement-accent) 40%, var(--t8-border, transparent));
-}
-
-.t8-achievement-theme-next svg {
-  color: var(--achievement-accent);
-}
-
-.t8-achievement-theme-next span {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--t8-text-muted, rgba(226, 232, 240, 0.72));
-  font-size: 11px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.t8-achievement-theme-next strong {
-  color: var(--achievement-accent);
-  font-size: 11px;
-  white-space: nowrap;
-}
-
-.t8-achievement-theme-showcase {
-  padding: 10px;
-}
-
-.t8-achievement-theme-showcase__head,
-.t8-achievement-theme-showcase__foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.t8-achievement-theme-showcase__head {
-  color: var(--achievement-accent);
-}
-
-.t8-achievement-theme-showcase__head strong {
-  min-width: 0;
-  flex: 1;
-  color: var(--t8-text-main, #f8fafc);
-  font-size: 13px;
-}
-
-.t8-achievement-theme-showcase__head span,
-.t8-achievement-theme-showcase__foot {
-  color: var(--t8-text-muted, rgba(226, 232, 240, .72));
-  font-size: 10px;
-}
-
-.t8-achievement-theme-showcase p {
-  margin: 8px 0;
-  color: var(--t8-text-muted, rgba(226, 232, 240, .72));
-  font-size: 11px;
-  line-height: 1.45;
-}
-
-.t8-achievement-theme-showcase__grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 7px;
-}
-
-.t8-achievement-theme-showcase__grid > div {
-  min-height: 48px;
-  padding: 7px;
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--achievement-accent) 10%, transparent);
-}
-
-.t8-achievement-theme-showcase__grid span {
-  display: block;
-  color: var(--t8-text-muted, rgba(226, 232, 240, .72));
-  font-size: 10px;
-}
-
-.t8-achievement-theme-showcase__grid strong {
-  display: block;
-  margin-top: 3px;
-  color: var(--achievement-accent);
-  font-size: 17px;
-  line-height: 1;
-}
-
-.t8-achievement-theme-showcase__foot {
-  margin-top: 8px;
-}
-
-.t8-achievement-theme-showcase__foot span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.t8-achievement-theme-task-group {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.t8-achievement-theme-task-group h4 {
-  margin: 4px 0 0;
-  color: var(--t8-text-main, #f8fafc);
-  font-size: 13px;
-  font-weight: 950;
-}
-
-.t8-achievement-theme-task-list {
-  display: grid;
-  gap: 8px;
-}
-
-.t8-achievement-theme-task,
-.t8-achievement-theme-film {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 10px;
-}
-
-.t8-achievement-theme-task.is-hidden-task {
-  border-color: color-mix(in srgb, var(--achievement-accent) 62%, var(--t8-border, transparent));
-  background:
-    repeating-linear-gradient(135deg, transparent 0 13px, color-mix(in srgb, var(--achievement-accent) 8%, transparent) 13px 14px),
-    color-mix(in srgb, var(--t8-bg-panel-elevated, #172033) 88%, transparent);
-}
-
-.t8-achievement-theme-task:not(.is-unlocked),
-.t8-achievement-theme-film:not(.is-unlocked) {
-  opacity: .82;
-}
-
-.t8-achievement-theme-task.is-tracking-disabled {
-  opacity: .66;
-}
-
-.t8-achievement-theme-task__icon {
-  width: 34px;
-  height: 34px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
-  border: 1px solid color-mix(in srgb, var(--achievement-accent) 42%, transparent);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--achievement-accent) 16%, transparent);
-  color: var(--achievement-accent);
-}
-
-.t8-achievement-theme-task__body {
-  min-width: 0;
-  flex: 1;
-}
-
-.t8-achievement-theme-task__top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.t8-achievement-theme-task__top strong {
-  min-width: 0;
-  overflow: hidden;
-  font-size: 13px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.t8-achievement-theme-task__top span {
-  flex: 0 0 auto;
-  padding: 1px 6px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--achievement-accent) 16%, transparent);
-  color: var(--achievement-accent);
-  font-size: 10px;
-  font-weight: 900;
-}
-
-.t8-achievement-theme-task__body p {
-  margin: 4px 0 8px;
-  color: var(--t8-text-muted, rgba(226, 232, 240, 0.72));
-  font-size: 11px;
-  line-height: 1.45;
-}
-
-.t8-achievement-theme-task__hint {
-  margin: -2px 0 8px;
-  padding: 6px 8px;
-  border-radius: 7px;
-  background: color-mix(in srgb, var(--achievement-accent) 10%, transparent);
-}
-
-.t8-achievement-theme-task__disabled {
-  margin: -2px 0 8px;
-  padding: 6px 8px;
-  border: 1px solid color-mix(in srgb, var(--t8-warning, #facc15) 36%, transparent);
-  border-radius: 7px;
-  background: color-mix(in srgb, var(--t8-warning, #facc15) 14%, transparent);
-  color: var(--t8-text-main, #f8fafc);
-  font-size: 11px;
-  line-height: 1.45;
-}
-
-.t8-achievement-theme-task__meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 6px;
-}
-
-.t8-achievement-alert,
-.t8-achievement-empty {
-  border-radius: 8px;
-  padding: 10px 12px;
-  font-size: 12px;
-  background: color-mix(in srgb, var(--t8-warning, #facc15) 18%, transparent);
-  color: var(--t8-text-main, #f8fafc);
-}
-
-.t8-achievement-alert--disabled {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 10px;
-  border: 1px solid color-mix(in srgb, var(--t8-warning, #facc15) 38%, transparent);
-}
-
-.t8-achievement-alert--disabled strong,
-.t8-achievement-alert--disabled span {
-  display: block;
-}
-
-.t8-achievement-alert--disabled strong {
-  margin-bottom: 3px;
-  font-size: 13px;
-}
-
-.t8-achievement-alert--disabled span {
-  color: var(--t8-text-muted, rgba(226, 232, 240, .72));
-  line-height: 1.45;
-}
-
-.t8-achievement-toast-stack {
-  position: fixed;
-  right: 18px;
-  bottom: 18px;
-  z-index: 10030;
-  display: flex;
-  width: min(360px, calc(100vw - 36px));
-  flex-direction: column;
-  gap: 10px;
-}
-
-.t8-achievement-toast {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px;
-  border: 1px solid var(--t8-border-strong, rgba(255, 255, 255, 0.2));
-  border-radius: 10px;
-  color: var(--t8-text-main, #f8fafc);
-  background: color-mix(in srgb, var(--t8-bg-panel-elevated, #111827) 96%, transparent);
-  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.32);
-  cursor: pointer;
-}
-
-.t8-achievement-toast__body strong,
-.t8-achievement-toast__body span {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.t8-achievement-toast__body strong {
-  font-size: 13px;
-}
-
-.t8-achievement-toast__body span {
-  margin-top: 3px;
-  font-size: 11px;
-  color: var(--t8-text-muted, rgba(226, 232, 240, 0.72));
-}
-
-.t8-hidden-ceremony {
-  --ceremony-accent: #38bdf8;
-  --ceremony-ink: #f8fafc;
-  position: fixed;
-  inset: 0;
-  z-index: 10035;
-  display: grid;
-  place-items: center;
-  pointer-events: none;
-}
-
-.t8-hidden-ceremony.is-rh-duck {
-  --ceremony-accent: #ff345f;
-  --ceremony-ink: #ffe8ee;
-}
-
-.t8-hidden-ceremony.is-yyh-portrait {
-  --ceremony-accent: #ff5fd2;
-  --ceremony-ink: #f0fff8;
-}
-
-.t8-hidden-ceremony.is-dragon-ball-shenron {
-  --ceremony-accent: #24f2c1;
-  --ceremony-ink: #eafffb;
-}
-
-.t8-hidden-ceremony__scrim {
-  position: absolute;
-  inset: 0;
-  background:
-    radial-gradient(circle at 50% 45%, color-mix(in srgb, var(--ceremony-accent) 22%, transparent), transparent 34%),
-    rgba(0, 0, 0, .38);
-  animation: t8-ceremony-scrim 4.6s ease forwards;
-}
-
-.t8-hidden-ceremony__stage {
-  position: relative;
-  width: min(520px, calc(100vw - 42px));
-  min-height: 230px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  padding: 28px 42px;
-  border: 2px solid color-mix(in srgb, var(--ceremony-accent) 78%, white 6%);
-  border-radius: 10px;
-  background:
-    linear-gradient(90deg, transparent 0 48%, color-mix(in srgb, var(--ceremony-accent) 20%, transparent) 49% 51%, transparent 52%),
-    repeating-linear-gradient(0deg, rgba(255,255,255,.05) 0 1px, transparent 1px 7px),
-    linear-gradient(180deg, rgba(7, 18, 23, .96), rgba(3, 8, 13, .98));
-  color: var(--ceremony-ink);
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--ceremony-accent) 26%, transparent),
-    0 0 44px color-mix(in srgb, var(--ceremony-accent) 36%, transparent),
-    0 24px 80px rgba(0, 0, 0, .45);
-  pointer-events: auto;
-  animation: t8-ceremony-stage 4.2s ease both;
-}
-
-.t8-hidden-ceremony.is-dragon-ball-shenron .t8-hidden-ceremony__stage {
-  border-radius: 999px 18px 999px 18px;
-  background:
-    radial-gradient(circle at 50% 54%, color-mix(in srgb, var(--ceremony-accent) 20%, transparent), transparent 38%),
-    repeating-conic-gradient(from 0deg, rgba(36,242,193,.10) 0 6deg, transparent 6deg 18deg),
-    linear-gradient(180deg, #061c22, #02090d);
-}
-
-.t8-hidden-ceremony__sigil {
-  width: 74px;
-  height: 74px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 2px solid currentColor;
-  border-radius: 999px;
-  color: var(--ceremony-accent);
-  background: color-mix(in srgb, var(--ceremony-accent) 10%, transparent);
-  box-shadow: 0 0 28px color-mix(in srgb, var(--ceremony-accent) 48%, transparent);
-  animation: t8-ceremony-sigil 1.35s ease-in-out infinite alternate;
-}
-
-.t8-hidden-ceremony__scan {
-  position: absolute;
-  left: -10%;
-  right: -10%;
-  top: 0;
-  height: 42px;
-  background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--ceremony-accent) 24%, transparent), transparent);
-  animation: t8-ceremony-scan 1.4s linear infinite;
-}
-
-.t8-hidden-ceremony__label {
-  margin-top: 16px;
-  color: var(--ceremony-accent);
-  font-size: 11px;
-  font-weight: 950;
-  letter-spacing: 0;
-}
-
-.t8-hidden-ceremony h3 {
-  margin: 8px 0 0;
-  font-size: clamp(24px, 4vw, 42px);
-  line-height: 1.05;
-  text-align: center;
-  text-shadow: 0 0 18px color-mix(in srgb, var(--ceremony-accent) 54%, transparent);
-}
-
-.t8-hidden-ceremony p {
-  max-width: 360px;
-  margin: 10px 0 0;
-  color: color-mix(in srgb, var(--ceremony-ink) 76%, transparent);
-  font-size: 13px;
-  line-height: 1.55;
-  text-align: center;
-}
-
-.t8-hidden-ceremony__stage > span {
-  margin-top: 12px;
-  padding: 3px 9px;
-  border: 1px solid color-mix(in srgb, var(--ceremony-accent) 42%, transparent);
-  border-radius: 999px;
-  color: var(--ceremony-accent);
-  font-size: 11px;
-  font-weight: 900;
-}
-
-.t8-hidden-ceremony__close {
   position: absolute;
   top: 10px;
   right: 10px;
 }
 
-@keyframes t8-ceremony-scrim {
-  0% { opacity: 0; }
-  10%, 82% { opacity: 1; }
-  100% { opacity: 0; }
-}
-
-@keyframes t8-ceremony-stage {
-  0% { opacity: 0; transform: translateY(18px) scale(.94); }
-  12%, 82% { opacity: 1; transform: translateY(0) scale(1); }
-  100% { opacity: 0; transform: translateY(-10px) scale(.98); }
-}
-
-@keyframes t8-ceremony-sigil {
-  from { transform: scale(.96); }
-  to { transform: scale(1.06); }
-}
-
-@keyframes t8-ceremony-scan {
-  from { transform: translateY(-44px); }
-  to { transform: translateY(250px); }
-}
-
-html[data-theme-style="pixel"] .t8-achievement-drawer__panel,
-html[data-theme-style="pixel"] .t8-achievement-toast {
-  border: 2px solid var(--px-ink, #1A1410);
-  border-radius: 12px;
-  background: var(--px-paper, #fff6d8);
-  color: var(--px-ink, #1A1410);
-  box-shadow: 5px 5px 0 var(--px-ink, #1A1410);
-}
-
-html[data-theme-style="pixel"] .t8-achievement-drawer__header {
-  background: var(--px-yellow, #FFE08A);
-  border-bottom: 2px solid var(--px-ink, #1A1410);
-}
-
-html[data-theme-style="pixel"] .t8-achievement-tabs button,
-html[data-theme-style="pixel"] .t8-achievement-kpis > div,
-html[data-theme-style="pixel"] .t8-achievement-card,
-html[data-theme-style="pixel"] .t8-achievement-theme-card,
-html[data-theme-style="pixel"] .t8-achievement-theme-detail__kpis > div,
-html[data-theme-style="pixel"] .t8-achievement-theme-hero,
-html[data-theme-style="pixel"] .t8-achievement-theme-next,
-html[data-theme-style="pixel"] .t8-achievement-theme-task,
-html[data-theme-style="pixel"] .t8-achievement-theme-film,
-html[data-theme-style="pixel"] .t8-achievement-theme-showcase,
-html[data-theme-style="pixel"] .t8-achievement-medal,
-html[data-theme-style="pixel"] .t8-achievement-film {
-  border: 2px solid var(--px-ink, #1A1410);
-  background: #fffaf0;
-  color: var(--px-ink, #1A1410);
-  box-shadow: 2px 2px 0 var(--px-ink, #1A1410);
-}
-
-html[data-theme-style="pixel"] .t8-achievement-tabs button.is-active {
-  background: var(--px-candy-mint, #A8E6C9);
-  color: var(--px-ink, #1A1410);
-}
-
-html[data-theme-style="pixel"] .t8-achievement-back,
-html[data-theme-style="pixel"] .t8-achievement-theme-task__icon,
-html[data-theme-style="pixel"] .t8-achievement-theme-task__top span,
-html[data-theme-style="pixel"] .t8-achievement-passport__themes button,
-html[data-theme-style="pixel"] .t8-achievement-review__grid > div {
-  border: 2px solid var(--px-ink, #1A1410);
-  background: var(--px-yellow, #FFE08A);
-  color: var(--px-ink, #1A1410);
-}
-
 @media (max-width: 680px) {
-  .t8-achievement-theme-grid,
-  .t8-achievement-kpis,
-  .t8-achievement-theme-detail__kpis,
-  .t8-achievement-passport__themes,
-  .t8-achievement-review__grid {
-    grid-template-columns: 1fr;
-  }
-
-  .t8-achievement-drawer__panel {
-    top: 6px;
-    right: 6px;
-    bottom: 6px;
-    width: calc(100vw - 12px);
-  }
 }
 
 [data-codex-studio-copyable],
@@ -6964,14 +5459,6 @@ html[data-theme-visual] .anime-tag-master-lightbox-backdrop {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .t8-achievement-theme-card:hover,
-  .t8-hidden-ceremony__scrim,
-  .t8-hidden-ceremony__stage,
-  .t8-hidden-ceremony__sigil,
-  .t8-hidden-ceremony__scan {
-    animation: none !important;
-    transform: none !important;
-  }
 }
 
 .react-flow__node .t8-panorama-storyboard-preview [data-panorama-storyboard-preview-caption="true"],
@@ -9642,25 +8129,6 @@ html[data-theme-visual="farm-story"] .t8-generation-target-download {
   color: #21452a;
 }
 
-[data-theme-visual="saint-seiya"] .t8-generation-target-node,
-html[data-theme-visual="saint-seiya"] .t8-generation-target-node {
-  border-color: rgba(250, 204, 21, 0.62);
-  background:
-    radial-gradient(circle at 16% 0%, rgba(250, 204, 21, 0.18), transparent 36%),
-    rgba(15, 23, 42, 0.92);
-  color: #fff7d6;
-  box-shadow:
-    0 0 0 1px rgba(250, 204, 21, 0.22),
-    0 18px 42px rgba(15, 23, 42, 0.26);
-}
-
-[data-theme-visual="saint-seiya"] .t8-generation-target-icon,
-html[data-theme-visual="saint-seiya"] .t8-generation-target-icon {
-  border-color: rgba(250, 204, 21, 0.48);
-  background: rgba(250, 204, 21, 0.13);
-  color: #fde68a;
-}
-
 @media (max-width: 720px) {
   .t8-generation-history-panel {
     left: 10px;
@@ -10725,6 +9193,18 @@ html[data-theme-visual="saint-seiya"] .t8-generation-target-icon {
   background-clip: padding-box;
 }
 
+.t8-clip-scroll-region {
+  overscroll-behavior: contain;
+  scrollbar-width: none !important;
+  -ms-overflow-style: none;
+}
+
+.t8-clip-scroll-region::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
 .t8-clip-command-feedback {
   animation: t8-clip-editor-enter 180ms ease-out;
 }
@@ -10853,6 +9333,29 @@ html[data-theme-visual="saint-seiya"] .t8-generation-target-icon {
 
 .t8-agent-activity__options button:hover {
   background: rgba(251, 191, 36, 0.24);
+}
+
+.t8-agent-activity__undo {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  gap: 0.25rem;
+  margin-top: 0.3rem;
+  border: 1px solid var(--t8-border);
+  border-radius: min(var(--t8-radius-button), 6px);
+  background: var(--t8-bg-panel-muted);
+  color: var(--t8-text-muted);
+  cursor: pointer;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1.2;
+  padding: 0.2rem 0.45rem;
+}
+
+.t8-agent-activity__undo:hover {
+  border-color: var(--t8-border-strong);
+  background: var(--t8-bg-panel-elevated);
+  color: var(--t8-text-main);
 }
 
 .t8-agent-cursor {

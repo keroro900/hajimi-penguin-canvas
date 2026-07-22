@@ -601,11 +601,9 @@ const GridEditorNode = ({ id, data, selected }: NodeProps) => {
 
   return (
     <div
-      className="t8-node relative overflow-visible rounded-xl border-2 transition-all"
+      className={`t8-node relative overflow-visible rounded-xl transition-all ${selected ? 'is-selected' : ''}`}
       style={{
         width: 520,
-        borderColor: selected ? COLOR : 'var(--t8-border-strong, rgba(255,255,255,.20))',
-        boxShadow: selected ? `0 0 0 1px ${COLOR}, 0 12px 28px rgba(251,146,60,.16)` : undefined,
       }}
     >
       <Handle type="target" position={Position.Left} style={{ background: COLOR, border: 0 }} />

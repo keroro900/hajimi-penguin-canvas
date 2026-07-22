@@ -12,7 +12,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { spawn } = require('child_process');
 const config = require('../config');
-const { resolveBundledFfmpeg } = require('../providers/llmMedia');
+const { resolveBundledFfmpeg, resolveBundledFfprobe } = require('../providers/llmMedia');
 
 const router = express.Router();
 const jobs = new Map();
@@ -200,10 +200,130 @@ function parseProbe(stderr) {
     width: videoMatch ? Number(videoMatch[1]) : undefined,
     height: videoMatch ? Number(videoMatch[2]) : undefined,
     hasAudio: audio,
+    probeSource: 'ffmpeg-stderr',
+  };
+}
+
+function runFfprobeJson(file, job, options = {}) {
+  const ffprobe = resolveBundledFfprobe();
+  const timeoutMs = options.timeoutMs || 45_000;
+  const args = ['-v', 'error', '-show_format', '-show_streams', '-of', 'json', file];
+  return new Promise((resolve, reject) => {
+    if (job?.cancelled) {
+      reject(new Error('任务已取消'));
+      return;
+    }
+    const child = spawn(ffprobe, args, { windowsHide: true });
+    let stdout = '';
+    let stderr = '';
+    let settled = false;
+    if (job) job.child = child;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      try { child.kill('SIGKILL'); } catch (_) {}
+      if (job) job.child = null;
+      reject(new Error('ffprobe 探测超时'));
+    }, timeoutMs);
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk.toString();
+      if (stdout.length > 2 * 1024 * 1024) stdout = stdout.slice(-2 * 1024 * 1024);
+    });
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk.toString();
+      if (stderr.length > 20_000) stderr = stderr.slice(-20_000);
+    });
+    child.once('error', (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (job) job.child = null;
+      reject(error);
+    });
+    child.once('close', (code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (job) job.child = null;
+      if (job?.cancelled) {
+        reject(new Error('任务已取消'));
+        return;
+      }
+      if (code !== 0) {
+        reject(new Error(stderr.trim().slice(0, 600) || `ffprobe 失败: ${code}`));
+        return;
+      }
+      try {
+        resolve(JSON.parse(stdout || '{}'));
+      } catch (error) {
+        reject(new Error(`ffprobe JSON 解析失败: ${error?.message || error}`));
+      }
+    });
+  });
+}
+
+function finiteNumber(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+function ratioToNumber(value) {
+  const text = String(value || '').trim();
+  const match = text.match(/^(-?\d+(?:\.\d+)?)\/(-?\d+(?:\.\d+)?)$/);
+  if (match) {
+    const a = Number(match[1]);
+    const b = Number(match[2]);
+    return Number.isFinite(a) && Number.isFinite(b) && b !== 0 ? a / b : undefined;
+  }
+  return finiteNumber(text);
+}
+
+function parseRotation(stream) {
+  const values = [
+    stream?.tags?.rotate,
+    stream?.rotation,
+    ...(Array.isArray(stream?.side_data_list) ? stream.side_data_list.map((item) => item?.rotation) : []),
+  ];
+  for (const value of values) {
+    const n = finiteNumber(value);
+    if (Number.isFinite(n)) return n;
+  }
+  return 0;
+}
+
+function parseProbeJson(payload) {
+  const streams = Array.isArray(payload?.streams) ? payload.streams : [];
+  const video = streams.find((stream) => stream?.codec_type === 'video') || {};
+  const audio = streams.find((stream) => stream?.codec_type === 'audio') || {};
+  const duration = finiteNumber(payload?.format?.duration)
+    ?? finiteNumber(video.duration)
+    ?? finiteNumber(audio.duration);
+  const fps = ratioToNumber(video.avg_frame_rate) ?? ratioToNumber(video.r_frame_rate);
+  return {
+    duration,
+    width: finiteNumber(video.width),
+    height: finiteNumber(video.height),
+    fps,
+    rotation: parseRotation(video),
+    hasVideo: !!video.codec_type,
+    hasAudio: !!audio.codec_type,
+    videoCodec: video.codec_name || '',
+    audioCodec: audio.codec_name || '',
+    audioSampleRate: finiteNumber(audio.sample_rate),
+    audioChannels: finiteNumber(audio.channels),
+    formatName: payload?.format?.format_name || '',
+    size: finiteNumber(payload?.format?.size),
+    bitRate: finiteNumber(payload?.format?.bit_rate),
+    probeSource: 'ffprobe-json',
   };
 }
 
 async function probeFile(file, job) {
+  try {
+    return parseProbeJson(await runFfprobeJson(file, job));
+  } catch (error) {
+    console.warn('[videoOps] ffprobe JSON failed, falling back to ffmpeg stderr:', error?.message || error);
+  }
   const result = await runFfmpeg(['-hide_banner', '-i', file], job, {
     allowFailure: true,
     timeoutMs: 45_000,
@@ -375,6 +495,9 @@ async function probeVideoUrl(url, job) {
       width: probe.width,
       height: probe.height,
       hasAudio: probe.hasAudio,
+      fps: probe.fps,
+      rotation: probe.rotation,
+      probeSource: probe.probeSource,
       size: stat?.size,
       mime: 'video/mp4',
       thumbnailUrl,

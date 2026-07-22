@@ -177,8 +177,6 @@ const ImageCompareNode = (p: NodeProps) => {
 
   const nodeStyle: CSSProperties = {
     width: 380,
-    borderColor: p.selected ? COLOR : undefined,
-    boxShadow: p.selected ? `0 0 0 2px ${COLOR}, var(--t8-shadow-strong, 0 18px 36px rgba(0,0,0,.22))` : undefined,
   };
 
   const renderPreview = () => {
@@ -216,7 +214,7 @@ const ImageCompareNode = (p: NodeProps) => {
   };
 
   return (
-    <div className="t8-node relative transition-all" style={nodeStyle}>
+    <div className={`t8-node relative transition-all ${p.selected ? 'is-selected' : ''}`} style={nodeStyle}>
       <Handle id="a" type="target" position={Position.Left} style={{ top: '37%', background: COLOR, border: 0 }} />
       <Handle id="b" type="target" position={Position.Left} style={{ top: '63%', background: COLOR, border: 0 }} />
       <Handle type="source" position={Position.Right} style={{ background: COLOR, border: 0 }} />

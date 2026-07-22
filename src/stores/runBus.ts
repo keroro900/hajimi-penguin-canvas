@@ -9,6 +9,7 @@ import { taskCompletionSound } from './taskCompletionSound';
  * - triggerRun(id)：单点调度 (外部应保证一次一个，等 lastDone)
  * - triggerRunMany(ids)：并发调度 (循环器专用) - 同时点亮多个节点让其同时进入 runFn
  * - markDone(id, ok)：节点完成时回调 (同时从 runningIds 移除，currentRunId 若是本节点则清空)
+ * - cancelNode(id)：只取消指定节点，保留其他并发任务和批量进度
  * - cancelAll(extraTargets)：取消全部 (广播本轮 cancelTargets/cancelSeq，再清空 runningIds + currentRunId)
  *
  * 向后兼容保证：现有 16 个节点仅依赖 currentRunId 逻辑不变；useRunTrigger 后续会同时检查 runningIds 是否包含自身 id。
@@ -34,6 +35,8 @@ interface RunBusState {
   triggerRun: (id: string, mode?: 'single' | 'batch') => void;
   triggerRunMany: (ids: string[], mode?: 'single' | 'batch') => void;
   markDone: (id: string, ok: boolean, error?: string) => void;
+  cancelNode: (id: string) => void;
+  cancelNodes: (ids: string[]) => void;
   cancelAll: (extraTargets?: string[]) => void;
   setBatchProgress: (total: number, done: number) => void;
 }
@@ -88,6 +91,32 @@ export const useRunBusStore = create<RunBusState>((set) => ({
       };
     });
   },
+  cancelNode: (id) =>
+    set((s) => {
+      const runningIds = s.runningIds.filter((runningId) => runningId !== id);
+      return {
+        currentRunId: s.currentRunId === id ? (runningIds[0] || null) : s.currentRunId,
+        runningIds,
+        mode: s.mode === 'batch' ? 'batch' : (runningIds.length > 0 ? s.mode : 'idle'),
+        cancelSeq: s.cancelSeq + 1,
+        cancelTargets: [id],
+      };
+    }),
+  cancelNodes: (ids) =>
+    set((s) => {
+      const targets = Array.from(new Set(ids.filter(Boolean)));
+      if (targets.length === 0) return s;
+      const runningIds = s.runningIds.filter((runningId) => !targets.includes(runningId));
+      return {
+        currentRunId: s.currentRunId && targets.includes(s.currentRunId)
+          ? (runningIds[0] || null)
+          : s.currentRunId,
+        runningIds,
+        mode: s.mode === 'batch' ? 'batch' : (runningIds.length > 0 ? s.mode : 'idle'),
+        cancelSeq: s.cancelSeq + 1,
+        cancelTargets: targets,
+      };
+    }),
   cancelAll: (extraTargets = []) =>
     set((s) => {
       const targets = Array.from(

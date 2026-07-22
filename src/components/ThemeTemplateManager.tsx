@@ -13,18 +13,11 @@ import {
 } from 'lucide-react';
 import {
   BUILT_IN_THEME_TEMPLATES,
-  dragonBallShenronHiddenMusicUrl,
-  dragonBallThemeMusicUrl,
-  evaThemeMusicUrl,
+  DEFAULT_THEME_TEMPLATE_ID,
   getTemplateMode,
   resolveThemeTemplate,
-  narutoThemeMusicUrl,
   rhHiddenThemeMusicUrl,
   rhThemeMusicUrl,
-  saintSeiyaHadesThemeMusicUrl,
-  saintSeiyaThemeMusicUrl,
-  slamdunkThemeMusicUrl,
-  soccerThemeMusicUrl,
 } from '../theme/defaultTemplates';
 import { getThemeContrastWarnings } from '../theme/validateTheme';
 import type {
@@ -87,17 +80,15 @@ const VISUAL_STYLE_OPTIONS = [
   { value: 'plain', label: '基础语义' },
   { value: 'tech', label: '科技视觉' },
   { value: 'pixel', label: '像素糖果' },
-  { value: 'op', label: 'OP 航海' },
   { value: 'rh', label: 'RH 工作台' },
-  { value: 'naruto', label: '火影忍者' },
-  { value: 'eva', label: 'EVA 指挥' },
-  { value: 'yyh', label: '幽游白书' },
-  { value: 'slamdunk', label: '灌篮高手' },
-  { value: 'soccer-hero', label: '足球小将' },
-  { value: 'dragon-ball', label: '七龙珠' },
-  { value: 'saint-seiya', label: '圣斗士' },
-  { value: 'tetris', label: '俄罗斯方块' },
-  { value: 'farm-story', label: '牧场物语' },
+  { value: 'soft', label: '柔和浮雕' },
+  { value: 'wabi', label: '侘寂' },
+  { value: 'vapor', label: '蒸汽波' },
+  { value: 'utility', label: '实用主义' },
+  { value: 'skeuo', label: '拟物化' },
+  { value: 'retro', label: '复古 OS' },
+  { value: 'ink', label: '水墨意境' },
+  { value: 'tap-studio', label: '黑底流光' },
 ] as const;
 
 const VISUAL_INTENSITY_OPTIONS = [
@@ -109,19 +100,15 @@ const VISUAL_INTENSITY_OPTIONS = [
 const MUSIC_PRESET_OPTIONS: Array<{ value: ThemeMusicPreset; label: string }> = [
   { value: 'tech-pulse', label: '科技脉冲' },
   { value: 'pixel-pop', label: '像素弹跳' },
-  { value: 'grand-line-adventure', label: '航海冒险' },
   { value: 'rh-pulse', label: 'RH 脉冲' },
-  { value: 'shinobi-flame', label: '忍者火焰' },
-  { value: 'eva-sync', label: 'EVA 同步' },
-  { value: 'spirit-gun', label: '灵丸脉冲' },
-  { value: 'buzzer-beater', label: '压哨热血' },
-  { value: 'golden-goal', label: '黄金进球' },
-  { value: 'ki-burst', label: '气功波雷达' },
-  { value: 'shenron-aura', label: '神龙青焰' },
-  { value: 'pegasus-cosmos', label: '天马小宇宙' },
-  { value: 'hades-eclipse', label: '冥界日蚀' },
-  { value: 'block-drop', label: '落块冲刺' },
-  { value: 'farm-breeze', label: '牧场微风' },
+  { value: 'soft-pulse', label: '柔和漂流' },
+  { value: 'wabi-drift', label: '远山磬' },
+  { value: 'vapor-drift', label: '日落漂流' },
+  { value: 'utility-pulse', label: '网格脉冲' },
+  { value: 'skeuo-hum', label: '录音棚低鸣' },
+  { value: 'retro-chime', label: '开机提示音' },
+  { value: 'ink-drift', label: '山岚流墨' },
+  { value: 'tap-flow', label: '黑底流光' },
 ];
 
 const MAX_THEME_AUDIO_SIZE = 20 * 1024 * 1024;
@@ -138,17 +125,6 @@ function fallbackVisuals(legacyStyle: LegacyThemeStyle): ThemeVisuals {
 }
 
 function visualDefaultsFor(style: ThemeVisuals['style'], legacyStyle: LegacyThemeStyle, prev?: ThemeVisuals): ThemeVisuals {
-  if (style === 'op') {
-    return {
-      ...fallbackVisuals(legacyStyle),
-      ...(prev || {}),
-      style,
-      iconPack: 'op',
-      canvasPattern: 'map',
-      nodeFrame: 'wanted',
-      headerMark: prev?.headerMark || 'ONE PIECE',
-    };
-  }
   if (style === 'rh') {
     return {
       ...fallbackVisuals(legacyStyle),
@@ -160,103 +136,92 @@ function visualDefaultsFor(style: ThemeVisuals['style'], legacyStyle: LegacyThem
       headerMark: prev?.headerMark || 'RH',
     };
   }
-  if (style === 'naruto') {
+  if (style === 'soft') {
     return {
       ...fallbackVisuals(legacyStyle),
       ...(prev || {}),
       style,
-      iconPack: 'naruto',
-      canvasPattern: 'chakra',
-      nodeFrame: 'shinobi-scroll',
-      headerMark: prev?.headerMark || 'KONOHA',
+      iconPack: 'default',
+      canvasPattern: 'soft-dots',
+      nodeFrame: 'soft-card',
+      headerMark: prev?.headerMark || 'SOFT',
     };
   }
-  if (style === 'eva') {
+  if (style === 'wabi') {
     return {
       ...fallbackVisuals(legacyStyle),
       ...(prev || {}),
       style,
-      iconPack: 'eva',
-      canvasPattern: 'eva-grid',
-      nodeFrame: 'eva-panel',
-      headerMark: prev?.headerMark || 'EVA',
+      iconPack: 'default',
+      canvasPattern: 'wabi-paper',
+      nodeFrame: 'wabi-card',
+      headerMark: prev?.headerMark || '侘',
     };
   }
-  if (style === 'yyh') {
+  if (style === 'vapor') {
     return {
       ...fallbackVisuals(legacyStyle),
       ...(prev || {}),
       style,
-      iconPack: 'yyh',
-      canvasPattern: 'spirit-map',
-      nodeFrame: 'spirit-case',
-      headerMark: prev?.headerMark || 'REI GUN',
+      iconPack: 'default',
+      canvasPattern: 'vapor-grid',
+      nodeFrame: 'vapor-card',
+      headerMark: prev?.headerMark || 'VAPOR',
     };
   }
-  if (style === 'slamdunk') {
+  if (style === 'utility') {
     return {
       ...fallbackVisuals(legacyStyle),
       ...(prev || {}),
       style,
-      iconPack: 'slamdunk',
-      canvasPattern: 'court',
-      nodeFrame: 'scoreboard-card',
-      headerMark: prev?.headerMark || 'BUZZER BEATER',
+      iconPack: 'default',
+      canvasPattern: 'utility-grid',
+      nodeFrame: 'utility-card',
+      headerMark: prev?.headerMark || 'UTILITY',
     };
   }
-  if (style === 'soccer-hero') {
+  if (style === 'skeuo') {
     return {
       ...fallbackVisuals(legacyStyle),
       ...(prev || {}),
       style,
-      iconPack: 'soccer',
-      canvasPattern: 'pitch',
-      nodeFrame: 'match-card',
-      headerMark: prev?.headerMark || 'GOLDEN GOAL',
+      iconPack: 'default',
+      canvasPattern: 'skeuo-wood',
+      nodeFrame: 'skeuo-panel',
+      headerMark: prev?.headerMark || 'SKEUO',
     };
   }
-  if (style === 'dragon-ball') {
+  if (style === 'retro') {
     return {
       ...fallbackVisuals(legacyStyle),
       ...(prev || {}),
       style,
-      iconPack: 'dragon-ball',
-      canvasPattern: 'dragon-radar',
-      nodeFrame: 'capsule-card',
-      headerMark: prev?.headerMark || 'DRAGON RADAR',
+      iconPack: 'default',
+      canvasPattern: 'retro-desktop',
+      nodeFrame: 'retro-window',
+      headerMark: prev?.headerMark || 'RETRO',
     };
   }
-  if (style === 'saint-seiya') {
+  if (style === 'ink') {
     return {
       ...fallbackVisuals(legacyStyle),
       ...(prev || {}),
       style,
-      iconPack: 'saint-seiya',
-      canvasPattern: 'sanctuary-zodiac',
-      nodeFrame: 'cloth-box-card',
-      headerMark: prev?.headerMark || 'SANCTUARY',
+      iconPack: 'default',
+      canvasPattern: 'ink-paper',
+      nodeFrame: 'ink-scroll',
+      headerMark: prev?.headerMark || '墨',
     };
   }
-  if (style === 'tetris') {
+  if (style === 'tap-studio') {
     return {
       ...fallbackVisuals(legacyStyle),
       ...(prev || {}),
       style,
-      iconPack: 'tetromino-well',
-      canvasPattern: 'tetris-stack',
-      nodeFrame: 'arcade-cabinet-card',
-      headerMark: prev?.headerMark || 'TETRIS STACK',
-    };
-  }
-  if (style === 'farm-story') {
-    return {
-      ...fallbackVisuals(legacyStyle),
-      ...(prev || {}),
-      style,
-      iconPack: 'farm-tools',
-      canvasPattern: 'pasture-map',
-      nodeFrame: 'farm-sign-card',
-      headerMark: prev?.headerMark || 'FARM STORY',
+      iconPack: 'default',
+      canvasPattern: 'tap-void',
+      nodeFrame: 'tap-glass',
+      headerMark: prev?.headerMark || 'FLOW',
     };
   }
   if (style === 'tech') {
@@ -281,16 +246,6 @@ function visualDefaultsFor(style: ThemeVisuals['style'], legacyStyle: LegacyThem
 
 function fallbackMusic(legacyStyle: LegacyThemeStyle, visuals?: ThemeVisuals): ThemeMusic {
   const visualStyle = visuals?.style;
-  if (visualStyle === 'op') {
-    return {
-      title: 'Grand Line Adventure Loop',
-      preset: 'grand-line-adventure',
-      source: 'synth',
-      volume: 0.16,
-      bpm: 96,
-      copyrightNote: '原创航海冒险风循环；可替换为已授权音频 URL。',
-    };
-  }
   if (visualStyle === 'rh') {
     return {
       title: '潮鸣',
@@ -305,106 +260,84 @@ function fallbackMusic(legacyStyle: LegacyThemeStyle, visuals?: ThemeVisuals): T
       copyrightNote: 'RH 风格默认音乐；隐藏模式会自动切换隐藏主题音乐。',
     };
   }
-  if (visualStyle === 'naruto') {
+  if (visualStyle === 'soft') {
     return {
-      title: '形势逆转',
-      preset: 'shinobi-flame',
-      source: 'url',
-      url: narutoThemeMusicUrl,
-      volume: 0.16,
-      bpm: 146,
-      copyrightNote: '火影忍者风格默认音乐文件，可在主题模板中上传替换。',
-    };
-  }
-  if (visualStyle === 'eva') {
-    return {
-      title: 'Decisive Battle',
-      preset: 'eva-sync',
-      source: 'url',
-      url: evaThemeMusicUrl,
-      volume: 0.16,
-      bpm: 152,
-      copyrightNote: 'EVA 风格默认音乐文件，可在主题模板中上传替换。',
-    };
-  }
-  if (visualStyle === 'yyh') {
-    return {
-      title: 'Spirit Gun Pulse',
-      preset: 'spirit-gun',
-      source: 'synth',
-      volume: 0.16,
-      bpm: 138,
-      copyrightNote: '原创灵界侦探氛围合成循环；可替换为已授权音频 URL。',
-    };
-  }
-  if (visualStyle === 'slamdunk') {
-    return {
-      title: '想大声说喜欢你',
-      preset: 'buzzer-beater',
-      source: 'url',
-      url: slamdunkThemeMusicUrl,
-      volume: 0.18,
-      bpm: 142,
-      copyrightNote: '灌篮高手风格默认音乐文件，可在主题模板中上传替换。公开分发前请确认音乐授权边界。',
-    };
-  }
-  if (visualStyle === 'soccer-hero') {
-    return {
-      title: '足球小将主题歌（燃烧英雄）',
-      preset: 'golden-goal',
-      source: 'url',
-      url: soccerThemeMusicUrl,
-      volume: 0.18,
-      bpm: 150,
-      copyrightNote: '足球小将风格默认 MIDI 音乐文件；若公开分发请确认音乐授权边界，golden-goal 仅作为兜底 preset。',
-    };
-  }
-  if (visualStyle === 'dragon-ball') {
-    return {
-      title: '摩诃不思议 Adventure',
-      preset: 'ki-burst',
-      source: 'url',
-      url: dragonBallThemeMusicUrl,
-      hiddenTitle: 'CHA-LA HEAD-CHA-LA',
-      hiddenUrl: dragonBallShenronHiddenMusicUrl,
-      hiddenVolume: 0.2,
-      volume: 0.18,
-      bpm: 156,
-      copyrightNote: '七龙珠第一部开场曲默认音乐文件；神龙隐藏模式会切换到 CHA-LA HEAD-CHA-LA，可在主题模板中上传替换。公开分发前请确认音乐授权边界。',
-    };
-  }
-  if (visualStyle === 'saint-seiya') {
-    return {
-      title: '天马幻想',
-      preset: 'pegasus-cosmos',
-      source: 'url',
-      url: saintSeiyaThemeMusicUrl,
-      hiddenTitle: '冥界篇 · 最后的圣战',
-      hiddenUrl: saintSeiyaHadesThemeMusicUrl,
-      hiddenVolume: 0.2,
-      volume: 0.18,
-      bpm: 148,
-      copyrightNote: '圣域篇默认使用天马幻想；冥界篇开启后切换最后的圣战，可替换为已授权音频 URL。',
-    };
-  }
-  if (visualStyle === 'tetris') {
-    return {
-      title: 'Block Drop Sprint',
-      preset: 'block-drop',
-      source: 'synth',
-      volume: 0.15,
-      bpm: 148,
-      copyrightNote: '原创 falling-block 合成循环；可替换为已授权音频 URL。',
-    };
-  }
-  if (visualStyle === 'farm-story') {
-    return {
-      title: 'Farm Breeze',
-      preset: 'farm-breeze',
+      title: 'Soft Drift',
+      preset: 'soft-pulse',
       source: 'synth',
       volume: 0.14,
+      bpm: 92,
+      copyrightNote: '原创柔和合成循环；可替换为已授权音频 URL。',
+    };
+  }
+  if (visualStyle === 'wabi') {
+    return {
+      title: '远山磬',
+      preset: 'wabi-drift',
+      source: 'synth',
+      volume: 0.1,
+      bpm: 60,
+      copyrightNote: '原创水墨晕染式合成循环；可替换为已授权音频 URL。',
+    };
+  }
+  if (visualStyle === 'vapor') {
+    return {
+      title: 'Sunset Drift',
+      preset: 'vapor-drift',
+      source: 'synth',
+      volume: 0.14,
+      bpm: 84,
+      copyrightNote: '原创蒸汽波日落合成循环；可替换为已授权音频 URL。',
+    };
+  }
+  if (visualStyle === 'utility') {
+    return {
+      title: 'Grid Pulse',
+      preset: 'utility-pulse',
+      source: 'synth',
+      volume: 0.12,
+      bpm: 108,
+      copyrightNote: '原创工程化合成循环；可替换为已授权音频 URL。',
+    };
+  }
+  if (visualStyle === 'skeuo') {
+    return {
+      title: 'Studio Hum',
+      preset: 'skeuo-hum',
+      source: 'synth',
+      volume: 0.1,
       bpm: 96,
-      copyrightNote: '原创轻量牧场合成循环；后续可替换为已授权季节音乐。',
+      copyrightNote: '原创录音棚低频氛围合成循环；可替换为已授权音频 URL。',
+    };
+  }
+  if (visualStyle === 'retro') {
+    return {
+      title: 'Boot Chime',
+      preset: 'retro-chime',
+      source: 'synth',
+      volume: 0.12,
+      bpm: 90,
+      copyrightNote: '原创 90 年代开机 POST 蜂鸣合成循环；可替换为已授权音频 URL。',
+    };
+  }
+  if (visualStyle === 'ink') {
+    return {
+      title: 'Mountain Mist',
+      preset: 'ink-drift',
+      source: 'synth',
+      volume: 0.11,
+      bpm: 72,
+      copyrightNote: '原创古琴泛音式合成循环，气韵悠远；可替换为已授权音频 URL。',
+    };
+  }
+  if (visualStyle === 'tap-studio') {
+    return {
+      title: 'Void Flow',
+      preset: 'tap-flow',
+      source: 'synth',
+      volume: 0.13,
+      bpm: 118,
+      copyrightNote: '原创黑底玻璃创作台氛围循环；可替换为已授权音频 URL。',
     };
   }
   if (legacyStyle === 'tech' || visualStyle === 'tech') {
@@ -513,12 +446,14 @@ function makePreviewStyle(tokens: ThemeTokens): CSSProperties {
 export default function ThemeTemplateManager({ open, onClose }: ThemeTemplateManagerProps) {
   const {
     theme,
+    appearancePreference,
     templateId,
     customTemplates,
     templatesPath,
     templatesError,
     setTemplate,
     setTheme,
+    setAppearancePreference,
     loadCustomTemplates,
     importTemplate,
     saveCustomTemplate,
@@ -637,7 +572,7 @@ export default function ThemeTemplateManager({ open, onClose }: ThemeTemplateMan
     setError('');
     try {
       await deleteCustomTemplate(editor.id);
-      setSelectedId(activeTemplate.id === editor.id ? BUILT_IN_THEME_TEMPLATES[1].id : activeTemplate.id);
+      setSelectedId(activeTemplate.id === editor.id ? DEFAULT_THEME_TEMPLATE_ID : activeTemplate.id);
       setMessage('主题已删除');
     } catch (e: any) {
       setError(e?.message || '删除失败');
@@ -930,6 +865,18 @@ export default function ThemeTemplateManager({ open, onClose }: ThemeTemplateMan
                   {m === 'light' ? '白天模式' : '黑夜模式'}
                 </button>
               ))}
+              <button
+                className={`t8-btn px-3 py-1.5 text-xs ${appearancePreference === 'system' ? 't8-btn-primary' : ''}`}
+                title="跟随操作系统的深浅色设置"
+                onClick={() => {
+                  setAppearancePreference('system');
+                  setTemplate(editor.id);
+                  setMessage('已切换为跟随系统外观');
+                  window.setTimeout(() => setMessage(''), 1200);
+                }}
+              >
+                跟随系统
+              </button>
               {currentModeActive && <span className="t8-chip px-2 py-1 text-[11px]">当前应用中</span>}
             </div>
 

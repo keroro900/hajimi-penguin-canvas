@@ -1,10 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Disc3, VolumeX } from 'lucide-react';
 import type { ThemeMusicPreset, ThemeMusicSource, ThemeTemplate } from '../theme/types';
-import { rhHiddenThemeMusicUrl } from '../theme/defaultTemplates';
-import { useHiddenFeatureStore } from '../stores/hiddenFeatures';
-import { useDragonBallRadarStore } from '../stores/dragonBallRadar';
-import { useSaintSeiyaSanctuaryStore } from '../stores/saintSeiyaSanctuary';
 
 interface ThemeMusicToggleProps {
   template: ThemeTemplate;
@@ -61,14 +57,6 @@ const PRESET_NOTES: Record<ThemeMusicPreset, Note[]> = {
     { freq: 784, at: 0.62, len: 0.08, type: 'square' },
     { freq: 659, at: 0.76, len: 0.08, type: 'square' },
   ],
-  'grand-line-adventure': [
-    { freq: 392, at: 0, len: 0.18, type: 'triangle' },
-    { freq: 494, at: 0.26, len: 0.16, type: 'triangle' },
-    { freq: 587, at: 0.52, len: 0.18, type: 'triangle' },
-    { freq: 659, at: 0.82, len: 0.2, type: 'sine' },
-    { freq: 784, at: 1.18, len: 0.26, type: 'triangle' },
-    { freq: 659, at: 1.62, len: 0.18, type: 'sine' },
-  ],
   'rh-pulse': [
     { freq: 196, at: 0, len: 0.11, type: 'sine' },
     { freq: 294, at: 0.18, len: 0.08, type: 'triangle' },
@@ -77,128 +65,73 @@ const PRESET_NOTES: Record<ThemeMusicPreset, Note[]> = {
     { freq: 440, at: 1.08, len: 0.08, type: 'triangle' },
     { freq: 659, at: 1.34, len: 0.1, type: 'sine' },
   ],
-  'shinobi-flame': [
-    { freq: 147, at: 0, len: 0.08, type: 'sawtooth' },
-    { freq: 220, at: 0.16, len: 0.08, type: 'square' },
-    { freq: 294, at: 0.32, len: 0.1, type: 'sawtooth' },
-    { freq: 440, at: 0.54, len: 0.1, type: 'triangle' },
-    { freq: 392, at: 0.82, len: 0.08, type: 'square' },
-    { freq: 587, at: 1.04, len: 0.12, type: 'sawtooth' },
-    { freq: 784, at: 1.34, len: 0.16, type: 'triangle' },
+  'soft-pulse': [
+    { freq: 174, at: 0, len: 0.32, type: 'sine' },
+    { freq: 220, at: 0.28, len: 0.24, type: 'sine' },
+    { freq: 261, at: 0.62, len: 0.28, type: 'triangle' },
+    { freq: 196, at: 1.04, len: 0.32, type: 'sine' },
+    { freq: 247, at: 1.42, len: 0.26, type: 'sine' },
   ],
-  'eva-sync': [
-    { freq: 110, at: 0, len: 0.08, type: 'sawtooth' },
-    { freq: 165, at: 0.18, len: 0.08, type: 'square' },
-    { freq: 220, at: 0.36, len: 0.1, type: 'sawtooth' },
-    { freq: 330, at: 0.58, len: 0.11, type: 'triangle' },
-    { freq: 247, at: 0.86, len: 0.08, type: 'square' },
-    { freq: 494, at: 1.08, len: 0.12, type: 'sawtooth' },
-    { freq: 659, at: 1.36, len: 0.18, type: 'triangle' },
+  'wabi-drift': [
+    { freq: 146, at: 0, len: 0.9, type: 'sine' },
+    { freq: 220, at: 0.8, len: 0.6, type: 'sine' },
+    { freq: 294, at: 1.6, len: 0.7, type: 'triangle' },
+    { freq: 196, at: 2.4, len: 0.9, type: 'sine' },
   ],
-  'spirit-gun': [
-    { freq: 196, at: 0, len: 0.1, type: 'triangle' },
-    { freq: 294, at: 0.18, len: 0.08, type: 'sawtooth' },
-    { freq: 392, at: 0.36, len: 0.1, type: 'triangle' },
-    { freq: 587, at: 0.62, len: 0.12, type: 'sine' },
-    { freq: 784, at: 0.86, len: 0.12, type: 'triangle' },
-    { freq: 988, at: 1.18, len: 0.16, type: 'sawtooth' },
-    { freq: 740, at: 1.54, len: 0.14, type: 'sine' },
+  'vapor-drift': [
+    { freq: 110, at: 0, len: 0.7, type: 'sine' },
+    { freq: 165, at: 0.5, len: 0.6, type: 'triangle' },
+    { freq: 220, at: 1.0, len: 0.6, type: 'sine' },
+    { freq: 277, at: 1.5, len: 0.5, type: 'triangle' },
+    { freq: 330, at: 2.0, len: 0.7, type: 'sine' },
   ],
-  'buzzer-beater': [
-    { freq: 130, at: 0, len: 0.08, type: 'triangle' },
-    { freq: 196, at: 0.18, len: 0.08, type: 'sine' },
-    { freq: 262, at: 0.36, len: 0.09, type: 'triangle' },
-    { freq: 330, at: 0.58, len: 0.1, type: 'sine' },
-    { freq: 392, at: 0.82, len: 0.11, type: 'triangle' },
-    { freq: 523, at: 1.08, len: 0.12, type: 'sine' },
-    { freq: 392, at: 1.42, len: 0.1, type: 'square' },
-    { freq: 659, at: 1.68, len: 0.16, type: 'triangle' },
+  'utility-pulse': [
+    { freq: 196, at: 0, len: 0.12, type: 'sine' },
+    { freq: 247, at: 0.3, len: 0.14, type: 'triangle' },
+    { freq: 294, at: 0.6, len: 0.16, type: 'sine' },
+    { freq: 392, at: 0.9, len: 0.14, type: 'triangle' },
   ],
-  'golden-goal': [
-    { freq: 196, at: 0, len: 0.08, type: 'triangle' },
-    { freq: 294, at: 0.16, len: 0.08, type: 'sine' },
-    { freq: 392, at: 0.32, len: 0.1, type: 'triangle' },
-    { freq: 587, at: 0.56, len: 0.12, type: 'sine' },
-    { freq: 523, at: 0.82, len: 0.09, type: 'triangle' },
-    { freq: 659, at: 1.04, len: 0.13, type: 'sine' },
-    { freq: 784, at: 1.34, len: 0.16, type: 'triangle' },
-    { freq: 587, at: 1.72, len: 0.12, type: 'square' },
+  'skeuo-hum': [
+    { freq: 73, at: 0, len: 0.8, type: 'sine' },
+    { freq: 110, at: 0.6, len: 0.6, type: 'sine' },
+    { freq: 147, at: 1.2, len: 0.7, type: 'sine' },
+    { freq: 220, at: 1.8, len: 0.5, type: 'triangle' },
   ],
-  'ki-burst': [
-    { freq: 196, at: 0, len: 0.08, type: 'sawtooth' },
-    { freq: 247, at: 0.12, len: 0.08, type: 'sawtooth' },
-    { freq: 330, at: 0.24, len: 0.1, type: 'triangle' },
-    { freq: 392, at: 0.38, len: 0.1, type: 'triangle' },
-    { freq: 523, at: 0.58, len: 0.14, type: 'sine' },
-    { freq: 659, at: 0.84, len: 0.16, type: 'triangle' },
-    { freq: 784, at: 1.18, len: 0.18, type: 'sawtooth' },
-    { freq: 988, at: 1.54, len: 0.18, type: 'sine' },
+  'retro-chime': [
+    { freq: 523, at: 0, len: 0.1, type: 'square' },
+    { freq: 659, at: 0.18, len: 0.1, type: 'square' },
+    { freq: 784, at: 0.36, len: 0.1, type: 'square' },
+    { freq: 1047, at: 0.54, len: 0.16, type: 'square' },
+    { freq: 130, at: 0.9, len: 1.2, type: 'sine' },
   ],
-  'shenron-aura': [
-    { freq: 98, at: 0, len: 0.42, type: 'sine' },
-    { freq: 147, at: 0.32, len: 0.36, type: 'triangle' },
-    { freq: 220, at: 0.66, len: 0.3, type: 'sine' },
-    { freq: 392, at: 1.08, len: 0.18, type: 'triangle' },
-    { freq: 523, at: 1.34, len: 0.2, type: 'sine' },
-    { freq: 659, at: 1.72, len: 0.22, type: 'triangle' },
-    { freq: 784, at: 2.12, len: 0.28, type: 'sine' },
+  'ink-drift': [
+    { freq: 146, at: 0, len: 1.2, type: 'sine' },
+    { freq: 220, at: 0.9, len: 1.0, type: 'sine' },
+    { freq: 196, at: 1.8, len: 1.1, type: 'sine' },
+    { freq: 294, at: 2.8, len: 1.0, type: 'sine' },
   ],
-  'pegasus-cosmos': [
-    { freq: 196, at: 0, len: 0.08, type: 'triangle' },
-    { freq: 294, at: 0.16, len: 0.08, type: 'sine' },
-    { freq: 392, at: 0.32, len: 0.1, type: 'triangle' },
-    { freq: 587, at: 0.56, len: 0.12, type: 'sine' },
-    { freq: 784, at: 0.84, len: 0.12, type: 'triangle' },
-    { freq: 988, at: 1.18, len: 0.16, type: 'sawtooth' },
-    { freq: 740, at: 1.54, len: 0.14, type: 'sine' },
-    { freq: 1175, at: 1.86, len: 0.18, type: 'triangle' },
-  ],
-  'hades-eclipse': [
-    { freq: 82, at: 0, len: 0.5, type: 'sine' },
-    { freq: 123, at: 0.36, len: 0.42, type: 'triangle' },
-    { freq: 185, at: 0.72, len: 0.34, type: 'sine' },
-    { freq: 277, at: 1.12, len: 0.22, type: 'triangle' },
-    { freq: 415, at: 1.46, len: 0.22, type: 'sawtooth' },
-    { freq: 622, at: 1.92, len: 0.28, type: 'sine' },
-  ],
-  'block-drop': [
-    { freq: 330, at: 0, len: 0.07, type: 'square' },
-    { freq: 392, at: 0.12, len: 0.07, type: 'square' },
-    { freq: 494, at: 0.24, len: 0.07, type: 'square' },
-    { freq: 659, at: 0.36, len: 0.09, type: 'square' },
-    { freq: 523, at: 0.56, len: 0.07, type: 'triangle' },
-    { freq: 392, at: 0.68, len: 0.07, type: 'square' },
-    { freq: 247, at: 0.86, len: 0.12, type: 'sawtooth' },
-    { freq: 988, at: 1.06, len: 0.08, type: 'square' },
-  ],
-  'farm-breeze': [
-    { freq: 196, at: 0, len: 0.18, type: 'triangle' },
-    { freq: 247, at: 0.26, len: 0.14, type: 'sine' },
-    { freq: 294, at: 0.52, len: 0.16, type: 'triangle' },
-    { freq: 392, at: 0.84, len: 0.18, type: 'sine' },
-    { freq: 330, at: 1.18, len: 0.14, type: 'triangle' },
-    { freq: 440, at: 1.46, len: 0.16, type: 'sine' },
-    { freq: 523, at: 1.82, len: 0.2, type: 'triangle' },
-    { freq: 392, at: 2.18, len: 0.18, type: 'sine' },
+  'tap-flow': [
+    { freq: 110, at: 0, len: 0.36, type: 'sine' },
+    { freq: 220, at: 0.18, len: 0.18, type: 'triangle' },
+    { freq: 330, at: 0.48, len: 0.16, type: 'sine' },
+    { freq: 247, at: 0.76, len: 0.22, type: 'triangle' },
+    { freq: 440, at: 1.08, len: 0.14, type: 'sine' },
+    { freq: 294, at: 1.38, len: 0.28, type: 'triangle' },
   ],
 };
 
 const PRESET_LOOP_SECONDS: Record<ThemeMusicPreset, number> = {
   'tech-pulse': 1.75,
   'pixel-pop': 1.08,
-  'grand-line-adventure': 2.15,
   'rh-pulse': 1.72,
-  'shinobi-flame': 1.7,
-  'eva-sync': 1.72,
-  'spirit-gun': 1.92,
-  'buzzer-beater': 2.08,
-  'golden-goal': 2.08,
-  'ki-burst': 1.96,
-  'shenron-aura': 2.72,
-  'pegasus-cosmos': 2.18,
-  'hades-eclipse': 2.78,
-  'block-drop': 1.32,
-  'farm-breeze': 2.48,
+  'soft-pulse': 1.84,
+  'wabi-drift': 3.4,
+  'vapor-drift': 3.0,
+  'utility-pulse': 1.5,
+  'skeuo-hum': 2.8,
+  'retro-chime': 2.4,
+  'ink-drift': 4.0,
+  'tap-flow': 2.0,
 };
 
 function clampVolume(value?: number) {
@@ -447,89 +380,22 @@ function scheduleMidiNote(ctx: AudioContext, master: GainNode, note: MidiSchedul
 
 export default function ThemeMusicToggle({ template }: ThemeMusicToggleProps) {
   const [enabled, setEnabled] = useState(false);
-  const rhDuckUploadIds = useHiddenFeatureStore((s) => s.rhDuckUploadIds);
-  const yyhPortraitIds = useHiddenFeatureStore((s) => s.yyhPortraitIds);
-  const shenronModeActive = useDragonBallRadarStore((s) => s.shenronModeActive);
-  const hadesModeActive = useSaintSeiyaSanctuaryStore((s) => s.hadesModeActive);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const masterGainRef = useRef<GainNode | null>(null);
   const timerRef = useRef<number | null>(null);
-  const autoHiddenMusicRef = useRef(false);
   const enabledRef = useRef(false);
 
-  const rhHiddenMusicActive = template.visuals?.style === 'rh' && rhDuckUploadIds.length > 0;
-  const yyhHiddenMusicActive = template.visuals?.style === 'yyh' && yyhPortraitIds.length > 0;
-  const shenronHiddenMusicActive = template.visuals?.style === 'dragon-ball' && shenronModeActive;
-  const hadesHiddenMusicActive = template.visuals?.style === 'saint-seiya' && hadesModeActive;
-  const hiddenMusicActive = rhHiddenMusicActive || yyhHiddenMusicActive || shenronHiddenMusicActive || hadesHiddenMusicActive;
   const music = useMemo(() => {
-    const base = template.music;
-    if (!hiddenMusicActive) return base;
-    if (hadesHiddenMusicActive) {
-      return {
-        title: base?.hiddenTitle || '冥界篇',
-        preset: 'hades-eclipse' as ThemeMusicPreset,
-        source: (base?.hiddenUrl ? 'url' : 'synth') as ThemeMusicSource,
-        url: base?.hiddenUrl,
-        volume: base?.hiddenVolume ?? 0.18,
-        bpm: 86,
-        copyrightNote: base?.copyrightNote,
-      };
-    }
-    if (shenronHiddenMusicActive) {
-      return {
-        title: base?.hiddenTitle || '神龙模式',
-        preset: 'shenron-aura' as ThemeMusicPreset,
-        source: (base?.hiddenUrl ? 'url' : 'synth') as ThemeMusicSource,
-        url: base?.hiddenUrl,
-        volume: base?.hiddenVolume ?? 0.2,
-        bpm: 72,
-        copyrightNote: base?.copyrightNote,
-      };
-    }
-    if (yyhHiddenMusicActive) {
-      return {
-        title: base?.hiddenTitle || '幽游隐藏模式',
-        preset: base?.preset || 'spirit-gun',
-        source: (base?.hiddenUrl ? 'url' : base?.source || 'synth') as ThemeMusicSource,
-        url: base?.hiddenUrl || base?.url,
-        volume: base?.hiddenVolume ?? base?.volume ?? 0.18,
-        bpm: base?.bpm,
-        copyrightNote: base?.copyrightNote,
-      };
-    }
-    return {
-      title: base?.hiddenTitle || '沙耶之歌',
-      preset: base?.preset || 'rh-pulse',
-      source: 'url' as const,
-      url: base?.hiddenUrl || rhHiddenThemeMusicUrl,
-      volume: base?.hiddenVolume ?? base?.volume ?? 0.2,
-      bpm: base?.bpm,
-      copyrightNote: base?.copyrightNote,
-    };
+    return template.music;
   }, [
-    hiddenMusicActive,
-    hadesHiddenMusicActive,
-    rhHiddenMusicActive,
-    shenronHiddenMusicActive,
-    yyhHiddenMusicActive,
-    template.music?.bpm,
-    template.music?.copyrightNote,
-    template.music?.hiddenTitle,
-    template.music?.hiddenUrl,
-    template.music?.hiddenVolume,
-    template.music?.preset,
-    template.music?.source,
-    template.music?.title,
-    template.music?.url,
-    template.music?.volume,
+    template.music,
   ]);
 
   const title = music?.title || 'Theme Music';
   const preset = music?.preset || 'tech-pulse';
   const volume = clampVolume(music?.volume);
-  const musicKey = `${template.id}|${rhHiddenMusicActive ? 'rh-hidden' : yyhHiddenMusicActive ? 'yyh-hidden' : shenronHiddenMusicActive ? 'shenron-hidden' : hadesHiddenMusicActive ? 'hades-hidden' : 'normal'}|${music?.preset || ''}|${music?.source || ''}|${music?.url || ''}|${volume}`;
+  const musicKey = `${template.id}|normal|${music?.preset || ''}|${music?.source || ''}|${music?.url || ''}|${volume}`;
 
   useEffect(() => {
     enabledRef.current = enabled;
@@ -631,7 +497,6 @@ export default function ThemeMusicToggle({ template }: ThemeMusicToggleProps) {
   };
 
   const toggle = async () => {
-    autoHiddenMusicRef.current = false;
     if (enabled) {
       stop();
       setEnabled(false);
@@ -644,19 +509,12 @@ export default function ThemeMusicToggle({ template }: ThemeMusicToggleProps) {
   useEffect(() => {
     const wasPlaying = enabledRef.current;
     stop();
-    if (hiddenMusicActive) {
-      autoHiddenMusicRef.current = !wasPlaying;
-      void playCurrentMusic();
-      return stop;
-    }
-
-    if (wasPlaying && !autoHiddenMusicRef.current) {
+    if (wasPlaying) {
       void playCurrentMusic();
     } else {
       setEnabled(false);
       enabledRef.current = false;
     }
-    autoHiddenMusicRef.current = false;
     return stop;
   }, [musicKey]);
 

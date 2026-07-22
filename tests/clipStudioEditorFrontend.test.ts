@@ -1,10 +1,292 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { resolveClipSpeedDuration } from '../src/utils/clipProject.ts';
 
 const source = readFileSync(new URL('../src/components/nodes/ClipStudioEditor.tsx', import.meta.url), 'utf8');
 const globalCss = readFileSync(new URL('../src/styles/index.css', import.meta.url), 'utf8');
 const lutPresets = readFileSync(new URL('../src/utils/lutPresets.ts', import.meta.url), 'utf8');
+
+test('clip studio reconciles persisted source metadata before building its normal draft', () => {
+  const nodeSource = readFileSync(new URL('../src/components/nodes/ClipStudioNode.tsx', import.meta.url), 'utf8');
+  assert.match(nodeSource, /type ClipVisualSourceMetadata/);
+  assert.match(nodeSource, /const clipVisualSourceMetadata = useMemo<Record<string, ClipVisualSourceMetadata>>/);
+  assert.match(nodeSource, /typeof item\.url === 'string'[\s\S]{0,220}Number\.isFinite\(duration\)[\s\S]{0,120}duration > 0/);
+  assert.doesNotMatch(nodeSource, /CLIP_HISTORY_KEYS[\s\S]{0,900}'clipVisualSourceMetadata'/);
+  assert.match(nodeSource, /const editedTimelineVisuals = useMemo\(\(\) => applyClipTimelineEdits/);
+  assert.match(nodeSource, /reconcileClipVisualSourceDurations\(\{\s*visuals: editedTimelineVisuals,\s*currentDurations: visualDurations,\s*currentSourceMetadata: clipVisualSourceMetadata,\s*probes: \[\],\s*\}\)/);
+  assert.match(nodeSource, /const invalidVisualIds = new Set\(visualSourceReconciliation\.invalidIds\)/);
+  assert.match(nodeSource, /duration: Number\(visualSourceReconciliation\.durations\[item\.id \|\| ''\] \?\? item\.duration\)[\s\S]{0,180}sourceInvalid: invalidVisualIds\.has\(item\.id \|\| ''\)/);
+  assert.match(nodeSource, /const renderableTimelineVisuals = timelineVisuals\.filter\(\(item\) => !item\.sourceInvalid\)/);
+  assert.match(nodeSource, /visuals: renderableTimelineVisuals/);
+  assert.match(nodeSource, /const activeVisualCount = renderableTimelineVisuals\.filter\(\(item\) => !item\.disabled\)\.length/);
+});
+
+test('clip studio probes video source boundaries with retryable URL registries', () => {
+  const nodeSource = readFileSync(new URL('../src/components/nodes/ClipStudioNode.tsx', import.meta.url), 'utf8');
+  assert.match(nodeSource, /const visualProbePromisesByUrlRef = useRef\(new Map<string, Promise/);
+  assert.match(nodeSource, /const validatedVisualSourceSignaturesRef = useRef\(new Set<string>\(\)\)/);
+  assert.match(nodeSource, /const probeVisualSourceUrls = useCallback/);
+  assert.match(nodeSource, /Array\.from\(new Set\(urls\.map\(normalizeVisualSourceUrl\)\.filter\(Boolean\)\)\)/);
+  assert.match(nodeSource, /visualProbePromisesByUrlRef\.current\.get\(url\)/);
+  assert.match(nodeSource, /visualProbePromisesByUrlRef\.current\.set\(url, promise\)/);
+  assert.match(nodeSource, /validatedVisualSourceSignaturesRef\.current\.add\(visualSourceSignature\(normalizedUrl, duration\)\)/);
+  assert.match(nodeSource, /if \(visualProbePromisesByUrlRef\.current\.get\(url\) === promise\)[\s\S]{0,120}delete\(url\)/);
+  assert.match(nodeSource, /probeItems\.some\(\(probe\) => normalizeVisualSourceUrl\(probe\.url\) === url/);
+  assert.match(nodeSource, /item\.generation && item\.generation\.status !== 'success' && !item\.url/);
+  assert.match(nodeSource, /if \(normalizeVisualSourceUrl\(persisted\?\.url\) === normalizeVisualSourceUrl\(item\.url\)[\s\S]{0,180}return false/);
+  assert.doesNotMatch(nodeSource, /signature\.startsWith\(signaturePrefix\)/);
+  assert.match(nodeSource, /const freshReconciliation = reconcileClipVisualSourceDurations/);
+  const validationIndex = nodeSource.indexOf('validatedVisualSourceSignaturesRef.current.add');
+  const cancellationIndex = nodeSource.indexOf('if (cancelled) return', validationIndex);
+  const updateIndex = nodeSource.indexOf('update(patchValue)', cancellationIndex);
+  assert.ok(validationIndex >= 0 && validationIndex < cancellationIndex && cancellationIndex < updateIndex);
+  assert.match(nodeSource, /patchValue\.clipVisualSourceMetadata = freshReconciliation\.sourceMetadata/);
+  assert.doesNotMatch(nodeSource, /commitClipPatch\(\{[\s\S]{0,200}clipVisualSourceMetadata/);
+  assert.match(nodeSource, /setLocalError\('视频时长读取失败'\)/);
+});
+
+test('clip studio reuses successful probe durations after a cancelled effect reopens', () => {
+  const nodeSource = readFileSync(new URL('../src/components/nodes/ClipStudioNode.tsx', import.meta.url), 'utf8');
+  assert.match(nodeSource, /const successfulVisualProbeDurationsByUrlRef = useRef\(new Map<string, number>\(\)\)/);
+  assert.match(nodeSource, /successfulVisualProbeDurationsByUrlRef\.current\.set\(normalizedUrl, duration\)/);
+  assert.match(nodeSource, /const cachedDuration = successfulVisualProbeDurationsByUrlRef\.current\.get\(url\)/);
+  assert.match(nodeSource, /cachedDuration != null && validatedVisualSourceSignaturesRef\.current\.has\(visualSourceSignature\(url, cachedDuration\)\)[\s\S]{0,120}Promise\.resolve\(\[\{ url, duration: cachedDuration \}\]\)/);
+  assert.doesNotMatch(nodeSource, /const signaturePrefix = `\$\{item\.url\}\\u0000`[\s\S]{0,220}signature\.startsWith\(signaturePrefix\)/);
+  const cacheIndex = nodeSource.indexOf('successfulVisualProbeDurationsByUrlRef.current.set');
+  const cancellationIndex = nodeSource.indexOf('if (cancelled) return', cacheIndex);
+  assert.ok(cacheIndex >= 0 && cacheIndex < cancellationIndex);
+});
+
+test('clip studio normalizes validates and prunes successful probe registries', () => {
+  const nodeSource = readFileSync(new URL('../src/components/nodes/ClipStudioNode.tsx', import.meta.url), 'utf8');
+  assert.match(nodeSource, /function normalizeVisualSourceUrl\(value: unknown\)[\s\S]{0,160}value\.trim\(\)/);
+  assert.match(nodeSource, /return `\$\{normalizeVisualSourceUrl\(url\)\}\\u0000\$\{Math\.round\(duration \* 1000\)\}`/);
+  assert.match(nodeSource, /normalizeVisualSourceUrl\(probe\.url\) === url/);
+  assert.match(nodeSource, /normalizeVisualSourceUrl\(persisted\?\.url\) === normalizeVisualSourceUrl\(item\.url\)/);
+  assert.match(nodeSource, /validatedVisualSourceSignaturesRef\.current\.has\(visualSourceSignature\(url, cachedDuration\)\)/);
+  assert.match(nodeSource, /successfulVisualProbeDurationsByUrlRef\.current\.delete\(url\)/);
+  assert.match(nodeSource, /validatedVisualSourceSignaturesRef\.current\.delete\(signature\)/);
+  assert.match(nodeSource, /activeVisualSourceUrlsRef\.current = activeUrls/);
+});
+
+test('clip studio strips transient sourceInvalid from every local visual persistence payload', () => {
+  const nodeSource = readFileSync(new URL('../src/components/nodes/ClipStudioNode.tsx', import.meta.url), 'utf8');
+  assert.match(nodeSource, /function serializeClipLocalVisuals\(visuals: ClipTimelineVisualMaterial\[\]\)[\s\S]{0,240}sourceInvalid: _sourceInvalid[\s\S]{0,160}return persisted/);
+  const payloadCount = (nodeSource.match(/clipLocalVisuals:\s*/g) || []).length;
+  const sanitizedPayloadCount = (nodeSource.match(/clipLocalVisuals:\s*serializeClipLocalVisuals\(/g) || []).length;
+  assert.ok(payloadCount > 0);
+  assert.equal(sanitizedPayloadCount, payloadCount);
+  assert.match(source, /draggedVisual\?\.kind === 'video'[\s\S]{0,220}onUpdateVisualTiming\(current\.id, next\.start, next\.duration\)/);
+});
+
+test('clip studio performs export-local video source reconciliation before rendering', () => {
+  const nodeSource = readFileSync(new URL('../src/components/nodes/ClipStudioNode.tsx', import.meta.url), 'utf8');
+  const renderStart = nodeSource.indexOf('const handleRender = useCallback');
+  const renderEnd = nodeSource.indexOf('useRunTrigger', renderStart);
+  const renderSource = nodeSource.slice(renderStart, renderEnd);
+  const pendingIndex = renderSource.indexOf('pendingGeneration');
+  const videoProbeIndex = renderSource.indexOf('await probeVisualSourceUrls');
+  assert.ok(pendingIndex >= 0 && pendingIndex < videoProbeIndex);
+  assert.match(renderSource, /const activeVideoVisuals = timelineVisuals\.filter\(\(item\) => !item\.disabled && item\.kind === 'video'\)/);
+  assert.match(renderSource, /const videoProbeItems = activeVideoUrls\.length \? await probeVisualSourceUrls\(activeVideoUrls\) : \[\]/);
+  assert.match(renderSource, /const audioProbeItems = audioUrls\.length \? await probeClipMedia\(audioUrls\) : \[\]/);
+  assert.match(renderSource, /reconcileClipVisualSourceDurations\(\{\s*visuals: timelineVisuals,\s*currentDurations: visualDurations,\s*currentSourceMetadata: clipVisualSourceMetadata,\s*probes: videoProbeItems,\s*\}\)/);
+  assert.doesNotMatch(renderSource, /mergeProbedClipVisualDurations/);
+  assert.doesNotMatch(renderSource, /const durationByUrl/);
+});
+
+test('clip studio reconciles probed audio source bounds without overwriting intentional trims', () => {
+  const nodeSource = readFileSync(new URL('../src/components/nodes/ClipStudioNode.tsx', import.meta.url), 'utf8');
+  const renderStart = nodeSource.indexOf('const handleRender = useCallback');
+  const renderEnd = nodeSource.indexOf('useRunTrigger', renderStart);
+  const renderSource = nodeSource.slice(renderStart, renderEnd);
+  assert.match(nodeSource, /import[\s\S]{0,1800}reconcileProbedClipAudioDurations/);
+  assert.doesNotMatch(nodeSource, /function mergeProbedClipAudioDurations/);
+  assert.match(nodeSource, /const audioReconciliation = reconcileProbedClipAudioDurations\(\{\s*audios: timelineAudios,\s*probes: probeItems/);
+  assert.match(renderSource, /const reconciledAudios = reconcileProbedClipAudioDurations\(\{\s*audios: timelineAudios,\s*probes: audioProbeItems/);
+  assert.match(renderSource, /audios: reconciledAudios\.items/);
+  assert.match(renderSource, /reconciledAudios\.changed \? \{ clipAudioEdits: reconciledAudios\.items \} : \{\}/);
+  const materialListStart = nodeSource.indexOf('function clipMaterialList');
+  const materialListEnd = nodeSource.indexOf('function inferClipFileKind', materialListStart);
+  const materialListSource = nodeSource.slice(materialListStart, materialListEnd);
+  assert.match(materialListSource, /trimStart:/);
+  assert.match(materialListSource, /speed:/);
+});
+
+test('clip studio invalidates stale renders by invocation token and edit revision', () => {
+  const nodeSource = readFileSync(new URL('../src/components/nodes/ClipStudioNode.tsx', import.meta.url), 'utf8');
+  assert.match(nodeSource, /const clipRenderInvocationRef = useRef\(0\)/);
+  assert.match(nodeSource, /const clipEditRevisionRef = useRef\(0\)/);
+  const commitStart = nodeSource.indexOf('const commitClipPatch = useCallback');
+  const commitEnd = nodeSource.indexOf('const patch = useCallback', commitStart);
+  assert.match(nodeSource.slice(commitStart, commitEnd), /clipEditRevisionRef\.current \+= 1/);
+  const undoStart = nodeSource.indexOf('const undoClipEdit = useCallback');
+  const redoStart = nodeSource.indexOf('const redoClipEdit = useCallback');
+  assert.match(nodeSource.slice(undoStart, redoStart), /clipEditRevisionRef\.current \+= 1/);
+  const redoEnd = nodeSource.indexOf('const patchVisualOrder', redoStart);
+  assert.match(nodeSource.slice(redoStart, redoEnd), /clipEditRevisionRef\.current \+= 1/);
+});
+
+test('clip studio guards every render await continuation and stale catch persistence', () => {
+  const nodeSource = readFileSync(new URL('../src/components/nodes/ClipStudioNode.tsx', import.meta.url), 'utf8');
+  const renderStart = nodeSource.indexOf('const handleRender = useCallback');
+  const renderEnd = nodeSource.indexOf('useRunTrigger', renderStart);
+  const renderSource = nodeSource.slice(renderStart, renderEnd);
+  assert.match(renderSource, /const renderInvocation = \+\+clipRenderInvocationRef\.current/);
+  assert.match(renderSource, /const editRevision = clipEditRevisionRef\.current/);
+  assert.match(renderSource, /clipRenderInvocationRef\.current !== renderInvocation/);
+  assert.match(renderSource, /clipEditRevisionRef\.current === editRevision/);
+  assert.match(renderSource, /剪辑内容已更新，请重新导出/);
+  const videoAwait = renderSource.indexOf('await probeVisualSourceUrls');
+  const audioAwait = renderSource.indexOf('await probeClipMedia', videoAwait);
+  const renderAwait = renderSource.indexOf('await renderClipProject', audioAwait);
+  const firstGuard = renderSource.indexOf('if (discardStaleRender()) return;', videoAwait);
+  const secondGuard = renderSource.indexOf('if (discardStaleRender()) return;', audioAwait);
+  const thirdGuard = renderSource.indexOf('if (discardStaleRender()) return;', renderAwait);
+  assert.ok(videoAwait >= 0 && videoAwait < firstGuard && firstGuard < audioAwait);
+  assert.ok(audioAwait >= 0 && audioAwait < secondGuard && secondGuard < renderAwait);
+  assert.ok(renderAwait >= 0 && renderAwait < thirdGuard);
+  const catchStart = renderSource.indexOf('} catch (error: any) {');
+  assert.match(renderSource.slice(catchStart), /catch \(error: any\) \{\s*if \(discardStaleRender\(\)\) return;/);
+  assert.ok(thirdGuard < renderSource.indexOf("status: 'success'"));
+});
+
+test('clip studio invalidates render continuations when effective upstream materials change', () => {
+  const nodeSource = readFileSync(new URL('../src/components/nodes/ClipStudioNode.tsx', import.meta.url), 'utf8');
+  assert.match(nodeSource, /function clipUpstreamMaterialFingerprint/);
+  assert.match(nodeSource, /\['id', 'url', 'text', 'duration'/);
+  assert.match(nodeSource, /const latestUpstreamMaterialFingerprintRef = useRef/);
+  assert.match(nodeSource, /latestUpstreamMaterialFingerprintRef\.current = upstreamMaterialFingerprint/);
+  const renderStart = nodeSource.indexOf('const handleRender = useCallback');
+  const renderEnd = nodeSource.indexOf('useRunTrigger', renderStart);
+  const renderSource = nodeSource.slice(renderStart, renderEnd);
+  assert.match(renderSource, /const renderUpstreamMaterialFingerprint = latestUpstreamMaterialFingerprintRef\.current/);
+  assert.match(renderSource, /const isRenderRequestCurrent = \(\) => \(/);
+  assert.match(renderSource, /clipRenderInvocationRef\.current === renderInvocation[\s\S]{0,180}clipEditRevisionRef\.current === editRevision[\s\S]{0,220}latestUpstreamMaterialFingerprintRef\.current === renderUpstreamMaterialFingerprint/);
+  assert.match(renderSource, /if \(isRenderRequestCurrent\(\)\) return false/);
+});
+
+test('clip studio blocks export when video preflight metadata is missing or its source boundary is invalid', () => {
+  const nodeSource = readFileSync(new URL('../src/components/nodes/ClipStudioNode.tsx', import.meta.url), 'utf8');
+  const renderStart = nodeSource.indexOf('const handleRender = useCallback');
+  const renderEnd = nodeSource.indexOf('useRunTrigger', renderStart);
+  const renderSource = nodeSource.slice(renderStart, renderEnd);
+  assert.match(renderSource, /const missingSourceMetadataVisual = activeVideoVisuals\.find/);
+  assert.match(renderSource, /normalizeVisualSourceUrl\(metadata\?\.url\) !== normalizeVisualSourceUrl\(item\.url\)/);
+  assert.match(renderSource, /媒体时长预检失败：无法读取视频源时长/);
+  assert.match(renderSource, /const activeInvalidVisualId = exportReconciliation\.invalidIds\.find/);
+  assert.match(renderSource, /媒体边界错误：裁剪起点超出视频时长/);
+  const missingIndex = renderSource.indexOf('missingSourceMetadataVisual');
+  const projectIndex = renderSource.indexOf('const project = buildClipDraftFromTimeline');
+  assert.ok(missingIndex >= 0 && missingIndex < projectIndex);
+});
+
+test('clip studio builds and renders a fresh reconciled export project without overwriting trims', () => {
+  const nodeSource = readFileSync(new URL('../src/components/nodes/ClipStudioNode.tsx', import.meta.url), 'utf8');
+  const renderStart = nodeSource.indexOf('const handleRender = useCallback');
+  const renderEnd = nodeSource.indexOf('useRunTrigger', renderStart);
+  const renderSource = nodeSource.slice(renderStart, renderEnd);
+  assert.match(renderSource, /const exportInvalidVisualIds = new Set\(exportReconciliation\.invalidIds\)/);
+  assert.match(renderSource, /const reconciledVisuals = timelineVisuals[\s\S]{0,500}duration: Number\(exportReconciliation\.durations\[item\.id \|\| ''\] \?\? item\.duration\)[\s\S]{0,300}!exportInvalidVisualIds\.has\(item\.id \|\| ''\)/);
+  assert.match(renderSource, /buildClipDraftFromTimeline\(\{\s*visuals: reconciledVisuals,\s*audios: reconciledAudios\.items,\s*texts: timelineTexts/);
+  assert.match(renderSource, /const result = await renderClipProject\(project,/);
+  assert.doesNotMatch(renderSource, /durationByUrl\.get/);
+  assert.match(renderSource, /clipLastProject: project/);
+  assert.match(renderSource, /exportReconciliation\.durationsChanged \? \{ clipVisualDurations: exportReconciliation\.durations \} : \{\}/);
+  assert.match(renderSource, /exportReconciliation\.sourceMetadataChanged \? \{ clipVisualSourceMetadata: exportReconciliation\.sourceMetadata \} : \{\}/);
+});
+
+test('clip studio blocks export when an active reconciled visual is shorter than 0.1 seconds', () => {
+  const nodeSource = readFileSync(new URL('../src/components/nodes/ClipStudioNode.tsx', import.meta.url), 'utf8');
+  const renderStart = nodeSource.indexOf('const handleRender = useCallback');
+  const renderEnd = nodeSource.indexOf('useRunTrigger', renderStart);
+  const renderSource = nodeSource.slice(renderStart, renderEnd);
+  assert.match(renderSource, /const tooShortVisual = reconciledVisuals\.find\(\(item\) =>[\s\S]{0,220}!item\.disabled[\s\S]{0,220}Number\.isFinite\(Number\(item\.duration\)\)[\s\S]{0,160}Number\(item\.duration\) < 0\.1/);
+  assert.match(renderSource, /if \(tooShortVisual\) \{[\s\S]{0,180}媒体时长预检失败：存在短于 0\.1 秒的片段[\s\S]{0,180}return;/);
+  assert.doesNotMatch(renderSource, /Number\(item\.duration\) <= 0\.1/);
+  const guardIndex = renderSource.indexOf('const tooShortVisual = reconciledVisuals.find');
+  const projectIndex = renderSource.indexOf('const project = buildClipDraftFromTimeline');
+  assert.ok(guardIndex >= 0 && guardIndex < projectIndex);
+});
+
+test('clip studio blocks export when reconciled audio is shorter than 0.1 seconds', () => {
+  const nodeSource = readFileSync(new URL('../src/components/nodes/ClipStudioNode.tsx', import.meta.url), 'utf8');
+  const renderStart = nodeSource.indexOf('const handleRender = useCallback');
+  const renderEnd = nodeSource.indexOf('useRunTrigger', renderStart);
+  const renderSource = nodeSource.slice(renderStart, renderEnd);
+  assert.match(renderSource, /const tooShortAudio = reconciledAudios\.items\.find\(\(item\) =>[\s\S]{0,220}Number\(item\.duration\) > 0[\s\S]{0,160}Number\(item\.duration\) < 0\.1/);
+  assert.match(renderSource, /if \(tooShortAudio\) \{[\s\S]{0,180}音频片段过短，无法导出（最短 0\.1 秒）[\s\S]{0,180}return;/);
+  assert.doesNotMatch(renderSource, /Number\(item\.duration\) <= 0\.1/);
+  const reconciliationIndex = renderSource.indexOf('const reconciledAudios = reconcileProbedClipAudioDurations');
+  const guardIndex = renderSource.indexOf('const tooShortAudio = reconciledAudios.items.find');
+  const projectIndex = renderSource.indexOf('const project = buildClipDraftFromTimeline');
+  assert.ok(reconciliationIndex >= 0 && reconciliationIndex < guardIndex && guardIndex < projectIndex);
+});
+
+test('clip studio includes a previously source-invalid visual when fresh export reconciliation validates it', () => {
+  const nodeSource = readFileSync(new URL('../src/components/nodes/ClipStudioNode.tsx', import.meta.url), 'utf8');
+  const renderStart = nodeSource.indexOf('const handleRender = useCallback');
+  const renderEnd = nodeSource.indexOf('useRunTrigger', renderStart);
+  const renderSource = nodeSource.slice(renderStart, renderEnd);
+  assert.match(renderSource, /sourceInvalid: exportInvalidVisualIds\.has\(item\.id \|\| ''\)/);
+  assert.match(renderSource, /\.filter\(\(item\) => !exportInvalidVisualIds\.has\(item\.id \|\| ''\)\)/);
+  assert.doesNotMatch(renderSource, /\.filter\(\(item\) => !item\.sourceInvalid/);
+});
+
+test('clip studio excludes invalid sources from preview and marks their timeline clips', () => {
+  assert.match(source, /const exportableTimelineVisuals = timelineVisuals\.filter\(\(item\) => !item\.sourceInvalid\)/);
+  assert.match(source, /const activeVisuals = timelineVisuals\.filter\(\(item\) => !item\.disabled && !item\.sourceInvalid\)/);
+  assert.match(source, /inspectClipProjectBeforeExport\(\{\s*visuals: exportableTimelineVisuals/);
+  assert.match(source, /playbackState\?\.item && !playbackState\.item\.disabled && !playbackState\.item\.sourceInvalid/);
+  assert.match(source, /data-clip-visual-badge="source-invalid"/);
+  assert.match(source, /媒体边界错误/);
+  assert.match(source, /title=\{item\.sourceInvalid \? '媒体边界错误：裁剪起点超出视频时长' :/);
+});
+
+test('clip studio preview converts timeline time to trimmed source time and advances on media end', () => {
+  assert.match(source, /const previewVideoSourceTime = \(visual: ClipTimelineVisualMaterial \| undefined, localTimelineTime: number, mediaDuration\?: number\) =>/);
+  assert.match(source, /Number\(visual\?\.trimStart \|\| 0\) \+ Math\.max\(0, localTimelineTime\) \* sanitizeSpeed\(visual\?\.speed\)/);
+  assert.match(source, /Number\.isFinite\(mediaDuration\)[\s\S]{0,160}Math\.max\(0, Number\(mediaDuration\) - 0\.001\)/);
+  assert.match(source, /applyPreviewVideoSourceSeek\(video, previewVisual, localTime\)/);
+  assert.match(source, /applyPreviewVideoSourceSeek\(video, nextState\?\.item, nextState\?\.localTime \|\| 0\)/);
+  assert.match(source, /const handlePreviewVideoEnded = \(\) =>/);
+  assert.match(source, /Math\.max\(playheadTime, activeClipEnd\)/);
+  assert.match(source, /onEnded=\{handlePreviewVideoEnded\}/);
+  assert.doesNotMatch(source, /onEnded=\{\(\) => setPlaying\(false\)\}/);
+});
+
+test('clip studio reapplies shared source seeking when video metadata loads', () => {
+  assert.match(source, /const applyPreviewVideoSourceSeek = \(video: HTMLVideoElement, visual: ClipTimelineVisualMaterial \| undefined, localTimelineTime: number\) =>/);
+  assert.match(source, /previewVideoSourceTime\(visual, localTimelineTime, video\.duration\)/);
+  assert.match(source, /const handlePreviewVideoLoadedMetadata = \(\) =>[\s\S]{0,300}applyPreviewVideoSourceSeek\(video, previewVisual, previewLocalTime\)/);
+  assert.match(source, /onLoadedMetadata=\{handlePreviewVideoLoadedMetadata\}/);
+  assert.ok((source.match(/applyPreviewVideoSourceSeek\(/g) || []).length >= 3);
+  assert.doesNotMatch(source, /applyPreviewVideoSourceSeek\([\s\S]{0,120}\* sanitizeSpeed/);
+});
+
+test('clip studio refreshes playback rate for editor open and same-id URL replacement', () => {
+  assert.match(source, /video\.playbackRate = sanitizeSpeed\(previewVisual\?\.speed\)/);
+  assert.match(source, /\[open, previewVisual\?\.id, previewVisual\?\.speed, previewVisual\?\.url\]/);
+  const handlerStart = source.indexOf('const handlePreviewVideoLoadedMetadata = () =>');
+  const handlerEnd = source.indexOf('const handlePreviewVideoEnded', handlerStart);
+  const handlerSource = source.slice(handlerStart, handlerEnd);
+  assert.match(handlerSource, /video\.playbackRate = sanitizeSpeed\(previewVisual\?\.speed\)/);
+  assert.ok(handlerSource.indexOf('video.playbackRate') < handlerSource.indexOf('applyPreviewVideoSourceSeek'));
+});
+
+test('clip studio drag previews pass type-aware source timing to the utility', () => {
+  assert.match(source, /const resolveDragSourceTiming = \(clipId: string, currentTrimStart: number\)[\s\S]{0,900}timelineLayout\.items\.find[\s\S]{0,900}audios\.find/);
+  assert.match(source, /visual\.kind === 'video'[\s\S]{0,220}trimStart: currentTrimStart/);
+  assert.match(source, /if \(audio\)[\s\S]{0,220}speed:[\s\S]{0,160}trimStart: currentTrimStart/);
+  assert.match(source, /return \{ speed: 1 \};/);
+  assert.equal((source.match(/\.\.\.resolveDragSourceTiming\((?:current|dragState)\.id, (?:current|dragState)\.trimStart\)/g) || []).length, 2);
+  assert.equal((source.match(/trimStart:\s*(?:current|dragState)\.trimStart/g) || []).length, 0);
+  assert.match(source, /const draggedVisual = timelineVisuals\.find\(\(item\) => item\.id === current\.id\)/);
+  assert.match(source, /draggedVisual\?\.kind === 'video'\s*\? onUpdateVisualTiming\(current\.id, next\.start, next\.duration, trimStart\)\s*:\s*onUpdateVisualTiming\(current\.id, next\.start, next\.duration\)/);
+  assert.match(source, /onUpdateAudioTiming\(current\.id, next\.start, next\.duration, trimStart\)/);
+  assert.match(source, /onUpdateTextTiming\(current\.id, next\.start, next\.duration\)/);
+});
 
 test('clip studio preview player hides browser native controls and uses editor transport controls', () => {
   const previewVideoTags = source.match(/<video[^>]*ref=\{previewVideoRef\}[^>]*>/g) || [];
@@ -57,10 +339,22 @@ test('clip studio left material library scrolls when canvas assets overflow', ()
   assert.match(source, /data-clip-media-pane/);
   assert.match(source, /data-clip-media-library-scroll/);
   assert.match(source, /data-clip-media-grid/);
-  assert.match(source, /className="t8-clip-media-library-scroll min-h-0 flex-1 overflow-y-auto overflow-x-hidden pr-1"/);
+  assert.match(source, /className="flex min-h-0 flex-1 flex-col overflow-hidden/);
+  assert.match(source, /className="t8-clip-media-library-scroll t8-clip-scroll-region min-h-0 max-h-full flex-1 overflow-y-auto overflow-x-hidden pr-1"/);
   assert.match(source, /className="grid auto-rows-\[96px\] grid-cols-2 gap-1\.5"/);
   assert.match(globalCss, /\.t8-clip-media-library-scroll/);
-  assert.match(globalCss, /\.t8-clip-media-library-scroll\s*\{[\s\S]{0,160}scrollbar-gutter:\s*stable/);
+  assert.match(globalCss, /\.t8-clip-media-library-scroll\s*\{[\s\S]{0,260}scrollbar-gutter:\s*stable/);
+});
+
+test('clip studio scroll regions keep wheel scrolling without visible system scrollbars', () => {
+  assert.match(source, /const paramPaneClass = 't8-clip-param-pane t8-clip-scroll-region/);
+  assert.match(source, /t8-clip-media-library-scroll t8-clip-scroll-region/);
+  assert.match(source, /t8-clip-left-editor t8-clip-scroll-region/);
+  assert.match(source, /t8-clip-settings-pane t8-clip-scroll-region/);
+  assert.match(source, /t8-clip-timeline-scroll t8-clip-scroll-region/);
+  assert.match(source, /t8-clip-generation-popover t8-clip-scroll-region/);
+  assert.match(globalCss, /\.t8-clip-scroll-region\s*\{[\s\S]{0,180}scrollbar-width:\s*none/);
+  assert.match(globalCss, /\.t8-clip-scroll-region::-webkit-scrollbar\s*\{[\s\S]{0,80}display:\s*none/);
 });
 
 test('clip studio moves color LUT and motion editing into left editing pages', () => {
@@ -109,10 +403,11 @@ test('clip studio exposes AI generation clips by reusing existing generation ser
   assert.match(adapterSource, /VIDEO_FAL_REGISTRY/);
   assert.match(adapterSource, /FAL_REGISTRY/);
   assert.match(nodeSource, /useApiKeysStore/);
-  assert.match(nodeSource, /zhenzhenImageModelOverrides/);
-  assert.match(nodeSource, /zhenzhenVideoModelOverrides/);
-  assert.match(adapterSource, /withUpstreamModelOption/);
-  assert.match(adapterSource, /resolveSeedanceVideoOverride/);
+  assert.match(nodeSource, /modelsForKind\(apiSettings,\s*'image'\)/);
+  assert.match(nodeSource, /modelsForKind\(apiSettings,\s*'video'\)/);
+  assert.match(nodeSource, /catalogModels/);
+  assert.doesNotMatch(adapterSource, /withUpstreamModelOption/);
+  assert.doesNotMatch(adapterSource, /resolveSeedanceVideoOverride/);
   assert.doesNotMatch(nodeSource, /fetch\('\/api\/proxy\/seedance\/submit'/);
   assert.doesNotMatch(nodeSource, /fetch\('\/api\/proxy\/image'/);
   assert.doesNotMatch(nodeSource, /doubao-seedance-2-0-260128'/);
@@ -211,6 +506,7 @@ test('clip studio opens generation settings only from clicked unfinished generat
   assert.match(source, /ref=\{generationPanelRef\}/);
   assert.match(source, /timelineVisuals\.find\(\(item\) => item\.id === generationPanelClipId && item\.generation && item\.generation\.status !== 'success'\)/);
   assert.match(source, /if \(!panelVisual\?\.generation \|\| panelVisual\.generation\.status === 'success'\) \{\s*setGenerationPanelClipId\(''\);/);
+  assert.match(source, /if \(item\.generation && item\.generation\.status !== 'success'\) \{\s*openGenerationPanelForClip\(item\.id \|\| '', item\.start\);\s*\}/);
   assert.doesNotMatch(source, /onClick=\{\(event\) => \{[\s\S]{0,260}if \(item\.generation && item\.generation\.status !== 'success'\) \{\s*setGenerationPanelClipId\(item\.id \|\| ''\);/);
   assert.match(source, /data-clip-generation-inline-settings[\s\S]{0,460}openGenerationPanelForClip\(item\.id \|\| '', item\.start\)/);
   assert.doesNotMatch(source, /else \{\s*setGenerationPanelClipId\(''\);/);
@@ -239,6 +535,20 @@ test('clip studio generation popover avoids covering the active track and viewpo
   assert.match(source, /generationPanelDirection === 'up' \? -8 : 8/);
 });
 
+test('clip studio generation popover measures its real content and repositions when the editor resizes', () => {
+  assert.match(source, /useLayoutEffect/);
+  assert.match(source, /const \[generationPanelMeasuredHeight,\s*setGenerationPanelMeasuredHeight\] = useState\(300\)/);
+  assert.match(source, /new ResizeObserver\(measureGenerationPanel\)/);
+  assert.match(source, /observer\.observe\(generationPanelRef\.current\)/);
+  assert.match(source, /observer\.observe\(editorShellRef\.current\)/);
+  assert.match(source, /const editorMainRef = useRef<HTMLElement>\(null\)/);
+  assert.match(source, /ref=\{editorMainRef\}/);
+  assert.match(source, /const generationPanelSafeTop =/);
+  assert.match(source, /const generationPanelAvailableHeight =/);
+  assert.match(source, /maxHeight:\s*generationPanelAvailableHeight/);
+  assert.doesNotMatch(source, /const generationPanelEstimatedHeight = 300/);
+});
+
 test('clip studio anchors generation settings beneath the selected timeline track', () => {
   assert.match(source, /const selectedGenerationTimelineItem = timelineLayout\.items\.find\(\(item\) => item\.id === selectedGenerationVisual\?\.id\)/);
   assert.match(source, /const generationPanelAnchorLaneIndex = visibleVisualLanes\.indexOf/);
@@ -254,7 +564,7 @@ test('clip studio generation settings panel stays compact on the timeline', () =
   assert.match(source, /data-clip-generation-panel-mode="quick"/);
   assert.match(source, /const generationPanelDirection = generationPanelShouldOpenUp \? 'up' : 'down'/);
   assert.match(source, /data-clip-generation-panel-direction=\{generationPanelDirection\}/);
-  assert.match(source, /className="t8-clip-modal t8-clip-generation-popover absolute z-50 rounded-md border p-2/);
+  assert.match(source, /className="t8-clip-modal t8-clip-generation-popover t8-clip-scroll-region absolute z-50 rounded-md border p-2/);
   assert.match(source, /data-clip-generation-prompt/);
   assert.match(source, /min-h-14 resize-y/);
   assert.match(source, /data-clip-generation-refs/);
@@ -273,7 +583,7 @@ test('clip studio visual actions require explicit selection and generation start
   const nodeSource = readFileSync(new URL('../src/components/nodes/ClipStudioNode.tsx', import.meta.url), 'utf8');
   assert.match(source, /const selectedTimelineVisual = timelineVisuals\.find\(\(item\) => item\.id === selectedId\)/);
   assert.match(source, /const selectedVisual = selectedTimelineVisual;/);
-  assert.match(source, /const previewFallbackVisual = timelineVisuals\.find\(\(item\) => !item\.disabled\) \|\| timelineVisuals\[0\]/);
+  assert.match(source, /const previewFallbackVisual = activeVisuals\[0\]/);
   assert.match(source, /selectedTimelineVisual \? 'visual' : 'none'/);
   assert.match(source, /selectedTimelineVisual\?\.id === item\.id \? 'is-selected/);
   assert.doesNotMatch(source, /setSelectedId\(selectedVisual\.id \|\| ''\);/);
@@ -282,6 +592,13 @@ test('clip studio visual actions require explicit selection and generation start
   assert.match(source, /onCreateGenerationClip\('video',\s*\{ start: playheadTime,\s*lane: selectedTimelineVisual \? Math\.max/);
   assert.match(source, /selectedTimelineVisual \? Math\.max\(0,\s*Math\.round\(Number\(selectedTimelineVisual\.lane \|\| 0\)\)\) : 0/);
   assert.match(nodeSource, /avoidOverlap:\s*false/);
+});
+
+test('clip studio media shelf never renders empty media sources for generation drafts', () => {
+  assert.match(source, /item\.kind === 'image' && item\.url \? \(/);
+  assert.match(source, /item\.kind === 'video' && item\.url \? \(/);
+  assert.match(source, /data-clip-media-draft-placeholder/);
+  assert.doesNotMatch(source, /item\.kind === 'image' \? \(\s*<img className="h-\[78px\]/);
 });
 
 test('clip studio keeps clicked timeline clip selected for delete even when tracks overlap', () => {
@@ -326,13 +643,23 @@ test('clip studio inserts timeline material and generation clips from the playhe
   assert.match(nodeSource, /avoidOverlap:\s*true/);
 });
 
-test('clip studio speed changes resize video timeline duration from source span', () => {
+test('clip studio speed changes use authoritative duration resolution only for an actual speed change', () => {
   const nodeSource = readFileSync(new URL('../src/components/nodes/ClipStudioNode.tsx', import.meta.url), 'utf8');
-  assert.match(nodeSource, /const speedPatchProvided = patchValue\.speed != null/);
-  assert.match(nodeSource, /const currentSpeed = Number\(currentVisual\?\.speed \|\| 1\)/);
-  assert.match(nodeSource, /const sourceSpan = Math\.max\(0\.25,\s*Number\(currentVisual\?\.duration \|\| imageDuration\) \* currentSpeed\)/);
-  assert.match(nodeSource, /const nextDuration = speedPatchProvided[\s\S]{0,180}sourceSpan \/ nextSpeed/);
-  assert.match(nodeSource, /clipVisualDurations:\s*speedPatchProvided[\s\S]{0,220}\[visualId\]: nextDuration/);
+  assert.match(nodeSource, /resolveClipSpeedDuration,/);
+  assert.match(nodeSource, /const currentSpeed = sanitizeClipSpeed\(currentVisual\?\.speed\)/);
+  assert.match(nodeSource, /const nextSpeed = sanitizeClipSpeed\(patchValue\.speed\)/);
+  assert.match(nodeSource, /const speedChanged = nextSpeed !== currentSpeed/);
+  assert.match(nodeSource, /const matchingSourceMetadata = clipVisualSourceMetadata\[visualId\]\?\.url === currentVisual\?\.url/);
+  assert.match(nodeSource, /resolveClipSpeedDuration\(\{\s*timelineDuration: Number\(currentVisual\?\.duration \|\| imageDuration\),\s*oldSpeed: currentSpeed,\s*newSpeed: nextSpeed,\s*trimStart: Number\(currentVisual\?\.trimStart \|\| 0\),\s*sourceDuration: matchingSourceMetadata\?\.duration,\s*\}\)/);
+  assert.match(nodeSource, /if \(speedChanged && nextDuration != null && nextDuration < 0\.1\) \{\s*setLocalError\('片段过短，无法应用该倍速（最短 0\.1 秒）'\);\s*return;\s*\}/);
+  assert.match(nodeSource, /\.\.\.\(speedChanged \? \{\s*clipVisualDurations: \{\s*\.\.\.visualDurations,\s*\[visualId\]: nextDuration,\s*\},\s*\} : \{\}\)/);
+  assert.doesNotMatch(nodeSource, /const speedPatchProvided = patchValue\.speed != null/);
+  assert.doesNotMatch(nodeSource, /Math\.max\(0\.25,\s*Number\(currentVisual\?\.duration \|\| imageDuration\) \* currentSpeed\)/);
+});
+
+test('clip studio speed duration preserves sub-quarter-second source spans', () => {
+  assert.equal(resolveClipSpeedDuration({ timelineDuration: 0.2, oldSpeed: 1, newSpeed: 2 }), 0.1);
+  assert.equal(resolveClipSpeedDuration({ timelineDuration: 0.25, oldSpeed: 1, newSpeed: 4 }), 0.063);
 });
 
 
@@ -392,7 +719,7 @@ test('clip studio frame cover avoids saving video urls as image covers', () => {
   assert.match(source, /const frameCoverPreviewUrl = selectedVisual\?\.kind === 'video' \? selectedVisual\.url : selectedVisual\?\.kind === 'image' \? selectedVisual\.url : ''/);
   assert.match(source, /const frameCoverSaveUrl = selectedVisual\?\.kind === 'image' \? selectedVisual\.url : ''/);
   assert.match(source, /clipCoverUrl:\s*coverTab === 'local' \? currentCoverPreview : frameCoverSaveUrl/);
-  assert.match(source, /localTime=\{Math\.max\(0,\s*coverDraftTime - \(selectedLayoutItem\?\.start \|\| 0\)\)\}/);
+  assert.match(source, /sourceTime=\{previewVideoSourceTime\(selectedVisual, Math\.max\(0,\s*coverDraftTime - \(selectedLayoutItem\?\.start \|\| 0\)\)\)\}/);
   assert.match(source, /data-clip-frame-cover-pending/);
   assert.match(nodeSource, /const displayCoverUrl = coverSource === 'frame' && !isLikelyImageUrl\(coverUrl\) \? '' : coverUrl/);
   assert.match(nodeSource, /clipCoverUrl:\s*nextCoverUrl/);
@@ -400,8 +727,8 @@ test('clip studio frame cover avoids saving video urls as image covers', () => {
 
 test('clip studio can persist probed audio durations and save exports to resource library', () => {
   const nodeSource = readFileSync(new URL('../src/components/nodes/ClipStudioNode.tsx', import.meta.url), 'utf8');
-  assert.match(nodeSource, /mergeProbedClipAudioDurations/);
-  assert.match(nodeSource, /clipAudioEdits:\s*mergedAudioDurations\.items/);
+  assert.match(nodeSource, /reconcileProbedClipAudioDurations/);
+  assert.match(nodeSource, /clipAudioEdits:\s*(?:audioReconciliation|reconciledAudios)\.items/);
   assert.match(nodeSource, /saveRenderToResourceLibrary/);
   assert.match(nodeSource, /addResourceItem\(\{\s*kind:\s*'video'/);
   assert.match(nodeSource, /保存成片到资源库/);
@@ -415,9 +742,9 @@ test('clip studio preview overlays active text clips on the player', () => {
 });
 
 test('clip studio does not preview hidden visual clips after toggling visibility off', () => {
-  assert.match(source, /const selectedVisibleVisual = selectedVisual && !selectedVisual\.disabled \? selectedVisual : undefined/);
+  assert.match(source, /const selectedVisibleVisual = selectedVisual && !selectedVisual\.disabled && !selectedVisual\.sourceInvalid \? selectedVisual : undefined/);
   assert.match(source, /const previewIdleVisual = selectedVisibleVisual \|\| previewFallbackVisual/);
-  assert.match(source, /const playbackVisibleState = playbackState\?\.item && !playbackState\.item\.disabled \? playbackState : undefined/);
+  assert.match(source, /const playbackVisibleState = playbackState\?\.item && !playbackState\.item\.disabled && !playbackState\.item\.sourceInvalid \? playbackState : undefined/);
   assert.match(source, /const hasVisiblePreviewMedia = Boolean\(previewVisual\?\.url\)/);
   assert.match(source, /playbackVisibleState\?\.item \|\| \(playing \? undefined : previewIdleVisual\)/);
   assert.match(source, /className=\{`relative h-full w-full \$\{hasVisiblePreviewMedia \? 'outline outline-1 outline-dashed outline-white\/80' : ''\}`\}/);
@@ -427,7 +754,7 @@ test('clip studio does not preview hidden visual clips after toggling visibility
 });
 
 test('clip studio draft parameter pane uses themed global css classes', () => {
-  assert.match(source, /t8-clip-param-pane space-y-3 overflow-auto/);
+  assert.match(source, /t8-clip-param-pane t8-clip-scroll-region space-y-3 overflow-auto/);
   assert.match(source, /t8-clip-param-card/);
   assert.match(source, /t8-clip-param-label/);
   assert.match(source, /t8-clip-param-preview/);
@@ -708,7 +1035,7 @@ test('clip studio keeps dense controls compact themed and clipped inside panes',
   assert.match(source, /const fieldClass = 't8-clip-field nodrag h-7/);
   assert.match(source, /t8-clip-source-tabs grid grid-cols-2/);
   assert.match(source, /t8-clip-media-filter-grid flex items-center gap-1\.5/);
-  assert.match(source, /t8-clip-settings-pane space-y-2 overflow-auto/);
+  assert.match(source, /t8-clip-settings-pane t8-clip-scroll-region space-y-2 overflow-auto/);
   assert.match(source, /t8-clip-settings-card/);
   assert.match(source, /t8-clip-preset-button/);
   assert.match(source, /t8-clip-color-field/);
@@ -737,6 +1064,59 @@ test('clip studio exposes obvious resize grips for layout panes and timeline hea
   assert.match(source, /t8-clip-timeline-header-resize/);
   assert.match(globalCss, /\.t8-clip-resize-grip/);
   assert.match(globalCss, /\.t8-clip-timeline-header-resize/);
+});
+
+test('clip studio video frame thumbnails receive trim and speed adjusted source time', () => {
+  assert.match(source, /function TimelineVideoFrame\(\{ src, sourceTime \}: \{ src: string; sourceTime: number \}\)/);
+  assert.match(source, /const safeDuration = Number\.isFinite\(video\.duration\) \? video\.duration : sourceTime/);
+  assert.match(source, /Math\.min\(sourceTime, Math\.max\(0, safeDuration - 0\.04\)\)/);
+  assert.match(
+    source,
+    /<MemoTimelineVideoFrame src=\{frame\.sourceUrl\} sourceTime=\{previewVideoSourceTime\(item, Math\.max\(0, frame\.time - \(live\?\.start \?\? item\.start\)\)\)\} \/>/,
+  );
+  assert.equal((source.match(/<MemoTimelineVideoFrame[^>]*sourceTime=\{previewVideoSourceTime\(/g) || []).length, 3);
+  assert.doesNotMatch(source, /<MemoTimelineVideoFrame[^>]*localTime=/);
+});
+
+test('clip studio caps the saved top row to keep a stable timeline row inside the viewport', () => {
+  assert.match(
+    source,
+    /gridTemplateRows:\s*`minmax\(144px,\s*min\(\$\{layoutState\.topHeight\}px,\s*calc\(100dvh - 288px\)\)\) 8px minmax\(208px,1fr\)`/,
+  );
+  assert.doesNotMatch(source, /gridTemplateRows:\s*`minmax\(180px,\s*min\(\$\{layoutState\.topHeight\}px,\s*calc\(100dvh - 220px\)\)\) 8px minmax\(140px,1fr\)`/);
+
+  for (const viewportHeight of [720, 500, 432]) {
+    const mainHeight = viewportHeight - 48 - 24;
+    const topHeight = Math.max(144, Math.min(440, viewportHeight - 288));
+    const timelineHeight = mainHeight - topHeight - 8;
+    assert.ok(timelineHeight >= 208, `${viewportHeight}px viewport leaves only ${timelineHeight}px for the timeline`);
+    assert.equal(topHeight + 8 + timelineHeight, mainHeight);
+  }
+});
+
+test('clip studio timeline grid children can shrink below their track content on short viewports', () => {
+  assert.match(source, /className="t8-clip-track-list min-h-0 overflow-hidden/);
+  assert.match(source, /className="t8-clip-timeline-scroll t8-clip-scroll-region min-h-0 min-w-0 overflow-auto/);
+  assert.match(source, /className="grid min-h-0 flex-1 grid-cols-\[180px_1fr\] overflow-hidden"/);
+});
+
+test('clip studio timeline resize starts from the rendered top row without changing side resize seeds', () => {
+  const nodeSource = readFileSync(new URL('../src/components/nodes/ClipStudioNode.tsx', import.meta.url), 'utf8');
+  assert.match(source, /const topRowPanelRef = useRef<HTMLElement>\(null\)/);
+  assert.match(source, /<section\s+ref=\{topRowPanelRef\}/);
+  assert.match(source, /const renderedTopHeight = topRowPanelRef\.current\?\.getBoundingClientRect\(\)\.height/);
+  assert.match(nodeSource, /const editorLayout = useMemo\(\(\) => sanitizeClipStudioLayout\(recordValue\(d\.clipEditorLayout\)\)/);
+  assert.match(source, /useState<ClipStudioLayout>\(\(\) => sanitizeClipStudioLayout\(editorLayout\)\)/);
+  assert.match(
+    source,
+    /startLayout:\s*type === 'timeline'\s*\? \{ \.\.\.layoutState, topHeight: renderedTopHeight \|\| layoutState\.topHeight \}\s*:\s*layoutState/,
+  );
+  assert.match(
+    source,
+    /topHeight:\s*type === 'timeline'\s*\? startLayout\.topHeight \+ deltaY\s*:\s*startLayout\.topHeight/,
+  );
+  assert.doesNotMatch(source, /Math\.max\(180, Math\.min\(720, startLayout\.topHeight \+ deltaY\)\)/);
+  assert.equal((source.match(/resizeClipStudioLayout\(current\.startLayout, current\.type, deltaX, deltaY\)/g) || []).length, 2);
 });
 
 test('clip studio timeline exposes editor-like track visibility and alignment controls', () => {
@@ -772,12 +1152,22 @@ test('clip studio timeline exposes editor-like track visibility and alignment co
 
 test('clip studio left color page surfaces a complete color/LUT editor', () => {
   assert.match(source, /data-clip-left-color-editor/);
-  assert.match(source, /t8-clip-left-editor min-h-0 flex-1 overflow-auto/);
+  assert.match(source, /t8-clip-left-editor t8-clip-scroll-region min-h-0 flex-1 overflow-auto/);
   assert.doesNotMatch(source, /data-clip-param-section-nav/);
   assert.doesNotMatch(source, /scrollParamSectionIntoView/);
   assert.match(source, /data-clip-param-section=\{placement === 'inspector' \? 'color' : undefined\}/);
   assert.match(source, /调色 \/ LUT/);
   assert.match(source, /data-clip-color-preview/);
+  assert.match(source, /data-clip-color-basic-controls/);
+  for (const label of ['色相', '饱和度', '明度', '对比度']) {
+    assert.match(source, new RegExp(label));
+  }
+  assert.match(source, /updateVisualFilter\(\{ hue: Number\(event\.target\.value\) \}\)/);
+  assert.match(source, /updateVisualFilter\(\{ saturation: Number\(event\.target\.value\) \}\)/);
+  assert.match(source, /updateVisualFilter\(\{ brightness: Number\(event\.target\.value\) \}\)/);
+  assert.match(source, /updateVisualFilter\(\{ contrast: Number\(event\.target\.value\) \}\)/);
+  assert.match(source, /hue-rotate\(\$\{clipColorHue\(item\)\}deg\)/);
+  assert.match(source, /saturate\(\$\{clipColorPercent\(item\?\.saturation,\s*100\) \/ 100\}\)/);
   assert.match(source, /data-clip-color-lut-controls/);
   assert.match(source, /导入 \.cube/);
   assert.match(source, /LUT 预设/);
@@ -807,6 +1197,7 @@ test('clip studio parameter pane keeps selected clip context and quick actions v
   assert.match(source, /selectedVisual\?\.disabled \? '隐藏' : '显示'/);
   assert.match(globalCss, /\.t8-clip-selection-summary/);
   assert.match(globalCss, /\.t8-clip-selection-quick-actions/);
+  assert.doesNotMatch(source, /data-clip-selection-summary className=\{`\$\{paramCardClass\} t8-clip-selection-summary sticky/);
 });
 
 test('clip studio timeline clip chips expose compact status badges for editing state', () => {
@@ -890,11 +1281,11 @@ test('clip studio dragging visual generation clips can move them between visual 
   const nodeSource = readFileSync(new URL('../src/components/nodes/ClipStudioNode.tsx', import.meta.url), 'utf8');
   assert.match(source, /startY: number/);
   assert.match(source, /currentY: number/);
-  assert.match(source, /Math\.abs\(event\.clientY - current\.startY\) >= 4/);
+  assert.match(source, /Math\.abs\(pointer\.clientY - current\.startY\) >= 4/);
   assert.match(source, /currentY: event\.clientY/);
   assert.match(source, /const itemLane = live && dragState \? resolveVisualLaneFromClientY\(dragState\.currentY\) :/);
   assert.match(source, /onUpdateVisualStart:\s*\(visualId: string,\s*start: number,\s*lane\?: number\) => void/);
-  assert.match(source, /onUpdateVisualStart\(current\.id,\s*next\.start,\s*resolveVisualLaneFromClientY\(event\.clientY\)\)/);
+  assert.match(source, /onUpdateVisualStart\(current\.id,\s*next\.start,\s*targetLane\)/);
   assert.match(nodeSource, /const updateVisualStart = useCallback\(\(visualId: string,\s*value: number,\s*lane\?: number\) =>/);
   assert.match(nodeSource, /const nextVisualLanes = lane == null \? visualLanes : resolveVisualLanePatchForDrop\(timelineVisuals,\s*visualLanes,\s*visualId,\s*lane\)/);
   assert.match(nodeSource, /clipVisualLanes: nextVisualLanes/);
@@ -913,7 +1304,7 @@ test('clip studio visual lanes create temporary top and bottom insert lanes whil
   assert.match(source, /const visualLaneInsertion =/);
   assert.match(source, /data-clip-visual-insert-lane/);
   assert.match(source, /clientY <= rect\.top \+ VISUAL_LANE_INSERT_ENTER_PX/);
-  assert.match(source, /clientY >= rect\.bottom - VISUAL_LANE_INSERT_ENTER_PX/);
+  assert.match(source, /clientY >= stableTrackBottom - VISUAL_LANE_INSERT_ENTER_PX/);
   assert.match(source, /return -1;/);
   assert.match(source, /visualRenderLanes/);
   assert.match(source, /style=\{\{ height: visualTrackTotalHeight \}\}/);
@@ -933,9 +1324,26 @@ test('clip studio visual lane insert intent uses hysteresis to avoid jitter whil
   assert.match(source, /setVisualLaneInsertIntent\(nextIntent\)/);
   assert.match(source, /if \(event\.currentTarget\.contains\(event\.relatedTarget as Node \| null\)\) return/);
   assert.match(source, /if \(previous === 'top' && clientY <= rect\.top \+ VISUAL_LANE_INSERT_EXIT_PX\) return 'top'/);
-  assert.match(source, /if \(previous === 'bottom' && clientY >= rect\.bottom - VISUAL_LANE_INSERT_EXIT_PX\) return 'bottom'/);
+  assert.match(source, /if \(previous === 'bottom' && clientY >= stableTrackBottom - VISUAL_LANE_INSERT_EXIT_PX\) return 'bottom'/);
   assert.match(source, /if \(insertIntent === 'top'\) return -1/);
   assert.match(source, /if \(insertIntent === 'bottom'\) return Math\.min\(CLIP_MAX_VISUAL_LANE, maxOccupiedVisualLane \+ 1\)/);
+  assert.match(source, /const visualLaneBaseHeight = useMemo/);
+  assert.match(source, /const stableTrackBottom = rect\.top \+ visualLaneBaseHeight/);
+  assert.match(source, /clientY >= stableTrackBottom - VISUAL_LANE_INSERT_EXIT_PX/);
+  assert.match(source, /clientY >= stableTrackBottom - VISUAL_LANE_INSERT_ENTER_PX/);
+  assert.doesNotMatch(source, /clientY >= rect\.bottom - VISUAL_LANE_INSERT_(?:ENTER|EXIT)_PX/);
+});
+
+test('clip studio batches pointer drag previews to one animation frame and commits the latest lane intent', () => {
+  assert.match(source, /const dragMoveFrameRef = useRef<number \| null>\(null\)/);
+  assert.match(source, /const pendingDragPointerRef = useRef<\{ clientX: number; clientY: number \} \| null>\(null\)/);
+  assert.match(source, /const visualLaneInsertIntentRef = useRef<'top' \| 'bottom' \| null>\(null\)/);
+  assert.match(source, /const flushPendingDragPointer = \(\) =>/);
+  assert.match(source, /pendingDragPointerRef\.current = \{ clientX: event\.clientX, clientY: event\.clientY \}/);
+  assert.match(source, /dragMoveFrameRef\.current = window\.requestAnimationFrame\(flushPendingDragPointer\)/);
+  assert.match(source, /\? resolveVisualLaneFromClientY\(event\.clientY, visualLaneInsertIntentRef\.current\)/);
+  assert.match(source, /window\.cancelAnimationFrame\(dragMoveFrameRef\.current\)/);
+  assert.doesNotMatch(source, /\[Boolean\(dragState\)[^\]]*visualLaneInsertIntent/);
 });
 
 test('clip studio exposes fps dragging and clear trim handles for clip duration edits', () => {

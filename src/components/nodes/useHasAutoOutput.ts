@@ -5,7 +5,7 @@ import { useNodeConnections, useNodesData } from '@xyflow/react';
  * 检测当前节点是否已经连接了下游 OutputNode / 3D 预览节点。
  *
  * 用途:
- *   生成类节点 (image/video/audio/seedance/llm/runninghub/storyboard 等) 在生成完成后,
+ *   生成类节点 (image/video/audio/seedance/llm/storyboard 等) 在生成完成后,
  *   Canvas 全局逻辑会自动外挂 OutputNode 显示结果, 此时节点内部的图像/视频/音频预览
  *   就成了冗余信息并占用大量垂直空间. 用本 hook 判断是否已外挂, 若是则节点内预览
  *   可以选择不渲染, 仅保留参数配置区域, 让结果由下游 OutputNode 集中展示.

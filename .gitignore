@@ -105,6 +105,7 @@ _preview_*.svg
 # Local release/package artifacts
 /release_packages/
 /dist_electron_verify/
+/.worktrees/
 
 # Dependencies
 node_modules

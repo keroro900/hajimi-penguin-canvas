@@ -219,6 +219,73 @@ test('Apishu video polling tolerates nested statuses and common output URL shape
   }), 'https://videos.apishu.example/file.mp4');
 });
 
+test('Apishu video polling preserves every returned video URL', () => {
+  const urls = proxyModule._testOnly.extractApishuVideoUrls({
+    status: '成功',
+    metadata: {
+      result_urls: [
+        'https://videos.apishu.example/one.mp4',
+        'https://videos.apishu.example/two.mp4',
+      ],
+    },
+    data: {
+      output: {
+        videos: [
+          { url: 'https://videos.apishu.example/three.mp4' },
+          { file_url: 'https://videos.apishu.example/four.mp4' },
+        ],
+      },
+      files: [
+        { video_url: 'https://videos.apishu.example/five.mp4' },
+        { download_url: 'https://videos.apishu.example/six.mp4' },
+      ],
+    },
+  });
+
+  assert.deepEqual(urls, [
+    'https://videos.apishu.example/one.mp4',
+    'https://videos.apishu.example/two.mp4',
+    'https://videos.apishu.example/three.mp4',
+    'https://videos.apishu.example/four.mp4',
+    'https://videos.apishu.example/five.mp4',
+    'https://videos.apishu.example/six.mp4',
+  ]);
+});
+
+test('Video and Seedance nodes keep multi-video polling results on canvas data', () => {
+  const videoNode = read('../src/components/nodes/VideoNode.tsx');
+  const seedanceNode = read('../src/components/nodes/SeedanceNode.tsx');
+  const generation = read('../src/services/generation.ts');
+
+  assert.match(generation, /videoUrls\?:\s*string\[\]/);
+  assert.match(videoNode, /const nextVideoUrls = Array\.isArray\(r\.videoUrls\)/);
+  assert.match(videoNode, /videoUrls:\s*nextVideoUrls/);
+  assert.match(seedanceNode, /const nextVideoUrls = Array\.isArray\(r\.videoUrls\)/);
+  assert.match(seedanceNode, /videoUrls:\s*nextVideoUrls/);
+});
+
+test('Video polling recovery keeps real model ids and resumes even with stale output', () => {
+  const videoNode = read('../src/components/nodes/VideoNode.tsx');
+  const seedanceNode = read('../src/components/nodes/SeedanceNode.tsx');
+  const proxyRoute = read('../backend/src/routes/proxy.js');
+
+  assert.doesNotMatch(videoNode, /protocolModel:\s*r\.protocol\s*\|\|/);
+  assert.doesNotMatch(seedanceNode, /protocolModel:\s*r\.protocol\s*\|\|/);
+  assert.doesNotMatch(videoNode, /status !== 'polling' \|\| !taskId \|\| videoUrl \|\| pollTimer\.current/);
+  assert.doesNotMatch(seedanceNode, /status !== 'polling' \|\| !taskId \|\| videoUrl \|\| pollTimer\.current/);
+  assert.match(proxyRoute, /resolveVideoSubmitProtocol\(settings,\s*queryModel,\s*queryModel,\s*protocolQueryModel\)/);
+  assert.match(proxyRoute, /usesV1VideoQuery\s*\?\s*apishuVideosEndpoint\(settings,\s*taskId\)/);
+  assert.match(proxyRoute, /TASK_KEY_TTL_MS = 3 \* 60 \* 60 \* 1000/);
+});
+
+test('Grok video reference uploads pass the effective model as model_name', () => {
+  const proxyRoute = read('../backend/src/routes/proxy.js');
+
+  assert.match(proxyRoute, /uploadRefToZhenzhen\(settings,\s*refs\[i\],\s*apiKey,\s*`参考图 #\$\{i \+ 1\}`,\s*\{\s*modelName:\s*effectiveModel\s*\}\)/);
+  assert.match(proxyRoute, /const grokUploadOptions = \{ modelName: effectiveApiModel \}/);
+  assert.match(proxyRoute, /uploadRefToZhenzhen\(settings,\s*trimmedRefs\[0\],\s*apiKey,\s*'Grok FAL 参考图',\s*grokUploadOptions\)/);
+});
+
 test('Apishu Seedance submit exposes protocol metadata for persisted polling recovery', () => {
   const proxyRoute = read('../backend/src/routes/proxy.js');
 
@@ -234,7 +301,7 @@ test('FAL routes use the common zhenzhen key instead of group tokens', () => {
   const imageNode = read('../src/components/nodes/ImageNode.tsx');
   const videoNode = read('../src/components/nodes/VideoNode.tsx');
 
-  assert.match(proxyRoute, /FAL 全部固定使用通用贞贞 API Key/);
+  assert.match(proxyRoute, /FAL 全部固定使用通用服务 API Key/);
   assert.match(proxyRoute, /ensureDefaultZhenzhenKey\(settings, res, '图像 FAL'\)/);
   assert.match(proxyRoute, /ensureDefaultZhenzhenKey\(settings, res, '视频 FAL'\)/);
   assert.doesNotMatch(proxyRoute, /route: 'image\/fal\/submit'[\s\S]*?applyZhenzhenProviderContext/);

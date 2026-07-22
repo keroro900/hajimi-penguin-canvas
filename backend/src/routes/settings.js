@@ -46,14 +46,11 @@ const TASK_COMPLETION_SOUND_EXTENSION_BY_MIME = {
   'audio/webm': '.webm',
 };
 
-// 默认 settings 结构(三套通用 Key + 8 类分类 Key)
+// 默认 settings 结构(通用服务、LLM 独立 Key + 8 类分类 Key)
 const DEFAULT_SETTINGS = {
-  // 三套通用 Key
+  // 通用服务与 LLM 独立 Key
   zhenzhenApiKey: '',
   zhenzhenBaseUrl: config.ZHENZHEN_BASE_URL,
-  rhApiKey: '',
-  rhBaseUrl: config.RH_BASE_URL,
-  // v1.2.9.16: 取消 rhWalletApiKey —— RH 钱包应用节点与普通 RunningHub 节点统一使用 rhApiKey
   llmApiKey: '',
   llmBaseUrl: config.ZHENZHEN_BASE_URL,
   // 分类 Key（留空时 fallback 到 zhenzhenApiKey）
@@ -67,7 +64,17 @@ const DEFAULT_SETTINGS = {
   sunoApiKey: '',
   zhenzhenImageModelOverrides: {},
   zhenzhenVideoModelOverrides: {},
+  zhenzhenLlmModelOverrides: {},
+  zhenzhenModelCatalog: {
+    all: [], imageModels: [], videoModels: [], audioModels: [], chatModels: [], unknownModels: [],
+    manualModels: [], typeOverrides: {},
+  },
+  llmModelCatalog: {
+    all: [], imageModels: [], videoModels: [], audioModels: [], chatModels: [], unknownModels: [],
+    manualModels: [], typeOverrides: {},
+  },
   zhenzhenImageModelProtocols: {},
+  zhenzhenVideoModelProtocols: {},
   // v1.2.10.2: 全局生成素材自动保存到本地的路径(可用户自定义)
   fileSavePath: config.DEFAULT_LOCAL_SAVE_DIR,
   // v1.3.1: 画布自动保存导出路径(实际写入 <path>/canvases)
@@ -200,6 +207,7 @@ const CLASSIFIED_KEY_FIELDS = [
   'gptImageApiKey', 'nanoBananaApiKey', 'mjApiKey', 'veoApiKey', 'soraApiKey',
   'grokApiKey', 'seedanceApiKey', 'sunoApiKey',
 ];
+const MODEL_FETCH_KEY_FIELDS = new Set(['zhenzhenApiKey', 'llmApiKey', ...CLASSIFIED_KEY_FIELDS]);
 
 function normalizePathForCompare(value) {
   return String(value || '')
@@ -274,7 +282,30 @@ function normalizeImageModelOverrides(value) {
 
 function normalizeImageModelProtocols(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
-  const allowed = new Set(['images', 'images-generations', 'images-edits', 'openai-chat', 'gemini-native']);
+  const allowed = new Set([
+    'images',
+    'azure-gpt-image',
+    'images-generations',
+    'images-edits',
+    'openai-chat',
+    'gemini-generate-content',
+    'gemini-interactions',
+    'gemini-native',
+  ]);
+  const next = {};
+  for (const [key, raw] of Object.entries(value)) {
+    const id = String(key || '').trim();
+    const protocol = String(raw || '').trim();
+    if (!id || !allowed.has(protocol)) continue;
+    if (id.length > 120 || /[\x00-\x1f\x7f]/.test(id)) continue;
+    next[id] = protocol;
+  }
+  return next;
+}
+
+function normalizeVideoModelProtocols(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const allowed = new Set(['seedance-v3', 'videos']);
   const next = {};
   for (const [key, raw] of Object.entries(value)) {
     const id = String(key || '').trim();
@@ -291,12 +322,13 @@ function normalizeSettingsBaseUrls(settings) {
   return {
     ...settings,
     zhenzhenBaseUrl,
-    rhBaseUrl: normalizeBaseUrl(settings.rhBaseUrl, config.RH_BASE_URL),
     llmBaseUrl: normalizeBaseUrl(dropLegacyPersonalBaseUrl(settings.llmBaseUrl), zhenzhenBaseUrl || config.ZHENZHEN_BASE_URL),
     hakimiMcpBackendUrl: normalizeBaseUrl(settings.hakimiMcpBackendUrl, DEFAULT_SETTINGS.hakimiMcpBackendUrl),
     zhenzhenImageModelOverrides: normalizeImageModelOverrides(settings.zhenzhenImageModelOverrides),
     zhenzhenVideoModelOverrides: normalizeModelOverrides(settings.zhenzhenVideoModelOverrides),
+    zhenzhenLlmModelOverrides: normalizeModelOverrides(settings.zhenzhenLlmModelOverrides),
     zhenzhenImageModelProtocols: normalizeImageModelProtocols(settings.zhenzhenImageModelProtocols),
+    zhenzhenVideoModelProtocols: normalizeVideoModelProtocols(settings.zhenzhenVideoModelProtocols),
   };
 }
 
@@ -358,7 +390,6 @@ router.get('/', (_req, res) => {
   const masked = {
     ...settings,
     zhenzhenApiKey: maskKey(settings.zhenzhenApiKey),
-    rhApiKey: maskKey(settings.rhApiKey),
     llmApiKey: maskKey(settings.llmApiKey),
     advancedProviders: maskAdvancedProviders(settings.advancedProviders),
     advancedProviderSummary: summarizeAdvancedProviders(settings.advancedProviders),
@@ -380,7 +411,12 @@ router.get('/raw', (_req, res) => {
 router.post('/zhenzhen-models', async (req, res) => {
   try {
     const settings = loadSettings();
-    const baseUrl = normalizeBaseUrl(req.body?.baseUrl, settings.zhenzhenBaseUrl || config.ZHENZHEN_BASE_URL);
+    const apiKeyField = String(req.body?.apiKeyField || 'zhenzhenApiKey').trim();
+    const savedKeyField = MODEL_FETCH_KEY_FIELDS.has(apiKeyField) ? apiKeyField : 'zhenzhenApiKey';
+    const fallbackBaseUrl = savedKeyField === 'llmApiKey'
+      ? (settings.llmBaseUrl || settings.zhenzhenBaseUrl || config.ZHENZHEN_BASE_URL)
+      : (settings.zhenzhenBaseUrl || config.ZHENZHEN_BASE_URL);
+    const baseUrl = normalizeBaseUrl(req.body?.baseUrl, fallbackBaseUrl);
     if (!baseUrl) {
       return res.json({
         success: true,
@@ -392,7 +428,7 @@ router.post('/zhenzhen-models', async (req, res) => {
       });
     }
     const incomingKey = String(req.body?.apiKey || '').trim();
-    const apiKey = incomingKey || settings.zhenzhenApiKey || '';
+    const apiKey = incomingKey || settings[savedKeyField] || settings.zhenzhenApiKey || '';
     if (!apiKey) {
       return res.json({
         success: true,
@@ -412,6 +448,42 @@ router.post('/zhenzhen-models', async (req, res) => {
       timeoutMs: Math.min(Math.max(Number(req.body?.timeoutMs) || 15000, 3000), 30000),
     });
     const { raw: _raw, provider: _provider, ...safeResult } = result || {};
+    if (safeResult.ok && Array.isArray(safeResult.all)) {
+      const catalogField = savedKeyField === 'llmApiKey' ? 'llmModelCatalog' : 'zhenzhenModelCatalog';
+      const previous = settings[catalogField] && typeof settings[catalogField] === 'object'
+        ? settings[catalogField]
+        : {};
+      const catalog = {
+        all: safeResult.all,
+        imageModels: safeResult.imageModels || [],
+        videoModels: safeResult.videoModels || [],
+        audioModels: safeResult.audioModels || [],
+        chatModels: savedKeyField === 'llmApiKey' ? safeResult.all : (safeResult.chatModels || []),
+        unknownModels: savedKeyField === 'llmApiKey' ? [] : (safeResult.unknownModels || []),
+        manualModels: Array.isArray(previous.manualModels) ? previous.manualModels : [],
+        typeOverrides: previous.typeOverrides && typeof previous.typeOverrides === 'object' ? previous.typeOverrides : {},
+        fetchedAt: new Date().toISOString(),
+        modelListUrl: safeResult.modelListUrl || '',
+      };
+      saveSettings({ ...settings, [catalogField]: catalog });
+      return res.json({ success: true, data: { ...safeResult, ...catalog, cached: false } });
+    }
+    const cached = settings[savedKeyField === 'llmApiKey' ? 'llmModelCatalog' : 'zhenzhenModelCatalog'];
+    if (Array.isArray(cached?.all) && cached.all.length > 0) {
+      return res.json({
+        success: true,
+        data: {
+          ok: true,
+          code: 'models_cache_fallback',
+          providerId: 'zhenzhen-default',
+          protocol: 'openai-compatible',
+          ...cached,
+          cached: true,
+          message: `实时拉取失败，已使用上次缓存的 ${cached.all.length} 个模型。`,
+          warning: safeResult.error || safeResult.message || '',
+        },
+      });
+    }
     res.json({ success: true, data: safeResult });
   } catch (e) {
     res.json({
@@ -535,589 +607,6 @@ router.post('/', (req, res) => {
 });
 
 // =====================
-// RH 工具节点 - 分类 API（v1.2.10+，与 RH 应用创意包数据完全分开）
-// =====================
-
-function loadJson(file, fallback) {
-  try {
-    if (!fs.existsSync(file)) return fallback;
-    return JSON.parse(fs.readFileSync(file, 'utf-8'));
-  } catch {
-    return fallback;
-  }
-}
-function saveJson(file, data) {
-  try {
-    const dir = require('path').dirname(file);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(file, JSON.stringify(data, null, 2), 'utf-8');
-    return true;
-  } catch {
-    return false;
-  }
-}
-function genId(prefix) {
-  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
-}
-function cleanId(value, prefix) {
-  const raw = String(value || '').trim().replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 96);
-  return raw || genId(prefix);
-}
-function normalizeRhToolsBackup(raw) {
-  const payload = raw && typeof raw === 'object' ? raw : {};
-  const rawCategories = Array.isArray(payload.categories) ? payload.categories : [];
-  const rawTools = Array.isArray(payload.tools) ? payload.tools : [];
-
-  const usedCatIds = new Set();
-  const categories = rawCategories
-    .map((c, idx) => {
-      const name = String(c?.name || '').trim();
-      if (!name) return null;
-      let id = cleanId(c?.id, 'rhcat');
-      while (usedCatIds.has(id)) id = genId('rhcat');
-      usedCatIds.add(id);
-      return {
-        id,
-        name: name.slice(0, 80),
-        order: Number.isFinite(Number(c?.order)) ? Number(c.order) : idx,
-        createdAt: Number(c?.createdAt) || Date.now(),
-      };
-    })
-    .filter(Boolean);
-
-  const categoryIds = new Set(categories.map((c) => c.id));
-  const usedToolIds = new Set();
-  const tools = rawTools
-    .map((t, idx) => {
-      const webappId = String(t?.webappId || '').trim();
-      const title = String(t?.title || '').trim();
-      if (!webappId || !title) return null;
-      let id = cleanId(t?.id, 'rhtool');
-      while (usedToolIds.has(id)) id = genId('rhtool');
-      usedToolIds.add(id);
-      const categoryId = String(t?.categoryId || '').trim();
-      return {
-        id,
-        webappId: webappId.slice(0, 120),
-        title: title.slice(0, 120),
-        description: typeof t?.description === 'string' ? t.description.slice(0, 2000) : '',
-        categoryId: categoryIds.has(categoryId) ? categoryId : '',
-        coverUrl: typeof t?.coverUrl === 'string' ? t.coverUrl.slice(0, 2000) : '',
-        order: Number.isFinite(Number(t?.order)) ? Number(t.order) : idx,
-        addedAt: Number(t?.addedAt) || Date.now(),
-      };
-    })
-    .filter(Boolean);
-
-  categories.sort((a, b) => (a.order || 0) - (b.order || 0));
-  tools.sort((a, b) => (a.order || 0) - (b.order || 0));
-  categories.forEach((c, idx) => { c.order = idx; });
-  tools.forEach((t, idx) => { t.order = idx; });
-  return { categories, tools };
-}
-
-const RH_TOOLBOX_SCHEMA = 't8-rh-toolbox-manifest';
-const RH_TOOLBOX_MEDIA_KINDS = new Set(['text', 'image', 'video', 'audio']);
-const RH_TOOLBOX_PARAM_KINDS = new Set(['text', 'number', 'select', 'boolean']);
-const RH_TOOLBOX_OUTPUT_ROLES = new Set(['append-output', 'replace-source', 'text-only', 'multi-output']);
-const RH_TOOLBOX_PARENT_IDS = new Set(['image', 'video', 'audio', 'model3d', 'text']);
-const RH_TOOLBOX_DEFAULT_POLL_INTERVAL_MS = 5000;
-const RH_TOOLBOX_DEFAULT_MAX_POLLS = 720;
-
-function cleanRhToolboxId(value, fallback) {
-  const raw = String(value || '').trim().toLowerCase();
-  const cleaned = raw.replace(/[^a-z0-9._:-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 120);
-  return cleaned || fallback;
-}
-
-function cleanRhToolboxText(value, fallback = '', max = 4000) {
-  const raw = String(value ?? '').trim();
-  if (!raw) return fallback;
-  return raw.length > max ? raw.slice(0, max) : raw;
-}
-
-function normalizeRhToolboxMajorId(value, fallback = 'image') {
-  const raw = String(value || '').trim().toLowerCase();
-  if (RH_TOOLBOX_PARENT_IDS.has(raw)) return raw;
-  if (['images', 'img', 'photo', 'image-tools', '图像', '图片'].includes(raw)) return 'image';
-  if (['videos', 'movie', 'video-tools', '视频'].includes(raw)) return 'video';
-  if (['sound', 'music', 'voice', 'audio-tools', '音频', '声音'].includes(raw)) return 'audio';
-  if (['3d', 'model-3d', 'models', 'model3d-tools', '模型'].includes(raw)) return 'model3d';
-  if (['texts', 'prompt', 'llm', 'text-tools', '文本', '文字'].includes(raw)) return 'text';
-  return fallback;
-}
-
-function normalizeRhToolboxMediaKind(value) {
-  return RH_TOOLBOX_MEDIA_KINDS.has(String(value || '')) ? String(value) : 'text';
-}
-
-function normalizeRhToolboxParamKind(value) {
-  return RH_TOOLBOX_PARAM_KINDS.has(String(value || '')) ? String(value) : 'text';
-}
-
-function normalizeRhToolboxManifestPayload(raw) {
-  const payload = raw && typeof raw === 'object' ? raw : {};
-  const rawCategories = Array.isArray(payload.categories) ? payload.categories : [];
-  const categories = [];
-  const categoryIds = new Set();
-
-  rawCategories.forEach((item, index) => {
-    const id = cleanRhToolboxId(item?.id, `category-${index + 1}`);
-    if (categoryIds.has(id)) return;
-    categoryIds.add(id);
-    categories.push({
-      id,
-      name: cleanRhToolboxText(item?.name, id, 120),
-      parentId: normalizeRhToolboxMajorId(item?.parentId || item?.majorCategoryId || item?.surface),
-      description: cleanRhToolboxText(item?.description, '', 1000),
-      order: Number.isFinite(Number(item?.order)) ? Number(item.order) : index,
-      icon: cleanRhToolboxText(item?.icon, 'Wrench', 80),
-    });
-  });
-
-  if (categories.length === 0) {
-    categories.push({ id: 'general', name: '通用工具', parentId: 'image', order: 0, icon: 'Wrench' });
-    categoryIds.add('general');
-  }
-
-  const rawTools = Array.isArray(payload.tools) ? payload.tools : [];
-  const toolIds = new Set();
-  const tools = [];
-
-  rawTools.forEach((item, index) => {
-    const id = cleanRhToolboxId(item?.id, `tool-${index + 1}`);
-    if (toolIds.has(id)) return;
-    toolIds.add(id);
-    const webappId = cleanRhToolboxText(item?.webappId, '', 120);
-    const categoryIdRaw = cleanRhToolboxId(item?.categoryId, '');
-    const categoryId = categoryIds.has(categoryIdRaw) ? categoryIdRaw : categories[0].id;
-    const inputSchema = Array.isArray(item?.inputSchema)
-      ? item.inputSchema.map((entry, entryIndex) => {
-        const rhNodeId = cleanRhToolboxText(entry?.rhNodeId, '', 80).replace(/^#/, '');
-        const fieldName = cleanRhToolboxText(entry?.fieldName, '', 160);
-        if (!rhNodeId || !fieldName) return null;
-        return {
-          key: cleanRhToolboxId(entry?.key, `${normalizeRhToolboxMediaKind(entry?.kind)}-${entryIndex + 1}`),
-          label: cleanRhToolboxText(entry?.label, '', 160),
-          kind: normalizeRhToolboxMediaKind(entry?.kind),
-          rhNodeId,
-          fieldName,
-          required: entry?.required !== false,
-          multiple: entry?.multiple === true,
-          maxItems: Number.isFinite(Number(entry?.maxItems)) ? Math.max(1, Math.floor(Number(entry.maxItems))) : undefined,
-          defaultValue: entry?.defaultValue == null ? undefined : String(entry.defaultValue).slice(0, 4000),
-          uploadAsset: entry?.uploadAsset !== false,
-          order: Number.isFinite(Number(entry?.order)) ? Number(entry.order) : entryIndex,
-        };
-      }).filter(Boolean)
-      : [];
-    const outputSchema = Array.isArray(item?.outputSchema)
-      ? item.outputSchema.map((entry, entryIndex) => ({
-        key: cleanRhToolboxId(entry?.key, `output-${entryIndex + 1}`),
-        label: cleanRhToolboxText(entry?.label, '', 160),
-        kind: normalizeRhToolboxMediaKind(entry?.kind),
-        role: RH_TOOLBOX_OUTPUT_ROLES.has(String(entry?.role || '')) ? String(entry.role) : 'append-output',
-      }))
-      : [];
-    const fixedParams = Array.isArray(item?.fixedParams)
-      ? item.fixedParams.map((entry) => {
-        const rhNodeId = cleanRhToolboxText(entry?.rhNodeId, '', 80).replace(/^#/, '');
-        const fieldName = cleanRhToolboxText(entry?.fieldName, '', 160);
-        if (!rhNodeId || !fieldName) return null;
-        return {
-          rhNodeId,
-          fieldName,
-          value: entry?.value ?? '',
-          valueType: entry?.valueType,
-        };
-      }).filter(Boolean)
-      : [];
-    const userParams = Array.isArray(item?.userParams)
-      ? item.userParams.map((entry, entryIndex) => {
-        const rhNodeId = cleanRhToolboxText(entry?.rhNodeId, '', 80).replace(/^#/, '');
-        const fieldName = cleanRhToolboxText(entry?.fieldName, '', 160);
-        const label = cleanRhToolboxText(entry?.label, '', 160);
-        if (!rhNodeId || !fieldName || !label) return null;
-        const kind = normalizeRhToolboxParamKind(entry?.kind);
-        return {
-          key: cleanRhToolboxId(entry?.key, `param-${entryIndex + 1}`),
-          label,
-          kind,
-          rhNodeId,
-          fieldName,
-          defaultValue: entry?.defaultValue,
-          placeholder: cleanRhToolboxText(entry?.placeholder, '', 500),
-          options: Array.isArray(entry?.options)
-            ? entry.options.filter((v) => typeof v === 'string' || typeof v === 'number').slice(0, 120)
-            : undefined,
-          min: Number.isFinite(Number(entry?.min)) ? Number(entry.min) : undefined,
-          max: Number.isFinite(Number(entry?.max)) ? Number(entry.max) : undefined,
-          step: Number.isFinite(Number(entry?.step)) ? Number(entry.step) : undefined,
-          required: entry?.required === true,
-        };
-      }).filter(Boolean)
-      : [];
-    const pollIntervalMs = Number.isFinite(Number(item?.runtime?.pollIntervalMs))
-      ? Math.max(1000, Number(item.runtime.pollIntervalMs))
-      : RH_TOOLBOX_DEFAULT_POLL_INTERVAL_MS;
-    const maxPolls = Number.isFinite(Number(item?.runtime?.maxPolls))
-      ? Math.max(1, Math.floor(Number(item.runtime.maxPolls)))
-      : RH_TOOLBOX_DEFAULT_MAX_POLLS;
-
-    tools.push({
-      id,
-      title: cleanRhToolboxText(item?.title, id, 160),
-      description: cleanRhToolboxText(item?.description, '', 4000),
-      categoryId,
-      webappId,
-      enabled: item?.enabled !== false && !!webappId,
-      order: Number.isFinite(Number(item?.order)) ? Number(item.order) : index,
-      capabilities: Array.isArray(item?.capabilities)
-        ? Array.from(new Set(item.capabilities.map((cap) => String(cap || '').trim()).filter(Boolean))).slice(0, 80)
-        : [],
-      inputSchema: inputSchema.sort((a, b) => (Number(a.order || 0) - Number(b.order || 0))),
-      outputSchema,
-      fixedParams,
-      userParams,
-      runtime: {
-        instanceType: cleanRhToolboxText(item?.runtime?.instanceType, '', 80),
-        pollIntervalMs,
-        maxPolls,
-        fetchAppInfo: item?.runtime?.fetchAppInfo !== false,
-      },
-      ui: item?.ui && typeof item.ui === 'object'
-        ? {
-          icon: cleanRhToolboxText(item.ui.icon, 'Wrench', 80),
-          showInNode: item.ui.showInNode !== false,
-          showInImageEditor: item.ui.showInImageEditor === true,
-          showInVideoEditor: item.ui.showInVideoEditor === true,
-          showInTextEditor: item.ui.showInTextEditor === true,
-          showInAudioEditor: item.ui.showInAudioEditor === true,
-        }
-        : { icon: 'Wrench', showInNode: true },
-      version: Number.isFinite(Number(item?.version)) ? Number(item.version) : 1,
-    });
-  });
-
-  categories.sort((a, b) => (Number(a.order || 0) - Number(b.order || 0)) || String(a.name).localeCompare(String(b.name), 'zh-Hans-CN'));
-  tools.sort((a, b) => (Number(a.order || 0) - Number(b.order || 0)) || String(a.title).localeCompare(String(b.title), 'zh-Hans-CN'));
-  return {
-    schema: RH_TOOLBOX_SCHEMA,
-    version: Number.isFinite(Number(payload.version)) ? Number(payload.version) : 1,
-    updatedAt: cleanRhToolboxText(payload.updatedAt, new Date().toISOString(), 80),
-    categories,
-    tools,
-  };
-}
-
-function readRhToolboxPersistentManifest() {
-  const empty = {
-    schema: RH_TOOLBOX_SCHEMA,
-    version: 1,
-    updatedAt: '',
-    categories: [],
-    tools: [],
-  };
-  const raw = loadJson(config.RH_TOOLBOX_MANIFEST_FILE, null);
-  if (!raw || typeof raw !== 'object') return empty;
-  const categoryCount = Array.isArray(raw.categories) ? raw.categories.length : 0;
-  const toolCount = Array.isArray(raw.tools) ? raw.tools.length : 0;
-  if (categoryCount === 0 && toolCount === 0) return empty;
-  return normalizeRhToolboxManifestPayload(raw);
-}
-
-function writeRhToolboxPersistentManifest(raw) {
-  const manifest = normalizeRhToolboxManifestPayload({
-    ...(raw && typeof raw === 'object' ? raw : {}),
-    updatedAt: new Date().toISOString(),
-  });
-  if (!saveJson(config.RH_TOOLBOX_MANIFEST_FILE, manifest)) {
-    throw new Error('RH工具箱持久化文件写入失败');
-  }
-  return manifest;
-}
-
-router.get('/rh-toolbox/manifest', (_req, res) => {
-  const manifest = readRhToolboxPersistentManifest();
-  res.json({
-    success: true,
-    data: {
-      manifest,
-      path: config.RH_TOOLBOX_MANIFEST_FILE,
-      categoryCount: manifest.categories.length,
-      toolCount: manifest.tools.length,
-    },
-  });
-});
-
-router.put('/rh-toolbox/manifest', (req, res) => {
-  try {
-    const manifest = writeRhToolboxPersistentManifest(req.body?.manifest || req.body || {});
-    res.json({
-      success: true,
-      data: {
-        manifest,
-        path: config.RH_TOOLBOX_MANIFEST_FILE,
-        categoryCount: manifest.categories.length,
-        toolCount: manifest.tools.length,
-      },
-    });
-  } catch (e) {
-    res.status(500).json({ success: false, error: e?.message || String(e) });
-  }
-});
-
-// 获取分类列表
-router.get('/rh-tool-categories', (_req, res) => {
-  const list = loadJson(config.RH_TOOL_CATEGORIES_FILE, []);
-  list.sort((a, b) => (a.order || 0) - (b.order || 0));
-  res.json({ success: true, data: list });
-});
-
-// 新增分类
-router.post('/rh-tool-categories', (req, res) => {
-  const { name } = req.body || {};
-  if (!name || !String(name).trim()) {
-    return res.json({ success: false, error: '分类名不能为空' });
-  }
-  const list = loadJson(config.RH_TOOL_CATEGORIES_FILE, []);
-  if (list.find((c) => c.name === String(name).trim())) {
-    return res.json({ success: false, error: '分类名已存在' });
-  }
-  const newCat = {
-    id: genId('rhcat'),
-    name: String(name).trim(),
-    order: list.length,
-    createdAt: Date.now(),
-  };
-  list.push(newCat);
-  saveJson(config.RH_TOOL_CATEGORIES_FILE, list);
-  res.json({ success: true, data: newCat });
-});
-
-// 重命名分类
-router.put('/rh-tool-categories/:id', (req, res) => {
-  const { id } = req.params;
-  const { name } = req.body || {};
-  if (!name || !String(name).trim()) {
-    return res.json({ success: false, error: '分类名不能为空' });
-  }
-  const list = loadJson(config.RH_TOOL_CATEGORIES_FILE, []);
-  const target = list.find((c) => c.id === id);
-  if (!target) return res.json({ success: false, error: '分类不存在' });
-  if (list.find((c) => c.id !== id && c.name === String(name).trim())) {
-    return res.json({ success: false, error: '分类名已存在' });
-  }
-  target.name = String(name).trim();
-  saveJson(config.RH_TOOL_CATEGORIES_FILE, list);
-  res.json({ success: true, data: target });
-});
-
-// 删除分类（其下应用 categoryId 重置为空）
-router.delete('/rh-tool-categories/:id', (req, res) => {
-  const { id } = req.params;
-  let list = loadJson(config.RH_TOOL_CATEGORIES_FILE, []);
-  const len = list.length;
-  list = list.filter((c) => c.id !== id);
-  if (list.length === len) {
-    return res.json({ success: false, error: '分类不存在' });
-  }
-  saveJson(config.RH_TOOL_CATEGORIES_FILE, list);
-  const apps = loadJson(config.RH_TOOL_APPS_FILE, []);
-  let changed = false;
-  apps.forEach((a) => {
-    if (a.categoryId === id) {
-      a.categoryId = '';
-      changed = true;
-    }
-  });
-  if (changed) saveJson(config.RH_TOOL_APPS_FILE, apps);
-  res.json({ success: true });
-});
-
-// 分类排序
-router.post('/rh-tool-categories/reorder', (req, res) => {
-  const { ids } = req.body || {};
-  if (!Array.isArray(ids)) return res.json({ success: false, error: '参数错误' });
-  const list = loadJson(config.RH_TOOL_CATEGORIES_FILE, []);
-  const map = new Map(list.map((c) => [c.id, c]));
-  const reordered = [];
-  ids.forEach((id, idx) => {
-    const c = map.get(id);
-    if (c) {
-      c.order = idx;
-      reordered.push(c);
-      map.delete(id);
-    }
-  });
-  for (const c of map.values()) {
-    c.order = reordered.length;
-    reordered.push(c);
-  }
-  saveJson(config.RH_TOOL_CATEGORIES_FILE, reordered);
-  res.json({ success: true, data: reordered });
-});
-
-// =====================
-// RH 工具节点 - 应用 API
-// =====================
-
-// 获取应用列表
-router.get('/rh-tool-apps', (_req, res) => {
-  const list = loadJson(config.RH_TOOL_APPS_FILE, []);
-  list.sort((a, b) => (a.order || 0) - (b.order || 0));
-  res.json({ success: true, data: list });
-});
-
-// 新增应用
-router.post('/rh-tool-apps', (req, res) => {
-  const { webappId, title, description, categoryId, coverUrl } = req.body || {};
-  if (!webappId || !title) {
-    return res.json({ success: false, error: '缺少必要参数 (webappId / title)' });
-  }
-  const list = loadJson(config.RH_TOOL_APPS_FILE, []);
-  const newApp = {
-    id: genId('rhtool'),
-    webappId: String(webappId).trim(),
-    title: String(title).trim(),
-    description: description ? String(description) : '',
-    categoryId: categoryId || '',
-    coverUrl: coverUrl || '',
-    order: list.length,
-    addedAt: Date.now(),
-  };
-  list.push(newApp);
-  saveJson(config.RH_TOOL_APPS_FILE, list);
-  res.json({ success: true, data: newApp });
-});
-
-// 更新应用
-router.put('/rh-tool-apps/:id', (req, res) => {
-  const { id } = req.params;
-  const list = loadJson(config.RH_TOOL_APPS_FILE, []);
-  const app = list.find((a) => a.id === id);
-  if (!app) return res.json({ success: false, error: '应用不存在' });
-  const { webappId, title, description, categoryId, coverUrl } = req.body || {};
-  if (typeof webappId === 'string' && webappId.trim()) app.webappId = webappId.trim();
-  if (typeof title === 'string' && title.trim()) app.title = title.trim();
-  if (typeof description === 'string') app.description = description;
-  if (typeof categoryId === 'string') app.categoryId = categoryId;
-  if (typeof coverUrl === 'string') app.coverUrl = coverUrl;
-  saveJson(config.RH_TOOL_APPS_FILE, list);
-  res.json({ success: true, data: app });
-});
-
-// 删除应用
-router.delete('/rh-tool-apps/:id', (req, res) => {
-  const { id } = req.params;
-  let list = loadJson(config.RH_TOOL_APPS_FILE, []);
-  const len = list.length;
-  list = list.filter((a) => a.id !== id);
-  if (list.length === len) return res.json({ success: false, error: '应用不存在' });
-  saveJson(config.RH_TOOL_APPS_FILE, list);
-  res.json({ success: true });
-});
-
-// 应用排序
-router.post('/rh-tool-apps/reorder', (req, res) => {
-  const { ids } = req.body || {};
-  if (!Array.isArray(ids)) return res.json({ success: false, error: '参数错误' });
-  const list = loadJson(config.RH_TOOL_APPS_FILE, []);
-  const map = new Map(list.map((a) => [a.id, a]));
-  const reordered = [];
-  ids.forEach((id, idx) => {
-    const a = map.get(id);
-    if (a) {
-      a.order = idx;
-      reordered.push(a);
-      map.delete(id);
-    }
-  });
-  for (const a of map.values()) {
-    a.order = reordered.length;
-    reordered.push(a);
-  }
-  saveJson(config.RH_TOOL_APPS_FILE, reordered);
-  res.json({ success: true, data: reordered });
-});
-
-// RH 超市导出: 分类 + 应用一次性备份，便于版本迁移。
-router.get('/rh-tools/export', (_req, res) => {
-  const categories = loadJson(config.RH_TOOL_CATEGORIES_FILE, [])
-    .sort((a, b) => (a.order || 0) - (b.order || 0));
-  const tools = loadJson(config.RH_TOOL_APPS_FILE, [])
-    .sort((a, b) => (a.order || 0) - (b.order || 0));
-  res.json({
-    success: true,
-    data: {
-      schema: 't8-rh-tools',
-      version: 1,
-      exportedAt: new Date().toISOString(),
-      categories,
-      tools,
-    },
-  });
-});
-
-// RH 超市导入: 默认覆盖当前 RH 超市数据，保留备份内 id 以兼容画布节点选中的应用。
-router.post('/rh-tools/import', (req, res) => {
-  try {
-    const mode = req.body?.mode === 'merge' ? 'merge' : 'replace';
-    const normalized = normalizeRhToolsBackup(req.body || {});
-
-    let categories = normalized.categories;
-    let tools = normalized.tools;
-
-    if (mode === 'merge') {
-      const existingCategories = loadJson(config.RH_TOOL_CATEGORIES_FILE, []);
-      const existingTools = loadJson(config.RH_TOOL_APPS_FILE, []);
-      const catByName = new Map(existingCategories.map((c) => [String(c.name || '').trim(), c]));
-      const mergedCategories = [...existingCategories];
-      const catIdMap = new Map();
-      for (const c of normalized.categories) {
-        const existing = catByName.get(c.name);
-        if (existing) {
-          catIdMap.set(c.id, existing.id);
-          continue;
-        }
-        c.order = mergedCategories.length;
-        mergedCategories.push(c);
-        catIdMap.set(c.id, c.id);
-      }
-
-      const toolByWebapp = new Map(existingTools.map((t) => [String(t.webappId || '').trim(), t]));
-      const mergedTools = [...existingTools];
-      for (const t of normalized.tools) {
-        const mappedCategory = catIdMap.get(t.categoryId) || t.categoryId || '';
-        const existing = toolByWebapp.get(t.webappId);
-        if (existing) {
-          Object.assign(existing, { ...t, id: existing.id, categoryId: mappedCategory });
-        } else {
-          t.categoryId = mappedCategory;
-          t.order = mergedTools.length;
-          mergedTools.push(t);
-        }
-      }
-      categories = mergedCategories.map((c, idx) => ({ ...c, order: idx }));
-      tools = mergedTools.map((t, idx) => ({ ...t, order: idx }));
-    }
-
-    saveJson(config.RH_TOOL_CATEGORIES_FILE, categories);
-    saveJson(config.RH_TOOL_APPS_FILE, tools);
-    res.json({
-      success: true,
-      data: {
-        categories,
-        tools,
-        categoryCount: categories.length,
-        toolCount: tools.length,
-      },
-    });
-  } catch (e) {
-    res.status(500).json({ success: false, error: e?.message || String(e) });
-  }
-});
-
 module.exports = router;
 module.exports.loadSettings = loadSettings;
 module.exports.saveSettings = saveSettings;

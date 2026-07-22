@@ -309,12 +309,18 @@ function classifyModelId(modelId, item) {
     : [];
   if (endpointTypes.some((value) => value.includes('video'))) return 'video';
   if (endpointTypes.some((value) => value.includes('image'))) return 'image';
+  if (endpointTypes.some((value) => value.includes('audio') || value.includes('speech') || value.includes('music'))) return 'audio';
+  if (endpointTypes.some((value) => value.includes('chat') || value.includes('completion') || value === 'openai')) return 'chat';
   const text = String(modelId || '').toLowerCase();
   const videoKeys = ['veo', 'sora', 'wan2', 'wanx', 'seedance', 'kling', 'hailuo', 'video', 't2v-', 'i2v-', 's2v'];
   if (videoKeys.some((key) => text.includes(key))) return 'video';
   const imageKeys = ['banana', 'image', 'dalle', 'dall-e', 'imagen', 'flux', 'stable', 'sdxl', 'midjourney', 'ideogram', 'z-image', 'qwen-image', 'seedream', 'text-to-image', 'image-to-image'];
   if (imageKeys.some((key) => text.includes(key))) return 'image';
-  return 'chat';
+  const audioKeys = ['audio', 'speech', 'tts', 'suno', 'music', 'voice', 'sound', 'song', 'vocal'];
+  if (audioKeys.some((key) => text.includes(key))) return 'audio';
+  const chatKeys = ['gpt-', 'chatgpt', 'claude', 'deepseek', 'qwen', 'llama', 'mistral', 'gemini', 'glm-', 'moonshot', 'kimi', 'minimax', 'command-r'];
+  if (chatKeys.some((key) => text.includes(key))) return 'chat';
+  return 'unknown';
 }
 
 function modelIdFromItem(item, provider) {
@@ -339,13 +345,15 @@ function parseModelList(raw, provider) {
     if (id && !all.includes(id)) all.push(id);
   }
 
-  const grouped = { imageModels: [], chatModels: [], videoModels: [] };
+  const grouped = { imageModels: [], chatModels: [], videoModels: [], audioModels: [], unknownModels: [] };
   for (const id of all) {
     const item = items.find((candidate) => modelIdFromItem(candidate, provider) === id);
     const kind = classifyModelId(id, item);
     if (kind === 'image') grouped.imageModels.push(id);
     else if (kind === 'video') grouped.videoModels.push(id);
-    else grouped.chatModels.push(id);
+    else if (kind === 'audio') grouped.audioModels.push(id);
+    else if (kind === 'chat') grouped.chatModels.push(id);
+    else grouped.unknownModels.push(id);
   }
   return { ...grouped, all };
 }
@@ -374,6 +382,17 @@ function videoEndpointCandidates(provider) {
   return uniqueUrls([primary, singular]);
 }
 
+function zhenzhenCompatibleVideoEndpointCandidates(provider) {
+  const defaults = provider?.defaults || {};
+  const override = defaults.videoGenerationEndpoint || defaults.video_generation_endpoint;
+  if (typeof override === 'string' && override.trim()) {
+    return uniqueUrls([providerEndpointUrl(provider, '/videos/generations', ['videoGenerationEndpoint', 'video_generation_endpoint'])]);
+  }
+  const baseUrl = cleanBaseUrl(provider?.baseUrl);
+  const root = baseUrl.replace(/\/v1(?:beta)?$/i, '').replace(/\/v2$/i, '');
+  return uniqueUrls([`${root}/v2/videos/generations`]);
+}
+
 function isSingularVideoTaskEndpoint(url) {
   return /\/video\/generations(?:\/|$)/.test(String(url || ''));
 }
@@ -393,6 +412,63 @@ function videoSubmitBodyForEndpoint(body, input, endpointUrl) {
     next.reference_images = next.images;
   }
   return next;
+}
+
+function providerKind(input = {}) {
+  return String(input.providerKind || input.provider_kind || input.providerParams?.providerKind || input.providerParams?.provider_kind || '').trim().toLowerCase();
+}
+
+function stripDataUrlPrefix(value) {
+  const text = String(value || '').trim();
+  const match = text.match(/^data:[^;,]+;base64,(.*)$/i);
+  return match ? match[1] : text;
+}
+
+function buildZhenzhenCompatibleVideoBody(input = {}, model, prompt, refs = []) {
+  const kind = providerKind(input);
+  if (!kind) return null;
+  const ratio = input.ratio || input.aspect_ratio || '16:9';
+
+  if (kind === 'grok') {
+    const body = {
+      prompt,
+      model,
+      ratio: String(ratio || '16:9'),
+      duration: parseInt(input.duration ?? input.seconds ?? 15, 10),
+      resolution: String(input.resolution || '720P'),
+    };
+    if (input.seed != null && Number(input.seed) > 0) body.seed = Number(input.seed);
+    if (refs.length) body.images = refs.slice(0, 7);
+    return body;
+  }
+
+  if (kind === 'sora') {
+    const body = {
+      prompt,
+      model,
+      aspect_ratio: String(input.aspect_ratio || input.ratio || '16:9'),
+      duration: String(input.duration ?? input.seconds ?? 15),
+      private: input.private !== false && input.is_private !== false,
+    };
+    if (input.seed != null && Number(input.seed) > 0) body.seed = Number(input.seed);
+    if (refs.length) body.images = refs.slice(0, 1).map(stripDataUrlPrefix).filter(Boolean);
+    return body;
+  }
+
+  if (kind === 'veo' || kind === 'seedance') {
+    const body = {
+      prompt,
+      model,
+      enhance_prompt: input.enhance_prompt !== false,
+    };
+    if (input.aspect_ratio || input.ratio) body.aspect_ratio = String(input.aspect_ratio || input.ratio);
+    if (input.seed != null && Number(input.seed) > 0) body.seed = Number(input.seed);
+    if (input.enable_upsample) body.enable_upsample = true;
+    if (refs.length) body.images = refs.slice(0, 3);
+    return body;
+  }
+
+  return null;
 }
 
 async function submitVideoGeneration(provider, candidateUrls, body, input, options = {}) {
@@ -507,6 +583,73 @@ function imageChatMessages(prompt, refs = [], options = {}) {
   return [{ role: 'user', content }];
 }
 
+function imageParamKind(input = {}, provider = {}) {
+  return String(input.paramKind || input.providerParams?.paramKind || provider.defaults?.imageParamKind || '').trim();
+}
+
+function imageLevelUpper(value, fallback = '2K') {
+  const text = String(value || fallback || '').trim();
+  return text ? text.toUpperCase() : '';
+}
+
+function imageLevelLower(value, fallback = '2K') {
+  const text = String(value || fallback || '').trim();
+  return text ? text.toLowerCase() : '';
+}
+
+function isAutoAspect(value) {
+  const text = String(value || '').trim();
+  return !text || ['auto', 'empty'].includes(text.toLowerCase());
+}
+
+function buildZhenzhenCompatibleImageBody(input = {}, model, prompt, refs = []) {
+  const paramKind = imageParamKind(input);
+  const aspectRatio = input.aspect_ratio || input.ratio;
+  const imageSize = input.image_size || input.resolution;
+  const size = input.size ? String(input.size) : '';
+  const n = Number(input.n) || 1;
+  const quality = input.quality ? String(input.quality) : 'auto';
+
+  if (paramKind === 'gpt-size') {
+    const body = { model, prompt, n, quality };
+    if (size) body.size = size;
+    if (imageSize) {
+      body.resolution = imageLevelLower(imageSize, '1K');
+      body.image_size = imageLevelUpper(imageSize, '1K');
+    }
+    if (refs.length) {
+      body.images = refs;
+      body.image = refs[0];
+      body.image_urls = refs;
+    }
+    return body;
+  }
+
+  if (paramKind === 'grok-image') {
+    const body = {
+      model,
+      prompt,
+      aspect_ratio: isAutoAspect(aspectRatio) ? '1:1' : String(aspectRatio),
+    };
+    if (refs.length) body.image = refs;
+    return body;
+  }
+
+  if (paramKind === 'banana-ratio') {
+    const body = {
+      prompt,
+      model,
+      aspect_ratio: isAutoAspect(aspectRatio) ? '1:1' : String(aspectRatio || '1:1'),
+      image_size: imageLevelUpper(imageSize, '2K'),
+      n,
+    };
+    if (refs.length) body.image = refs;
+    return body;
+  }
+
+  return null;
+}
+
 async function generateChat(provider, input = {}, options = {}) {
   const validation = validateProvider(provider, { apiKeyRequired: true });
   if (!validation.ok) return validation;
@@ -616,12 +759,12 @@ async function generateImage(provider, input = {}, options = {}) {
 
   let model;
   try {
-    model = selectedModel(input.model || input.providerModel, provider.imageModels, provider.defaults?.imageModel || 'gpt-image-1');
+    model = selectedModel(input.model || input.providerModel, provider.imageModels, provider.defaults?.imageModel || '');
   } catch (e) {
     return { ok: false, code: 'invalid_model', providerId: provider.id, protocol: provider.protocol, error: e.message };
   }
 
-  const body = {
+  let body = {
     model,
     prompt,
   };
@@ -641,7 +784,9 @@ async function generateImage(provider, input = {}, options = {}) {
       baseUrl: options.baseUrl,
       referenceTarget: input.referenceTarget || provider.defaults?.referenceTarget || 'data-url',
     });
-    if (refs.length) body.image = refs;
+    const zhenzhenBody = buildZhenzhenCompatibleImageBody(input, model, prompt, refs);
+    if (zhenzhenBody) body = zhenzhenBody;
+    else if (refs.length) body.image = refs;
   } catch (e) {
     return { ok: false, code: 'invalid_reference', providerId: provider.id, protocol: provider.protocol, error: e?.message || '参考图解析失败。' };
   }
@@ -716,7 +861,7 @@ async function generateVideo(provider, input = {}, options = {}) {
     return { ok: false, code: 'invalid_model', providerId: provider.id, protocol: provider.protocol, error: e.message };
   }
 
-  const body = { model, prompt };
+  let body = { model, prompt };
   if (input.aspect_ratio) body.aspect_ratio = String(input.aspect_ratio);
   if (input.ratio) body.ratio = String(input.ratio);
   if (input.size) body.size = String(input.size);
@@ -730,13 +875,21 @@ async function generateVideo(provider, input = {}, options = {}) {
       baseUrl: options.baseUrl,
       referenceTarget: input.referenceTarget || provider.defaults?.videoReferenceTarget || provider.defaults?.referenceTarget || 'data-url',
     });
-    if (refs.length) body.images = refs;
+    const zhenzhenBody = buildZhenzhenCompatibleVideoBody(input, model, prompt, refs);
+    if (zhenzhenBody) body = zhenzhenBody;
+    else if (refs.length) body.images = refs;
   } catch (e) {
     return { ok: false, code: 'invalid_reference', providerId: provider.id, protocol: provider.protocol, error: e?.message || '参考图解析失败。' };
   }
 
   try {
-    const submitted = await submitVideoGeneration(provider, videoEndpointCandidates(provider), body, input, options);
+    const submitted = await submitVideoGeneration(
+      provider,
+      providerKind(input) ? zhenzhenCompatibleVideoEndpointCandidates(provider) : videoEndpointCandidates(provider),
+      body,
+      input,
+      options,
+    );
     if (!submitted.ok) {
       const raw = submitted.raw || {};
       const status = submitted.res?.status || 0;
@@ -885,6 +1038,8 @@ async function fetchModels(provider, options = {}) {
         imageModels: parsed.imageModels,
         chatModels: parsed.chatModels,
         videoModels: parsed.videoModels,
+        audioModels: parsed.audioModels,
+        unknownModels: parsed.unknownModels,
         all: parsed.all,
         message: parsed.all.length ? `已拉取 ${parsed.all.length} 个模型。` : '模型列表接口可达，但未解析到模型。',
         raw,

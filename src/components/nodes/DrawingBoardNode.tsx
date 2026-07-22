@@ -44,7 +44,6 @@ import {
 } from 'lucide-react';
 import { PORT_COLOR } from '../../config/portTypes';
 import { uploadDataUrl, uploadFileBlob } from '../../services/imageOps';
-import { runRhImageCutout } from '../../services/rhToolboxCapabilities';
 import { useRunTrigger } from '../../hooks/useRunTrigger';
 import { useUpdateNodeData } from './useUpdateNodeData';
 import { useUpstreamMaterials } from './useUpstreamMaterials';
@@ -740,7 +739,6 @@ const DrawingBoardNode = ({ id, data, selected }: NodeProps) => {
   }));
   const [status, setStatus] = useState<'idle' | 'running' | 'success' | 'error'>((d.status as any) || 'idle');
   const [error, setError] = useState<string | null>(typeof d.error === 'string' ? d.error : null);
-  const [rhCutoutRunning, setRhCutoutRunning] = useState(false);
   const [dragLayerId, setDragLayerId] = useState<string | null>(null);
   const [, forceRender] = useState(0);
 
@@ -1660,68 +1658,6 @@ const DrawingBoardNode = ({ id, data, selected }: NodeProps) => {
       setStatus('error');
     }
   }, [applyTool, cutoutDraft, cutoutFeather, cutoutInvert, cutoutSmooth, layers, loadImage, patchLayers, pushHistorySnapshot]);
-
-  const applyRhCutoutToSelectedImage = useCallback(async () => {
-    if (!selectedCutoutSource) {
-      setError('请先选中一张可编辑图片再自动抠图');
-      return;
-    }
-    const { layer: sourceLayer, element: source } = selectedCutoutSource;
-    if (!isLayerEditable(layers, sourceLayer)) {
-      setError('源图片图层已隐藏、锁定或不存在，无法自动抠图');
-      return;
-    }
-
-    setRhCutoutRunning(true);
-    setStatus('running');
-    setError(null);
-    try {
-      const result = await runRhImageCutout(source.url, {
-        onProgress: (progress) => {
-          if (progress.stage === 'error') setError(progress.message);
-        },
-      });
-      let naturalW = source.naturalW;
-      let naturalH = source.naturalH;
-      try {
-        const img = await loadImage(result.outputUrl);
-        naturalW = Math.max(1, Math.round(img.naturalWidth || naturalW || source.w));
-        naturalH = Math.max(1, Math.round(img.naturalHeight || naturalH || source.h));
-      } catch {
-        // The RH result URL is still written back; preview loading can retry naturally.
-      }
-
-      pushHistorySnapshot();
-      patchLayers((prev) => prev.map((layer) => (
-        layer.id === sourceLayer.id && layer.kind === 'layer'
-          ? {
-              ...layer,
-              elements: layer.elements.map((el) => (
-                el.id === source.id && el.kind === 'image'
-                  ? {
-                      ...el,
-                      url: result.outputUrl,
-                      name: `${source.name || '图片'} RH抠图`,
-                      naturalW,
-                      naturalH,
-                    }
-                  : el
-              )),
-            }
-          : layer
-      )));
-      setActiveLayerId(sourceLayer.id);
-      setSelectedElementId(source.id);
-      applyTool('select');
-      setStatus('success');
-    } catch (e: any) {
-      const msg = e?.message || 'RH 自动抠图失败';
-      setError(msg);
-      setStatus('error');
-    } finally {
-      setRhCutoutRunning(false);
-    }
-  }, [applyTool, layers, loadImage, patchLayers, pushHistorySnapshot, selectedCutoutSource]);
 
   const upstreamSig = useMemo(() => upstream.images.map((m) => m.url).join('|'), [upstream.images]);
 
@@ -2731,16 +2667,6 @@ const DrawingBoardNode = ({ id, data, selected }: NodeProps) => {
               <button type="button" className="t8-btn min-h-8 w-full px-2 text-[11px]" onClick={() => imageInputRef.current?.click()}>
                 <ImagePlus size={13} /> 载入图片
               </button>
-              <button
-                type="button"
-                className="t8-btn min-h-8 w-full px-2 text-[11px]"
-                onClick={() => void applyRhCutoutToSelectedImage()}
-                disabled={!selectedCutoutSource || rhCutoutRunning || status === 'running'}
-                title={selectedCutoutSource ? '调用 RH工具箱自动抠图并替换选中图片' : '请先选中一张图片'}
-              >
-                {rhCutoutRunning ? <Loader2 size={13} className="animate-spin" /> : <Scissors size={13} />}
-                {rhCutoutRunning ? 'RH抠图中...' : 'RH自动抠图'}
-              </button>
             </aside>
 
             <main
@@ -2780,7 +2706,7 @@ const DrawingBoardNode = ({ id, data, selected }: NodeProps) => {
       tabIndex={0}
       onKeyDownCapture={handleRootKeyDownCapture}
       data-drawing-board-node="true"
-      className={`t8-node relative flex flex-col transition-all ${selected ? 'ring-2 ring-orange-300' : ''}`}
+      className={`t8-node relative flex flex-col transition-all ${selected ? 'is-selected' : ''}`}
       style={{ width: NODE_W, height: NODE_H, overflow: 'visible' }}
     >
       <Handle type="target" position={Position.Left} style={{ background: PORT_COLOR.image, border: 0, zIndex: 40 }} />
@@ -2895,16 +2821,6 @@ const DrawingBoardNode = ({ id, data, selected }: NodeProps) => {
                 title={hasBoardImages ? '用当前选中图片或第一张图片的原始像素设置画布，并按 1:1 放置图片' : '请先载入一张图片'}
               >
                 <Ruler size={12} /> 保持原图像素尺寸
-              </button>
-              <button
-                type="button"
-                className="t8-btn col-span-3 min-h-7 px-2 text-[10px]"
-                onClick={() => void applyRhCutoutToSelectedImage()}
-                disabled={!selectedCutoutSource || rhCutoutRunning || status === 'running'}
-                title={selectedCutoutSource ? '调用 RH工具箱自动抠图并替换选中图片' : '请先选中一张图片'}
-              >
-                {rhCutoutRunning ? <Loader2 size={12} className="animate-spin" /> : <Scissors size={12} />}
-                {rhCutoutRunning ? 'RH抠图中...' : 'RH自动抠图'}
               </button>
             </div>
             <div className="grid grid-cols-[38px_1fr_46px] items-center gap-2">

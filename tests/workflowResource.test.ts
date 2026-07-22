@@ -29,6 +29,43 @@ test('createWorkflowResourceManifest preserves selected nodes and internal edges
   assert.deepEqual(manifest.edges.map((edge) => edge.id), ['ab']);
 });
 
+test('createWorkflowResourceManifest stores reusable node configuration without stale generated results', () => {
+  const manifest = createWorkflowResourceManifest({
+    sourceCanvasId: 'canvas-a',
+    nodes: [
+      {
+        id: 'image-a',
+        type: 'image',
+        position: { x: 100, y: 120 },
+        data: {
+          prompt: 'new campaign hero',
+          imageUrl: 'https://cdn.example.com/old.png',
+          imageUrls: ['https://cdn.example.com/old.png'],
+          status: 'success',
+        },
+      } as Node,
+      {
+        id: 'output-a',
+        type: 'output',
+        position: { x: 460, y: 120 },
+        data: {
+          directImageUrl: 'https://cdn.example.com/final.png',
+          imageUrl: 'https://cdn.example.com/final.png',
+          status: 'success',
+        },
+      } as Node,
+    ],
+    edges: [{ id: 'io', source: 'image-a', target: 'output-a' }] as Edge[],
+  }, { title: '复用流程' });
+
+  assert.equal(manifest.nodes[0].data?.prompt, 'new campaign hero');
+  assert.equal('imageUrl' in (manifest.nodes[0].data || {}), false);
+  assert.equal('imageUrls' in (manifest.nodes[0].data || {}), false);
+  assert.equal(manifest.nodes[0].data?.status, 'idle');
+  assert.equal((manifest.nodes[1].data as any)?.directImageUrl, 'https://cdn.example.com/final.png');
+  assert.equal((manifest.nodes[1].data as any)?.imageUrl, 'https://cdn.example.com/final.png');
+});
+
 test('createWorkflowResourceManifest rejects empty workflow fragments', () => {
   assert.throws(
     () => createWorkflowResourceManifest({ nodes: [], edges: [] }, { title: '空流程' }),

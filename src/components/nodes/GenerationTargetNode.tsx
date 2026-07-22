@@ -10,6 +10,8 @@ import {
 } from '../../utils/canvasCreativeWorkflow';
 import { getMediaItemsFromData } from '../../utils/mediaCollection';
 import { useUpdateNodeData } from './useUpdateNodeData';
+import { useApiKeysStore } from '../../stores/apiKeys';
+import { effectiveModelId, modelsForKind } from '../../providers/modelCatalog';
 
 function textFromData(data: any): string {
   return String(
@@ -41,6 +43,9 @@ function selectedNodesForTarget(targetId: string, nodes: Node[]) {
 
 const GenerationTargetNode = ({ id, data, selected }: NodeProps) => {
   const d = (data as any) || {};
+  const apiSettings = useApiKeysStore((state) => state.settings);
+  const imageModels = useMemo(() => modelsForKind(apiSettings, 'image'), [apiSettings]);
+  const imageModel = effectiveModelId(d.apiModel || d.model, imageModels);
   const rf = useReactFlow();
   const update = useUpdateNodeData(id);
   const creativeTargetId = id;
@@ -69,6 +74,10 @@ const GenerationTargetNode = ({ id, data, selected }: NodeProps) => {
       update({ status: 'failed', error: '请先输入提示词，或把文本节点连接到目标框。' });
       return;
     }
+    if (!imageModel) {
+      update({ status: 'failed', error: '请先拉取或手动填写图片模型。' });
+      return;
+    }
     setBusyMode(mode);
     update({ status: 'generating', error: '', prompt: finalPrompt });
     try {
@@ -76,8 +85,8 @@ const GenerationTargetNode = ({ id, data, selected }: NodeProps) => {
         viewportAnchor: rf.getNode(id)?.position,
       });
       const result = await generateImage({
-        model: d.model || 'gpt-image-2',
-        apiModel: d.apiModel || d.model || 'gpt-image-2',
+        model: imageModel,
+        apiModel: imageModel,
         prompt: finalPrompt,
         aspectRatio,
         aspect_ratio: aspectRatio,
@@ -119,7 +128,7 @@ const GenerationTargetNode = ({ id, data, selected }: NodeProps) => {
 
   return (
     <div
-      className={`t8-generation-target-node rounded-xl border p-3 shadow-lg ${selected ? 'is-selected' : ''}`}
+      className={`t8-node t8-generation-target-node rounded-xl border p-3 shadow-lg ${selected ? 'is-selected' : ''}`}
       data-target-status={status}
       data-has-result={resultUrl ? 'true' : 'false'}
     >

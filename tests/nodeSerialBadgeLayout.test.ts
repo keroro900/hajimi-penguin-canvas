@@ -13,7 +13,6 @@ function readProjectFile(path: string): string {
 test('NodeID badge anchors to the visible node card instead of the ReactFlow wrapper', () => {
   const canvasSource = readProjectFile('src/components/Canvas.tsx');
   const baseCss = readProjectFile('src/styles/index.css');
-  const slamDunkCss = readProjectFile('src/styles/theme-slamdunk.css');
 
   assert.match(canvasSource, /useNodeSerialBadgeAnchor/);
   assert.match(canvasSource, /--t8-node-serial-anchor-left/);
@@ -24,7 +23,4 @@ test('NodeID badge anchors to the visible node card instead of the ReactFlow wra
   assert.match(baseCss, /right:\s*auto/);
   assert.match(baseCss, /--t8-node-serial-offset-x:\s*9px/);
   assert.match(baseCss, /--t8-node-serial-offset-y:\s*-10px/);
-
-  assert.match(slamDunkCss, /--t8-node-serial-offset-x:\s*12px/);
-  assert.match(slamDunkCss, /--t8-node-serial-offset-y:\s*-12px/);
 });

@@ -149,7 +149,6 @@ test('generation history shortcut and drawer are wired through toolbar, canvas, 
 
   assert.match(css, /Generation history drawer v1/);
   assert.match(css, /\.t8-generation-history-panel/);
-  assert.match(css, /\[data-theme-visual="farm-story"\] \.t8-generation-history-panel/);
   assert.match(css, /\.t8-generation-history-grid/);
 
   assert.match(features, /generationHistoryShortcut/);

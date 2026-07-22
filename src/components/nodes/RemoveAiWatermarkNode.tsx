@@ -401,11 +401,9 @@ function RemoveAiWatermarkNode({ id, data, selected }: { id: string; data: any; 
 
   return (
     <div
-      className={`t8-node overflow-hidden ${selected ? 'ring-2' : ''}`}
+      className={`t8-node overflow-hidden ${selected ? 'is-selected' : ''}`}
       style={{
         width: 380,
-        borderColor: selected ? 'var(--t8-accent)' : 'var(--t8-border-strong)',
-        boxShadow: selected ? '0 0 0 2px color-mix(in srgb, var(--t8-accent) 32%, transparent)' : undefined,
       }}
     >
       <Handle type="target" position={Position.Left} style={{ background: 'var(--t8-accent)', border: '1px solid var(--t8-bg-node)' }} />

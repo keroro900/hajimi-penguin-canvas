@@ -1,0 +1,801 @@
+/*
+ * 水墨意境 (Ink / Shuimo) visual skin
+ * 中国传统水墨美学：墨分五色（焦浓重淡清）+ 朱红印章 + 青绿山水 + 书法字体 + 墨晕泼墨动效。
+ * 界面如宣纸册页，节点如手卷题跋，连线如书法笔触，选中态盖朱红印章。
+ * 气韵生动，意在笔先。动效 320ms ease-out，墨晕扩散缓入缓出。
+ * SHIFT 切断用毛笔枯笔飞白（断续 dasharray）+ 朱红轨迹。
+ */
+
+html[data-theme-visual="ink"] {
+  /* === 墨色母题 === */
+  --ink-accent: var(--t8-accent);
+  --ink-accent-soft: color-mix(in srgb, var(--t8-accent) 14%, transparent);
+  --ink-accent-line: color-mix(in srgb, var(--t8-accent) 32%, transparent);
+  --ink-card-bg: var(--t8-bg-panel);
+  --ink-card-bg-elev: var(--t8-bg-panel-elevated);
+  --ink-muted-bg: var(--t8-bg-panel-muted);
+  --ink-ink: var(--t8-text-main);
+  --ink-ink-muted: var(--t8-text-muted);
+  --ink-ink-dim: var(--t8-text-dim);
+  --ink-border: color-mix(in srgb, var(--t8-text-main) 12%, transparent);
+  /* 朱红印章 / 青绿山水 / 金箔 */
+  --ink-seal: #C41E3A;
+  --ink-seal-soft: color-mix(in srgb, #C41E3A 16%, transparent);
+  --ink-seal-line: color-mix(in srgb, #C41E3A 36%, transparent);
+  --ink-mountain: #2E8B57;
+  --ink-gold: #D4AF37;
+  --ink-radius: 2px;
+  /* 宣纸纤维纹理：多层 radial-gradient 模拟纸纤维颗粒，比 wabi 更细密。 */
+  --ink-paper-texture:
+    radial-gradient(circle at 11% 19%, color-mix(in srgb, var(--t8-text-main) 2.5%, transparent) 0.5px, transparent 1px),
+    radial-gradient(circle at 43% 61%, color-mix(in srgb, var(--t8-text-main) 2%, transparent) 0.5px, transparent 1px),
+    radial-gradient(circle at 77% 14%, color-mix(in srgb, var(--t8-text-main) 2.5%, transparent) 0.5px, transparent 1px),
+    radial-gradient(circle at 29% 87%, color-mix(in srgb, var(--t8-text-main) 2%, transparent) 0.5px, transparent 1px),
+    radial-gradient(circle at 89% 73%, color-mix(in srgb, var(--t8-text-main) 2.5%, transparent) 0.5px, transparent 1px),
+    radial-gradient(circle at 57% 35%, color-mix(in srgb, var(--t8-text-main) 1.5%, transparent) 0.5px, transparent 1px);
+  --ink-paper-size: 42px 42px, 58px 58px, 48px 48px, 64px 64px, 52px 52px, 70px 70px;
+  /* 墨晕：双层 radial-gradient 模拟浓墨晕 + 淡墨晕，比 wabi 更明显。 */
+  --ink-wash:
+    radial-gradient(ellipse at 28% 18%, color-mix(in srgb, var(--t8-text-main) 5%, transparent), transparent 50%),
+    radial-gradient(ellipse at 72% 82%, color-mix(in srgb, var(--ink-seal) 4%, transparent), transparent 45%);
+  /* 笔触墨迹：单层 radial 模拟毛笔枯笔留下的墨点。 */
+  --ink-transition: 320ms ease-out;
+
+  /* SHIFT 切断符号：毛笔枯笔飞白——断续 dasharray 细线，模拟干笔擦过宣纸。 */
+  --t8-cut-cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23C41E3A' stroke-width='1.6' stroke-linecap='round' opacity='0.8'><path d='M4 12c4 0 5-0.8 6-0.8s2 0.8 10 0.8' stroke-dasharray='0.8 2.2'/><path d='M4 13c4 0 5-0.8 6-0.8s2 0.8 10 0.8' stroke='%231a1a1a' stroke-width='0.5' stroke-dasharray='0.5 3' opacity='0.5'/></svg>") 12 12, crosshair;
+  --t8-cut-color: var(--ink-seal);
+  --t8-cut-track: color-mix(in srgb, var(--ink-seal) 55%, transparent);
+  --t8-cut-button-bg: var(--ink-card-bg);
+  --t8-cut-button-fg: var(--ink-seal);
+  --t8-cut-button-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='black' d='M3 11c4 0 5-1.5 6-1.5s2 1.5 12 1.5v2c-10 0-11-1.5-12-1.5S7 13 3 13z'/></svg>");
+}
+
+/* 浅色模式增强：宣纸白底上墨线/朱红易显淡，加强边线/墨晕/纸纹让水墨识别度不丢。 */
+html[data-theme-visual="ink"][data-theme-mode="light"] {
+  --ink-border: color-mix(in srgb, var(--t8-text-main) 22%, transparent);
+  --ink-paper-texture:
+    radial-gradient(circle at 11% 19%, color-mix(in srgb, var(--t8-text-main) 3.5%, transparent) 0.5px, transparent 1px),
+    radial-gradient(circle at 43% 61%, color-mix(in srgb, var(--t8-text-main) 3%, transparent) 0.5px, transparent 1px),
+    radial-gradient(circle at 77% 14%, color-mix(in srgb, var(--t8-text-main) 3.5%, transparent) 0.5px, transparent 1px),
+    radial-gradient(circle at 29% 87%, color-mix(in srgb, var(--t8-text-main) 3%, transparent) 0.5px, transparent 1px),
+    radial-gradient(circle at 89% 73%, color-mix(in srgb, var(--t8-text-main) 3.5%, transparent) 0.5px, transparent 1px),
+    radial-gradient(circle at 57% 35%, color-mix(in srgb, var(--t8-text-main) 2.5%, transparent) 0.5px, transparent 1px);
+  --ink-wash:
+    radial-gradient(ellipse at 28% 18%, color-mix(in srgb, var(--t8-text-main) 8%, transparent), transparent 50%),
+    radial-gradient(ellipse at 72% 82%, color-mix(in srgb, var(--ink-seal) 6%, transparent), transparent 45%);
+}
+
+html[data-theme-visual="ink"] body,
+html[data-theme-visual="ink"] #root {
+  background: var(--t8-bg-app);
+  color: var(--ink-ink);
+  font-family: var(--t8-font-family);
+}
+
+/* 应用外壳：宣纸底 + 墨晕渐变。 */
+html[data-theme-visual="ink"] .t8-app-shell {
+  background:
+    var(--ink-wash),
+    linear-gradient(180deg, var(--t8-bg-app), var(--t8-bg-canvas)) !important;
+}
+
+/* === 顶栏：宣纸卡 + 淡墨下边线，标题行书 === */
+html[data-theme-visual="ink"] .t8-topbar {
+  min-height: 48px;
+  background: var(--ink-card-bg) !important;
+  border-bottom: 1px solid var(--ink-border) !important;
+  box-shadow: 0 1px 4px color-mix(in srgb, var(--t8-text-main) 6%, transparent) !important;
+}
+
+/* 顶栏标题：行书字体 + 焦墨色。 */
+html[data-theme-visual="ink"] .t8-topbar h1 {
+  font-weight: 700 !important;
+  color: var(--ink-ink) !important;
+  font-family: var(--t8-display-font) !important;
+  letter-spacing: 0.06em;
+}
+
+/* 顶栏状态芯片：宣纸 muted + 淡墨边。 */
+html[data-theme-visual="ink"] .t8-topbar-status-chip {
+  background: var(--ink-muted-bg) !important;
+  border: 1px solid var(--ink-border) !important;
+  border-radius: var(--ink-radius) !important;
+  color: var(--ink-ink-muted) !important;
+  padding: 2px 8px !important;
+  box-shadow: none !important;
+  transition: border-color var(--ink-transition), color var(--ink-transition) !important;
+}
+
+html[data-theme-visual="ink"] .t8-topbar-status-chip[class*="text-emerald"],
+html[data-theme-visual="ink"] .t8-topbar-status-chip[class*="emerald-"] {
+  color: var(--ink-mountain) !important;
+  border-color: color-mix(in srgb, var(--ink-mountain) 32%, transparent) !important;
+}
+
+html[data-theme-visual="ink"] .t8-topbar-status-chip[class*="text-red"],
+html[data-theme-visual="ink"] .t8-topbar-status-chip[class*="red-"] {
+  color: var(--ink-seal) !important;
+  border-color: var(--ink-seal-line) !important;
+}
+
+html[data-theme-visual="ink"] .t8-topbar-status-chip[class*="text-yellow"],
+html[data-theme-visual="ink"] .t8-topbar-status-chip[class*="yellow-"] {
+  color: var(--ink-gold) !important;
+  border-color: color-mix(in srgb, var(--ink-gold) 32%, transparent) !important;
+}
+
+/* 顶栏工具按钮：宣纸卡 + 淡墨边。 */
+html[data-theme-visual="ink"] .t8-topbar button:not(.px-btn):not(.t8-topbar-status-chip) {
+  background: var(--ink-card-bg) !important;
+  border: 1px solid var(--ink-border) !important;
+  border-radius: var(--ink-radius) !important;
+  color: var(--ink-ink) !important;
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--t8-text-main) 5%, transparent) !important;
+  transition: border-color var(--ink-transition), color var(--ink-transition), background var(--ink-transition) !important;
+}
+
+html[data-theme-visual="ink"] .t8-topbar button:not(.px-btn):not(.t8-topbar-status-chip):hover {
+  border-color: var(--ink-seal-line) !important;
+  color: var(--ink-seal) !important;
+  background: var(--ink-seal-soft) !important;
+}
+
+html[data-theme-visual="ink"] .t8-topbar button:not(.px-btn):not(.t8-topbar-status-chip):active {
+  filter: brightness(0.96);
+}
+
+/* 顶栏激活态按钮：朱红淡底 + 朱红字。 */
+html[data-theme-visual="ink"] .t8-topbar button[aria-pressed="true"],
+html[data-theme-visual="ink"] .t8-topbar button[class*="emerald-"]:not(:hover) {
+  background: var(--ink-seal-soft) !important;
+  color: var(--ink-seal) !important;
+  border-color: var(--ink-seal-line) !important;
+}
+
+/* === 侧栏：宣纸卡 + 淡墨右边线 + 纤维纹理 === */
+html[data-theme-visual="ink"] .t8-sidebar,
+html[data-theme-visual="ink"] .t8-sidebar-scroll {
+  background: var(--ink-card-bg) !important;
+  border-right: 1px solid var(--ink-border) !important;
+  background-image: var(--ink-paper-texture) !important;
+  background-size: var(--ink-paper-size) !important;
+}
+
+/* 侧栏分隔线统一走淡墨。 */
+html[data-theme-visual="ink"] .t8-sidebar .border-b,
+html[data-theme-visual="ink"] .t8-sidebar .border-t {
+  border-color: var(--ink-border) !important;
+}
+
+/* 侧栏分组标题：楷书 + 淡墨，hover 朱红。 */
+html[data-theme-visual="ink"] .t8-sidebar button[class*="uppercase tracking-wider"] {
+  color: var(--ink-ink-muted) !important;
+  letter-spacing: 0.08em;
+  font-family: var(--t8-display-font) !important;
+  transition: color var(--ink-transition) !important;
+}
+
+html[data-theme-visual="ink"] .t8-sidebar button[class*="uppercase tracking-wider"]:hover {
+  color: var(--ink-seal) !important;
+}
+
+/* 侧栏小工具按钮：宣纸卡 + 淡墨边。 */
+html[data-theme-visual="ink"] .t8-sidebar button:not(.t8-sidebar-node):not(.px-btn):not([class*="uppercase tracking-wider"]) {
+  background: var(--ink-card-bg) !important;
+  border: 1px solid var(--ink-border) !important;
+  border-radius: var(--ink-radius) !important;
+  color: var(--ink-ink-muted) !important;
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--t8-text-main) 5%, transparent) !important;
+  transition: border-color var(--ink-transition), color var(--ink-transition), background var(--ink-transition) !important;
+}
+
+html[data-theme-visual="ink"] .t8-sidebar button:not(.t8-sidebar-node):not(.px-btn):not([class*="uppercase tracking-wider"]):hover {
+  border-color: var(--ink-seal-line) !important;
+  color: var(--ink-seal) !important;
+  background: var(--ink-seal-soft) !important;
+}
+
+html[data-theme-visual="ink"] .t8-sidebar button:not(.t8-sidebar-node):not(.px-btn):not([class*="uppercase tracking-wider"]):active {
+  filter: brightness(0.96);
+}
+
+/* 侧栏搜索框：宣纸 muted + 淡墨边。 */
+html[data-theme-visual="ink"] .t8-sidebar-search-box {
+  background: var(--ink-muted-bg) !important;
+  border: 1px solid var(--ink-border) !important;
+  border-radius: var(--ink-radius) !important;
+  box-shadow: none !important;
+  transition: border-color var(--ink-transition) !important;
+}
+
+html[data-theme-visual="ink"] .t8-sidebar-search-box:focus-within {
+  border-color: var(--ink-seal-line) !important;
+}
+
+html[data-theme-visual="ink"] .t8-sidebar-search-box input {
+  background: transparent !important;
+  color: var(--ink-ink) !important;
+}
+
+html[data-theme-visual="ink"] .t8-sidebar-search-box input::placeholder {
+  color: var(--ink-ink-dim) !important;
+  opacity: 0.7;
+}
+
+/* 侧栏画布列表行：hover 朱红淡底。 */
+html[data-theme-visual="ink"] .t8-sidebar-canvas-row {
+  border-radius: var(--ink-radius) !important;
+  transition: background var(--ink-transition) !important;
+}
+
+html[data-theme-visual="ink"] .t8-sidebar-canvas-row:hover {
+  background: var(--ink-seal-soft) !important;
+}
+
+html[data-theme-visual="ink"] .t8-sidebar-canvas-title {
+  color: var(--ink-ink) !important;
+  font-family: var(--t8-display-font) !important;
+}
+
+/* 侧栏更新提示点：朱红方印（圆角方块）。 */
+html[data-theme-visual="ink"] .t8-sidebar-canvas-update-dot {
+  background: var(--ink-seal) !important;
+  border: 1px solid var(--ink-card-bg) !important;
+  border-radius: var(--ink-radius) !important;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ink-seal) 18%, transparent) !important;
+}
+
+html[data-theme-visual="ink"] .t8-sidebar-canvas-update-dot::after {
+  border-color: color-mix(in srgb, var(--ink-seal) 40%, transparent) !important;
+}
+
+/* 侧栏底栏版本信息：清墨色。 */
+html[data-theme-visual="ink"] .t8-sidebar > div:last-child {
+  color: var(--ink-ink-dim) !important;
+}
+
+/* 侧栏滚动条：墨色细条，hover 朱红。 */
+html[data-theme-visual="ink"] .t8-sidebar ::-webkit-scrollbar,
+html[data-theme-visual="ink"] .t8-sidebar-scroll ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+html[data-theme-visual="ink"] .t8-sidebar ::-webkit-scrollbar-thumb,
+html[data-theme-visual="ink"] .t8-sidebar-scroll ::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--ink-ink-muted) 30%, transparent) !important;
+  border-radius: var(--ink-radius) !important;
+}
+
+html[data-theme-visual="ink"] .t8-sidebar ::-webkit-scrollbar-thumb:hover,
+html[data-theme-visual="ink"] .t8-sidebar-scroll ::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--ink-seal) 40%, transparent) !important;
+}
+
+html[data-theme-visual="ink"] .t8-sidebar ::-webkit-scrollbar-track,
+html[data-theme-visual="ink"] .t8-sidebar-scroll ::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+
+/* === 通用卡片/面板：宣纸册页 + 纤维纹理 + 淡墨边 + 轻阴影 === */
+html[data-theme-visual="ink"] .t8-card,
+html[data-theme-visual="ink"] .t8-sidebar-node {
+  background: var(--ink-card-bg) !important;
+  border: 1px solid var(--ink-border) !important;
+  border-radius: var(--ink-radius) !important;
+  box-shadow: 0 2px 6px color-mix(in srgb, var(--t8-text-main) 8%, transparent) !important;
+  transition: filter var(--ink-transition), border-color var(--ink-transition) !important;
+}
+
+html[data-theme-visual="ink"] .t8-panel {
+  background: var(--t8-bg-panel-elevated) !important;
+  border: 1px solid var(--t8-border) !important;
+  border-radius: var(--t8-radius-panel) !important;
+  box-shadow: var(--t8-shadow-panel) !important;
+}
+
+html[data-theme-visual="ink"] .t8-card:hover,
+html[data-theme-visual="ink"] .t8-sidebar-node:hover {
+  filter: brightness(1.03);
+  border-color: var(--ink-seal-line) !important;
+}
+
+/* 节点标题栏：朱红淡晕底 + 淡墨下边线 + 行书字体 + 焦墨字。
+   token nodeHeaderBg 已是 rgba(196,30,58,0.06~0.10) 朱红淡晕。 */
+html[data-theme-visual="ink"] .react-flow__node:not(.react-flow__node-groupBox) .t8-node-header,
+html[data-theme-visual="ink"] .t8-node-header {
+  background: var(--t8-node-header-bg) !important;
+  border-bottom: 1px solid var(--ink-border) !important;
+  border-radius: var(--ink-radius) var(--ink-radius) 0 0 !important;
+  font-family: var(--t8-display-font) !important;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--ink-ink) !important;
+}
+
+/* GroupBox (打组容器)：保留组色身份，外壳补宣纸册页 + 淡墨边；选中加朱红印章外环。 */
+html[data-theme-visual="ink"] .react-flow__node-groupBox > div:first-child,
+html[data-theme-visual="ink"] .t8-group-box {
+  background: var(--ink-muted-bg) !important;
+  border: 1px solid var(--ink-border) !important;
+  border-radius: var(--ink-radius) !important;
+  box-shadow: 0 1px 4px color-mix(in srgb, var(--t8-text-main) 6%, transparent) !important;
+  background-image: var(--ink-paper-texture) !important;
+  background-size: var(--ink-paper-size) !important;
+}
+
+html[data-theme-visual="ink"] .react-flow__node-groupBox.selected > div:first-child,
+html[data-theme-visual="ink"] .t8-group-box[data-selected="true"] {
+  border-color: var(--ink-seal) !important;
+  box-shadow: 0 0 0 1px var(--ink-seal-line), 0 2px 8px color-mix(in srgb, var(--ink-seal) 16%, transparent) !important;
+}
+
+/* 组标题栏：保持组色识别度，仅方角对齐 + 行书 + 焦墨字。 */
+html[data-theme-visual="ink"] .t8-group-box__header {
+  border-top-left-radius: var(--ink-radius) !important;
+  border-top-right-radius: var(--ink-radius) !important;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  font-family: var(--t8-display-font) !important;
+  border-bottom: 1px solid var(--ink-border) !important;
+  color: var(--ink-ink) !important;
+}
+
+html[data-theme-visual="ink"] .t8-group-box__title,
+html[data-theme-visual="ink"] .t8-group-box__count {
+  color: var(--ink-ink) !important;
+}
+
+/* 组内操作按钮（重命名/删除）：宣纸卡 + 淡墨边；执行按钮保留组色。 */
+html[data-theme-visual="ink"] .t8-group-box__button:not(.t8-group-box__button--run) {
+  background: var(--ink-card-bg) !important;
+  border: 1px solid var(--ink-border) !important;
+  border-radius: var(--ink-radius) !important;
+  color: var(--ink-ink-muted) !important;
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--t8-text-main) 5%, transparent) !important;
+  transition: border-color var(--ink-transition), color var(--ink-transition) !important;
+}
+
+html[data-theme-visual="ink"] .t8-group-box__button:not(.t8-group-box__button--run):hover {
+  color: var(--ink-seal) !important;
+  border-color: var(--ink-seal-line) !important;
+}
+
+html[data-theme-visual="ink"] .t8-group-box__button:not(.t8-group-box__button--run):active {
+  filter: brightness(0.96);
+}
+
+/* 组颜色选择器浮层：宣纸卡。 */
+html[data-theme-visual="ink"] .t8-group-box ~ div[class*="grid"] {
+  background: var(--ink-card-bg-elev) !important;
+  border: 1px solid var(--ink-border) !important;
+  border-radius: var(--ink-radius) !important;
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--t8-text-main) 12%, transparent) !important;
+}
+
+/* === 按钮：宣纸卡 + 淡墨边，hover 朱红淡底，active 墨色加深 === */
+html[data-theme-visual="ink"] .react-flow__node:not(.react-flow__node-groupBox) button:not(.react-flow__controls-button):not([class*="text-red"]):not([class*="bg-red"]):not([title*="删除"]):not([aria-label*="删除"]),
+html[data-theme-visual="ink"] .t8-btn,
+html[data-theme-visual="ink"] .t8-mini-icon-button {
+  background: var(--ink-card-bg) !important;
+  border: 1px solid var(--ink-border) !important;
+  border-radius: var(--ink-radius) !important;
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--t8-text-main) 6%, transparent) !important;
+  color: var(--ink-ink) !important;
+  transition: filter var(--ink-transition), border-color var(--ink-transition), background var(--ink-transition), color var(--ink-transition) !important;
+}
+
+html[data-theme-visual="ink"] .react-flow__node:not(.react-flow__node-groupBox) button:not(.react-flow__controls-button):not([class*="text-red"]):not([class*="bg-red"]):not([title*="删除"]):not([aria-label*="删除"]):hover,
+html[data-theme-visual="ink"] .t8-btn:hover,
+html[data-theme-visual="ink"] .t8-mini-icon-button:hover {
+  filter: brightness(1.04);
+  border-color: var(--ink-seal-line) !important;
+  color: var(--ink-seal) !important;
+  background: var(--ink-seal-soft) !important;
+}
+
+html[data-theme-visual="ink"] .react-flow__node:not(.react-flow__node-groupBox) button:not(.react-flow__controls-button):not([class*="text-red"]):not([class*="bg-red"]):not([title*="删除"]):not([aria-label*="删除"]):active,
+html[data-theme-visual="ink"] .t8-btn:active,
+html[data-theme-visual="ink"] .t8-mini-icon-button:active {
+  filter: brightness(0.95);
+}
+
+/* 主按钮：朱红淡底 + 朱红字 + 朱红边（印章式）。 */
+html[data-theme-visual="ink"] .t8-btn--primary,
+html[data-theme-visual="ink"] button[class*="bg-"][class*="--accent"],
+html[data-theme-visual="ink"] .px-btn--mint {
+  background: var(--ink-seal-soft) !important;
+  color: var(--ink-seal) !important;
+  border: 1px solid var(--ink-seal-line) !important;
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--ink-seal) 14%, transparent) !important;
+}
+
+html[data-theme-visual="ink"] .t8-btn--primary:hover {
+  background: color-mix(in srgb, var(--ink-seal) 22%, transparent) !important;
+  border-color: var(--ink-seal) !important;
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--ink-seal) 22%, transparent) !important;
+}
+
+html[data-theme-visual="ink"] .t8-btn--primary:active {
+  filter: brightness(0.95);
+}
+
+/* === 输入框/选择框：宣纸 muted 底 + 淡墨边 + focus 朱红边 === */
+html[data-theme-visual="ink"] .react-flow__node:not(.react-flow__node-groupBox) input,
+html[data-theme-visual="ink"] .react-flow__node:not(.react-flow__node-groupBox) select,
+html[data-theme-visual="ink"] .react-flow__node:not(.react-flow__node-groupBox) textarea,
+html[data-theme-visual="ink"] .t8-input,
+html[data-theme-visual="ink"] .t8-select,
+html[data-theme-visual="ink"] textarea {
+  background: var(--ink-muted-bg) !important;
+  border: 1px solid var(--ink-border) !important;
+  border-radius: var(--ink-radius) !important;
+  box-shadow: none !important;
+  color: var(--ink-ink) !important;
+  font-family: var(--t8-font-family) !important;
+  transition: border-color var(--ink-transition) !important;
+}
+
+html[data-theme-visual="ink"] .react-flow__node:not(.react-flow__node-groupBox) input:focus,
+html[data-theme-visual="ink"] .react-flow__node:not(.react-flow__node-groupBox) select:focus,
+html[data-theme-visual="ink"] .react-flow__node:not(.react-flow__node-groupBox) textarea:focus,
+html[data-theme-visual="ink"] .t8-input:focus,
+html[data-theme-visual="ink"] .t8-select:focus,
+html[data-theme-visual="ink"] textarea:focus {
+  outline: none !important;
+  border-color: var(--ink-seal) !important;
+  box-shadow: 0 0 0 1px var(--ink-seal-line) !important;
+}
+
+/* select option：下拉项可读性兜底。 */
+html[data-theme-visual="ink"] select option {
+  background: var(--ink-card-bg-elev) !important;
+  color: var(--ink-ink) !important;
+}
+
+html[data-theme-visual="ink"] select option:checked {
+  background: var(--ink-seal-soft) !important;
+  color: var(--ink-ink) !important;
+}
+
+/* === 端口（Handle）：朱红小圆点 + 宣纸边（像印章纽） === */
+html[data-theme-visual="ink"] .react-flow__handle {
+  border-radius: 50% !important;
+  border: 1.5px solid var(--ink-card-bg) !important;
+  background: var(--ink-seal) !important;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--ink-seal) 40%, transparent), 0 1px 2px rgba(0,0,0,0.2) !important;
+}
+
+html[data-theme-visual="ink"] .react-flow__handle:hover {
+  filter: brightness(1.15);
+}
+
+html[data-theme-visual="ink"] .react-flow__handle.react-flow__handle-connecting {
+  background: var(--t8-warning) !important;
+  border-color: var(--ink-card-bg) !important;
+}
+
+html[data-theme-visual="ink"] .react-flow__handle.react-flow__handle-valid {
+  background: var(--ink-mountain) !important;
+  border-color: var(--ink-card-bg) !important;
+}
+
+/* === 连线：浓墨细线（书法笔触），选中朱红 + 加粗 === */
+html[data-theme-visual="ink"] .react-flow__edge-path {
+  stroke: var(--t8-edge) !important;
+  stroke-width: 1.6 !important;
+  stroke-linecap: round !important;
+  transition: stroke 160ms ease, stroke-width 160ms ease;
+}
+
+html[data-theme-visual="ink"] .react-flow__edge.selected .react-flow__edge-path,
+html[data-theme-visual="ink"] .react-flow__edge:hover .react-flow__edge-path {
+  stroke: var(--t8-edge-selected) !important;
+  stroke-width: 2.2 !important;
+}
+
+/* 主题激活边：朱红「干笔飞白」虚线流动（遵守 36 边上限 + viewport-moving 暂停）。 */
+html[data-theme-visual="ink"] .react-flow__edge.t8-edge-theme-active .react-flow__edge-path {
+  stroke: var(--ink-seal) !important;
+  stroke-width: 2 !important;
+  stroke-dasharray: 0.5 4;
+  animation: t8-ink-edge-flow 2s linear infinite;
+  opacity: 0.8;
+}
+
+@keyframes t8-ink-edge-flow {
+  to { stroke-dashoffset: -18; }
+}
+
+/* 框选：朱红淡底 + 朱红边。 */
+html[data-theme-visual="ink"] .react-flow__selection {
+  background: var(--t8-selection-bg) !important;
+  border: 1px solid var(--t8-selection-border) !important;
+  border-radius: var(--ink-radius) !important;
+}
+
+/* === MiniMap / 音乐按钮：宣纸卡 + 淡墨边（controls 面板透明） === */
+html[data-theme-visual="ink"] .t8-theme-music-toggle {
+  background: var(--ink-card-bg) !important;
+  border: 1px solid var(--ink-border) !important;
+  border-radius: var(--ink-radius) !important;
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--t8-text-main) 8%, transparent) !important;
+}
+
+/* controls 面板容器透明，只给内部按钮走宣纸卡。 */
+html[data-theme-visual="ink"] .react-flow__controls {
+  background: var(--t8-bg-panel-elevated) !important;
+  border: 1px solid var(--t8-border) !important;
+  border-radius: var(--t8-radius-panel) !important;
+  box-shadow: var(--t8-shadow-panel) !important;
+}
+
+html[data-theme-visual="ink"] .react-flow__controls-button {
+  background: var(--ink-card-bg) !important;
+  border: 1px solid var(--ink-border) !important;
+  border-radius: var(--ink-radius) !important;
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--t8-text-main) 5%, transparent) !important;
+  color: var(--ink-ink) !important;
+  margin: 2px 0 !important;
+  transition: border-color var(--ink-transition), color var(--ink-transition) !important;
+}
+
+html[data-theme-visual="ink"] .react-flow__controls-button:hover {
+  color: var(--ink-seal) !important;
+  border-color: var(--ink-seal-line) !important;
+  background: var(--ink-seal-soft) !important;
+}
+/* === 右键菜单 / 弹窗 / 抽屉：宣纸卡 + 纤维纹理 + 行书标题 + 朱红下边线 === */
+html[data-theme-visual="ink"] .t8-modal,
+html[data-theme-visual="ink"] .t8-drawer {
+  background: var(--ink-card-bg-elev) !important;
+  border: 1px solid var(--ink-border) !important;
+  border-radius: var(--ink-radius) !important;
+  box-shadow: 0 4px 20px color-mix(in srgb, var(--t8-text-main) 14%, transparent) !important;
+  background-image: var(--ink-paper-texture) !important;
+  background-size: var(--ink-paper-size) !important;
+}
+
+html[data-theme-visual="ink"] .t8-context-menu {
+  background: var(--t8-bg-panel-elevated) !important;
+  border: 1px solid var(--t8-border) !important;
+  border-radius: var(--t8-radius-panel) !important;
+  box-shadow: var(--t8-shadow-panel) !important;
+}
+
+/* 弹窗/抽屉标题：行书字体 + 焦墨色 + 朱红下边线点缀。 */
+html[data-theme-visual="ink"] .t8-modal h1,
+html[data-theme-visual="ink"] .t8-modal h2,
+html[data-theme-visual="ink"] .t8-modal h3,
+html[data-theme-visual="ink"] .t8-drawer h1,
+html[data-theme-visual="ink"] .t8-drawer h2,
+html[data-theme-visual="ink"] .t8-drawer h3 {
+  font-weight: 700 !important;
+  color: var(--ink-ink) !important;
+  font-family: var(--t8-display-font) !important;
+  letter-spacing: 0.06em;
+  border-bottom: 2px solid var(--ink-seal-line) !important;
+  padding-bottom: 6px !important;
+}
+
+html[data-theme-visual="ink"] .t8-modal .border-b,
+html[data-theme-visual="ink"] .t8-drawer .border-b,
+html[data-theme-visual="ink"] .t8-context-menu .border-b {
+  border-color: var(--ink-border) !important;
+}
+
+/* === Chip / Badge：宣纸 muted + 淡墨边 === */
+html[data-theme-visual="ink"] .t8-chip {
+  background: var(--ink-muted-bg) !important;
+  border: 1px solid var(--ink-border) !important;
+  border-radius: var(--ink-radius) !important;
+  color: var(--ink-ink) !important;
+  box-shadow: none !important;
+}
+
+html[data-theme-visual="ink"] .t8-chip--active,
+html[data-theme-visual="ink"] .t8-chip[class*="active"] {
+  background: var(--ink-seal-soft) !important;
+  border-color: var(--ink-seal-line) !important;
+  color: var(--ink-seal) !important;
+}
+
+/* 智能节点状态 chip：状态色。 */
+html[data-theme-visual="ink"] .t8-smart-mini-status {
+  border-radius: var(--ink-radius) !important;
+}
+
+html[data-theme-visual="ink"] .t8-smart-node-status--success {
+  color: var(--ink-mountain) !important;
+  border-color: color-mix(in srgb, var(--ink-mountain) 36%, transparent) !important;
+}
+
+html[data-theme-visual="ink"] .t8-smart-node-status--error,
+html[data-theme-visual="ink"] .t8-smart-node-status--danger {
+  color: var(--ink-seal) !important;
+  border-color: var(--ink-seal-line) !important;
+}
+
+html[data-theme-visual="ink"] .t8-smart-node-status--warning,
+html[data-theme-visual="ink"] .t8-smart-node-status--pending {
+  color: var(--ink-gold) !important;
+  border-color: color-mix(in srgb, var(--ink-gold) 36%, transparent) !important;
+}
+
+/* === Tooltip / 通用浮层提示：宣纸卡 === */
+html[data-theme-visual="ink"] [role="tooltip"],
+html[data-theme-visual="ink"] .t8-tooltip {
+  background: var(--ink-card-bg-elev) !important;
+  border: 1px solid var(--ink-border) !important;
+  border-radius: var(--ink-radius) !important;
+  color: var(--ink-ink) !important;
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--t8-text-main) 10%, transparent) !important;
+}
+
+/* === SHIFT 划线轨迹：毛笔枯笔飞白 === */
+html[data-theme-visual="ink"] .t8-cut-track {
+  stroke: var(--t8-cut-track) !important;
+  stroke-width: 1.6 !important;
+  stroke-dasharray: 0.5 3 !important;
+  stroke-linecap: round !important;
+  opacity: 0.7;
+}
+
+html[data-theme-visual="ink"] .t8-cut-button {
+  background: var(--ink-card-bg) !important;
+  color: var(--ink-seal) !important;
+  border: 1px solid var(--ink-border) !important;
+  border-radius: var(--ink-radius) !important;
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--t8-text-main) 6%, transparent) !important;
+}
+
+/* === 浮层操作栏：宣纸卡 === */
+html[data-theme-visual="ink"] .t8-node-action-bar {
+  background: var(--ink-card-bg-elev) !important;
+  border: 1px solid var(--ink-border) !important;
+  border-radius: var(--ink-radius) !important;
+  box-shadow: 0 2px 10px color-mix(in srgb, var(--t8-text-main) 10%, transparent) !important;
+}
+
+/* === legacy 内部控件兜底：浅色模式下把节点里残留的暗色/白色工具类映射回水墨调色 === */
+/* 1. 所有 text-white* 元素 → 焦墨色 */
+html[data-theme-visual="ink"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) [class*="text-white"]:not(input):not(textarea):not(select) {
+  color: var(--ink-ink) !important;
+}
+
+/* 1b. 浅色模式 svg 图标：跟随父级焦墨色，不被 text-white/NN 冲淡 */
+html[data-theme-visual="ink"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) svg,
+html[data-theme-visual="ink"][data-theme-mode="light"] .t8-node svg {
+  color: var(--ink-ink) !important;
+}
+
+/* 2. 表单控件本身的 text-white → 焦墨色 */
+html[data-theme-visual="ink"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) input[class*="text-white"],
+html[data-theme-visual="ink"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) textarea[class*="text-white"],
+html[data-theme-visual="ink"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) select[class*="text-white"] {
+  color: var(--ink-ink) !important;
+}
+
+/* 3. placeholder 文字色 */
+html[data-theme-visual="ink"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) input::placeholder,
+html[data-theme-visual="ink"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) textarea::placeholder {
+  color: var(--ink-ink-dim) !important;
+  opacity: 0.7 !important;
+}
+
+/* 4. bg-white/ 透明底 → 宣纸 elevated 底 */
+html[data-theme-visual="ink"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) [class*="bg-white/"]:not(input):not(textarea):not(select):not(img):not(video):not(canvas) {
+  background: var(--ink-card-bg-elev) !important;
+}
+
+/* 5. 表单控件的 bg-white/ → muted 底 */
+html[data-theme-visual="ink"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) input[class*="bg-white/"],
+html[data-theme-visual="ink"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) textarea[class*="bg-white/"],
+html[data-theme-visual="ink"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) select[class*="bg-white/"] {
+  background: var(--ink-muted-bg) !important;
+}
+
+/* 6. bg-zinc-900/950（暗色模式硬底）→ muted 底 */
+html[data-theme-visual="ink"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) [class*="bg-zinc-900"]:not(input):not(textarea):not(select):not(img):not(video):not(canvas),
+html[data-theme-visual="ink"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) [class*="bg-zinc-950"]:not(input):not(textarea):not(select):not(img):not(video):not(canvas) {
+  background: var(--ink-muted-bg) !important;
+}
+
+/* 7. select/option 的 bg-zinc-900 → elevated 底 */
+html[data-theme-visual="ink"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) select[class*="bg-zinc-900"],
+html[data-theme-visual="ink"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) select[class*="bg-zinc-950"],
+html[data-theme-visual="ink"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) option[class*="bg-zinc-900"],
+html[data-theme-visual="ink"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) option[class*="bg-zinc-950"] {
+  background: var(--ink-card-bg-elev) !important;
+  color: var(--ink-ink) !important;
+}
+
+/* 8. bg-black/ 透明底 → 移除 */
+html[data-theme-visual="ink"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) [class*="bg-black/"]:not(input):not(textarea):not(select):not(img):not(video):not(canvas) {
+  background: transparent !important;
+}
+
+/* 9. border-white/ → 淡墨边 */
+html[data-theme-visual="ink"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) [class*="border-white/"] {
+  border-color: var(--ink-border) !important;
+}
+
+/* 10. focus:border-white/ → focus 朱红边 */
+html[data-theme-visual="ink"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) [class*="focus:border-white"]:focus {
+  border-color: var(--ink-seal) !important;
+}
+
+/* 11. 残留的浅色文字工具类 → 淡墨色 */
+html[data-theme-visual="ink"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) [class*="text-amber-100"],
+html[data-theme-visual="ink"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) [class*="text-cyan-300"],
+html[data-theme-visual="ink"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) [class*="text-sky-300"] {
+  color: var(--ink-ink-muted) !important;
+}
+
+/* 12. hover:text-white → hover 朱红 */
+html[data-theme-visual="ink"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) [class*="hover:text-white"]:hover {
+  color: var(--ink-seal) !important;
+}
+
+/* 13. 节点内 select 下拉框统一走宣纸 + 焦墨字 */
+html[data-theme-visual="ink"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) select {
+  background: var(--ink-muted-bg) !important;
+  color: var(--ink-ink) !important;
+  border-color: var(--ink-border) !important;
+}
+
+html[data-theme-visual="ink"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) select option {
+  background: var(--ink-card-bg-elev) !important;
+  color: var(--ink-ink) !important;
+}
+
+/* 14. 节点内 input/textarea 统一兜底 */
+html[data-theme-visual="ink"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+html[data-theme-visual="ink"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) textarea {
+  background: var(--ink-muted-bg) !important;
+  color: var(--ink-ink) !important;
+  border-color: var(--ink-border) !important;
+  box-shadow: none !important;
+}
+
+html[data-theme-visual="ink"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) input::placeholder,
+html[data-theme-visual="ink"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) textarea::placeholder {
+  color: var(--ink-ink-dim) !important;
+  opacity: 0.7 !important;
+}
+
+/* 顶栏/侧栏残留硬底工具类兜底：收敛为宣纸卡。 */
+html[data-theme-visual="ink"][data-theme-mode="dark"] .t8-topbar button[class*="bg-sky-"],
+html[data-theme-visual="ink"][data-theme-mode="dark"] .t8-topbar button[class*="bg-emerald-"],
+html[data-theme-visual="ink"][data-theme-mode="dark"] .t8-topbar button[class*="bg-white/"] {
+  background: var(--ink-card-bg) !important;
+  border-color: var(--ink-border) !important;
+}
+
+/* === 视口拖动 / 节点拖拽时：暂停墨晕动效与边流动，避免性能拖累 === */
+html[data-theme-visual="ink"] .t8-canvas-shell.t8-viewport-moving .react-flow__node.selected:not(.react-flow__node-groupBox) > div:first-child,
+html[data-theme-visual="ink"] .t8-canvas-shell.t8-node-dragging .react-flow__node.selected:not(.react-flow__node-groupBox) > div:first-child {
+  animation: none !important;
+}
+
+html[data-theme-visual="ink"] .t8-canvas-shell.t8-viewport-moving .react-flow__node.selected:not(.react-flow__node-groupBox) > div:first-child::after,
+html[data-theme-visual="ink"] .t8-canvas-shell.t8-node-dragging .react-flow__node.selected:not(.react-flow__node-groupBox) > div:first-child::after {
+  animation: none !important;
+}
+
+html[data-theme-visual="ink"] .t8-canvas-shell.t8-viewport-moving .react-flow__edge.t8-edge-theme-active .react-flow__edge-path,
+html[data-theme-visual="ink"] .t8-canvas-shell.t8-node-dragging .react-flow__edge.t8-edge-theme-active .react-flow__edge-path {
+  animation: none !important;
+}
+
+/* 减少动态效果偏好：关掉所有动画/墨晕/filter。 */
+@media (prefers-reduced-motion: reduce) {
+  html[data-theme-visual="ink"] .t8-card,
+  html[data-theme-visual="ink"] .t8-btn,
+  html[data-theme-visual="ink"] .react-flow__handle,
+  html[data-theme-visual="ink"] .react-flow__edge.t8-edge-theme-active .react-flow__edge-path {
+    transition: none !important;
+    animation: none !important;
+    filter: none !important;
+  }
+}

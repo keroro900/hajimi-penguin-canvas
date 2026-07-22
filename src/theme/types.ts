@@ -1,37 +1,8 @@
 export type ThemeMode = 'dark' | 'light';
 export type LegacyThemeStyle = 'tech' | 'pixel';
-export type ThemeVisualStyle =
-  | 'plain'
-  | 'tech'
-  | 'pixel'
-  | 'op'
-  | 'rh'
-  | 'naruto'
-  | 'eva'
-  | 'yyh'
-  | 'slamdunk'
-  | 'soccer-hero'
-  | 'dragon-ball'
-  | 'saint-seiya'
-  | 'tetris'
-  | 'farm-story';
+export type ThemeVisualStyle = 'plain' | 'tech' | 'pixel' | 'rh' | 'soft' | 'wabi' | 'vapor' | 'utility' | 'skeuo' | 'retro' | 'ink' | 'tap-studio';
 export type ThemeIntensity = 'subtle' | 'medium' | 'strong';
-export type ThemeMusicPreset =
-  | 'tech-pulse'
-  | 'pixel-pop'
-  | 'grand-line-adventure'
-  | 'rh-pulse'
-  | 'shinobi-flame'
-  | 'eva-sync'
-  | 'spirit-gun'
-  | 'buzzer-beater'
-  | 'golden-goal'
-  | 'ki-burst'
-  | 'shenron-aura'
-  | 'pegasus-cosmos'
-  | 'hades-eclipse'
-  | 'block-drop'
-  | 'farm-breeze';
+export type ThemeMusicPreset = 'tech-pulse' | 'pixel-pop' | 'rh-pulse' | 'soft-pulse' | 'wabi-drift' | 'vapor-drift' | 'utility-pulse' | 'skeuo-hum' | 'retro-chime' | 'ink-drift' | 'tap-flow';
 export type ThemeMusicSource = 'synth' | 'url' | 'upload';
 
 export interface ThemeTokens {
@@ -80,9 +51,9 @@ export interface ThemeModeDefinition {
 export interface ThemeVisuals {
   style: ThemeVisualStyle;
   intensity?: ThemeIntensity;
-  iconPack?: 'default' | 'op' | 'naruto' | 'eva' | 'yyh' | 'slamdunk' | 'soccer' | 'dragon-ball' | 'saint-seiya' | 'tetromino-well' | 'farm-tools';
-  canvasPattern?: 'none' | 'dots' | 'map' | 'circuit' | 'confetti' | 'hub' | 'chakra' | 'eva-grid' | 'spirit-map' | 'court' | 'pitch' | 'dragon-radar' | 'sanctuary-zodiac' | 'tetris-stack' | 'pasture-map';
-  nodeFrame?: 'plain' | 'glass' | 'sticker' | 'wanted' | 'hub-card' | 'shinobi-scroll' | 'eva-panel' | 'spirit-case' | 'scoreboard-card' | 'match-card' | 'capsule-card' | 'cloth-box-card' | 'arcade-cabinet-card' | 'farm-sign-card';
+  iconPack?: 'default' | 'op' | 'naruto' | 'eva' | 'yyh' | 'slamdunk' | 'soccer' | 'farm-tools';
+  canvasPattern?: 'none' | 'dots' | 'map' | 'circuit' | 'confetti' | 'hub' | 'chakra' | 'eva-grid' | 'spirit-map' | 'court' | 'pitch' | 'pasture-map' | 'soft-dots' | 'wabi-paper' | 'vapor-grid' | 'utility-grid' | 'skeuo-wood' | 'retro-desktop' | 'ink-paper' | 'tap-void';
+  nodeFrame?: 'plain' | 'glass' | 'sticker' | 'wanted' | 'hub-card' | 'shinobi-scroll' | 'eva-panel' | 'spirit-case' | 'scoreboard-card' | 'match-card' | 'farm-sign-card' | 'soft-card' | 'wabi-card' | 'vapor-card' | 'utility-card' | 'skeuo-panel' | 'retro-window' | 'ink-scroll' | 'tap-glass';
   headerMark?: string;
 }
 

@@ -378,8 +378,6 @@ test('Cowart-inspired workflow is wired through node registry, toolbar, canvas, 
 
   assert.match(css, /Generation target node v1/);
   assert.match(css, /\.t8-generation-target-download/);
-  assert.match(css, /\[data-theme-visual="farm-story"\] \.t8-generation-target-node/);
-  assert.match(css, /\[data-theme-visual="saint-seiya"\] \.t8-generation-target-node/);
 
   assert.match(features, /cowartInspiredCanvasWorkflow/);
 });

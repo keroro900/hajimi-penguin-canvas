@@ -1,6 +1,7 @@
 import type { Edge, Node } from '@xyflow/react';
 import type { ResourceItem } from '../services/api';
 import type { SendNodeFragment } from './sendNodeFragment';
+import { sanitizeClipboardNodeData } from './canvasClipboard.ts';
 
 export const WORKFLOW_RESOURCE_SCHEMA = 't8-workflow-fragment';
 
@@ -52,6 +53,7 @@ function cleanNodes(nodes: unknown): Node[] {
     .map((node) => {
       const cloned = clonePlain(node) as Node & Record<string, any>;
       cloned.selected = false;
+      cloned.data = sanitizeClipboardNodeData((node as Node).data, (node as Node).type);
       cloned.dragging = false;
       delete cloned.resizing;
       delete cloned.positionAbsolute;

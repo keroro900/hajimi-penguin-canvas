@@ -6,6 +6,8 @@ import {
   markMediaSlotCancelled,
   markMediaSlotFailed,
   markMediaSlotSuccess,
+  resolveMediaResultSlots,
+  successfulMediaSlotUrls,
   summarizeMediaSlots,
 } from '../src/utils/mediaTaskSlots.ts';
 
@@ -52,3 +54,27 @@ test('media task slots can cancel unfinished work while keeping completed output
   });
 });
 
+test('media result slots fall back to persisted output urls when slots are missing', () => {
+  assert.deepEqual(resolveMediaResultSlots([], ['a.png', 'b.png'], 10), [
+    { index: 0, status: 'success', url: 'a.png', urls: ['a.png'] },
+    { index: 1, status: 'success', url: 'b.png', urls: ['b.png'] },
+  ]);
+});
+
+test('media result slots recover the primary url from legacy urls arrays', () => {
+  assert.deepEqual(resolveMediaResultSlots([
+    { index: 3, status: 'success', urls: ['', 'legacy.png'] },
+    { index: 4, status: 'running', taskId: 'task-4' },
+  ], ['stale.png'], 10), [
+    { index: 3, status: 'success', url: 'legacy.png', urls: ['legacy.png'] },
+    { index: 4, status: 'running', taskId: 'task-4' },
+  ]);
+});
+
+test('successful media slot urls expose one primary output per result slot', () => {
+  assert.deepEqual(successfulMediaSlotUrls([
+    { index: 0, status: 'success', url: 'primary.png', urls: ['primary.png', 'duplicate.png'] },
+    { index: 1, status: 'success', url: 'second.png', urls: ['second.png'] },
+    { index: 2, status: 'running' },
+  ]), ['primary.png', 'second.png']);
+});

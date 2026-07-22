@@ -94,13 +94,13 @@ test('batch processor operation flags are exclusive and normalize legacy multi-s
     batchProcessorOperation: 'upscale',
     batchProcessorTrimBlackBars: true,
     batchProcessorRemoveBg: true,
-  }), 'upscale');
+  }), 'trim');
 
-  assert.deepEqual(createExclusiveBatchProcessorOperationPatch('expand'), {
-    batchProcessorOperation: 'expand',
-    batchProcessorTrimBlackBars: false,
+  assert.deepEqual(createExclusiveBatchProcessorOperationPatch('trim'), {
+    batchProcessorOperation: 'trim',
+    batchProcessorTrimBlackBars: true,
     batchProcessorRemoveBg: false,
-    batchProcessorExpandCanvas: true,
+    batchProcessorExpandCanvas: false,
     batchProcessorUpscale: false,
   });
   assert.deepEqual(createExclusiveBatchProcessorOperationPatch(null), {
@@ -184,45 +184,29 @@ test('batch processor node is a toolbox executable that does not auto-output to 
   assert.match(node, /已启用/);
   assert.match(node, /未启用/);
   assert.match(node, /开启后点击开始批处理/);
-  assert.match(node, /批量扩图已启用，将调用 RH AI扩图/);
-  assert.match(node, /仅图像素材可用/);
-  assert.match(node, /批量抠图、批量扩图和高清放大统一调用 RH 工具箱能力层/);
   assert.match(node, /batchProcessorLocalConcurrency/);
-  assert.match(node, /batchProcessorRhConcurrency/);
   assert.match(node, /batchProcessorRetryCount/);
   assert.match(node, /batchProcessorContinueOnError/);
-  assert.match(node, /batchProcessorCutoutOutputRatio/);
-  assert.match(node, /batchProcessorExpandPresetId/);
   assert.match(node, /resolveBatchProcessorOperation/);
   assert.match(node, /createExclusiveBatchProcessorOperationPatch/);
   assert.match(node, /data-batch-status/);
   assert.match(node, /正在处理/);
   assert.match(node, /runBatchWorkPool/);
-  assert.match(node, /runRhImageCapability/);
-  assert.match(node, /RH_IMAGE_CAPABILITY_PRESETS/);
-  assert.match(node, /RH高清/);
-  assert.match(node, /RH 4K/);
+  assert.doesNotMatch(node, /runRhImageCapability|RH_IMAGE_CAPABILITY_PRESETS|RH高清|RH 4K|RH并发/);
   assert.match(node, /并发/);
   assert.match(node, /重试失败/);
-  assert.match(node, /normalizeBatchConcurrency\(d\.batchProcessorRhConcurrency,\s*2,\s*1,\s*10\)/);
-  assert.match(node, /\[1,\s*2,\s*3,\s*4,\s*5,\s*6,\s*7,\s*8,\s*9,\s*10\]\.map\(\(item\) => <option key=\{item\} value=\{item\}>\{item\}<\/option>\)/);
   assert.doesNotMatch(node, /imageUrls:\s*result/);
   assert.doesNotMatch(node, /videoUrls:\s*result/);
   assert.doesNotMatch(node, /audioUrls:\s*result/);
 });
 
-test('batch processor routes cutout, expand, and upscale through RH toolbox only', () => {
+test('batch processor ignores removed RH operations and keeps local trim processing', () => {
   const node = read('src/components/nodes/BatchProcessorNode.tsx');
 
-  assert.match(node, /runRhStep\('RH高清抠图',\s*'image\.cutout'/);
-  assert.match(node, /runRhStep\('RH AI扩图',\s*'image\.expand'/);
-  assert.match(node, /runRhStep\('RH 4K高清放大',\s*'image\.upscale'/);
   assert.match(node, /const selectedOperation = resolveBatchProcessorOperation\(d\)/);
-  assert.match(node, /const hasRhSteps = cutoutSelected \|\| expandSelected \|\| upscaleSelected/);
-  assert.match(node, /const activeConcurrency = hasRhSteps \? rhConcurrency : localConcurrency/);
-  assert.match(node, /抠图后比例/);
-  assert.match(node, /batchProcessorCutoutOutputRatio/);
-  assert.match(node, /RH并发/);
+  assert.match(node, /const activeConcurrency = localConcurrency/);
+  assert.match(node, /opTrimBorder/);
+  assert.doesNotMatch(node, /runRhStep|cutoutSelected|expandSelected|upscaleSelected|rhConcurrency/);
 
   assert.doesNotMatch(node, /opRemoveBg/);
   assert.doesNotMatch(node, /opUpscale/);

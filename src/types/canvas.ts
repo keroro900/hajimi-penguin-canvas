@@ -14,25 +14,8 @@ export type NodeType =
   | 'director-storyboard'
   | 'audio'
   | 'llm'
-  | 'runninghub'
-  | 'runninghub-wallet'
-  | 'rh-config'
-  | 'rh-tools'
-  | 'rh-toolbox'
-  | 'rh-toolbox-maker'
-  | 'vibex'
-  | 'fal-toolbox'
-  | 'fal-toolbox-maker'
   | 'model-3d-preview'
   | 'model-3d-upload'
-  | 'grok-oauth-agent'
-  | 'codex-cli-agent'
-  | 'codex-image-conjure'
-  | 'genclaw'
-  | 'artist-style-master'
-  | 'anime-tag-master'
-  | 'comfyui-store'
-  | 'comfyui-app-maker'
   // Special (5)
   | 'multi-angle-3d'
   | 'panorama-720'
@@ -47,6 +30,7 @@ export type NodeType =
   | 'frame-pair'
   | 'loop'
   | 'pick-from-set'
+  | 'random-route'
   | 'text-split'
   | 'resize'
   | 'lut-color'
@@ -82,17 +66,13 @@ export type NodeType =
   | 'upload'
   | 'material-set'
   | 'generation-target'
+  | 'layer-agent'
+  | 'apparel-pack-output'
   | 'output';
 
 // 节点分类
 export type NodeCategory =
   | 'core'
-  | 'rh'
-  | 'fal'
-  | 'grok'
-  | 'codex'
-  | 'inspiration'
-  | 'comfyui'
   | 'special'
   | 'utility'
   | 'auxiliary'
@@ -139,6 +119,7 @@ export interface AdvancedProviderConfig {
   hasApiKey?: boolean;
   imageModels?: string[];
   videoModels?: string[];
+  audioModels?: string[];
   chatModels?: string[];
   defaults?: Record<string, any> & {
     imageProtocol?: 'images' | 'openai-chat';
@@ -647,12 +628,23 @@ export interface CanvasData {
 }
 
 // API Key 设置(对应后端 settings)
+export interface DynamicModelCatalog {
+  all: string[];
+  imageModels: string[];
+  videoModels: string[];
+  audioModels: string[];
+  chatModels: string[];
+  unknownModels: string[];
+  manualModels?: string[];
+  typeOverrides?: Record<string, 'image' | 'video' | 'audio' | 'chat' | 'unknown'>;
+  fetchedAt?: string;
+  modelListUrl?: string;
+}
+
 export interface ApiSettings {
-  // 三套通用 Key
+  // 通用服务与 LLM 独立 Key
   zhenzhenApiKey: string;
   zhenzhenBaseUrl: string; // 用户填写的默认服务 Base URL
-  rhApiKey: string;
-  rhBaseUrl: string; // https://www.runninghub.cn
   llmApiKey: string;
   llmBaseUrl: string; // 用户填写的 LLM Base URL
   // 分类 API Key（留空时 fallback 到 zhenzhenApiKey）
@@ -666,7 +658,20 @@ export interface ApiSettings {
   sunoApiKey?: string;
   zhenzhenImageModelOverrides?: Record<string, string>;
   zhenzhenVideoModelOverrides?: Record<string, string>;
-  zhenzhenImageModelProtocols?: Record<string, 'images' | 'images-generations' | 'images-edits' | 'openai-chat' | 'gemini-native'>;
+  zhenzhenLlmModelOverrides?: Record<string, string>;
+  zhenzhenModelCatalog?: DynamicModelCatalog;
+  llmModelCatalog?: DynamicModelCatalog;
+  zhenzhenImageModelProtocols?: Record<string,
+    | 'images'
+    | 'azure-gpt-image'
+    | 'images-generations'
+    | 'images-edits'
+    | 'openai-chat'
+    | 'gemini-generate-content'
+    | 'gemini-interactions'
+    | 'gemini-native'
+  >;
+  zhenzhenVideoModelProtocols?: Record<string, 'seedance-v3' | 'videos'>;
   // v1.2.10.2: 全局生成素材自动保存到本地的路径(可用户自定义)
   fileSavePath?: string;
   // v1.3.1: 画布自动保存导出路径(实际写入 <path>/canvases)

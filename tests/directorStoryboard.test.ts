@@ -330,8 +330,7 @@ test('director storyboard keeps existing Seedance model choices without adding a
 
   assert.match(node, /doubao-seedance-2-0-fast-260128/);
   assert.match(node, /doubao-seedance-2-0-260128/);
-  assert.doesNotMatch(node, /video-standard-720p-fast/);
-  assert.doesNotMatch(node, /video-standard-720p/);
+  assert.doesNotMatch(node, /isLegacySeedancePlaceholderModel/);
 });
 
 test('buildDirectorShotSeedancePayload compiles media mentions and first/last frame references', () => {
@@ -511,9 +510,9 @@ test('director bridge run plan uses prepared first and last frames instead of sh
 test('seedance proxy reports detailed zhenzhen file-upload failures before task submission', () => {
   const proxy = read('../backend/src/routes/proxy.js');
 
-  assert.match(proxy, /async function uploadRefToZhenzhen\(ref,\s*apiKey,\s*label = '参考素材'\)/);
+  assert.match(proxy, /async function uploadRefToZhenzhen\(settings,\s*ref,\s*apiKey,\s*label = '参考素材'\)/);
   assert.match(proxy, /throw new Error\(`\$\{label\} 上传失败: \/v1\/files HTTP \$\{upR\.status\}/);
-  assert.match(proxy, /uploadRefToZhenzhen\(a,\s*apiKey,\s*`reference_audio \$\{i \+ 1\}`\)/);
+  assert.match(proxy, /uploadRefToZhenzhen\(settings,\s*a,\s*apiKey,\s*`reference_audio \$\{i \+ 1\}`\)/);
 });
 
 test('runDirectorStoryboardJobs starts all jobs without a concurrency limiter and reports each completion immediately', async () => {

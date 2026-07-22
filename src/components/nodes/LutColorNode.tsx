@@ -1052,12 +1052,16 @@ const LutColorNode = (p: NodeProps) => {
   );
 
   return (
-    <>
+    <div className="contents" data-canvas-node-root={true}>
       <ImageOpFrame
         id={p.id}
         data={p.data}
         selected={p.selected}
+        dragging={p.dragging}
         title="LUT调色"
+        accessibleLabel="LUT 调色节点"
+        composerAriaLabel="LUT 调色节点属性"
+        emptyHint="连接上游图像后点击卡片"
         subtitle={`${activeLabel} · ${Math.round(amount * 100)}%`}
         icon={<Palette size={13} />}
         colorHex="#f97316"
@@ -1303,7 +1307,7 @@ const LutColorNode = (p: NodeProps) => {
         onClose={() => setPreviewOpen(false)}
         onSaveResource={previewUrl ? handleSaveLocal : undefined}
       />
-    </>
+    </div>
   );
 };
 

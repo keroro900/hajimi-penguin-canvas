@@ -1,6 +1,8 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { Handle, Position, useReactFlow, type NodeProps } from '@xyflow/react';
+import { useApiKeysStore } from '../../stores/apiKeys';
+import { effectiveModelId, modelsForKind } from '../../providers/modelCatalog';
 import {
   AlertCircle,
   Box,
@@ -44,7 +46,6 @@ import { generateLlm, queryImageStatus, submitImageAsync } from '../../services/
 import * as api from '../../services/api';
 import { logBus } from '../../stores/logs';
 import { taskCompletionSound } from '../../stores/taskCompletionSound';
-import { trackAchievementEvent } from '../../stores/achievements';
 import {
   PANORAMA_FIXED_PROMPT,
   PANORAMA_CAMERA_PRESETS,
@@ -1086,6 +1087,11 @@ const Panorama3DNode = (p: NodeProps) => {
   const viewRef = useRef({ yaw: 0, pitch: 0, fov: 75 });
   const avatarsRef = useRef<PanoramaAvatar[]>([]);
   const d = (p.data as any) || {};
+  const apiSettings = useApiKeysStore((state) => state.settings);
+  const imageModels = useMemo(() => modelsForKind(apiSettings, 'image'), [apiSettings]);
+  const chatModels = useMemo(() => modelsForKind(apiSettings, 'chat'), [apiSettings]);
+  const imageModel = effectiveModelId(d.apiModel || d.model, imageModels);
+  const actionPlannerModel = effectiveModelId(d.actionPlannerModel, chatModels);
   const lockPanoramaStoryboardPreviewTextElement = useCallback((element: HTMLElement | null) => {
     if (!element) return;
     const style = element.style;
@@ -2156,8 +2162,9 @@ const Panorama3DNode = (p: NodeProps) => {
     setIsPlanningAction(true);
     setActionPlanStatus('AI解析中...');
     try {
+      if (!actionPlannerModel) throw new Error('请先拉取或手动填写文本模型');
       const res = await generateLlm({
-        model: 'gpt-4o-mini',
+        model: actionPlannerModel,
         temperature: 0.15,
         max_tokens: 2800,
         messages: [
@@ -2579,7 +2586,6 @@ const Panorama3DNode = (p: NodeProps) => {
       });
       if (!saved.success) throw new Error(saved.error || '保存场景快照失败');
       window.dispatchEvent(new CustomEvent('penguin:resources-changed'));
-      if (!saved.data.duplicate) trackAchievementEvent({ type: 'resource.saved', kind: 'image', category: category.id });
       setSceneResourceState(saved.data.duplicate ? '已在资源库' : '已保存');
       window.setTimeout(() => setSceneResourceState(''), 1600);
     } catch (e: any) {
@@ -3533,7 +3539,13 @@ const Panorama3DNode = (p: NodeProps) => {
       setError(validation.error);
       return;
     }
+    if (!imageModel) {
+      update({ status: 'error', panoramaError: '请先拉取或手动填写图片模型' });
+      setError('请先拉取或手动填写图片模型');
+      return;
+    }
     const request = buildPanoramaImageRequest({
+      model: imageModel,
       mode,
       prompt,
       sizeLevel,
@@ -3572,7 +3584,7 @@ const Panorama3DNode = (p: NodeProps) => {
       let lastProgress = '';
       for (let i = 0; i < maxPoll; i++) {
         await new Promise((resolve) => setTimeout(resolve, interval));
-        const q = await queryImageStatus(taskId, 'gpt-image-2');
+        const q = await queryImageStatus(taskId, imageModel);
         if (q.progress && q.progress !== lastProgress) {
           lastProgress = q.progress;
           update({ progress: q.progress });
@@ -3672,7 +3684,6 @@ const Panorama3DNode = (p: NodeProps) => {
         throw new Error('后端未按全景类型保存，请重启开发后端后再试。');
       }
       window.dispatchEvent(new CustomEvent('penguin:resources-changed'));
-      if (!saved.data.duplicate) trackAchievementEvent({ type: 'resource.saved', kind: 'panorama', category: category.id });
       setResourceState(saved.data.duplicate ? '已在资源库' : '已保存');
       window.setTimeout(() => setResourceState(''), 1800);
     } catch (e: any) {
@@ -3701,8 +3712,6 @@ const Panorama3DNode = (p: NodeProps) => {
 
   const nodeStyle = {
     width: 1180,
-    borderColor: p.selected ? COLOR : undefined,
-    boxShadow: p.selected ? `0 0 0 2px ${COLOR}, var(--t8-shadow-strong, 0 18px 36px rgba(0,0,0,.22))` : undefined,
   };
 
   const savedError = typeof d.panoramaError === 'string' ? d.panoramaError : '';
@@ -4010,8 +4019,8 @@ const Panorama3DNode = (p: NodeProps) => {
   );
 
   return (
-    <>
-    <div className="t8-node relative transition-all" style={nodeStyle}>
+    <div className="contents" data-canvas-node-root={true}>
+    <div className={`t8-node relative transition-all ${p.selected ? 'is-selected' : ''}`} style={nodeStyle}>
       <Handle type="target" position={Position.Left} style={{ background: COLOR, border: 0 }} />
       <Handle type="source" position={Position.Right} style={{ background: COLOR, border: 0 }} />
 
@@ -6506,7 +6515,7 @@ const Panorama3DNode = (p: NodeProps) => {
       </div>,
       document.body,
     ) : null}
-    </>
+    </div>
   );
 };
 

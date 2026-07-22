@@ -44,16 +44,13 @@ export interface BatchProgressSummary {
   status: 'idle' | 'running' | 'success' | 'error';
 }
 
-export type BatchProcessorOperation = 'trim' | 'cutout' | 'expand' | 'upscale';
+export type BatchProcessorOperation = 'trim';
 
 export const BATCH_PROCESSOR_OPERATION_FIELDS: Record<BatchProcessorOperation, string> = {
   trim: 'batchProcessorTrimBlackBars',
-  cutout: 'batchProcessorRemoveBg',
-  expand: 'batchProcessorExpandCanvas',
-  upscale: 'batchProcessorUpscale',
 };
 
-export const BATCH_PROCESSOR_OPERATION_ORDER: BatchProcessorOperation[] = ['trim', 'cutout', 'expand', 'upscale'];
+export const BATCH_PROCESSOR_OPERATION_ORDER: BatchProcessorOperation[] = ['trim'];
 
 export function resolveBatchProcessorOperation(input: Record<string, unknown> = {}): BatchProcessorOperation | null {
   const explicit = input.batchProcessorOperation;
@@ -72,9 +69,9 @@ export function createExclusiveBatchProcessorOperationPatch(
   return {
     batchProcessorOperation: operation || '',
     batchProcessorTrimBlackBars: operation === 'trim',
-    batchProcessorRemoveBg: operation === 'cutout',
-    batchProcessorExpandCanvas: operation === 'expand',
-    batchProcessorUpscale: operation === 'upscale',
+    batchProcessorRemoveBg: false,
+    batchProcessorExpandCanvas: false,
+    batchProcessorUpscale: false,
   };
 }
 

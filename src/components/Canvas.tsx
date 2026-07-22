@@ -1,10 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type CSSProperties, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type RefObject } from 'react';
 import {
   ReactFlow,
-  Background,
-  BackgroundVariant,
   Controls,
-  MiniMap,
   ReactFlowProvider,
   ConnectionMode,
   SelectionMode,
@@ -14,14 +11,17 @@ import {
   addEdge,
   applyEdgeChanges,
   applyNodeChanges,
+  reconnectEdge,
   getBezierPath,
   useReactFlow,
+  useUpdateNodeInternals,
   type Connection,
   type ConnectionLineComponentProps,
   type Edge,
   type Node,
   type NodeChange,
   type EdgeChange,
+  type Viewport,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { Play, Copy, CopyPlus, Trash2, FolderPlus, PackagePlus, Library, Download, Workflow, Send as SendIcon, Sparkles } from 'lucide-react';
@@ -29,14 +29,25 @@ import * as LucideIcons from 'lucide-react';
 import { useCanvasStore } from '../stores/canvas';
 import { useThemeStore } from '../stores/theme';
 import { useShortcutStore } from '../stores/shortcuts';
-import { trackAchievementEvent, useAchievementStore } from '../stores/achievements';
 import { getTemplateMode, resolveThemeTemplate } from '../theme/defaultTemplates';
 import { useRunBusStore } from '../stores/runBus';
 import { useGroupBusStore, GROUP_COLORS, DEFAULT_GROUP_NAME } from '../stores/groupBus';
 import { useRadialMenuStore } from '../stores/radialMenu';
-import { topologicalBatches, topologicalSort } from '../utils/topologicalSort';
-import { createGroupExecutionPlan } from '../utils/groupExecutionPlan';
+ import { topologicalBatches, topologicalSort } from '../utils/topologicalSort';
+ import {
+   calculateNodeSnapGuides,
+   createCanvasZoomTrackingState,
+   createRafThrottle,
+   getCanvasPerformanceProfile,
+   reduceCanvasZoomTracking,
+ } from '../utils/canvasPerformance';
+ import { createGroupExecutionPlan } from '../utils/groupExecutionPlan';
 import { installGlobalWheelBlockObserver } from '../utils/wheelBlock';
+import {
+  createProximityHandleController,
+  type ProximityHandleController,
+} from '../utils/proximityHandleController';
+import { attachEdgeEndpointToCard } from '../utils/edgeEndpointGeometry';
 // v1.2.10.5: 节点落点防重叠解析器 (单节点/整组双模式 + 兜底+toast+飞镜)
 import {
   placeSingleNode,
@@ -104,6 +115,7 @@ import {
 } from '../utils/nodeSerialIds';
 import { resolveConnectionByNodeSerialId } from '../utils/connectByNodeSerialId';
 import { formatShortcutList, matchesAnyShortcut } from '../utils/keyboardShortcuts';
+import { isCanvasModalActive } from '../utils/modalIsolation';
 import { applyNodeAlignment, type NodeAlignAction } from '../utils/nodeAlign';
 import {
   RADIAL_MENU_MOVE_TOLERANCE,
@@ -123,6 +135,7 @@ import {
   type MaterialSetItem,
   type MaterialSetKind,
 } from '../utils/materialSet';
+import { excludeRandomRouteBranchDescendants } from '../utils/randomRoute';
 import { chooseDefaultSendMode, resolveEffectiveSendMode } from '../utils/sendMode';
 import {
   DEFAULT_VIDEO_EDIT_DATA,
@@ -141,17 +154,17 @@ import {
   prepareCanvasResourcePackageImport,
 } from '../utils/canvasCreativeWorkflow';
 import {
-  VIBEX_MESSAGE_CONTRACT,
-  VIBEX_ONLINE_URL,
-  buildVibeXSendNodeSpecs,
-  normalizeVibeXResultPayload,
-} from '../utils/vibexBridge';
+  PHOTOSHOP_MESSAGE_CONTRACT,
+  buildPhotoshopSendNodeSpecs,
+  normalizePhotoshopResultPayload,
+} from '../utils/photoshopBridge';
 import {
   applyCanvasRealtimeOp,
   makeCanvasRealtimeClientId,
   normalizeCanvasRealtimeOp,
 } from '../utils/canvasRealtime';
 import { CanvasRealtimeClient } from '../services/canvasRealtime';
+import { saveAssetToDisk } from '../services/api';
 import * as api from '../services/api';
 import { logBus } from '../stores/logs';
 import CanvasToolbar from './CanvasToolbar';
@@ -163,17 +176,15 @@ import RadialMenuSettingsModal from './RadialMenuSettingsModal';
 import MaterialDragOverlay from './MaterialDragOverlay';
 import ThemeMusicToggle from './ThemeMusicToggle';
 import CreativeDeskLayer from './CreativeDeskLayer';
-import FarmCanvasLayer, { type FarmCanvasFloatingFeedback } from './FarmCanvasLayer';
-import DragonBallRadar from './DragonBallRadar';
-import SaintSeiyaSanctuary from './SaintSeiyaSanctuary';
-import TetrisPanel from './TetrisPanel';
-import FarmStoryPanel, { T8_FARM_STORY_PANEL_COLLAPSED_STORAGE_KEY, type FarmStoryPanelCanvasHint } from './FarmStoryPanel';
+import { type FarmCanvasFloatingFeedback } from './FarmCanvasLayer';
+import { T8_FARM_STORY_PANEL_COLLAPSED_STORAGE_KEY, type FarmStoryPanelCanvasHint } from './FarmStoryPanel';
 import SendMaterialsModal from './SendMaterialsModal';
 import SmartImage from './SmartImage';
 import { useCanvasHistory } from '../hooks/useCanvasHistory';
 import type { CanvasTemplate } from '../config/canvasTemplates';
 import PlaceholderNode from './nodes/PlaceholderNode';
 import DeletableEdge from './edges/DeletableEdge';
+import { listEdgeInsertCandidates, planEdgeSplice } from './edges/edgeInsertCandidates';
 import { NODE_REGISTRY } from '../config/nodeRegistry';
 import type { CreativeDeskState, FarmAnimalProductId, FarmCanvasState, FarmCropId, FarmDecorObjectType, FarmEventLogItem, FarmTool, NodeType, NodeMeta } from '../types/canvas';
 import {
@@ -213,6 +224,12 @@ import {
 } from '../utils/farmCanvas';
 import { farmSoundCueForEvent, farmSoundCueForTool, playFarmActionSound, type FarmSoundCue } from '../utils/farmSound';
 import { readImageNaturalSize } from '../utils/imageNaturalSize';
+import { getGroupMemberIds } from '../utils/groupMembership';
+import {
+  validateMaterialConnection,
+  validateMaterialConnections,
+  type MaterialConnectionCandidate,
+} from '../utils/groupMaterialRouting';
 import {
   isConnectionValid,
   getNodeOutputs,
@@ -223,13 +240,14 @@ import {
   NODE_PORTS,
   type PortType,
 } from '../config/portTypes';
-import {
-  GENCLAW_DEFAULT_IMAGE_API_MODEL,
-  GENCLAW_DEFAULT_IMAGE_MODEL,
-  GENCLAW_DEFAULT_LLM_MODEL,
-  GENCLAW_SKETCH_SYSTEM_PROMPT,
-  GENCLAW_SYSTEM_PROMPT,
-} from '../genclaw/config';
+
+const isSmartNodeComposerTarget = (target: EventTarget | null) =>
+  target instanceof Element &&
+  Boolean(target.closest('[data-canvas-floating-ui="smart-node-composer"]'));
+
+const isSmartNodeComposerKeyboardEvent = (event: KeyboardEvent) =>
+  isSmartNodeComposerTarget(event.target) ||
+  isSmartNodeComposerTarget(document.activeElement);
 
 const CANVAS_PAN_MOUSE_BUTTONS = [0] as const;
 const CANVAS_MIN_ZOOM = 0.02;
@@ -281,8 +299,13 @@ const EDGE_CUT_FEEDBACK_MS = 1100;
 const MAX_EDGE_CONNECT_FEEDBACKS = 3;
 const EDGE_CONNECT_FEEDBACK_MS = 950;
 const CANVAS_EXTERNAL_SYNC_INTERVAL_MS = 2000;
+const AGENT_ACTIVITY_DISMISS_MS = 6500;
 const RESOURCE_PACKAGE_LIBRARY_KINDS: api.ResourceKind[] = ['image', 'video', 'audio', 'panorama', 'set', 'pose', 'workflow'];
-const CARD_MODE_OWNS_OUTPUT_TYPES = new Set(['image', 'video', 'seedance', 'audio', 'runninghub', 'runninghub-wallet', 'rh-toolbox', 'fal-toolbox']);
+const CARD_MODE_OWNS_OUTPUT_TYPES = new Set(['image', 'video', 'seedance', 'audio']);
+
+function isAltDragPlaceholderNode(node: Pick<Node, 'id'> | null | undefined): boolean {
+  return typeof node?.id === 'string' && node.id.startsWith('_alt-ph-');
+}
 
 async function loadResourcePackageLibrarySnapshot() {
   const categories: api.ResourceCategory[] = [];
@@ -393,6 +416,42 @@ function FarmStoryConnectionLine({
         </g>
       )}
     </g>
+  );
+}
+
+function CardAttachedConnectionLine({
+  connectionLineStyle,
+  connectionStatus,
+  fromNode,
+  fromX,
+  fromY,
+  fromPosition,
+  toHandle,
+  toNode,
+  toX,
+  toY,
+  toPosition,
+}: ConnectionLineComponentProps) {
+  const sourceX = attachEdgeEndpointToCard(fromX, fromPosition, fromNode.type);
+  const targetX = toNode && toHandle
+    ? attachEdgeEndpointToCard(toX, toPosition, toNode.type)
+    : toX;
+  const [path] = getBezierPath({
+    sourceX,
+    sourceY: fromY,
+    sourcePosition: fromPosition,
+    targetX,
+    targetY: toY,
+    targetPosition: toPosition,
+  });
+
+  return (
+    <path
+      d={path}
+      fill="none"
+      className={`react-flow__connection-path${connectionStatus ? ` is-${connectionStatus}` : ''}`}
+      style={connectionLineStyle}
+    />
   );
 }
 
@@ -1025,26 +1084,6 @@ function inferFarmHandlePortType(
   return primaryFarmPortType(declaredTypes);
 }
 
-function farmAchievementTypeForEvent(kind?: FarmEventLogItem['kind']): api.AchievementEventPayload['type'] | null {
-  if (kind === 'plot_tilled') return 'farm.plot_tilled';
-  if (kind === 'crop_planted') return 'farm.crop_planted';
-  if (kind === 'crop_watered') return 'farm.crop_watered';
-  if (kind === 'crop_harvested') return 'farm.crop_harvested';
-  if (kind === 'order_completed') return 'farm.order_completed';
-  if (kind === 'building_placed') return 'farm.building_placed';
-  if (kind === 'decor_placed') return 'farm.decor_placed';
-  if (kind === 'rare_event') return 'farm.rare_crop';
-  return null;
-}
-
-function farmAchievementKindForEvent(event: FarmEventLogItem) {
-  if (event.rareEventId) return event.rareEventId;
-  if (event.cropId) return event.cropId;
-  if (event.objectKind) return event.objectKind;
-  if (event.kind === 'order_completed') return 'order';
-  return 'farm';
-}
-
 function lazyCanvasNode(load: () => Promise<any>, displayName: string): ComponentType<any> {
   const LazyNode = lazy(load);
   const WrappedNode = (props: any) => (
@@ -1056,32 +1095,6 @@ function lazyCanvasNode(load: () => Promise<any>, displayName: string): Componen
   return WrappedNode;
 }
 
-function missingPrivateToolNode(displayName: string, label: string, description: string): ComponentType<any> {
-  const MissingNode = (props: any) => (
-    <PlaceholderNode
-      {...props}
-      data={{
-        ...(props.data || {}),
-        label: (props.data as any)?.label || label,
-        description,
-        placeholderNote: '私有开发工具源码未包含在当前公开源码树中',
-      }}
-    />
-  );
-  MissingNode.displayName = `MissingPrivateToolNode(${displayName})`;
-  return MissingNode;
-}
-
-const privateMakerNodeModules = import.meta.glob('./nodes/*MakerNode.tsx');
-
-function privateToolNodeLoader(modulePath: string, displayName: string, label: string, description: string) {
-  const load = privateMakerNodeModules[`${modulePath}.tsx`];
-  if (load) return load as () => Promise<any>;
-  return async () => ({
-    default: missingPrivateToolNode(displayName, label, description),
-  });
-}
-
 const TextNode = lazyCanvasNode(() => import('./nodes/TextNode'), 'TextNode');
 const ImageNode = lazyCanvasNode(() => import('./nodes/ImageNode'), 'ImageNode');
 const LLMNode = lazyCanvasNode(() => import('./nodes/LLMNode'), 'LLMNode');
@@ -1090,26 +1103,14 @@ const VideoEditNode = lazyCanvasNode(() => import('./nodes/VideoEditNode'), 'Vid
 const SeedanceNode = lazyCanvasNode(() => import('./nodes/SeedanceNode'), 'SeedanceNode');
 const DirectorStoryboardNode = lazyCanvasNode(() => import('./nodes/DirectorStoryboardNode'), 'DirectorStoryboardNode');
 const AudioNode = lazyCanvasNode(() => import('./nodes/AudioNode'), 'AudioNode');
-const RunningHubNode = lazyCanvasNode(() => import('./nodes/RunningHubNode'), 'RunningHubNode');
-const RhConfigNode = lazyCanvasNode(() => import('./nodes/RhConfigNode'), 'RhConfigNode');
-const RHToolsNode = lazyCanvasNode(() => import('./nodes/RHToolsNode'), 'RHToolsNode');
-const RHToolboxNode = lazyCanvasNode(() => import('./nodes/RHToolboxNode'), 'RHToolboxNode');
-const FalToolboxNode = lazyCanvasNode(() => import('./nodes/FalToolboxNode'), 'FalToolboxNode');
 const Model3DPreviewNode = lazyCanvasNode(() => import('./nodes/Model3DPreviewNode'), 'Model3DPreviewNode');
-const GrokOAuthAgentNode = lazyCanvasNode(() => import('./nodes/GrokOAuthAgentNode'), 'GrokOAuthAgentNode');
-const CodexCliAgentNode = lazyCanvasNode(() => import('./nodes/CodexCliAgentNode'), 'CodexCliAgentNode');
-const CodexImageConjureNode = lazyCanvasNode(() => import('./nodes/CodexImageConjureNode'), 'CodexImageConjureNode');
-const GenClawNode = lazyCanvasNode(() => import('./nodes/GenClawNode'), 'GenClawNode');
-const ArtistStyleMasterNode = lazyCanvasNode(() => import('./nodes/ArtistStyleMasterNode'), 'ArtistStyleMasterNode');
-const AnimeTagMasterNode = lazyCanvasNode(() => import('./nodes/AnimeTagMasterNode'), 'AnimeTagMasterNode');
-const ComfyUIStoreNode = lazyCanvasNode(() => import('./nodes/ComfyUIStoreNode'), 'ComfyUIStoreNode');
-const ComfyUIAppMakerNode = lazyCanvasNode(() => import('./nodes/ComfyUIAppMakerNode'), 'ComfyUIAppMakerNode');
 const ResizeNode = lazyCanvasNode(() => import('./nodes/ResizeNode'), 'ResizeNode');
 const LutColorNode = lazyCanvasNode(() => import('./nodes/LutColorNode'), 'LutColorNode');
 const UpscaleNode = lazyCanvasNode(() => import('./nodes/UpscaleNode'), 'UpscaleNode');
 const GridCropNode = lazyCanvasNode(() => import('./nodes/GridCropNode'), 'GridCropNode');
 const GridEditorNode = lazyCanvasNode(() => import('./nodes/GridEditorNode'), 'GridEditorNode');
 const ClipStudioNode = lazyCanvasNode(() => import('./nodes/ClipStudioNode'), 'ClipStudioNode');
+const LayerAgentNode = lazyCanvasNode(() => import('./nodes/LayerAgentNode'), 'LayerAgentNode');
 const SketchRenderNode = lazyCanvasNode(() => import('./nodes/SketchRenderNode'), 'SketchRenderNode');
 const CombineNode = lazyCanvasNode(() => import('./nodes/CombineNode'), 'CombineNode');
 const RemoveBgNode = lazyCanvasNode(() => import('./nodes/RemoveBgNode'), 'RemoveBgNode');
@@ -1122,6 +1123,7 @@ const Panorama3DNode = lazyCanvasNode(() => import('./nodes/Panorama3DNode'), 'P
 const AggregateParserNode = lazyCanvasNode(() => import('./nodes/AggregateParserNode'), 'AggregateParserNode');
 const BatchProcessorNode = lazyCanvasNode(() => import('./nodes/BatchProcessorNode'), 'BatchProcessorNode');
 const ApparelPackNode = lazyCanvasNode(() => import('./nodes/ApparelPackNode'), 'ApparelPackNode');
+const ApparelPackOutputNode = lazyCanvasNode(() => import('./nodes/ApparelPackOutputNode'), 'ApparelPackOutputNode');
 const TopazImageUpscaleNode = lazyCanvasNode(() => import('./nodes/TopazImageUpscaleNode'), 'TopazImageUpscaleNode');
 const TopazVideoUpscaleNode = lazyCanvasNode(() => import('./nodes/TopazVideoUpscaleNode'), 'TopazVideoUpscaleNode');
 const IdeaNode = lazyCanvasNode(() => import('./nodes/IdeaNode'), 'IdeaNode');
@@ -1138,27 +1140,13 @@ const FrameExtractorNode = lazyCanvasNode(() => import('./nodes/FrameExtractorNo
 const FramePairNode = lazyCanvasNode(() => import('./nodes/FramePairNode'), 'FramePairNode');
 const LoopNode = lazyCanvasNode(() => import('./nodes/LoopNode'), 'LoopNode');
 const PickFromSetNode = lazyCanvasNode(() => import('./nodes/PickFromSetNode'), 'PickFromSetNode');
+const RandomRouteNode = lazyCanvasNode(() => import('./nodes/RandomRouteNode'), 'RandomRouteNode');
 const TextSplitNode = lazyCanvasNode(() => import('./nodes/TextSplitNode'), 'TextSplitNode');
 const MaterialSetNode = lazyCanvasNode(() => import('./nodes/MaterialSetNode'), 'MaterialSetNode');
 const GenerationTargetNode = lazyCanvasNode(() => import('./nodes/GenerationTargetNode'), 'GenerationTargetNode');
-const VibeXNode = lazyCanvasNode(() => import('./nodes/VibeXNode'), 'VibeXNode');
 const UploadNode = lazyCanvasNode(() => import('./nodes/UploadNode'), 'UploadNode');
 const OutputNode = lazyCanvasNode(() => import('./nodes/OutputNode'), 'OutputNode');
 const GroupBoxNode = lazyCanvasNode(() => import('./nodes/GroupBoxNode'), 'GroupBoxNode');
-const RH_TOOLBOX_MAKER_MODULE = './nodes/RHToolboxMakerNode';
-const FAL_TOOLBOX_MAKER_MODULE = './nodes/FalToolboxMakerNode';
-const RHToolboxMakerNode = import.meta.env?.DEV
-  ? lazyCanvasNode(
-    privateToolNodeLoader(RH_TOOLBOX_MAKER_MODULE, 'RHToolboxMakerNode', 'RH工具箱制作器', '维护者私有开发工具源码未包含在当前公开源码树中。'),
-    'RHToolboxMakerNode',
-  )
-  : PlaceholderNode;
-const FalToolboxMakerNode = import.meta.env?.DEV
-  ? lazyCanvasNode(
-    privateToolNodeLoader(FAL_TOOLBOX_MAKER_MODULE, 'FalToolboxMakerNode', 'FAL应用制作工具', '维护者私有开发工具源码未包含在当前公开源码树中。'),
-    'FalToolboxMakerNode',
-  )
-  : PlaceholderNode;
 
 // Phase 4 阶段:全部 24 个节点均已实现业务逻辑
 const SPECIFIC_NODES: Record<string, any> = {
@@ -1171,27 +1159,8 @@ const SPECIFIC_NODES: Record<string, any> = {
   'director-storyboard': DirectorStoryboardNode,
   audio: AudioNode,
   llm: LLMNode,
-  runninghub: RunningHubNode,
-  // RH 钱包应用：复用 RunningHubNode。v1.2.9.16 起与普通 RunningHub 节点统一使用 settings.rhApiKey
-  'runninghub-wallet': RunningHubNode,
-  'rh-config': RhConfigNode,
-  // RH 工具节点：内置启动器 + 应用运行面板（v1.2.10+）
-  'rh-tools': RHToolsNode,
-  'rh-toolbox': RHToolboxNode,
-  vibex: VibeXNode,
-  ...(import.meta.env?.DEV ? { 'rh-toolbox-maker': RHToolboxMakerNode } : {}),
-  'fal-toolbox': FalToolboxNode,
   'model-3d-preview': Model3DPreviewNode,
   'model-3d-upload': UploadNode,
-  'grok-oauth-agent': GrokOAuthAgentNode,
-  'codex-cli-agent': CodexCliAgentNode,
-  'codex-image-conjure': CodexImageConjureNode,
-  'genclaw': GenClawNode,
-  'artist-style-master': ArtistStyleMasterNode,
-  'anime-tag-master': AnimeTagMasterNode,
-  ...(import.meta.env?.DEV ? { 'fal-toolbox-maker': FalToolboxMakerNode } : {}),
-  'comfyui-store': ComfyUIStoreNode,
-  'comfyui-app-maker': ComfyUIAppMakerNode,
   // Special (5)
   'multi-angle-3d': PresetImageNode,
   'panorama-720': PresetImageNode,
@@ -1206,6 +1175,7 @@ const SPECIFIC_NODES: Record<string, any> = {
   'frame-pair': FramePairNode,
   loop: LoopNode,
   'pick-from-set': PickFromSetNode,
+  'random-route': RandomRouteNode,
   'text-split': TextSplitNode,
   'material-set': MaterialSetNode,
   'generation-target': GenerationTargetNode,
@@ -1217,6 +1187,7 @@ const SPECIFIC_NODES: Record<string, any> = {
   'grid-crop': GridCropNode,
   'grid-editor': GridEditorNode,
   'clip-studio': ClipStudioNode,
+  'layer-agent': LayerAgentNode,
   'sketch-renderer': SketchRenderNode,
   // Auxiliary (5)
   edit: ImageNode, // 复用 ImageNode,默认偏向 edit 能力
@@ -1234,6 +1205,7 @@ const SPECIFIC_NODES: Record<string, any> = {
   'aggregate-parser': AggregateParserNode,
   'batch-processor': BatchProcessorNode,
   'apparel-pack': ApparelPackNode,
+  'apparel-pack-output': ApparelPackOutputNode,
   'topaz-image-upscale': TopazImageUpscaleNode,
   'topaz-video-upscale': TopazVideoUpscaleNode,
   'director-studio': DirectorStudioNode,
@@ -1356,11 +1328,11 @@ function withNodeSerialBadge(Component: ComponentType<any>): ComponentType<any> 
 
 // 节点初始 data(用于区分共享组件的 kind/preset/model 等)
 const INITIAL_DATA: Record<string, Record<string, any>> = {
-  image: { model: 'gpt-image-2', aspectRatio: '1:1', sizeLevel: '1K', referenceImages: [] },
-  edit: { mode: 'edit', model: 'gpt-image-2', aspectRatio: '1:1', sizeLevel: '1K', referenceImages: [] },
+  image: { model: '', apiModel: '', aspectRatio: '1:1', sizeLevel: '1K', referenceImages: [] },
+  edit: { mode: 'edit', model: '', apiModel: '', aspectRatio: '1:1', sizeLevel: '1K', referenceImages: [] },
   'video-edit': { ...DEFAULT_VIDEO_EDIT_DATA, clips: [], settings: { ...DEFAULT_VIDEO_EDIT_DATA.settings }, job: { ...DEFAULT_VIDEO_EDIT_DATA.job } },
   seedance: {
-    model: 'doubao-seedance-2-0-fast-260128',
+    model: '',
     duration: 5,
     ratio: '16:9',
     resolution: '480p',
@@ -1374,7 +1346,7 @@ const INITIAL_DATA: Record<string, Record<string, any>> = {
     frameMode: 'auto',
   },
   'director-storyboard': {
-    model: 'doubao-seedance-2-0-fast-260128',
+    model: '',
     ratio: '16:9',
     resolution: '480p',
     generateAudio: true,
@@ -1549,7 +1521,7 @@ const INITIAL_DATA: Record<string, Record<string, any>> = {
   'penguin-portrait': { preset: 'penguin-portrait' },
   audio: { mode: 'generate', version: 'v5.5', title: '', tags: '', seed: 0, continueAt: 28 },
   llm: {
-    model: 'gemini-3.5-flash',
+    model: '',
     system: '',
     prompt: '',
     temperature: 0.7,
@@ -1564,200 +1536,14 @@ const INITIAL_DATA: Record<string, Record<string, any>> = {
     targetType: 'image',
     title: '生成目标框',
     prompt: '',
-    model: 'gpt-image-2',
+    model: '',
+    apiModel: '',
     aspectRatio: '1:1',
     sizeLevel: '1K',
     status: 'idle',
     resultUrl: '',
     resultUrls: [],
     resultVersions: [],
-  },
-  // RH 工具节点（v1.2.10.1+）：启动器状态字段 + 运行状态字段（与 RunningHubNode 对齐）
-  // 启动器：rhToolsActiveCategoryId / rhToolsActiveAppId / rhToolsSearchQuery
-  // 运行态：appInfo / paramValues / instanceType / status / taskId / urls / error / rhCode / materialOrder
-  // 输出字段：imageUrl / videoUrl / audioUrl（按扩展名分流给下游 OutputNode）
-  'rh-tools': {
-    rhToolsActiveCategoryId: 'all',
-    rhToolsActiveAppId: '',
-    rhToolsSearchQuery: '',
-    appInfo: null,
-    paramValues: {},
-    materialOrder: [],
-    instanceType: '',
-    status: 'idle',
-    taskId: '',
-    urls: [],
-    error: '',
-    rhCode: 0,
-    imageUrl: '',
-    videoUrl: '',
-    audioUrl: '',
-  },
-  'rh-toolbox': {
-    rhToolboxCategoryId: 'all',
-    rhToolboxActiveToolId: '',
-    rhToolboxSearchQuery: '',
-    rhToolboxUserParams: {},
-    materialOrder: [],
-    excludedMaterialIds: [],
-    instanceType: '',
-    status: 'idle',
-    taskId: '',
-    urls: [],
-    imageUrl: '',
-    imageUrls: [],
-    videoUrl: '',
-    videoUrls: [],
-    audioUrl: '',
-    audioUrls: [],
-    outputText: '',
-    error: '',
-  },
-  'fal-toolbox': {
-    falToolboxCategoryId: 'all',
-    falToolboxActiveToolId: '',
-    falToolboxSearchQuery: '',
-    falToolboxUserParams: {},
-    materialOrder: [],
-    excludedMaterialIds: [],
-    status: 'idle',
-    requestId: '',
-    responseUrl: '',
-    statusUrl: '',
-    urls: [],
-    imageUrl: '',
-    imageUrls: [],
-    videoUrl: '',
-    videoUrls: [],
-    audioUrl: '',
-    audioUrls: [],
-    modelUrls: [],
-    modelUrl: '',
-    directModelUrl: '',
-    directModelUrls: [],
-    outputText: '',
-    error: '',
-  },
-  'codex-cli-agent': {
-    codexMode: 'chat',
-    codexPreset: '提示词增强',
-    codexModel: '',
-    codexProfile: '',
-    codexSandbox: 'workspace-write',
-    codexApprovalPolicy: 'never',
-    codexReasoningEffort: '',
-    codexWebSearch: false,
-    codexIncludePlanTool: true,
-    codexExecutablePath: '',
-    codexExtraArgs: '',
-    codexSessionId: '',
-    codexSelectedSkillNames: [],
-    codexMessages: [],
-    codexArtifacts: [],
-    codexVersions: [],
-    materialOrder: [],
-    excludedMaterialIds: [],
-    codexQuickPrompt: '',
-    codexQuickPromptMentions: [],
-    codexPersistPrompt: false,
-    codexBriefSubject: '',
-    codexBriefStyle: '',
-    codexBriefCamera: '',
-    codexBriefLighting: '',
-    codexBriefComposition: '',
-    codexTargetPlatform: '通用',
-    codexAspectRatio: '自动',
-    codexStyleLock: '',
-    codexNegativePrompt: '',
-    codexAutoNegativePrompt: true,
-    codexBatchVariantCount: 1,
-    codexLastRunSummary: '',
-    outputText: '',
-    imageUrl: '',
-    imageUrls: [],
-    videoUrl: '',
-    videoUrls: [],
-    audioUrl: '',
-    audioUrls: [],
-    modelUrl: '',
-    modelUrls: [],
-    status: 'idle',
-    error: '',
-  },
-  'codex-image-conjure': {
-    codexConjurePrompt: '',
-    codexConjurePromptMentions: [],
-    codexConjureTemplateId: '',
-    codexConjureSnippetQuery: '',
-    codexConjureSelectedSkillNames: ['imagegen'],
-    codexConjureModel: 'gpt-5.5',
-    codexConjureAspectRatio: '9:16',
-    codexConjureSize: '2K',
-    codexConjureQuality: '高',
-    codexConjureCount: 1,
-    codexConjureBatchCount: 1,
-    codexConjureConcurrency: 1,
-    codexConjurePromptMode: '原始模式',
-    codexConjureFormat: 'png',
-    codexConjureBackground: '自动',
-    codexConjureNegativePrompt: '',
-    codexConjureAutoPublish: true,
-    codexConjurePersistPrompt: true,
-    codexConjurePersistRefs: true,
-    codexConjureGalleryQuery: '',
-    codexConjureGalleryRefs: [],
-    codexConjureMaterialOrder: [],
-    codexConjureExcludedMaterialIds: [],
-    codexConjureTasks: [],
-    codexConjureLastRunSummary: '',
-    outputText: '',
-    imageUrl: '',
-    imageUrls: [],
-    status: 'idle',
-    error: '',
-  },
-  genclaw: {
-    genclawPrompt: '',
-    genclawBriefText: '',
-    genclawSketchCode: '',
-    genclawSketchKind: 'svg',
-    genclawSketchImageUrl: '',
-    genclawFinalImageUrls: [],
-    genclawReviewText: '',
-    genclawStepStatus: {
-      brief: 'idle',
-      sketch: 'idle',
-      render: 'idle',
-      'final-review': 'idle',
-    },
-    genclawLlmModel: GENCLAW_DEFAULT_LLM_MODEL,
-    genclawImageModel: GENCLAW_DEFAULT_IMAGE_MODEL,
-    genclawImageApiModel: GENCLAW_DEFAULT_IMAGE_API_MODEL,
-    genclawSystemPrompt: GENCLAW_SYSTEM_PROMPT,
-    genclawSketchSystemPrompt: GENCLAW_SKETCH_SYSTEM_PROMPT,
-    genclawModel: GENCLAW_DEFAULT_IMAGE_MODEL,
-    genclawAspectRatio: '1:1',
-    genclawSize: '2K',
-    aspectRatio: '1:1',
-    sizeLevel: '2K',
-    genclawImageCount: 1,
-    imageCount: 1,
-    genclawImageQuality: 'auto',
-    imageQuality: 'auto',
-    genclawLlmProviderSource: 'zhenzhen',
-    genclawLlmProviderId: '',
-    genclawLlmProviderModel: '',
-    genclawImageProviderSource: 'zhenzhen',
-    genclawImageProviderId: '',
-    genclawImageProviderModel: '',
-    genclawProviderParams: {},
-    genclawImageProviderParams: {},
-    providerParams: {},
-    imageUrl: '',
-    imageUrls: [],
-    outputText: '',
-    status: 'idle',
-    error: '',
   },
   'sketch-renderer': {
     sketchCode: '',
@@ -1784,87 +1570,14 @@ const INITIAL_DATA: Record<string, Record<string, any>> = {
     error: '',
     size: { w: 520, h: 440 },
   },
-  'comfyui-store': {
-    comfyuiStoreProviderId: '',
-    comfyuiStoreCategoryId: 'all',
-    comfyuiStoreActiveAppId: '',
-    comfyuiStoreSearchQuery: '',
-    comfyuiStoreParamValues: {},
-    materialOrder: [],
-    excludedMaterialIds: [],
+  'layer-agent': {
     status: 'idle',
-    taskId: '',
+    sourceImageUrl: '',
     imageUrl: '',
-    imageUrls: [],
-    videoUrls: [],
-    audioUrls: [],
-    outputText: '',
+    selectedLayerId: '',
+    layerStack: null,
     error: '',
   },
-  'comfyui-app-maker': {
-    comfyMakerTitle: 'Anima 文生图',
-    comfyMakerAppId: 'anima-text-to-image-v1',
-    comfyMakerCategoryId: 'image',
-    comfyMakerDescription: '从 ComfyUI API Workflow 自动生成的本地应用',
-    comfyMakerWorkflowRaw: '',
-    text: '',
-    outputText: '',
-  },
-  ...(import.meta.env?.DEV ? {
-    'rh-toolbox-maker': {
-      rhToolboxMakerTitle: '智能抠图',
-      rhToolboxMakerId: 'image-cutout-v1',
-      rhToolboxMakerDescription: '维护者预置 RH 工具模板',
-      rhToolboxMakerCategoryId: 'image-tools',
-      rhToolboxMakerWebappId: '',
-      rhToolboxMakerCapabilities: 'image.cutout\nimage.edit',
-      rhToolboxMakerEnabled: true,
-      rhToolboxMakerShowInNode: true,
-      rhToolboxMakerAccent: '#22c55e',
-      rhToolboxMakerPollIntervalMs: 5000,
-      rhToolboxMakerMaxPolls: 720,
-      rhToolboxMakerInputs: [
-        {
-          rowId: 'input-1',
-          key: 'source-image',
-          label: '原图',
-          kind: 'image',
-          rhNodeId: '7',
-          fieldName: 'image',
-          required: true,
-          uploadAsset: true,
-        },
-      ],
-      rhToolboxMakerOutputs: [
-        {
-          rowId: 'output-1',
-          key: 'output-image',
-          label: '输出图',
-          kind: 'image',
-          role: 'append-output',
-        },
-      ],
-      rhToolboxMakerUserParams: [],
-      rhToolboxMakerFixedParams: [],
-      text: '',
-      outputText: '',
-    },
-    'fal-toolbox-maker': {
-      falToolboxMakerUrl: 'https://fal.ai/models/xai/grok-imagine-image/quality/edit/api',
-      falToolboxMakerEndpoint: 'xai/grok-imagine-image/quality/edit',
-      falToolboxMakerTitle: 'Grok Imagine Image Edit',
-      falToolboxMakerId: 'grok-imagine-image-edit',
-      falToolboxMakerCategoryId: 'image-edit',
-      falToolboxMakerDescription: '从 fal.ai API 文档生成的 Fal 超市草稿',
-      falToolboxMakerCapabilities: 'image.edit\nimage.generate',
-      falToolboxMakerOutputKind: 'image',
-      falToolboxMakerHasImageInput: true,
-      falToolboxMakerImageMultiple: false,
-      falToolboxMakerImageBase64: true,
-      text: '',
-      outputText: '',
-    },
-  } : {}),
   // 循环器: 默认串联 + image kind
   loop: { mode: 'serial', kind: 'image', outputs: [], progress: { done: 0, total: 0, ok: 0, fail: 0 } },
   // 从合集获取: 默认 image + 第 1 个
@@ -1941,13 +1654,6 @@ const INITIAL_DATA: Record<string, Record<string, any>> = {
     imageUrls: [],
     urls: [],
     status: 'idle',
-  },
-  vibex: {
-    vibexFrameMode: 'online',
-    vibexCustomUrl: '',
-    vibexNodeWidth: 1080,
-    vibexNodeHeight: 820,
-    label: 'VibeX工作台',
   },
   'drawing-board': { boardRatio: '16:9', boardWidth: 960, boardHeight: 540, boardElements: [], boardColor: '#111827', boardStrokeSize: 5 },
   'lut-color': {
@@ -2039,18 +1745,15 @@ const INITIAL_DATA: Record<string, Record<string, any>> = {
 const EXECUTABLE_NODE_TYPES = new Set<string>([
   'image', 'edit',
   'multi-angle-3d', 'panorama-720', 'penguin-portrait',
-  'video', 'seedance', 'audio', 'llm', 'runninghub', 'runninghub-wallet',
-  // v1.2.10.1: rh-tools 与 RunningHub 同质，同样可被批量运行调起
-  'rh-tools', 'rh-toolbox', 'fal-toolbox', 'comfyui-store',
-  'grok-oauth-agent', 'codex-cli-agent', 'codex-image-conjure', 'genclaw',
-  'resize', 'lut-color', 'upscale', 'grid-crop', 'grid-editor', 'remove-bg', 'combine', 'image-compare', 'drawing-board',
+  'video', 'seedance', 'audio', 'llm',
+  'resize', 'lut-color', 'upscale', 'grid-crop', 'grid-editor', 'remove-bg', 'combine', 'image-compare', 'drawing-board', 'layer-agent',
   'director-studio', 'panorama-3d',
   'frame-extractor', 'frame-pair',
   'clip-studio',
   'sketch-renderer',
   'upload',
   // v1.2.8 工具节点 (循环器 / 从合集获取)
-  'loop', 'pick-from-set',
+  'loop', 'pick-from-set', 'random-route',
   // v1.4.8: 工具箱文本节点也可点击 RUN 直接外挂 OutputNode
   'cinematic', 'video-motion', 'multi-angle-visual', 'portrait-master', 'pose-master', 'aggregate-parser', 'batch-processor', 'apparel-pack',
   'topaz-image-upscale', 'topaz-video-upscale',
@@ -2065,26 +1768,7 @@ const BATCH_EXECUTABLE_NODE_TYPES = new Set<string>(
 const groupMemberIdsFromNodes = (groupId: string, sourceNodes: Node[]): string[] => {
   const groupNode = sourceNodes.find((node) => node.id === groupId && node.type === 'groupBox');
   if (!groupNode) return [];
-  const memberIds = new Set<string>(
-    Array.isArray((groupNode.data as any)?.memberIds)
-      ? (groupNode.data as any).memberIds.filter((value: unknown): value is string => typeof value === 'string' && !!value)
-      : [],
-  );
-  const groupRect = rectOf(groupNode);
-  for (const node of sourceNodes) {
-    if (node.id === groupId || node.type === 'groupBox' || node.id === BULK_PHANTOM_ID) continue;
-    const rect = rectOf(node);
-    const center = { x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 };
-    if (
-      center.x >= groupRect.x &&
-      center.x <= groupRect.x + groupRect.w &&
-      center.y >= groupRect.y &&
-      center.y <= groupRect.y + groupRect.h
-    ) {
-      memberIds.add(node.id);
-    }
-  }
-  return Array.from(memberIds);
+  return getGroupMemberIds(groupNode, sourceNodes);
 };
 
 const expandGroupRunIds = (ids: string[], sourceNodes: Node[]): string[] => {
@@ -2102,10 +1786,15 @@ const expandGroupRunIds = (ids: string[], sourceNodes: Node[]): string[] => {
 
 const groupExecutableCount = (ids: string[], sourceNodes: Node[], sourceEdges: Edge[]): number => {
   const memberIds = expandGroupRunIds(ids, sourceNodes);
+  const idSet = new Set(memberIds);
+  const subNodes = sourceNodes.filter((node) => idSet.has(node.id));
+  const subEdges = sourceEdges.filter((edge) => idSet.has(edge.source) && idSet.has(edge.target));
+  const pruned = excludeRandomRouteBranchDescendants(subNodes, subEdges);
+  const prunedMemberIds = memberIds.filter((id) => pruned.nodeIds.has(id));
   return createGroupExecutionPlan({
-    nodes: sourceNodes,
-    edges: sourceEdges,
-    memberIds,
+    nodes: pruned.nodes,
+    edges: pruned.edges,
+    memberIds: prunedMemberIds,
     executableTypes: BATCH_EXECUTABLE_NODE_TYPES,
   }).stages.flat().length;
 };
@@ -2541,8 +2230,8 @@ nodeTypes.groupBox = withNodeSerialBadge(GroupBoxNode);
 function BulkPhantomNode() {
   return (
     <>
-      <Handle type="target" position={Position.Left} style={{ opacity: 0, width: 1, height: 1, minWidth: 0, minHeight: 0, border: 'none', background: 'transparent' }} />
-      <Handle type="source" position={Position.Right} style={{ opacity: 0, width: 1, height: 1, minWidth: 0, minHeight: 0, border: 'none', background: 'transparent' }} />
+      <Handle type="target" position={Position.Left} className="t8-bulk-phantom-handle" style={{ opacity: 0, width: 1, height: 1, minWidth: 0, minHeight: 0, border: 'none', background: 'transparent' }} />
+      <Handle type="source" position={Position.Right} className="t8-bulk-phantom-handle" style={{ opacity: 0, width: 1, height: 1, minWidth: 0, minHeight: 0, border: 'none', background: 'transparent' }} />
     </>
   );
 }
@@ -2899,7 +2588,6 @@ function isRadialMenuPaneTarget(target: EventTarget | null): boolean {
         '.react-flow__handle',
         '.react-flow__edge',
         '.react-flow__controls',
-        '.react-flow__minimap',
         '[data-canvas-floating-ui]',
         '[data-drag-source]',
         'button',
@@ -2923,66 +2611,6 @@ function shouldTreatDragSourceAsMedia(target: EventTarget | null, event?: { ctrl
   return Boolean(event?.ctrlKey || event?.metaKey || (event?.buttons !== undefined && isLeftRightMouseChord(event.buttons)));
 }
 
-type ModelUsageHelpSection = {
-  title: string;
-  paragraphs?: readonly string[];
-  items?: readonly string[];
-};
-
-const MODEL_USAGE_HELP_SECTIONS: readonly ModelUsageHelpSection[] = [
-  {
-    title: '特别注意事项',
-    paragraphs: [
-      '如果不小心网页崩溃等，但是实际任务没失败，需要去网站异步任务看下，有个蓝色的TASKID，点进去可以看到下载地址，手动下载。另外fal模型会预扣3.4个币，生成结束后会多退少补。seedance2.0模型会预扣10个币，生成结束后多退少补',
-    ],
-  },
-  {
-    title: '图像模型注意事项（2K，4K只有FAL长期稳定，其他都不保证稳定）',
-    items: [
-      '2026.06.25谷歌香蕉模型从preview模型升级为正式版，模型名字需要修改，如之前是 gemini-3-pro-image-preview ，需要改为 gemini-3-pro-image，请求的模型名字之前带preview 的都去掉preview以下是新名字gemini-3-pro-image，gemini-3-pro-image-2k，gemini-3-pro-image-4k，gemini-3.1-flash-image，gemini-3.1-flash-image-512px，gemini-3.1-flash-image-2k，gemini-3.1-flash-image-4k，特殊的nano-banana-pro模型不需要修改',
-      'gpt-image-2模型，新增azure特价分组，固定0.3积分，支持2K,4K，目前稳定（2K,4K没法保证永久稳定，最稳定是FAL模型方法），支持质量参数传入！（2026.06.17）',
-      'gpt-image-2-all模型（default分组）只能出1K图，速度最快，最稳定，审核最松',
-      'gpt-image-2模型（default分组）可以出1K，2K，4K图，2K，4K不一定稳定，如果提示系统错误，降低分辨率重试，超过1K，需要选择分辨率， auto不支持1K以上',
-      'gpt-image-2-fal模型，兜底模型，支持2K，4K，价格较贵',
-      'gpt-image-2-2k模型是备用模型，非gpt-image-2模型分支，直接支持2k，目前0.1积分,2026.06.10新增（default分组）',
-      'gpt-image-2-4k模型是备用模型，非gpt-image-2模型分支，直接支持2k，目前0.1积分,2026.06.10新增（default分组）',
-      'nano-banana-2和nano-banana-pro模型，需要用gemini优质分组，default分组不稳定（尤其4K）',
-      'nano-banana-2-fal和nano-banana-pro-fal模型，兜底模型，支持4K，价格较贵',
-      'grok-4.2-image模型（Default分组），审核最松，可以做各种姿势，支持多图编辑，保持一致性需要单独写保证脸部100%一致性不变',
-      'MJ系列模型（Default分组），不同模型的用法都不一样，参考官方，推荐用fast模式，relax模式封号比较严重',
-    ],
-  },
-  {
-    title: '视频模型注意事项',
-    items: [
-      '20250624更新，seedance2.0新增mini模型（720P是满血版的一半），支持原生4K，电影级质感（仅满血720P可选）',
-      'seedance2.0（Default分组）非远景推荐480P+FAST模式，质量吊打快乐马，价格只要5个币15秒，后续用flashvsr放大即可，720P满血15秒大概15币，不排队，支持真人',
-      'seedance2.0（sd-global分组）通常需要在上游平台单独开通，建议先确认账号权限、审核规则和计费方式后再使用',
-      'veo3.1模型，需要看下网站左侧分类教程，有多个分组可用，目前比较稳的是veo&grok备用分组2的veo3.1模型和默认分组的fal模型',
-      'veo-omni模型，需要使用default分组（veo-omnii模型是2026.06.06刚上架的）',
-      'grok-video模型，需要看下网站左侧分类教程，有多个分组可用，目前比较稳的是fal模型和默认分组，新增支持最新imagine 1.5模型（支持图生视频FAL模型），最佳SD平替（default分组），以及veo&grok备用分组2，支持15秒多参生视频，2026.06.11 修复 grok-video-3 模型的 default 默认分组，直接升级成 imagine 1.5 模型，0.5积分10秒，2026.06.12新增grok-video-1.5-6s，grok-video-1.5-10s，grok-video-1.5-15s模型，默认720P，分组default，3个模型，分别是0.5，0.7，0.7积分，最佳SD2.0平替',
-      'sora-2模型，支持sora-vip分组以及default默认分组的FAL模型（sora-vip分组是2026.06.06刚修复的）',
-    ],
-  },
-  {
-    title: '音频模型注意事项',
-    paragraphs: [
-      'suno v5.5模型（Default分组）支持生成，翻唱，延长，一次生成两首歌，翻唱模式情况下，如果是版权歌曲大概率会失败，需要做各种前置处理，可以在网站异步任务查看。',
-    ],
-  },
-  {
-    title: 'LLM模型注意事项',
-    paragraphs: [
-      'LLM模型有时候因为官方问题会出现速度慢，失败等现象，这时候换个模型即可或者换一下分组即可，预置了多个模型。',
-    ],
-  },
-  {
-    title: '内容更新包 v2.1.8',
-    paragraphs: [
-      '内容更新包 v2.1.8：新增提示词模板库 content-pack-v2、画布食谱、ComfyUI/RH/FAL 示例清单。排障顺序：先确认分组和模型，再降低分辨率或时长，最后去异步任务页用 TASKID 找结果。',
-    ],
-  },
-];
 function getReactFlowHandleInfo(target: EventTarget | null): {
   nodeId: string;
   handleType: 'source' | 'target';
@@ -3058,7 +2686,7 @@ function PlacementShelf({
         borderRadius: 12,
       }
     : {
-        border: `1px solid ${isDark ? 'rgba(255,255,255,.16)' : 'rgba(0,0,0,.12)'}`,
+        border: `1px solid var(--t8-shelf-border, ${isDark ? 'rgba(255,255,255,.16)' : 'rgba(0,0,0,.12)'})`,
         background: isDark ? 'rgba(17,24,39,.92)' : 'rgba(255,255,255,.94)',
         color: isDark ? '#f8fafc' : '#111827',
         boxShadow: '0 18px 48px rgba(0,0,0,.28)',
@@ -3241,6 +2869,7 @@ interface CanvasInnerProps {
 
 type AgentActivityItem = {
   id: string;
+  timelineKey: string;
   event: string;
   label: string;
   detail?: string;
@@ -3251,7 +2880,22 @@ type AgentActivityItem = {
   createdAt: number;
   agentId?: string;
   runId?: string;
+  operationBatchId?: string;
 };
+
+function agentActivityTimelineKey(event: string, payload: any, nodeId: string, type: string) {
+  const runId = String(payload?.runId || 'canvas');
+  if (event === 'agent:tool_call_start' || event === 'agent:tool_call_end') {
+    return `${runId}:tool:${payload?.index ?? 'item'}:${type}`;
+  }
+  if (event === 'agent:run_started' || event === 'agent:run_done' || event === 'agent:run_error') return `${runId}:run`;
+  if (event === 'agent:run_node_status' || event === 'canvas:run_node') return `${runId}:node:${nodeId || payload?.index || 'unknown'}`;
+  if (event === 'agent:verification' || event === 'agent:verification_error' || event === 'agent:operation_undone') {
+    return `${runId}:verification:${payload?.operationBatchId || 'current'}`;
+  }
+  if (event === 'agent:repair_started') return `${runId}:repair:${nodeId || 'unknown'}`;
+  return `${runId}:${event}:${payload?.index ?? payload?.questionId ?? payload?.createdAt ?? 'item'}`;
+}
 
 type AgentCursorState = {
   x: number;
@@ -3260,6 +2904,14 @@ type AgentCursorState = {
 };
 
 function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
+  // Counts render-function invocations; the audit resets it after mount/StrictMode setup.
+  // It measures invocations, not committed renders.
+  if (
+    typeof window !== 'undefined'
+    && (import.meta.env.DEV || new URLSearchParams(window.location.search).has('perf-audit'))
+  ) {
+    window.__t8CanvasInnerRenderCount = (window.__t8CanvasInnerRenderCount ?? 0) + 1;
+  }
   const { activeId, canvases, loadCanvases, setActive } = useCanvasStore();
   const { theme, style, templateId, customTemplates } = useThemeStore();
   const shortcuts = useShortcutStore((s) => s.shortcuts);
@@ -3269,18 +2921,15 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
     [templateId, customTemplates],
   );
   const visualStyle = currentTemplate.visuals?.style || style;
-  const isOp = visualStyle === 'op';
-  const isNaruto = visualStyle === 'naruto';
-  const isEva = visualStyle === 'eva';
-  const isYyh = visualStyle === 'yyh';
-  const isSlamdunk = visualStyle === 'slamdunk';
-  const isSoccer = visualStyle === 'soccer-hero';
-  const isDragonBall = visualStyle === 'dragon-ball';
-  const isTetris = visualStyle === 'tetris';
-  const isFarmStory = visualStyle === 'farm-story';
-  const farmDevToolsEnabled = isFarmStory && import.meta.env.DEV;
   const themeTokens = getTemplateMode(currentTemplate, theme).tokens;
   const { screenToFlowPosition, setCenter, getViewport, setViewport, fitView } = useReactFlow();
+  const updateNodeInternals = useUpdateNodeInternals();
+  const [currentCanvasZoom, setCurrentCanvasZoom] = useState(() => {
+    const initialZoom = getViewport().zoom;
+    return Number.isFinite(initialZoom) ? initialZoom : 1;
+  });
+  const currentCanvasZoomRef = useRef(currentCanvasZoom);
+  const canvasZoomTrackingRef = useRef(createCanvasZoomTrackingState(currentCanvasZoom));
   const radialSlotsRaw = useRadialMenuStore((s) => s.slots);
   const radialLongPressMs = useRadialMenuStore((s) => s.longPressMs);
   const radialSlots = useMemo(
@@ -3294,10 +2943,42 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
   );
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
+  const [canvasShellElement, setCanvasShellElement] = useState<HTMLDivElement | null>(null);
+  const proximityHandleControllerRef = useRef<ProximityHandleController | null>(null);
   const [agentActivityItems, setAgentActivityItems] = useState<AgentActivityItem[]>([]);
   const [agentCursor, setAgentCursor] = useState<AgentCursorState | null>(null);
   const agentRunNodeMetaRef = useRef<Map<string, { runId: string; agentId?: string; canvasId?: string; startedAt: number }>>(new Map());
   const lastAgentRunDoneTsRef = useRef(0);
+
+  useEffect(() => {
+    if (!canvasShellElement) return;
+
+    const controller = createProximityHandleController(canvasShellElement);
+    proximityHandleControllerRef.current = controller;
+    const onPointerMove = (event: PointerEvent) => controller.pointerMove(event);
+    const onPointerDown = (event: PointerEvent) => controller.pointerDown(event);
+    const onPointerUp = (event: PointerEvent) => controller.pointerUp(event);
+    const onPointerCancel = () => controller.pointerCancel();
+    const onBlur = () => controller.blur();
+
+    canvasShellElement.addEventListener('pointermove', onPointerMove, true);
+    canvasShellElement.addEventListener('pointerdown', onPointerDown, true);
+    window.addEventListener('pointerup', onPointerUp, true);
+    window.addEventListener('pointercancel', onPointerCancel, true);
+    window.addEventListener('blur', onBlur, true);
+
+    return () => {
+      canvasShellElement.removeEventListener('pointermove', onPointerMove, true);
+      canvasShellElement.removeEventListener('pointerdown', onPointerDown, true);
+      window.removeEventListener('pointerup', onPointerUp, true);
+      window.removeEventListener('pointercancel', onPointerCancel, true);
+      window.removeEventListener('blur', onBlur, true);
+      controller.dispose();
+      if (proximityHandleControllerRef.current === controller) {
+        proximityHandleControllerRef.current = null;
+      }
+    };
+  }, [canvasShellElement]);
   const [generationHistoryOpen, setGenerationHistoryOpen] = useState(false);
   const generationHistoryDataKey = useMemo(() => buildGenerationHistoryDataKey(nodes), [nodes]);
   const generationHistoryCount = useMemo(() => countGenerationHistoryItems(nodes), [generationHistoryDataKey]);
@@ -3341,6 +3022,10 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
     const label =
       event === 'agent:run_started' ? `${agentLabel} 开始控制画布 · ${drivingModeLabel}`
         : event === 'agent:plan_diff' ? `${agentLabel} 预演画布计划`
+        : event === 'agent:verification' ? `${agentLabel} 回读验证画布结果`
+        : event === 'agent:verification_error' ? `${agentLabel} 画布验证失败`
+        : event === 'agent:operation_undone' ? `${agentLabel} 已撤销本轮操作`
+        : event === 'agent:repair_started' ? `${agentLabel} 自动修正并重试`
         : event === 'agent:phase' ? `${agentLabel} ${payload?.payload?.label || payload?.payload?.phase || '推进流程'}`
           : event === 'agent:ask_user' ? `${agentLabel} 等待用户选择`
             : event === 'agent:user_answer' ? `${agentLabel} 收到用户选择`
@@ -3374,6 +3059,14 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       ? String(nodeType)
       : event === 'agent:plan_diff'
         ? String(payload?.diff?.summary || payload?.payload?.summary || '准备预演节点、连线和模型运行')
+      : event === 'agent:verification'
+        ? String(payload?.verification?.ok ? '节点、连线和结果已回读' : `发现 ${payload?.verification?.failureCount || 0} 项需要处理`)
+      : event === 'agent:verification_error'
+        ? String(payload?.error || '无法回读画布结果')
+      : event === 'agent:operation_undone'
+        ? String(payload?.operationBatchId || '画布已恢复到执行前状态')
+      : event === 'agent:repair_started'
+        ? String(payload?.reason || payload?.nodeId || '定向修正生成节点')
       : event === 'agent:run_node_status'
         ? String(payload?.payload?.detail || payload?.detail || nodeId || '生成节点')
       : payload?.payload?.question
@@ -3381,6 +3074,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         : payload?.label || payload?.payload?.detail || payload?.payload?.label || payload?.payload?.text || payload?.payload?.phase || '';
     const nextItem: AgentActivityItem = {
         id: `${event}-${createdAt}-${Math.random().toString(36).slice(2, 6)}`,
+        timelineKey: agentActivityTimelineKey(event, payload, nodeId, type),
         event,
         label,
         detail: String(detail || '').slice(0, 80),
@@ -3391,17 +3085,11 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         createdAt,
         agentId: payload?.agentId,
         runId: payload?.runId,
+        operationBatchId: String(payload?.operationBatchId || '').trim() || undefined,
       };
     setAgentActivityItems((items) => {
-      if (event === 'agent:run_node_status' && nodeId) {
-        let replaced = false;
-        const updated = items.map((item) => {
-          if (item.event !== 'agent:run_node_status' || item.nodeId !== nodeId) return item;
-          replaced = true;
-          return { ...nextItem, id: item.id };
-        });
-        if (replaced) return updated;
-      }
+      const existing = items.find((item) => item.timelineKey === nextItem.timelineKey);
+      if (existing) return items.map((item) => item.timelineKey === nextItem.timelineKey ? { ...nextItem, id: item.id } : item);
       return [nextItem, ...items].slice(0, 6);
     });
   }, []);
@@ -3422,6 +3110,51 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       console.warn('提交 Codex 选项失败', error);
     });
   }, [activeId]);
+
+  const handleAgentOperationUndo = useCallback(async (item: AgentActivityItem) => {
+    if (!item.operationBatchId) return;
+    const undo = (force = false) => api.undoAgentCanvasOperationBatch(item.operationBatchId!, {
+      canvasId: activeId || undefined,
+      force,
+    });
+    try {
+      await undo(false);
+    } catch (error: any) {
+      const message = String(error?.message || '撤销失败');
+      if (!/Canvas changed after|后续|force=true/i.test(message)) {
+        setAgentActivityItems((items) => items.map((entry) => entry.id === item.id ? { ...entry, status: 'error', detail: message } : entry));
+        return;
+      }
+      const confirmed = window.confirm('本轮操作之后画布又有修改。强制撤销会覆盖这些后续修改，确定继续吗？');
+      if (!confirmed) return;
+      await undo(true);
+    }
+    setAgentActivityItems((items) => items.map((entry) => entry.id === item.id ? {
+      ...entry,
+      label: '已撤销本轮画布操作',
+      detail: '画布已恢复到执行前状态',
+      status: 'done',
+      operationBatchId: undefined,
+    } : entry));
+  }, [activeId]);
+
+  useEffect(() => {
+    const transientItems = agentActivityItems.filter((item) => item.status !== 'waiting');
+    if (transientItems.length === 0) return;
+    const now = Date.now();
+    const nextDelay = Math.max(
+      0,
+      Math.min(...transientItems.map((item) => AGENT_ACTIVITY_DISMISS_MS - (now - item.createdAt))),
+    );
+    const timer = window.setTimeout(() => {
+      const cutoff = Date.now() - AGENT_ACTIVITY_DISMISS_MS;
+      setAgentActivityItems((items) => items.filter((item) => (
+        item.status === 'waiting' || item.createdAt > cutoff
+      )));
+    }, nextDelay + 50);
+    return () => window.clearTimeout(timer);
+  }, [agentActivityItems]);
+
   const [farmSoundEnabled, setFarmSoundEnabled] = useState(() => {
     if (typeof window === 'undefined') return true;
     try {
@@ -3438,10 +3171,9 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
   const farmFollowupNoticeTimerRef = useRef<number | null>(null);
   const farmContinuousFeedbackBatchRef = useRef<FarmContinuousFeedbackBatch | null>(null);
   const webImageImportMessageIdsRef = useRef<Set<string>>(new Set());
-  const vibeXImportMessageIdsRef = useRef<Set<string>>(new Set());
+  const photoshopImportMessageIdsRef = useRef<Set<string>>(new Set());
   const edgeCutFeedbackTimersRef = useRef<Map<string, number>>(new Map());
   const edgeConnectFeedbackTimersRef = useRef<Map<string, number>>(new Map());
-  const farmAchievementEventIdsRef = useRef<Set<string>>(new Set());
   const lastCanvasPointerRef = useRef<{ x: number; y: number } | null>(null);
   const [creativeDeskEditing, setCreativeDeskEditing] = useState(false);
   const [creativeDeskActiveItemId, setCreativeDeskActiveItemId] = useState<string | null>(null);
@@ -3484,12 +3216,6 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
   const [nodeDragging, setNodeDragging] = useState(false);
   const [dragSaveTick, setDragSaveTick] = useState(0);
   const lastDone = useRunBusStore((s) => s.lastDone);
-  const lastAchievementDoneTsRef = useRef(0);
-  const achievementProfileLoaded = useAchievementStore((state) => Boolean(state.profile));
-  const achievementTrackingEnabled = useAchievementStore((state) => state.profile?.preferences?.enabled !== false);
-  const rhDuckDecodedUnlocked = useAchievementStore((state) => Boolean(state.profile?.unlockedAchievements?.['rh-duck-decoded']));
-  const yyhPortraitOutputUnlocked = useAchievementStore((state) => Boolean(state.profile?.unlockedAchievements?.['yyh-portrait-output']));
-  const hiddenOutputSyncRef = useRef<Set<string>>(new Set());
 
   useEffect(() => () => {
     farmFloatingFeedbackTimersRef.current.forEach((timerId) => window.clearTimeout(timerId));
@@ -3536,7 +3262,6 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
     setEdgeConnectFeedbacks([]);
     edgeConnectFeedbackTimersRef.current.forEach((timerId) => window.clearTimeout(timerId));
     edgeConnectFeedbackTimersRef.current.clear();
-    farmAchievementEventIdsRef.current.clear();
   }, [loadedCanvasId]);
 
   useEffect(() => {
@@ -3556,29 +3281,6 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
     setFarmSoundEnabled(enabled);
     if (enabled) playFarmActionSound('select', { enabled: true });
   }, []);
-
-  const trackFarmAchievementFromEvent = useCallback((event?: FarmEventLogItem, previousEventId?: string) => {
-    if (!event || event.id === previousEventId) return;
-    const type = farmAchievementTypeForEvent(event.kind);
-    if (!type || farmAchievementEventIdsRef.current.has(event.id)) return;
-    farmAchievementEventIdsRef.current.add(event.id);
-    if (farmAchievementEventIdsRef.current.size > 200) {
-      farmAchievementEventIdsRef.current = new Set(Array.from(farmAchievementEventIdsRef.current).slice(-120));
-    }
-    trackAchievementEvent({
-      type,
-      theme: 'farm-story',
-      kind: farmAchievementKindForEvent(event),
-    });
-  }, []);
-
-  const trackFarmAchievementsFromEvents = useCallback((events: FarmEventLogItem[] | undefined, previousEventId?: string) => {
-    if (!Array.isArray(events)) return;
-    for (const event of events) {
-      if (event.id === previousEventId) break;
-      trackFarmAchievementFromEvent(event);
-    }
-  }, [trackFarmAchievementFromEvent]);
 
   const pushFarmFloatingFeedback = useCallback((feedback: Omit<FarmCanvasFloatingFeedback, 'id'>) => {
     if (!feedback.message) return;
@@ -3819,12 +3521,12 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
   const connectingFromRef = useRef<{
     nodeId: string;
     handleType: 'source' | 'target';
+    handleId?: string | null;
   } | null>(null);
   const isConnectionDraggingRef = useRef(false);
   const connectionPanModeRef = useRef(false);
   const connectionPanPointerRef = useRef<{ x: number; y: number } | null>(null);
   const [connectionPanModeActive, setConnectionPanModeActive] = useState(false);
-  const [modelHelpOpen, setModelHelpOpen] = useState(false);
   const [radialSettingsOpen, setRadialSettingsOpen] = useState(false);
   const altDragCloneRef = useRef<{
     placeholderIds: Map<string, string>; // origId -> placeholderId
@@ -3840,9 +3542,16 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
   }, []);
 
   const resetConnectionPanMode = useCallback(() => {
+    connectingFromRef.current = null;
     isConnectionDraggingRef.current = false;
+    connectionPanPointerRef.current = null;
     setConnectionPanMode(false);
   }, [setConnectionPanMode]);
+
+  const finalizeConnectionPanMode = useCallback(() => {
+    proximityHandleControllerRef.current?.connectionEnd();
+    resetConnectionPanMode();
+  }, [resetConnectionPanMode]);
 
   const clearEdgeMotionReleaseTimer = useCallback(() => {
     if (edgeMotionReleaseTimerRef.current) {
@@ -3881,10 +3590,51 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
     setViewportMoving(true);
   }, [clearEdgeMotionReleaseTimer, restoreRadialViewportLock]);
 
-  const handleViewportMoveEnd = useCallback(() => {
-    if (radialViewportLockRef.current) {
+  const handleViewportMove = useCallback((_event: MouseEvent | TouchEvent | null, viewportPayload: Viewport) => {
+    const lockedViewport = radialViewportLockRef.current;
+    if (lockedViewport) {
       restoreRadialViewportLock();
+      const trackingResult = reduceCanvasZoomTracking(canvasZoomTrackingRef.current, {
+        type: 'locked', zoom: lockedViewport.zoom,
+      });
+      canvasZoomTrackingRef.current = trackingResult.state;
+      currentCanvasZoomRef.current = trackingResult.state.liveZoom;
+      if (trackingResult.renderZoom !== null) {
+        setCurrentCanvasZoom(trackingResult.renderZoom);
+      }
       return;
+    }
+    const trackingResult = reduceCanvasZoomTracking(canvasZoomTrackingRef.current, {
+      type: 'move', zoom: viewportPayload.zoom,
+    });
+    canvasZoomTrackingRef.current = trackingResult.state;
+    currentCanvasZoomRef.current = trackingResult.state.liveZoom;
+    if (trackingResult.renderZoom !== null) {
+      setCurrentCanvasZoom(trackingResult.renderZoom);
+    }
+  }, [restoreRadialViewportLock]);
+
+  const handleViewportMoveEnd = useCallback((_event: MouseEvent | TouchEvent | null, viewportPayload: Viewport) => {
+    const lockedViewport = radialViewportLockRef.current;
+    if (lockedViewport) {
+      restoreRadialViewportLock();
+      const trackingResult = reduceCanvasZoomTracking(canvasZoomTrackingRef.current, {
+        type: 'locked', zoom: lockedViewport.zoom,
+      });
+      canvasZoomTrackingRef.current = trackingResult.state;
+      currentCanvasZoomRef.current = trackingResult.state.liveZoom;
+      if (trackingResult.renderZoom !== null) {
+        setCurrentCanvasZoom(trackingResult.renderZoom);
+      }
+      return;
+    }
+    const trackingResult = reduceCanvasZoomTracking(canvasZoomTrackingRef.current, {
+      type: 'end', zoom: viewportPayload.zoom,
+    });
+    canvasZoomTrackingRef.current = trackingResult.state;
+    currentCanvasZoomRef.current = trackingResult.state.liveZoom;
+    if (trackingResult.renderZoom !== null) {
+      setCurrentCanvasZoom(trackingResult.renderZoom);
     }
     releaseEdgeMotionSoon(setViewportMoving);
   }, [releaseEdgeMotionSoon, restoreRadialViewportLock]);
@@ -3907,6 +3657,12 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
     nodesRef.current = nodes;
   }, [nodes]);
   useEffect(() => {
+    const frameId = requestAnimationFrame(() => {
+      updateNodeInternals(nodesRef.current.map((node) => node.id));
+    });
+    return () => cancelAnimationFrame(frameId);
+  }, [theme, templateId, visualStyle, updateNodeInternals]);
+  useEffect(() => {
     edgesRef.current = edges;
   }, [edges]);
   useEffect(() => {
@@ -3920,7 +3676,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
   }, [radialMenu]);
 
   const annotateFarmPortHandles = useCallback(() => {
-    if (!isFarmStory || typeof document === 'undefined') return;
+    if (!false || typeof document === 'undefined') return;
     const nodeById = new Map(nodesRef.current.map((node) => [node.id, node]));
     document.querySelectorAll<HTMLElement>('.react-flow__handle').forEach((handleEl) => {
       const nodeId =
@@ -3947,7 +3703,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       handleEl.setAttribute('data-t8-port-aria', 'farm-story');
       handleEl.setAttribute('aria-label', `${PORT_LABEL[portType]}${rawHandleType === 'source' ? '输出' : '输入'}端口`);
     });
-  }, [isFarmStory]);
+  }, []);
 
   useEffect(() => {
     if (typeof document === 'undefined') return undefined;
@@ -3961,7 +3717,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         }
       });
     };
-    if (!isFarmStory) {
+    if (!false) {
       clearFarmPortHandles();
       return undefined;
     }
@@ -3972,7 +3728,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
     return () => {
       observer.disconnect();
     };
-  }, [annotateFarmPortHandles, isFarmStory, nodes]);
+  }, [annotateFarmPortHandles, nodes]);
 
   const suppressRadialContextMenu = useCallback(() => {
     radialContextMenuSuppressedUntilRef.current = Date.now() + RADIAL_MENU_CONTEXT_SUPPRESS_MS;
@@ -3988,58 +3744,6 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
     Boolean(radialMenuRef.current) ||
     Boolean(radialPressRef.current?.open)
   ), []);
-
-  useEffect(() => {
-    if (!loaded || !achievementProfileLoaded || !achievementTrackingEnabled) return;
-    const syncOnce = (key: string, payload: Parameters<typeof trackAchievementEvent>[0]) => {
-      if (hiddenOutputSyncRef.current.has(key)) return;
-      hiddenOutputSyncRef.current.add(key);
-      trackAchievementEvent(payload);
-    };
-    const hasRhDuckDecodedOutput = nodes.some((node) => Boolean((node.data as any)?.rhDuckDecoded));
-    if (hasRhDuckDecodedOutput && !rhDuckDecodedUnlocked) {
-      syncOnce('rh-duck-used-output', {
-        type: 'hidden_mode.used',
-        theme: 'rh',
-        kind: 'rh-duck',
-        mode: 'used',
-        nodeType: 'upload',
-      });
-    }
-    const hasYyhPortraitHiddenOutput = nodes.some((node) => Boolean((node.data as any)?.yyhPortraitHidden));
-    if (hasYyhPortraitHiddenOutput && !yyhPortraitOutputUnlocked) {
-      syncOnce('yyh-portrait-used-output', {
-        type: 'hidden_mode.used',
-        theme: 'yyh',
-        kind: 'yyh-portrait',
-        mode: 'used',
-        nodeType: 'portrait-master',
-      });
-    }
-  }, [
-    achievementProfileLoaded,
-    achievementTrackingEnabled,
-    loaded,
-    nodes,
-    rhDuckDecodedUnlocked,
-    yyhPortraitOutputUnlocked,
-  ]);
-
-  useEffect(() => {
-    if (!lastDone?.ok || !lastDone.ts || lastAchievementDoneTsRef.current === lastDone.ts) return;
-    lastAchievementDoneTsRef.current = lastDone.ts;
-    const node = nodesRef.current.find((item) => item.id === lastDone.id);
-    const nodeType = String(node?.type || 'unknown');
-    trackAchievementEvent({ type: 'node.run_success', theme: visualStyle, nodeType });
-    window.dispatchEvent(new CustomEvent('t8:tetris-energy-bonus', {
-      detail: { amount: 12, nodeType },
-    }));
-    if (nodeType === 'panorama-3d') {
-      trackAchievementEvent({ type: 'panorama.generated', theme: visualStyle, nodeType });
-    } else if (nodeType === 'aggregate-parser') {
-      trackAchievementEvent({ type: 'parsehub.resolved', theme: visualStyle, nodeType });
-    }
-  }, [lastDone, visualStyle]);
 
   useEffect(() => {
     if (!lastDone?.ts || lastAgentRunDoneTsRef.current === lastDone.ts) return;
@@ -4242,6 +3946,37 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
     x: number;
     y: number;
   } | null>(null);
+
+  // 连线中点「插入节点」菜单(由 DeletableEdge 悬停簇的 ＋ 按钮触发)
+  const [edgeInsertMenu, setEdgeInsertMenu] = useState<{
+    edgeId: string;
+    x: number;
+    y: number;
+    portType: PortType;
+  } | null>(null);
+
+  useEffect(() => {
+    const onEdgeInsertRequest = (event: Event) => {
+      const detail = ((event as CustomEvent)?.detail || {}) as {
+        edgeId?: string;
+        x?: number;
+        y?: number;
+        portType?: PortType;
+      };
+      const edgeId = String(detail.edgeId || '');
+      if (!edgeId) return;
+      const edge = edgesRef.current.find((ed) => ed.id === edgeId);
+      if (!edge) return;
+      setEdgeInsertMenu({
+        edgeId,
+        x: Number(detail.x) || window.innerWidth / 2,
+        y: Number(detail.y) || window.innerHeight / 2,
+        portType: (detail.portType || (edge.data as any)?.portType || 'any') as PortType,
+      });
+    };
+    window.addEventListener('penguin:edge-insert-node-request', onEdgeInsertRequest);
+    return () => window.removeEventListener('penguin:edge-insert-node-request', onEdgeInsertRequest);
+  }, []);
 
   // 历史栈
   const applySnapshot = useCallback((snap: { nodes: Node[]; edges: Edge[] }) => {
@@ -4514,6 +4249,14 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       canvasEventSource.addEventListener('agent:run_started', handleAgentEvent('agent:run_started'));
       canvasEventSource.addEventListener('agent:phase', handleAgentEvent('agent:phase', 'preview'));
       canvasEventSource.addEventListener('agent:plan_diff', handleAgentEvent('agent:plan_diff', 'preview'));
+      canvasEventSource.addEventListener('agent:verification', (event) => {
+        const payload = readEventPayload(event);
+        if (!payload) return;
+        pushAgentActivity('agent:verification', payload, payload?.verification?.ok ? 'done' : 'preview');
+      });
+      canvasEventSource.addEventListener('agent:verification_error', handleAgentEvent('agent:verification_error', 'error'));
+      canvasEventSource.addEventListener('agent:operation_undone', handleAgentEvent('agent:operation_undone', 'done'));
+      canvasEventSource.addEventListener('agent:repair_started', handleAgentEvent('agent:repair_started', 'running'));
       canvasEventSource.addEventListener('agent:ask_user', handleAgentEvent('agent:ask_user', 'waiting'));
       canvasEventSource.addEventListener('agent:user_answer', handleAgentEvent('agent:user_answer', 'done'));
       canvasEventSource.addEventListener('agent:run_node_status', (event) => {
@@ -4657,9 +4400,9 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
     if (isDraggingRef.current) return;
     const client = realtimeClientRef.current;
     if (!client || !realtimeClientIdRef.current) return;
-    const persistNodes = nodes.filter((n) => n.id !== BULK_PHANTOM_ID);
+    const persistNodes = nodes.filter((n) => n.id !== BULK_PHANTOM_ID && !isAltDragPlaceholderNode(n));
     const persistEdges = edges.filter(
-      (ed) => ed.source !== BULK_PHANTOM_ID && ed.target !== BULK_PHANTOM_ID
+      (ed) => ed.source !== BULK_PHANTOM_ID && ed.target !== BULK_PHANTOM_ID && !ed.source.startsWith('_alt-ph-') && !ed.target.startsWith('_alt-ph-')
     );
     const snapshot = JSON.stringify({
       nodes: persistNodes,
@@ -4703,9 +4446,9 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
     if (!activeId || !loaded || loadedCanvasId !== activeId) return;
     if (isDraggingRef.current) return;
     // 过滤 SHIFT 批量移线拖拽过程中的 phantom 节点与重定向边(不作为持久化快照)
-    const persistNodes = nodes.filter((n) => n.id !== BULK_PHANTOM_ID);
+    const persistNodes = nodes.filter((n) => n.id !== BULK_PHANTOM_ID && !isAltDragPlaceholderNode(n));
     const persistEdges = edges.filter(
-      (ed) => ed.source !== BULK_PHANTOM_ID && ed.target !== BULK_PHANTOM_ID
+      (ed) => ed.source !== BULK_PHANTOM_ID && ed.target !== BULK_PHANTOM_ID && !ed.source.startsWith('_alt-ph-') && !ed.target.startsWith('_alt-ph-')
     );
     const nextNodeSerialId = nextNodeSerialIdRef.current;
     const snapshot = JSON.stringify({ nodes: persistNodes, edges: persistEdges, creativeDesk, nextNodeSerialId, farmCanvas });
@@ -4816,10 +4559,10 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
   }, [creativeDeskEditing, loadCreativeDeskResources]);
 
   useEffect(() => {
-    if (!isFarmStory || !farmCanvasEditing) return;
+    if (!false || !farmCanvasEditing) return;
     if (farmResourceDecorLoadedRef.current || farmResourceDecorItems.length > 0 || farmResourceDecorLoading) return;
     void loadFarmResourceDecorItems();
-  }, [farmCanvasEditing, farmResourceDecorItems.length, farmResourceDecorLoading, isFarmStory, loadFarmResourceDecorItems]);
+  }, [farmCanvasEditing, farmResourceDecorItems.length, farmResourceDecorLoading, loadFarmResourceDecorItems]);
 
   const handleCreativeDeskUploadFiles = useCallback(async (files: File[]) => {
     const images = files.filter((file) => inferCanvasMediaKind(file) === 'image');
@@ -4901,7 +4644,6 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
     if (enabled) {
       setCreativeDeskEditing(false);
       setRadialSettingsOpen(false);
-      setModelHelpOpen(false);
       setFarmCanvasFeedback('已进入牧场编辑，选择工具后点击画布空白处操作。');
       return;
     }
@@ -4959,7 +4701,6 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
     setFarmCanvasEditing(true);
     setCreativeDeskEditing(false);
     setRadialSettingsOpen(false);
-    setModelHelpOpen(false);
     showFarmToolSelectionFeedback(buildFarmToolSelectionFeedback(tool, nextFarmCanvas));
   }, [farmCanvas, showFarmToolSelectionFeedback]);
 
@@ -4975,7 +4716,6 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
     setFarmCanvasEditing(true);
     setCreativeDeskEditing(false);
     setRadialSettingsOpen(false);
-    setModelHelpOpen(false);
     showFarmToolSelectionFeedback(buildFarmToolSelectionFeedback('build', nextFarmCanvas));
   }, [farmCanvas, showFarmToolSelectionFeedback]);
 
@@ -4991,7 +4731,6 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
     setFarmCanvasEditing(true);
     setCreativeDeskEditing(false);
     setRadialSettingsOpen(false);
-    setModelHelpOpen(false);
     showFarmToolSelectionFeedback(buildFarmToolSelectionFeedback('decor', nextFarmCanvas));
   }, [farmCanvas, showFarmToolSelectionFeedback]);
 
@@ -5025,7 +4764,6 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
     setFarmCanvasEditing(true);
     setCreativeDeskEditing(false);
     setRadialSettingsOpen(false);
-    setModelHelpOpen(false);
     showFarmToolSelectionFeedback(buildFarmToolSelectionFeedback('decor', nextFarmCanvas, {
       resourceDecorLabel: `${resource.title || resource.id} -> ${typeLabel}`,
     }));
@@ -5106,11 +4844,10 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
             tone: 'reward',
           });
         }
-        trackFarmAchievementsFromEvents(result.state.eventLog, prev.eventLog[0]?.id);
       }
       return result.state;
     });
-  }, [flashFarmObject, flushFarmContinuousFeedback, playFarmSound, pushFarmFloatingFeedback, queueFarmContinuousFeedback, trackFarmAchievementsFromEvents]);
+  }, [flashFarmObject, flushFarmContinuousFeedback, playFarmSound, pushFarmFloatingFeedback, queueFarmContinuousFeedback]);
 
   const handleFarmCancelContinuousAction = useCallback((reason: 'escape' | 'contextmenu' | 'blur') => {
     flushFarmContinuousFeedback();
@@ -5164,11 +4901,10 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       });
       playFarmSound(result.error ? 'error' : 'order');
       if (result.changed && !result.error) {
-        trackFarmAchievementsFromEvents(result.state.eventLog, prev.eventLog[0]?.id);
       }
       return result.state;
     });
-  }, [getFarmViewportCenter, playFarmSound, pushFarmFloatingFeedback, trackFarmAchievementsFromEvents]);
+  }, [getFarmViewportCenter, playFarmSound, pushFarmFloatingFeedback]);
 
   const handleFarmCompleteNpcVisit = useCallback((visitId: string) => {
     setFarmCanvas((prev) => {
@@ -5183,11 +4919,10 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       });
       playFarmSound(result.error ? 'error' : 'order');
       if (result.changed && !result.error) {
-        trackFarmAchievementsFromEvents(result.state.eventLog, prev.eventLog[0]?.id);
       }
       return result.state;
     });
-  }, [getFarmViewportCenter, playFarmSound, pushFarmFloatingFeedback, trackFarmAchievementsFromEvents]);
+  }, [getFarmViewportCenter, playFarmSound, pushFarmFloatingFeedback]);
 
   const handleFarmJumpToMature = useCallback(() => {
     const state = sanitizeFarmCanvasState(farmCanvas);
@@ -5220,7 +4955,6 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
     setFarmCanvasEditing(true);
     setCreativeDeskEditing(false);
     setRadialSettingsOpen(false);
-    setModelHelpOpen(false);
     setFarmCanvas((prev) => sanitizeFarmCanvasState({ ...prev, selectedTool: 'harvest' }));
     setFarmCanvasFeedback(`已定位成熟作物 ${index + 1}/${matureObjects.length}，收获工具已就绪。`);
     flushFarmContinuousFeedback();
@@ -5244,7 +4978,6 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
     setFarmCanvasEditing(true);
     setCreativeDeskEditing(false);
     setRadialSettingsOpen(false);
-    setModelHelpOpen(false);
     if (marker.kind === 'mature') {
       setFarmCanvas((prev) => sanitizeFarmCanvasState({ ...prev, selectedTool: 'harvest' }));
     } else if (marker.kind === 'dry') {
@@ -5307,21 +5040,37 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         data: { ...(INITIAL_DATA[type] || {}), ...(options?.data || {}) },
       };
       setNodes((prev) => [...prev, ...assignActiveNodeSerials([newNode], prev)]);
-      trackAchievementEvent({ type: 'node.created', theme: visualStyle, nodeType: type });
     },
     [screenToFlowPosition, nodes, getViewport, setCenter, assignActiveNodeSerials, visualStyle]
   );
 
-  const handleCreateGenerationTarget = useCallback(() => {
-    addNode(CREATIVE_TARGET_NODE_TYPE as NodeType);
-  }, [addNode]);
-
-  const handleOpenVibeXWorkbench = useCallback(() => {
-    window.open(VIBEX_ONLINE_URL, '_blank', 'noopener,noreferrer');
+  const clearRadialPress = useCallback(() => {
+    const press = radialPressRef.current;
+    if (press?.timer) window.clearTimeout(press.timer);
+    radialPressRef.current = null;
+    if (!radialMenuRef.current) {
+      radialViewportLockRef.current = null;
+    }
   }, []);
 
-  const handleCreateVibeXNode = useCallback(() => {
-    addNode('vibex' as NodeType);
+  const closeRadialMenu = useCallback(() => {
+    clearRadialPress();
+    restoreRadialViewportLock();
+    radialViewportLockRef.current = null;
+    radialMenuRef.current = null;
+    setRadialMenu(null);
+  }, [clearRadialPress, restoreRadialViewportLock]);
+
+  const handleRadialMenuSelect = useCallback((index: number) => {
+    const current = radialMenuRef.current;
+    const slot = radialSlots[index];
+    if (!slot?.enabled) return;
+    closeRadialMenu();
+    addNode(slot.nodeType, { atScreen: current?.anchor || current?.center });
+  }, [addNode, closeRadialMenu, radialSlots]);
+
+  const handleCreateGenerationTarget = useCallback(() => {
+    addNode(CREATIVE_TARGET_NODE_TYPE as NodeType);
   }, [addNode]);
 
   const handleCreateImageFromSelection = useCallback((ids: string[]) => {
@@ -5455,25 +5204,21 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
     return () => window.removeEventListener('message', handleWebImageMessage);
   }, [importWebImagePayload]);
 
-  const importVibeXPayload = useCallback((input: unknown, sourceLabel = 'VibeX') => {
+  const importPhotoshopPayload = useCallback((input: unknown, sourceLabel = 'Photoshop') => {
       const data = input && typeof input === 'object' ? input as Record<string, any> : {};
-      const payload = normalizeVibeXResultPayload(data.payload || data);
+      const payload = normalizePhotoshopResultPayload(data.payload || data);
       if (!payload) {
-        logBus.warn(`${sourceLabel} 没有发送可识别的视频、图片、音频或提示词`, 'VibeX');
+        logBus.warn(`${sourceLabel} 没有发送可识别的图像或提示词`, 'Photoshop');
         return false;
       }
       const messageId = String(payload.messageId || data.messageId || '').trim().slice(0, 180);
       if (messageId) {
-        if (vibeXImportMessageIdsRef.current.has(messageId)) return false;
-        vibeXImportMessageIdsRef.current.add(messageId);
-        if (vibeXImportMessageIdsRef.current.size > 80) {
-          vibeXImportMessageIdsRef.current = new Set([...vibeXImportMessageIdsRef.current].slice(-40));
-        }
+        if (photoshopImportMessageIdsRef.current.has(messageId)) return false;
       }
 
-      const specs = buildVibeXSendNodeSpecs(payload);
+      const specs = buildPhotoshopSendNodeSpecs(payload);
       if (specs.length === 0) {
-        logBus.warn(`${sourceLabel} 回传没有可创建的素材节点`, 'VibeX');
+        logBus.warn(`${sourceLabel} 回传没有可创建的素材节点`, 'Photoshop');
         return false;
       }
 
@@ -5485,7 +5230,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
           : { x: window.innerWidth / 2, y: window.innerHeight / 2 },
       );
       const newNodes = materialNodesFromSpecs(specs, nodesRef.current, base, {
-        signature: `vibex:${messageId || Date.now()}`,
+        signature: `photoshop:${messageId || Date.now()}`,
         mode: 'output',
         sourceCanvasId: activeId,
         sourceNodeIds: [],
@@ -5502,23 +5247,29 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       }
       setNodes([...nodesRef.current.map((node) => ({ ...node, selected: false })), ...assignedNewNodes]);
       registerPlacementShelfNodes(assignedNewNodes, '发送');
-      logBus.success(`已从 ${sourceLabel} 发送 ${assignedNewNodes.length} 个节点到当前画布`, 'VibeX');
+      if (messageId) {
+        photoshopImportMessageIdsRef.current.add(messageId);
+        if (photoshopImportMessageIdsRef.current.size > 80) {
+          photoshopImportMessageIdsRef.current = new Set([...photoshopImportMessageIdsRef.current].slice(-40));
+        }
+      }
+      logBus.success(`已从 ${sourceLabel} 发送 ${assignedNewNodes.length} 个节点到当前画布`, 'Photoshop');
       return true;
   }, [activeId, assignActiveNodeSerials, getViewport, registerPlacementShelfNodes, screenToFlowPosition]);
 
   useEffect(() => {
-    const handleVibeXMessage = (event: MessageEvent) => {
+    const handlePhotoshopMessage = (event: MessageEvent) => {
       const data = event.data || {};
       if (
-        data.type !== VIBEX_MESSAGE_CONTRACT.type ||
-        data.source !== VIBEX_MESSAGE_CONTRACT.source
+        data.type !== PHOTOSHOP_MESSAGE_CONTRACT.type ||
+        data.source !== PHOTOSHOP_MESSAGE_CONTRACT.source
       ) return;
-      importVibeXPayload(data, 'VibeX');
+      importPhotoshopPayload(data, 'Photoshop');
     };
 
-    window.addEventListener('message', handleVibeXMessage);
-    return () => window.removeEventListener('message', handleVibeXMessage);
-  }, [importVibeXPayload]);
+    window.addEventListener('message', handlePhotoshopMessage);
+    return () => window.removeEventListener('message', handlePhotoshopMessage);
+  }, [importPhotoshopPayload]);
 
   useEffect(() => {
     let disposed = false;
@@ -5531,13 +5282,6 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
           const json = await res.json().catch(() => null);
           const messages = Array.isArray(json?.data?.messages) ? json.data.messages : [];
           messages.forEach((message: any) => {
-            if (
-              message?.type === VIBEX_MESSAGE_CONTRACT.type &&
-              message?.source === VIBEX_MESSAGE_CONTRACT.source
-            ) {
-              importVibeXPayload(message, '网页版 VibeX');
-              return;
-            }
             if (
               message?.type === WEB_IMAGE_EXTENSION_MESSAGE_CONTRACT.type &&
               message?.source === WEB_IMAGE_EXTENSION_MESSAGE_CONTRACT.source
@@ -5557,7 +5301,55 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       disposed = true;
       if (timerId != null) window.clearTimeout(timerId);
     };
-  }, [importVibeXPayload, importWebImagePayload]);
+  }, [importWebImagePayload]);
+
+  useEffect(() => {
+    let disposed = false;
+    let timerId: number | null = null;
+
+    const settleMessage = async (message: any, imported: boolean, error?: unknown) => {
+      const messageId = String(message?.payload?.messageId || message?.messageId || '').trim();
+      if (!messageId) return;
+      const endpoint = error ? 'fail' : 'complete';
+      await fetch(`/api/photoshop-bridge/messages/${encodeURIComponent(messageId)}/${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(error ? { error: error instanceof Error ? error.message : String(error) } : { imported }),
+      }).catch(() => undefined);
+    };
+
+    const drain = async () => {
+      try {
+        const res = await fetch('/api/photoshop-bridge/pending?limit=12', { cache: 'no-store' });
+        if (res.ok) {
+          const json = await res.json().catch(() => null);
+          const messages = Array.isArray(json?.data?.messages) ? json.data.messages : [];
+          for (const message of messages) {
+            if (
+              message?.type === PHOTOSHOP_MESSAGE_CONTRACT.type &&
+              message?.source === PHOTOSHOP_MESSAGE_CONTRACT.source
+            ) {
+              try {
+                const imported = importPhotoshopPayload(message, 'Photoshop');
+                await settleMessage(message, imported);
+              } catch (err) {
+                await settleMessage(message, false, err);
+              }
+            }
+          }
+        }
+      } catch {
+        // Photoshop bridge is optional; retry quietly when it is unavailable.
+      }
+      if (!disposed) timerId = window.setTimeout(drain, 2200);
+    };
+
+    drain();
+    return () => {
+      disposed = true;
+      if (timerId != null) window.clearTimeout(timerId);
+    };
+  }, [importPhotoshopPayload]);
 
   useEffect(() => {
     const stopRadialPointerEvent = (event: PointerEvent | MouseEvent) => {
@@ -5566,14 +5358,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       event.stopImmediatePropagation();
     };
 
-    const clearPress = () => {
-      const press = radialPressRef.current;
-      if (press?.timer) window.clearTimeout(press.timer);
-      radialPressRef.current = null;
-      if (!radialMenuRef.current) {
-        radialViewportLockRef.current = null;
-      }
-    };
+    const clearPress = clearRadialPress;
 
     const clearMiddlePan = () => {
       if (middlePanRef.current?.dragging) {
@@ -5583,13 +5368,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       middlePanRef.current = null;
     };
 
-    const closeRadial = () => {
-      clearPress();
-      restoreRadialViewportLock();
-      radialViewportLockRef.current = null;
-      radialMenuRef.current = null;
-      setRadialMenu(null);
-    };
+    const closeRadial = closeRadialMenu;
 
     const openRadialFromPress = (press: RadialPressState) => {
       const center = clampRadialMenuCenter(press.start, {
@@ -5616,6 +5395,14 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
     };
 
     const onPointerDown = (event: PointerEvent) => {
+      if (
+        radialMenuRef.current &&
+        event.button !== RADIAL_MENU_MOUSE_BUTTON &&
+        !(event.target instanceof Element && event.target.closest('[data-canvas-floating-ui="radial-node-menu"]'))
+      ) {
+        closeRadial();
+        return;
+      }
       if (event.defaultPrevented || event.button !== RADIAL_MENU_MOUSE_BUTTON) return;
       if (event.pointerType && event.pointerType !== 'mouse') return;
       if (!isRadialMenuPaneTarget(event.target)) return;
@@ -5707,10 +5494,13 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       const slot = current?.activeIndex === null || current?.activeIndex === undefined
         ? null
         : radialSlots[current.activeIndex];
-      closeRadial();
-      if (slot?.enabled) {
-        addNode(slot.nodeType, { atScreen: current?.anchor || press.start });
+      if (!slot?.enabled) {
+        if (press.timer) window.clearTimeout(press.timer);
+        radialPressRef.current = null;
+        return;
       }
+      closeRadial();
+      addNode(slot.nodeType, { atScreen: current?.anchor || press.start });
     };
 
     const onPointerCancel = (event: PointerEvent) => {
@@ -5780,6 +5570,8 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
     };
 
     const onKeyDown = (event: KeyboardEvent) => {
+      if (isCanvasModalActive()) return;
+      if (isSmartNodeComposerKeyboardEvent(event)) return;
       if (event.key === 'Escape' && radialMenuRef.current) {
         event.preventDefault();
         closeRadial();
@@ -5814,6 +5606,8 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
     };
   }, [
     addNode,
+    clearRadialPress,
+    closeRadialMenu,
     getViewport,
     isRadialMenuContextMenuSuppressed,
     radialLongPressMs,
@@ -6186,8 +5980,12 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
           zoom: Math.min(Math.max(zoom || 0.9, 0.72), 1.05),
         };
       }
-      setEdges([...edgesRef.current.map((edge) => ({ ...edge, selected: false })), ...instance.edges]);
-      setNodes([...nodesRef.current.map((node) => ({ ...node, selected: false })), ...instance.nodes]);
+      const nextNodes = [...nodesRef.current.map((node) => ({ ...node, selected: false })), ...instance.nodes];
+      const baseEdges = edgesRef.current.map((edge) => ({ ...edge, selected: false }));
+      const validation = validateMaterialConnections(nextNodes, baseEdges, instance.edges);
+      setEdges([...baseEdges, ...(validation.accepted as Edge[])]);
+      setNodes(nextNodes);
+      if (validation.rejected.length > 0) logBus.warn(`已跳过 ${validation.rejected.length} 条无效工作流连线`, '资源库');
       logBus.success(`已插入 ${options.title || summarizeSendNodeFragment(fragment)}`, '资源库');
     },
     [activeId, assignActiveNodeSerials, basePositionForActiveSend, getViewport, screenToFlowPosition],
@@ -6375,8 +6173,12 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
               zoom: Math.min(Math.max(zoom || 0.9, 0.72), 1.05),
             };
           }
-          setEdges([...edgesRef.current.map((edge) => ({ ...edge, selected: false })), ...instance.edges]);
-          setNodes([...nodesRef.current.map((node) => ({ ...node, selected: false })), ...instance.nodes]);
+          const nextNodes = [...nodesRef.current.map((node) => ({ ...node, selected: false })), ...instance.nodes];
+          const baseEdges = edgesRef.current.map((edge) => ({ ...edge, selected: false }));
+          const validation = validateMaterialConnections(nextNodes, baseEdges, instance.edges);
+          setEdges([...baseEdges, ...(validation.accepted as Edge[])]);
+          setNodes(nextNodes);
+          if (validation.rejected.length > 0) logBus.warn(`已跳过 ${validation.rejected.length} 条无效发送连线`, '发送节点');
           registerPlacementShelfNodes(instance.nodes, '发送');
           setSendModal(null);
           logBus.success(`已发送 ${summarizeSendNodeFragment(fragment)} 到当前画布`, '发送节点');
@@ -6402,14 +6204,19 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
             zoom: 0.88,
           };
         }
+        const nextTargetNodes = [...targetNodes, ...instance.nodes];
+        const targetValidation = validateMaterialConnections(nextTargetNodes, targetEdges, instance.edges);
         const payload = {
-          nodes: [...targetNodes, ...instance.nodes],
-          edges: [...targetEdges, ...instance.edges],
+          nodes: nextTargetNodes,
+          edges: [...targetEdges, ...(targetValidation.accepted as Edge[])],
           viewport: data.viewport || { x: 0, y: 0, zoom: 1 },
           nextNodeSerialId: freshSerials.nextNodeSerialId,
           creativeDesk: data.creativeDesk,
           farmCanvas: sanitizeFarmCanvasState(data.farmCanvas),
         };
+        if (targetValidation.rejected.length > 0) {
+          logBus.warn(`已跳过 ${targetValidation.rejected.length} 条无效发送连线`, '发送节点');
+        }
         await api.saveCanvasData(targetCanvasId, payload);
         api.autoSaveCanvasData(targetCanvasId, payload).catch(() => {});
         await loadCanvases();
@@ -6546,7 +6353,6 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         if (!result.success) throw new Error(result.error || '保存工作流失败');
         window.dispatchEvent(new CustomEvent('penguin:resources-changed'));
         const duplicate = Boolean((result as any).duplicate || (result.data as any)?.duplicate);
-        if (!duplicate) trackAchievementEvent({ type: 'workflow.saved', kind: 'workflow', category: 'workflow' });
         logBus.success(duplicate ? `资源库已有相同工作流：${manifest.title}` : `已保存工作流：${manifest.title}`, '资源库');
         return true;
       } catch (e: any) {
@@ -6585,8 +6391,6 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         });
         if (result.success) {
           saved += 1;
-          const duplicate = Boolean((result as any).duplicate || (result.data as any)?.duplicate);
-          if (!duplicate) trackAchievementEvent({ type: 'resource.saved', kind, category: 'send-material' });
         }
         else failures.push(result.error || `${PORT_LABEL[kind]}入库失败`);
         continue;
@@ -6601,8 +6405,6 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       });
       if (result.success) {
         saved += 1;
-        const duplicate = Boolean((result as any).duplicate || (result.data as any)?.duplicate);
-        if (!duplicate) trackAchievementEvent({ type: 'resource.saved', kind: `${kind}-set`, category: 'send-material-set' });
       }
       else failures.push(result.error || `${PORT_LABEL[kind]}素材集入库失败`);
     }
@@ -6660,6 +6462,32 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
     logBus.success(message, 'Figma');
     return message;
   }, [sendModal]);
+
+  const handleSendMaterialsToPhotoshop = useCallback(async () => {
+    if (!sendModal || sendModal.materials.length === 0) throw new Error('没有可发送到 Photoshop 的素材');
+    const imageMaterials = sendModal.materials.filter((item) => item.kind === 'image' && item.url);
+    if (imageMaterials.length === 0) throw new Error('Photoshop 只接收图像素材，请先选择图像输出或上传素材');
+    const result = await api.sendToPhotoshop({
+      materials: imageMaterials.map((item) => ({
+        id: item.id,
+        kind: item.kind,
+        url: item.url,
+        text: item.text,
+        name: item.name,
+      })),
+      tags: ['哈基米画布', 'Photoshop'],
+      sourceCanvasId: activeId || undefined,
+      sourceLabel: sendModal.sourceLabel || '哈基米画布',
+    });
+    if (!result.success) {
+      const message = result.error || '发送到 Photoshop 失败，请确认 Hakimi Photoshop Link 面板已连接';
+      logBus.warn(message, 'Photoshop');
+      throw new Error(message);
+    }
+    const message = `已发送 ${result.data.sent || imageMaterials.length} 张图像到 Photoshop 队列，请保持 Hakimi Photoshop Link 面板连接${result.data.commandId ? `（任务 ${result.data.commandId}）` : ''}`;
+    logBus.success(message, 'Photoshop');
+    return message;
+  }, [activeId, sendModal]);
 
   const handleCanvasPointerMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     lastCanvasPointerRef.current = { x: e.clientX, y: e.clientY };
@@ -6741,7 +6569,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         ...n,
         id: newId,
         selected: true,
-        data: sanitizeClipboardNodeData(n.data),
+        data: sanitizeClipboardNodeData(n.data, n.type),
       } as Node;
     });
     const remappedGroupNodes = remapPastedGroupMemberIds(newNodes, idMap) as Node[];
@@ -6798,7 +6626,15 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
     }
     // 取消其他节点的选中,新粘贴节点设为选中
     setNodes((prev) => [...prev.map((n) => ({ ...n, selected: false })), ...assignedNewNodes]);
-    setEdges((prev) => [...prev, ...newInternalEdges, ...extraEdges]);
+    const pastedEdgeCandidates = [...newInternalEdges, ...extraEdges];
+    const validationNodes = [...nodes, ...assignedNewNodes];
+    setEdges((prev) => {
+      const validation = validateMaterialConnections(validationNodes, prev, pastedEdgeCandidates);
+      if (validation.rejected.length > 0) {
+        logBus.warn(`已跳过 ${validation.rejected.length} 条会形成循环或类型不兼容的粘贴连线`, '粘贴');
+      }
+      return [...prev, ...(validation.accepted as Edge[])];
+    });
   }, [nodes, assignActiveNodeSerials, resolveClipboardPasteAnchor]);
 
   const handleDuplicate = useCallback(() => {
@@ -6912,8 +6748,12 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
           }
           const normalized = normalizeCanvasNodeSerials(importedNodes, source.nextNodeSerialId);
           nextNodeSerialIdRef.current = normalized.nextNodeSerialId;
+          const importedValidation = validateMaterialConnections(normalized.nodes, [], importedEdges);
           setNodes(normalized.nodes);
-          setEdges(importedEdges);
+          setEdges(importedValidation.accepted as Edge[]);
+          if (importedValidation.rejected.length > 0) {
+            logBus.warn(`已跳过 ${importedValidation.rejected.length} 条循环或不兼容的导入连线`, '导入');
+          }
           setCreativeDesk(migrateCreativeDeskToViewportCoordinates(source.creativeDesk, source.viewport));
           setFarmCanvas(sanitizeFarmCanvasState(source.farmCanvas));
           if (resourcePackagePlan) {
@@ -6938,12 +6778,20 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
   // ===== 应用模板 =====
   const handleApplyTemplate = useCallback((tpl: CanvasTemplate) => {
     const built = tpl.build();
+    const existingNodes = nodesRef.current;
+    const templateNodes = assignActiveNodeSerials(built.nodes.map((n) => ({ ...n, selected: true })), existingNodes);
     // 偏移现有 nodes 数量,避免重叠
     setNodes((prev) => [
       ...prev.map((n) => ({ ...n, selected: false })),
-      ...assignActiveNodeSerials(built.nodes.map((n) => ({ ...n, selected: true })), prev),
+      ...templateNodes,
     ]);
-    setEdges((prev) => [...prev, ...built.edges]);
+    setEdges((prev) => {
+      const validation = validateMaterialConnections([...existingNodes, ...templateNodes], prev, built.edges);
+      if (validation.rejected.length > 0) {
+        logBus.warn(`已跳过 ${validation.rejected.length} 条无效模板连线`, '模板');
+      }
+      return [...prev, ...(validation.accepted as Edge[])];
+    });
   }, [assignActiveNodeSerials]);
 
   // ===== 批量运行 =====
@@ -6995,9 +6843,10 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
   );
 
   const runNodesByOrder = useCallback(
-    async (subNodes: Node[], subEdges: Edge[]) => (
-      runStagesByOrder(topologicalBatches(subNodes, subEdges, BATCH_EXECUTABLE_NODE_TYPES))
-    ),
+    async (subNodes: Node[], subEdges: Edge[]) => {
+      const pruned = excludeRandomRouteBranchDescendants(subNodes, subEdges);
+      return runStagesByOrder(topologicalBatches(pruned.nodes, pruned.edges, BATCH_EXECUTABLE_NODE_TYPES));
+    },
     [runStagesByOrder]
   );
 
@@ -7019,10 +6868,12 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       const idSet = new Set(memberIds);
       const subNodes = nodes.filter((n) => idSet.has(n.id));
       const subEdges = edges.filter((e) => idSet.has(e.source) && idSet.has(e.target));
+      const pruned = excludeRandomRouteBranchDescendants(subNodes, subEdges);
+      const prunedMemberIds = memberIds.filter((id) => pruned.nodeIds.has(id));
       const plan = createGroupExecutionPlan({
-        nodes: subNodes,
-        edges: subEdges,
-        memberIds,
+        nodes: pruned.nodes,
+        edges: pruned.edges,
+        memberIds: prunedMemberIds,
         executableTypes: BATCH_EXECUTABLE_NODE_TYPES,
       });
       const stages = plan.stages.map((stage) => stage.map((item) => item.id));
@@ -7045,30 +6896,13 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
   const onNodeDragStart = useCallback(
     (e: React.MouseEvent | MouseEvent, node: Node) => {
       clearEdgeMotionReleaseTimer();
+      dragFrameRef.current?.cancel();
       isDraggingRef.current = true;
       setNodeDragging(true);
       altDragCloneRef.current = null;
       groupDragRef.current = null;
       if (node.type === 'groupBox') {
-        const groupRect = rectOf(node);
-        const memberIds = new Set<string>(
-          Array.isArray((node.data as any)?.memberIds)
-            ? (node.data as any).memberIds.filter((value: unknown): value is string => typeof value === 'string' && !!value)
-            : [],
-        );
-        for (const candidate of nodes) {
-          if (candidate.id === node.id || candidate.type === 'groupBox' || candidate.id === BULK_PHANTOM_ID) continue;
-          const rect = rectOf(candidate);
-          const center = { x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 };
-          if (
-            center.x >= groupRect.x &&
-            center.x <= groupRect.x + groupRect.w &&
-            center.y >= groupRect.y &&
-            center.y <= groupRect.y + groupRect.h
-          ) {
-            memberIds.add(candidate.id);
-          }
-        }
+        const memberIds = new Set(groupMemberIdsFromNodes(node.id, nodes));
         const memberPositions: Record<string, { x: number; y: number }> = {};
         for (const candidate of nodes) {
           if (memberIds.has(candidate.id)) {
@@ -7234,6 +7068,91 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deleteReq?.ts]);
 
+  const dragFrameRef = useRef<ReturnType<typeof createRafThrottle<
+    | { kind: 'clear' }
+    | { kind: 'group'; groupId: string; dx: number; dy: number }
+    | {
+        kind: 'snap';
+        node: Node;
+      }
+  >> | null>(null);
+  if (!dragFrameRef.current) {
+    dragFrameRef.current = createRafThrottle((payload) => {
+      if (payload.kind === 'clear') {
+        setGuides((current) => (
+          current.vertical.length === 0 && current.horizontal.length === 0
+            ? current
+            : { vertical: [], horizontal: [] }
+        ));
+        return;
+      }
+
+      if (payload.kind === 'group') {
+        const ref = groupDragRef.current;
+        if (!ref || ref.groupId !== payload.groupId || ref.memberIds.length === 0) return;
+        const idSet = new Set(ref.memberIds);
+        setNodes((prev) => {
+          let changed = false;
+          const next = prev.map((n) => {
+            if (!idSet.has(n.id)) return n;
+            const initial = ref.memberPositions[n.id];
+            if (!initial) return n;
+            const nextX = initial.x + payload.dx;
+            const nextY = initial.y + payload.dy;
+            if (Math.abs(n.position.x - nextX) < 0.01 && Math.abs(n.position.y - nextY) < 0.01) {
+              return n;
+            }
+            changed = true;
+            return { ...n, position: { x: nextX, y: nextY } };
+          });
+          return changed ? next : prev;
+        });
+        return;
+      }
+
+      const result = calculateNodeSnapGuides({
+        draggedNode: payload.node as any,
+        nodes: nodesRef.current as any,
+        threshold: ALIGN_THRESHOLD,
+      });
+      setGuides((current) => {
+        const sameVertical = current.vertical.length === result.vertical.length
+          && current.vertical.every((value, index) => Math.abs(value - result.vertical[index]) < 0.01);
+        const sameHorizontal = current.horizontal.length === result.horizontal.length
+          && current.horizontal.every((value, index) => Math.abs(value - result.horizontal[index]) < 0.01);
+        return sameVertical && sameHorizontal
+          ? current
+          : { vertical: result.vertical, horizontal: result.horizontal };
+      });
+      if (!result.snapPosition) return;
+      setNodes((prev) => {
+        let changed = false;
+        const next = prev.map((n) => {
+          if (n.id !== payload.node.id) return n;
+          if (
+            Math.abs(n.position.x - result.snapPosition!.x) < 0.01
+            && Math.abs(n.position.y - result.snapPosition!.y) < 0.01
+          ) {
+            return n;
+          }
+          changed = true;
+          return {
+            ...n,
+            position: {
+              x: result.snapPosition!.x,
+              y: result.snapPosition!.y,
+            },
+          };
+        });
+        return changed ? next : prev;
+      });
+    });
+  }
+
+  useEffect(() => () => {
+    dragFrameRef.current?.cancel();
+  }, []);
+
   const handleCancelRun = useCallback(() => {
     cancelRunRef.current = true;
     useRunBusStore.getState().cancelAll();
@@ -7272,89 +7191,24 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         const dx = node.position.x - ref.startX;
         const dy = node.position.y - ref.startY;
         if (dx === 0 && dy === 0) return;
-        if (ref.memberIds.length === 0) return;
-        const idSet = new Set(ref.memberIds);
-        setNodes((prev) =>
-          prev.map((n) => {
-            if (!idSet.has(n.id)) return n;
-            const initial = ref.memberPositions[n.id];
-            if (!initial) return n;
-            return { ...n, position: { x: initial.x + dx, y: initial.y + dy } };
-          })
-        );
+        dragFrameRef.current?.schedule({ kind: 'group', groupId: node.id, dx, dy });
         return;
       }
       if (!snapEnabled) return;
-      const w = (node as any).width || (node as any).measured?.width || 200;
-      const h = (node as any).height || (node as any).measured?.height || 100;
-      const tx = node.position.x;
-      const ty = node.position.y;
-      const targets = { L: tx, C: tx + w / 2, R: tx + w, T: ty, M: ty + h / 2, B: ty + h };
-      const vGuides = new Set<number>();
-      const hGuides = new Set<number>();
-      let snapDX: number | null = null;
-      let snapDY: number | null = null;
-      let bestVDiff = ALIGN_THRESHOLD;
-      let bestHDiff = ALIGN_THRESHOLD;
-      for (const other of nodes) {
-        if (other.id === node.id) continue;
-        const ow = (other as any).width || (other as any).measured?.width || 200;
-        const oh = (other as any).height || (other as any).measured?.height || 100;
-        const ox = other.position.x;
-        const oy = other.position.y;
-        const oVals = { L: ox, C: ox + ow / 2, R: ox + ow, T: oy, M: oy + oh / 2, B: oy + oh };
-        // 垂直辅助线(列对齐): L/C/R 对 L/C/R
-        for (const tk of ['L', 'C', 'R'] as const) {
-          for (const ok of ['L', 'C', 'R'] as const) {
-            const diff = Math.abs(targets[tk] - oVals[ok]);
-            if (diff < ALIGN_THRESHOLD) {
-              vGuides.add(oVals[ok]);
-              if (diff < bestVDiff) {
-                bestVDiff = diff;
-                snapDX = oVals[ok] - targets[tk];
-              }
-            }
-          }
-        }
-        // 水平辅助线(行对齐): T/M/B 对 T/M/B
-        for (const tk of ['T', 'M', 'B'] as const) {
-          for (const ok of ['T', 'M', 'B'] as const) {
-            const diff = Math.abs(targets[tk] - oVals[ok]);
-            if (diff < ALIGN_THRESHOLD) {
-              hGuides.add(oVals[ok]);
-              if (diff < bestHDiff) {
-                bestHDiff = diff;
-                snapDY = oVals[ok] - targets[tk];
-              }
-            }
-          }
-        }
+      if (currentCanvasZoomRef.current < 0.55) {
+        dragFrameRef.current?.schedule({ kind: 'clear' });
+        return;
       }
-      setGuides({ vertical: Array.from(vGuides), horizontal: Array.from(hGuides) });
-      // 弱吸附:调整当前拖拽节点位置
-      if (snapDX !== null || snapDY !== null) {
-        setNodes((prev) =>
-          prev.map((n) =>
-            n.id === node.id
-              ? {
-                  ...n,
-                  position: {
-                    x: tx + (snapDX ?? 0),
-                    y: ty + (snapDY ?? 0),
-                  },
-                }
-              : n
-          )
-        );
-      }
+      dragFrameRef.current?.schedule({ kind: 'snap', node });
     },
-    [nodes, snapEnabled]
+    [snapEnabled]
   );
 
   const onNodeDragStop = useCallback((_e: any, node: Node) => {
     isDraggingRef.current = false;
     setDragSaveTick((tick) => tick + 1);
     releaseEdgeMotionSoon(setNodeDragging);
+    dragFrameRef.current?.cancel();
     setGuides({ vertical: [], horizontal: [] });
 
     // ===== ALT+拖动结束: ID 互换 =====
@@ -7383,7 +7237,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
           if (origIds.has(n.id)) {
             const newId = `${n.type}-${stamp}-${newIdMap.size}-${Math.random().toString(36).slice(2, 5)}`;
             newIdMap.set(n.id, newId);
-            const copyNode = { ...n, id: newId, selected: true, data: sanitizeClipboardNodeData(n.data) } as Node;
+            const copyNode = { ...n, id: newId, selected: true, data: sanitizeClipboardNodeData(n.data, n.type) } as Node;
             copyDrafts.push(copyNode);
             copyIds.add(newId);
             return copyNode;
@@ -7569,7 +7423,9 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
   const selectionStartRef = useRef<{ x: number; y: number } | null>(null);
   const onSelectionChange = useCallback(
     ({ nodes: ns }: { nodes: Node[]; edges: Edge[] }) => {
-      lastSelectedIdsRef.current = ns.map((n) => n.id);
+      const selectedIds = ns.map((n) => n.id);
+      lastSelectedIdsRef.current = selectedIds;
+      proximityHandleControllerRef.current?.selectionChange(new Set(selectedIds));
     },
     []
   );
@@ -7962,7 +7818,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
 
   const onConnect = useCallback(
     (params: Connection) => {
-      resetConnectionPanMode();
+      finalizeConnectionPanMode();
       // 批量移线过程中禁止普通连接逻辑(不然会多一条重复边)
       if (bulkReconnectRef.current) return;
       const curNodes = nodesRef.current;
@@ -7971,25 +7827,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       const src = curNodes.find((n) => n.id === params.source);
       let tgt = curNodes.find((n) => n.id === params.target);
       if (!isConnectionValid(src, tgt)) return;
-
-      // ⚡ 组容器连出去重: 如果 source 是 groupBox, 并且组内成员已经独立连到同一个下游 target,
-      // 则自动断开那些「成员→target」的重复边, 只保留 group→target
-      // (避免同一源头重复传输 + 防止潜在循环依赖)
-      if (src && src.type === 'groupBox' && tgt && params.target) {
-        const memberIds: string[] = Array.isArray((src.data as any)?.memberIds)
-          ? ((src.data as any).memberIds as string[])
-          : [];
-        if (memberIds.length > 0) {
-          const memberSet = new Set(memberIds);
-          const dupEdges = curEdges.filter(
-            (e) => memberSet.has(e.source) && e.target === params.target,
-          );
-          if (dupEdges.length > 0) {
-            const dupIds = new Set(dupEdges.map((e) => e.id));
-            setEdges((eds) => eds.filter((e) => !dupIds.has(e.id)));
-          }
-        }
-      }
+      let validationNodes = curNodes;
 
       // ⚡ 输出素材节点单输入约束:若目标是 output 且已有连入,
       // 自动派生一个新的 output 节点并把本次连接转向它。
@@ -8009,6 +7847,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
             data: { ...(INITIAL_DATA['output'] || {}) },
           };
           setNodes((prev) => [...prev, ...assignActiveNodeSerials([newNode], prev)]);
+          validationNodes = [...curNodes, newNode];
           // 后续边连到新节点
           tgt = newNode;
           params = { ...params, target: newId };
@@ -8021,22 +7860,59 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       const matched = outs.find((o) => ins.includes(o) || o === 'any' || ins.includes('any'));
       const matchedPortType = matched ?? 'any';
       const color = matched && matched !== 'any' ? PORT_COLOR[matched] : undefined;
+      const candidate: MaterialConnectionCandidate = {
+        ...params,
+        id: `e-${params.source}-${params.target}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        ...(color ? { style: { stroke: color, strokeWidth: 2 } } : {}),
+        data: { portType: matchedPortType },
+      };
+      if (!validateMaterialConnection(validationNodes, curEdges, candidate).valid) return;
       setEdges((eds) =>
-        addEdge(
-          {
-            ...params,
-            ...(color ? { style: { stroke: color, strokeWidth: 2 } } : {}),
-            data: { portType: matchedPortType },
-          },
-          eds
-        )
+        addEdge(candidate as Edge, eds)
       );
-      if (isFarmStory) {
+      if (false) {
         pushEdgeConnectFeedback({ portType: matchedPortType });
         playFarmSound(farmConnectionKindFromPortType(matchedPortType) === 'water' ? 'water' : 'select');
       }
     },
-    [resetConnectionPanMode, assignActiveNodeSerials, isFarmStory, playFarmSound, pushEdgeConnectFeedback]
+    [finalizeConnectionPanMode, assignActiveNodeSerials, playFarmSound, pushEdgeConnectFeedback]
+  );
+
+  const onReconnect = useCallback(
+    (edge: Edge, connection: Connection) => {
+      finalizeConnectionPanMode();
+
+      const curNodes = nodesRef.current;
+      const src = curNodes.find((n) => n.id === connection.source);
+      const tgt = curNodes.find((n) => n.id === connection.target);
+      if (!isConnectionValid(src, tgt)) return;
+
+      const outs = src ? getNodeOutputs(src) : [];
+      const ins = tgt ? getNodeInputs(tgt) : [];
+      const matched = outs.find((o) => ins.includes(o) || o === 'any' || ins.includes('any'));
+      const matchedPortType = matched ?? 'any';
+      const color = matched && matched !== 'any' ? PORT_COLOR[matched] : undefined;
+      const candidate: MaterialConnectionCandidate = {
+        ...edge,
+        ...connection,
+        data: { ...((edge.data as Record<string, unknown> | undefined) || {}), portType: matchedPortType },
+      };
+      if (!validateMaterialConnection(curNodes, edgesRef.current, candidate, edge.id).valid) return;
+
+      setEdges((eds) =>
+        reconnectEdge(edge, connection, eds, { shouldReplaceId: false }).map((item) => {
+          if (item.id !== edge.id) return { ...item, selected: false };
+          return {
+            ...item,
+            selected: true,
+            selectable: true,
+            ...(color ? { style: { ...(item.style || {}), stroke: color, strokeWidth: 2 } } : {}),
+            data: { ...((edge.data as Record<string, unknown> | undefined) || {}), portType: matchedPortType },
+          };
+        })
+      );
+    },
+    [finalizeConnectionPanMode]
   );
 
   // ReactFlow 拖线连接时的实时校验(在连线处于“预览”阶段就拦截不兼容连接)
@@ -8045,16 +7921,22 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       const curNodes = nodesRef.current;
       const src = curNodes.find((n) => n.id === (params as Connection).source);
       const tgt = curNodes.find((n) => n.id === (params as Connection).target);
-      return isConnectionValid(src, tgt);
+      if (!src || !tgt) return false;
+      const candidate: MaterialConnectionCandidate = {
+        ...(params as Connection),
+        id: '__preview__',
+      };
+      return validateMaterialConnection(curNodes, edgesRef.current, candidate).valid;
     },
     []
   );
 
   // ===== 拖线到空白处 → 弹出候选节点菜单 =====
   const onConnectStart = useCallback(
-    (_e: any, params: { nodeId: string | null; handleType: 'source' | 'target' | null }) => {
+    (_e: any, params: { nodeId: string | null; handleType: 'source' | 'target' | null; handleId?: string | null }) => {
       if (!params.nodeId || !params.handleType) return;
-      connectingFromRef.current = { nodeId: params.nodeId, handleType: params.handleType };
+      proximityHandleControllerRef.current?.connectionStart();
+      connectingFromRef.current = { nodeId: params.nodeId, handleType: params.handleType, handleId: params.handleId };
       isConnectionDraggingRef.current = true;
       setConnectionPanMode(false);
 
@@ -8097,7 +7979,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         return;
       }
       connectingFromRef.current = null;
-      resetConnectionPanMode();
+      finalizeConnectionPanMode();
 
       // ===== SHIFT+批量移线处理 =====
       if (bulkReconnectRef.current) {
@@ -8114,13 +7996,12 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
             handleEl.closest('.react-flow__node')?.getAttribute('data-id') ||
             '';
           const dropHandleType = handleEl.getAttribute('data-handletype'); // 'source' | 'target'
+          const dropHandleId = handleEl.getAttribute('data-handleid');
 
           if (newNodeId && newNodeId !== bulk.fromNodeId) {
             // 入口→入口: 所有入边的 target 改为新节点
             if (bulk.handleType === 'target' && dropHandleType === 'target') {
-              const bulkIds = new Set(bulk.edges.map((e) => e.id));
               setEdges((eds) => {
-                const filtered = eds.filter((e) => !bulkIds.has(e.id));
                 const newTarget = nodes.find((n) => n.id === newNodeId);
                 const newEdges = bulk.edges.map((old) => {
                   const srcNode = nodes.find((n) => n.id === old.source);
@@ -8132,20 +8013,26 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
                     ...old,
                     id: `e-${old.source}-${newNodeId}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
                     target: newNodeId,
-                    targetHandle: null,
+                    targetHandle: dropHandleId,
                     ...(color ? { style: { stroke: color, strokeWidth: 2 } } : {}),
                     data: { ...((old.data as any) || {}), portType: matched ?? 'any' },
                   };
                 });
-                return [...filtered, ...newEdges];
+                const validation = validateMaterialConnections(nodes, eds, newEdges, bulk.edges.map((edge) => edge.id));
+                if (validation.rejected.length > 0) {
+                  logBus.warn(`已跳过 ${validation.rejected.length} 条会形成循环或类型不兼容的连线`, '批量移线');
+                }
+                const acceptedIds = new Set(validation.accepted.map((edge) => edge.id));
+                const replacedIds = new Set(
+                  newEdges.flatMap((edge, index) => acceptedIds.has(edge.id) ? [bulk.edges[index].id] : []),
+                );
+                return [...eds.filter((edge) => !replacedIds.has(edge.id)), ...(validation.accepted as Edge[])];
               });
               return;
             }
             // 出口→出口: 所有出边的 source 改为新节点
             if (bulk.handleType === 'source' && dropHandleType === 'source') {
-              const bulkIds = new Set(bulk.edges.map((e) => e.id));
               setEdges((eds) => {
-                const filtered = eds.filter((e) => !bulkIds.has(e.id));
                 const newSource = nodes.find((n) => n.id === newNodeId);
                 const newEdges = bulk.edges.map((old) => {
                   const tgtNode = nodes.find((n) => n.id === old.target);
@@ -8157,12 +8044,20 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
                     ...old,
                     id: `e-${newNodeId}-${old.target}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
                     source: newNodeId,
-                    sourceHandle: null,
+                    sourceHandle: dropHandleId,
                     ...(color ? { style: { stroke: color, strokeWidth: 2 } } : {}),
                     data: { ...((old.data as any) || {}), portType: matched ?? 'any' },
                   };
                 });
-                return [...filtered, ...newEdges];
+                const validation = validateMaterialConnections(nodes, eds, newEdges, bulk.edges.map((edge) => edge.id));
+                if (validation.rejected.length > 0) {
+                  logBus.warn(`已跳过 ${validation.rejected.length} 条会形成循环或类型不兼容的连线`, '批量移线');
+                }
+                const acceptedIds = new Set(validation.accepted.map((edge) => edge.id));
+                const replacedIds = new Set(
+                  newEdges.flatMap((edge, index) => acceptedIds.has(edge.id) ? [bulk.edges[index].id] : []),
+                );
+                return [...eds.filter((edge) => !replacedIds.has(edge.id)), ...(validation.accepted as Edge[])];
               });
               return;
             }
@@ -8183,11 +8078,21 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       const onEdge = !!target.closest('.react-flow__edge');
       // 判断是否落在真实节点上 (排除 groupBox 类型: groupBox 本身应被当作“区域容器” 而非可连接节点)
       let onNode = false;
+      let hitNode: Node | null = null;
       if (nodeEl) {
         const hitId = nodeEl.getAttribute('data-id');
-        const hitNode = hitId ? nodes.find((n) => n.id === hitId) : null;
+        hitNode = hitId ? nodes.find((n) => n.id === hitId) || null : null;
         // groupBox 节点 不作为“节点”处理 → 允许弹出候选菜单
         if (hitNode && hitNode.type !== 'groupBox') onNode = true;
+      }
+      if (!onHandle && !onEdge && hitNode?.type === 'groupBox' && from.handleType === 'source') {
+        onConnect({
+          source: from.nodeId,
+          sourceHandle: from.handleId ?? null,
+          target: hitNode.id,
+          targetHandle: 'group-in',
+        });
+        return;
       }
       // 如果落在 Handle/真实节点/连线 上,让 ReactFlow 自己处理(已连 / 不连),则不弹菜单
       if (onHandle || onNode || onEdge) return;
@@ -8204,7 +8109,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         screenPos: { x: clientX, y: clientY },
       });
     },
-    [resetConnectionPanMode, screenToFlowPosition, nodes]
+    [finalizeConnectionPanMode, screenToFlowPosition, nodes, onConnect]
   );
 
   // 拉线时按 Space 进入“连线导航”模式，适合远距离连线。
@@ -8223,7 +8128,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         from.handleType === 'source'
           ? {
               source: from.nodeId,
-              sourceHandle: null,
+              sourceHandle: from.handleId ?? null,
               target: handle.nodeId,
               targetHandle: handle.handleId,
             }
@@ -8231,7 +8136,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
               source: handle.nodeId,
               sourceHandle: handle.handleId,
               target: from.nodeId,
-              targetHandle: null,
+              targetHandle: from.handleId ?? null,
             };
       connectingFromRef.current = null;
       onConnect(params);
@@ -8239,6 +8144,8 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
     };
 
     const onKeyDown = (event: KeyboardEvent) => {
+      if (isCanvasModalActive()) return;
+      if (isSmartNodeComposerKeyboardEvent(event)) return;
       if (!isConnectionDraggingRef.current) return;
       if (!matchesAnyShortcut(shortcuts['connection.pan-mode'], event)) return;
       if (isTextEditingTarget(event.target)) return;
@@ -8247,7 +8154,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       if (event.repeat) return;
       if (connectionPanModeRef.current) {
         connectingFromRef.current = null;
-        resetConnectionPanMode();
+        finalizeConnectionPanMode();
         return;
       }
       setConnectionPanMode(true);
@@ -8291,7 +8198,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
     const onPointerUp = () => {
       connectionPanPointerRef.current = null;
     };
-    const onBlur = () => resetConnectionPanMode();
+    const onBlur = () => finalizeConnectionPanMode();
 
     window.addEventListener('keydown', onKeyDown, true);
     window.addEventListener('pointerdown', onPointerDown, true);
@@ -8306,21 +8213,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       window.removeEventListener('blur', onBlur);
       document.body.classList.remove('connection-pan-mode');
     };
-  }, [getViewport, onConnect, resetConnectionPanMode, setConnectionPanMode, setViewport, shortcuts]);
-
-  useEffect(() => {
-    if (!modelHelpOpen) return;
-    const onPointerDown = (event: PointerEvent) => {
-      const target = event.target as Element | null;
-      if (!target?.closest('.t8-canvas-shell')) return;
-      if (target.closest('[data-canvas-floating-ui="model-help-panel"], [data-canvas-floating-ui="model-help-toggle"]')) {
-        return;
-      }
-      setModelHelpOpen(false);
-    };
-    window.addEventListener('pointerdown', onPointerDown, true);
-    return () => window.removeEventListener('pointerdown', onPointerDown, true);
-  }, [modelHelpOpen]);
+  }, [getViewport, onConnect, finalizeConnectionPanMode, setConnectionPanMode, setViewport, shortcuts]);
 
   // ===== 全局 SHIFT+Handle 批量移线拦截器 =====
   // 原因: ReactFlow 的 multiSelectionKeyCode 包含 'Shift'，导致按住 SHIFT 在 handle 上 mousedown
@@ -8639,6 +8532,8 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       };
 
       const onKeyDown = (kev: KeyboardEvent) => {
+        if (isCanvasModalActive()) return;
+        if (isSmartNodeComposerKeyboardEvent(kev)) return;
         if (kev.key === 'Escape') {
           cleanup();
           restoreOriginal();
@@ -8727,8 +8622,10 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
 
         // 执行批量重连: 生成新边替换 stashed 中被重定向到 phantom 的边
         setEdges((eds) => {
-          const filtered = eds.filter((ed) => !stashedIds.has(ed.id));
+          const originalById = new Map(stashed.map((edge) => [edge.id, edge]));
+          const restoredEdges = eds.map((edge) => originalById.get(edge.id) || edge);
           const ts = Date.now();
+          const upHandleId = upHandleEl.getAttribute('data-handleid');
           const newEdges: Edge[] = stashed.map((old) => {
             const sourceId =
               startHandleType === 'target' ? old.source : upNodeId;
@@ -8750,8 +8647,8 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
                 .slice(2, 6)}`,
               source: sourceId,
               target: targetId,
-              sourceHandle: startHandleType === 'target' ? old.sourceHandle : null,
-              targetHandle: startHandleType === 'source' ? old.targetHandle : null,
+              sourceHandle: startHandleType === 'target' ? old.sourceHandle : upHandleId,
+              targetHandle: startHandleType === 'source' ? old.targetHandle : upHandleId,
               ...(color ? { style: { stroke: color, strokeWidth: 2 } } : {}),
               data: {
                 ...((old.data as any) || {}),
@@ -8759,7 +8656,18 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
               },
             };
           });
-          return [...filtered, ...newEdges];
+          const validation = validateMaterialConnections(
+            nodesRef.current,
+            restoredEdges,
+            newEdges,
+            stashed.map((edge) => edge.id),
+          );
+          if (validation.rejected.length > 0) {
+            logBus.warn(`已跳过 ${validation.rejected.length} 条会形成循环或类型不兼容的连线`, '批量移线');
+          }
+          const acceptedIds = new Set(validation.accepted.map((edge) => edge.id));
+          const replacedIds = new Set(newEdges.flatMap((edge, index) => acceptedIds.has(edge.id) ? [stashed[index].id] : []));
+          return [...restoredEdges.filter((edge) => !replacedIds.has(edge.id)), ...(validation.accepted as Edge[])];
         });
       };
 
@@ -8856,24 +8764,85 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       const matched = outs.find((o) => ins.includes(o) || o === 'any' || ins.includes('any'));
       const matchedPortType = matched ?? 'any';
       const color = matched && matched !== 'any' ? PORT_COLOR[matched] : undefined;
+      const candidate: MaterialConnectionCandidate = {
+        ...params,
+        id: `e-${params.source}-${params.target}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        ...(color ? { style: { stroke: color, strokeWidth: 2 } } : {}),
+        data: { portType: matchedPortType },
+      };
 
-      setEdges((eds) =>
-        addEdge(
-          {
-            ...params,
-            ...(color ? { style: { stroke: color, strokeWidth: 2 } } : {}),
-            data: { portType: matchedPortType },
-          },
-          eds
-        )
-      );
-      if (isFarmStory) {
+      setEdges((eds) => validateMaterialConnection([...nodes, tempNewNode], eds, candidate).valid
+        ? addEdge(candidate as Edge, eds)
+        : eds);
+      if (false) {
         pushEdgeConnectFeedback({ portType: matchedPortType });
         playFarmSound(farmConnectionKindFromPortType(matchedPortType) === 'water' ? 'water' : 'select');
       }
       setPicker(null);
     },
-    [picker, nodes, assignActiveNodeSerials, isFarmStory, playFarmSound, pushEdgeConnectFeedback]
+    [picker, nodes, assignActiveNodeSerials, playFarmSound, pushEdgeConnectFeedback]
+  );
+
+  // 连线中点「插入节点」: 在连线中间创建节点, 并把原连线替换为 source → newNode → target
+  const insertNodeIntoEdge = useCallback(
+    (edgeId: string, type: NodeType, atScreen: { x: number; y: number }) => {
+      const curNodes = nodesRef.current;
+      const curEdges = edgesRef.current;
+      const edge = curEdges.find((ed) => ed.id === edgeId);
+      if (!edge) return;
+      const portType = (((edge.data as any)?.portType) || 'any') as PortType;
+      const flow = screenToFlowPosition(atScreen);
+      const sz = defaultSizeOf(type);
+      const id = `${type}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      const newNode: Node = {
+        id,
+        type,
+        // 节点视觉中心对准连线中点
+        position: { x: flow.x - sz.w / 2, y: flow.y - sz.h / 2 },
+        data: { ...(INITIAL_DATA[type] || {}) },
+      };
+      const plan = planEdgeSplice(edge, id, portType);
+      const color = portType !== 'any' ? PORT_COLOR[portType] : undefined;
+      const stamp = Date.now();
+      const upstreamEdge: Edge = {
+        id: `e-${edge.source}-${id}-${stamp}-${Math.random().toString(36).slice(2, 6)}`,
+        ...plan.upstream,
+        selected: true,
+        selectable: true,
+        ...(color ? { style: { stroke: color, strokeWidth: 2 } } : {}),
+      };
+      const downstreamEdge: Edge = {
+        id: `e-${id}-${edge.target}-${stamp}-${Math.random().toString(36).slice(2, 6)}`,
+        ...plan.downstream,
+        selected: false,
+        selectable: true,
+        ...(color ? { style: { stroke: color, strokeWidth: 2 } } : {}),
+      };
+      // 拼接可行性校验(沿用连线校验规则: 类型兼容 / 防循环 / 组约束)
+      const validationNodes = [...curNodes, newNode];
+      const edgesWithoutOriginal = curEdges.filter((ed) => ed.id !== edgeId);
+      const upstreamOk = validateMaterialConnection(
+        validationNodes,
+        edgesWithoutOriginal,
+        upstreamEdge as MaterialConnectionCandidate,
+      ).valid;
+      const downstreamOk = upstreamOk && validateMaterialConnection(
+        validationNodes,
+        [...edgesWithoutOriginal, upstreamEdge],
+        downstreamEdge as MaterialConnectionCandidate,
+      ).valid;
+      const [nodeWithSerial] = assignActiveNodeSerials([newNode], curNodes);
+      if (upstreamOk && downstreamOk) {
+        setNodes((prev) => [...prev, nodeWithSerial || newNode]);
+        // 原子替换: 同一个 setEdges 内先过滤原连线再追加两条新连线(绝不只删不补)
+        setEdges((eds) => [...eds.filter((ed) => ed.id !== edgeId), upstreamEdge, downstreamEdge]);
+      } else {
+        // 兜底: 拼接失败时保留原连线, 只在中点放下未连接的节点
+        logBus.warn('无法把该节点串入连线, 已改为在连线中点插入未连接节点', '插入节点');
+        setNodes((prev) => [...prev, nodeWithSerial || newNode]);
+      }
+    },
+    [screenToFlowPosition, assignActiveNodeSerials]
   );
 
   const handleConnectPickerToNodeId = useCallback(() => {
@@ -8936,8 +8905,41 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
     setNodeIdDialog(null);
   }, [getViewport, nodeIdDialog, onConnect, setCenter]);
 
+  const cardModeSavedOutputUrlsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!loaded) return;
+    const pushUrl = (bucket: string[], value: unknown) => {
+      const url = typeof value === 'string' ? value.trim() : '';
+      if (!url || /^data:/i.test(url)) return;
+      bucket.push(url);
+    };
+    const pushUrls = (bucket: string[], value: unknown) => {
+      if (Array.isArray(value)) value.forEach((item) => pushUrl(bucket, item));
+    };
+    const urls: string[] = [];
+    for (const node of nodes) {
+      const t = node.type as string;
+      const d = (node.data as any) || {};
+      if (!CARD_MODE_OWNS_OUTPUT_TYPES.has(t) || d?.uiVariant === 'classic' || isAltDragPlaceholderNode(node)) continue;
+      pushUrl(urls, d.imageUrl);
+      pushUrls(urls, d.imageUrls);
+      pushUrls(urls, d.urls);
+      pushUrls(urls, d.generatedImages);
+      pushUrl(urls, d.videoUrl);
+      pushUrls(urls, d.videoUrls);
+      pushUrl(urls, d.audioUrl);
+      pushUrl(urls, d.audioUrl_1);
+      pushUrls(urls, d.audioUrls);
+    }
+    for (const url of urls) {
+      if (cardModeSavedOutputUrlsRef.current.has(url)) continue;
+      cardModeSavedOutputUrlsRef.current.add(url);
+      saveAssetToDisk(url).catch(() => {/* best-effort local mirror */});
+    }
+  }, [nodes, loaded]);
+
   // ===== 自动创建输出素材节点 =====
-  // 生成类节点 (image/video/audio/seedance/llm/runninghub 等) 输出字段有值后,
+  // 生成类节点 (image/video/audio/seedance/llm 等) 输出字段有值后,
   // 自动创建对应数量的 OutputNode 并连线。
   // 防循环: 以 nodeId -> sig(输出项列表哈希) 记忆已处理状态,
   // 同 sig 不重复创建; 且跳过本身就是 OutputNode 的节点避免链式爆炸.
@@ -8948,7 +8950,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
     // v1.2.9.9: 'loop' 也加入 — 循环器自身不产出最终结果 (累积已由下游 EXEC→OutputNode 链路接管),
     //          autoOutput 若给 LoopNode 自动建 OutputNode 会让用户看到 “循环器自己生了 N 个素材” 的错误体验。
     // PoseMaster 自己负责写入单张/合集 OutputNode；通用 autoOutput 再处理会把批量合集拆出重复单体。
-    const SKIP_TYPES = new Set(['output', 'groupBox', 'bulkPhantom', 'upload', 'material-set', 'pick-from-set', 'loop', 'pose-master']);
+    const SKIP_TYPES = new Set(['output', 'groupBox', 'bulkPhantom', 'upload', 'material-set', 'pick-from-set', 'loop', 'random-route', 'pose-master']);
 
     const toAddNodes: Node[] = [];
     const toAddEdges: Edge[] = [];
@@ -8973,11 +8975,21 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       ) {
         toRemoveNodeIds.add(target.id);
       }
+      if (
+        source?.type === 'random-route' &&
+        target?.type === 'output' &&
+        target.id.startsWith('output-auto-') &&
+        edges.filter((item) => item.target === edge.target).length === 1 &&
+        !edges.some((item) => item.source === edge.target) &&
+        ((target.data as any) || {}).userMoved !== true
+      ) {
+        toRemoveNodeIds.add(target.id);
+      }
     }
 
     for (const n of nodes) {
       const t = n.type as string;
-      if (!t || SKIP_TYPES.has(t)) continue;
+      if (!t || SKIP_TYPES.has(t) || isAltDragPlaceholderNode(n)) continue;
       const d = (n.data as any) || {};
       if (CARD_MODE_OWNS_OUTPUT_TYPES.has(t) && d?.uiVariant !== 'classic') {
         for (const edge of edges) {
@@ -9770,6 +9782,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
   // ===== 全局快捷键 =====
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (isCanvasModalActive()) return;
       // 当焦点在表单元素中时不拦截
       const tag = (e.target as HTMLElement | null)?.tagName?.toLowerCase();
       const isEditing =
@@ -9932,19 +9945,27 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
 
   const isDark = theme === 'dark';
   const isPixel = style === 'pixel';
-  const isDecorativeEdgeVisual = isSlamdunk || isSoccer || isDragonBall || isTetris || isFarmStory;
-  const heavyEdgeMotion = isDecorativeEdgeVisual && edges.length >= EDGE_MOTION_HEAVY_EDGE_COUNT;
-  const edgeMotionReduced = isDecorativeEdgeVisual && (viewportMoving || nodeDragging);
-  const edgeMotionMode = isDecorativeEdgeVisual ? (edgeMotionReduced ? 'reduced' : 'scoped') : undefined;
+  const isDecorativeEdgeVisual = false;
+  const heavyEdgeMotion = false;
+  const edgeMotionReduced = false;
+  const edgeMotionMode = undefined;
   const heavyCanvasSurface = nodes.length >= 96 || edges.length >= EDGE_MOTION_HEAVY_EDGE_COUNT;
-  const canvasInteractionBusy = viewportMoving || nodeDragging;
-  const shouldCullOffscreenElements = heavyCanvasSurface || canvasInteractionBusy;
+  const canvasPerformance = useMemo(
+    () => getCanvasPerformanceProfile({
+      zoom: currentCanvasZoom,
+      nodeCount: nodes.length,
+      edgeCount: edges.length,
+      viewportMoving,
+      nodeDragging,
+    }),
+    [currentCanvasZoom, nodes.length, edges.length, viewportMoving, nodeDragging],
+  );
   const farmStoryToolbarHint = useMemo(
-    () => (isFarmStory ? buildFarmToolbarConsoleHint(farmCanvas, farmStoryPanelOpen) : undefined),
-    [farmCanvas, farmStoryPanelOpen, isFarmStory],
+    () => undefined,
+    [farmCanvas, farmStoryPanelOpen],
   );
   const farmTopNotice = useMemo<FarmFollowupNotice | null>(() => {
-    if (!isFarmStory) return null;
+    if (!false) return null;
     if (farmFollowupNotice) return farmFollowupNotice;
     return {
       id: 'farm-feedback-current',
@@ -9953,14 +9974,14 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       tone: 'success',
       routeTitle: '当前提示',
     };
-  }, [farmCanvasFeedback, farmFollowupNotice, isFarmStory]);
-  const farmMiniMapMarkers = useMemo(
-    () => (isFarmStory ? buildFarmMiniMapMarkers(farmCanvas, { maxMarkers: FARM_MINIMAP_MARKER_LIMIT }) : []),
-    [farmCanvas, isFarmStory],
+  }, [farmCanvasFeedback, farmFollowupNotice]);
+  const farmMiniMapMarkers = useMemo<FarmMiniMapMarker[]>(
+    () => [],
+    [farmCanvas],
   );
-  const farmMiniMapRenderableMarkers = useMemo(
-    () => (isFarmStory ? layoutFarmMiniMapMarkers(farmMiniMapMarkers, nodes) : []),
-    [farmMiniMapMarkers, isFarmStory, nodes],
+  const farmMiniMapRenderableMarkers = useMemo<FarmMiniMapRenderableMarker[]>(
+    () => [],
+    [farmMiniMapMarkers, nodes],
   );
   const farmMiniMapRouteHintMarkers = useMemo(
     () => (
@@ -10003,7 +10024,6 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
     setFarmCanvasEditing(true);
     setCreativeDeskEditing(false);
     setRadialSettingsOpen(false);
-    setModelHelpOpen(false);
     if (farmMiniMapRouteHint.target === 'mature-crop' || farmMiniMapRouteHintMarker.kind === 'mature') {
       setFarmCanvas((prev) => sanitizeFarmCanvasState({ ...prev, selectedTool: 'harvest' }));
     } else if (farmMiniMapRouteHint.target === 'water' || farmMiniMapRouteHintMarker.kind === 'dry') {
@@ -10022,25 +10042,24 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
     });
   }, [farmMiniMapRouteHint, farmMiniMapRouteHintCountLabel, farmMiniMapRouteHintMarker, flashFarmObject, getFarmViewportCenter, getViewport, pushFarmFloatingFeedback, setCenter]);
   const renderedNodes = useMemo(
-    () => (isFarmStory ? nodes.map(withFarmNodeVisualState) : nodes),
-    [isFarmStory, nodes],
+    () => nodes,
+    [nodes],
   );
-  const farmMiniMapHeavySurface = isFarmStory
+  const farmMiniMapHeavySurface = false
     && ((farmCanvas.objects.length + farmCanvas.animals.length) >= FARM_MINIMAP_HEAVY_OBJECT_COUNT
       || farmMiniMapMarkers.length >= FARM_MINIMAP_MARKER_LIMIT);
-  const farmMiniMapVisible = isFarmStory
+  const farmMiniMapVisible = false
     && farmMiniMapRenderableMarkers.length > 0
     && !((viewportMoving || nodeDragging) && (heavyCanvasSurface || farmMiniMapHeavySurface));
   const guideColor = themeTokens.edgeSelected;
   const edgeStroke = themeTokens.edge;
-  const dotColor = themeTokens.gridDot;
   const bgColor = themeTokens.canvasBg;
 
   const memoNodeTypes = useMemo(() => nodeTypes, []);
   const memoEdgeTypes = useMemo(() => edgeTypes, []);
   const memoConnectionLineComponent = useMemo(
-    () => (isFarmStory ? FarmStoryConnectionLine : undefined),
-    [isFarmStory],
+    () => CardAttachedConnectionLine,
+    [],
   );
 
   // ⚠️ 以下几个在 ReactFlow 的 fieldsToTrack 列表中, 必须稳定引用,
@@ -10079,13 +10098,14 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
   if (!activeId) {
     return (
       <div
+        ref={setCanvasShellElement}
         className="t8-canvas-shell flex-1 flex items-center justify-center"
         data-theme-visual={visualStyle}
         data-theme-mode={theme}
         style={{ background: bgColor, color: themeTokens.textMuted }}
       >
         <div className="text-center">
-          <div className="text-2xl mb-2 font-bold tracking-wide">无限画布</div>
+          <div className="text-2xl mb-2 font-bold tracking-wide">JIMI AI</div>
           <p>请先在左侧创建或选择一个画布</p>
         </div>
       </div>
@@ -10124,7 +10144,6 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
                 const next = !value;
                 if (next) {
                   setRadialSettingsOpen(false);
-                  setModelHelpOpen(false);
                   setFarmCanvasEditing(false);
                 }
                 return next;
@@ -10145,7 +10164,6 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
               setRadialSettingsOpen((value) => {
                 const next = !value;
                 if (next) {
-                  setModelHelpOpen(false);
                   setCreativeDeskEditing(false);
                   setFarmCanvasEditing(false);
                 }
@@ -10155,44 +10173,14 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
           >
             <LucideIcons.Settings2 size={16} />
           </button>
-          <button
-            type="button"
-            className={`t8-control-rail-help t8-mini-icon-button${modelHelpOpen ? ' is-active' : ''}`}
-            data-canvas-floating-ui="model-help-toggle"
-            aria-label="模型注意事项"
-            title="模型注意事项"
-            aria-expanded={modelHelpOpen}
-            onClick={(event) => {
-              event.stopPropagation();
-              setModelHelpOpen((value) => {
-                const next = !value;
-                if (next) {
-                  setRadialSettingsOpen(false);
-                  setCreativeDeskEditing(false);
-                  setFarmCanvasEditing(false);
-                }
-                return next;
-              });
-            }}
-          >
-            <LucideIcons.CircleHelp size={16} />
-          </button>
-          <ThemeMusicToggle template={currentTemplate} />
+
+        <ThemeMusicToggle template={currentTemplate} />
           <Controls
             fitViewOptions={CANVAS_OVERVIEW_FIT_OPTIONS}
             style={{
-              background: isFarmStory
-                ? themeTokens.panelBg
-                : isOp
-                ? themeTokens.panelBg
-                : isDark ? 'rgba(20,20,22,.9)' : 'rgba(255,255,255,.9)',
-              border: isFarmStory
-                ? `3px solid ${themeTokens.secondary}`
-                : isOp
-                ? `3px solid ${themeTokens.textMain}`
-                : `1px solid ${isDark ? 'rgba(255,255,255,.1)' : 'rgba(0,0,0,.08)'}`,
-              borderRadius: isFarmStory ? 10 : isOp ? '16px 16px 8px 8px' : 8,
-              boxShadow: isFarmStory ? `4px 4px 0 ${themeTokens.edge}` : isOp ? `4px 4px 0 ${themeTokens.textMain}` : undefined,
+              background: isDark ? 'rgba(20,20,22,.9)' : 'rgba(255,255,255,.9)',
+              border: `1px solid ${isDark ? 'rgba(255,255,255,.1)' : 'rgba(0,0,0,.08)'}`,
+              borderRadius: 8,
             }}
           />
         </div>
@@ -10211,64 +10199,57 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         )}
       </div>
       <RadialMenuSettingsModal open={radialSettingsOpen} onClose={() => setRadialSettingsOpen(false)} />
-      {modelHelpOpen && (
-        <div
-          className="t8-model-help-panel nodrag nopan"
-          data-canvas-floating-ui="model-help-panel"
-          role="dialog"
-          aria-modal="false"
-          aria-label="模型注意事项"
-        >
-          <div className="t8-model-help-panel__header">
-            <div>
-              <div className="t8-model-help-panel__eyebrow">MODEL NOTES</div>
-              <h2>模型注意事项</h2>
-            </div>
-            <button
-              type="button"
-              className="t8-model-help-panel__close t8-mini-icon-button"
-              aria-label="关闭说明"
-              title="关闭说明"
-              onClick={(event) => {
-                event.stopPropagation();
-                setModelHelpOpen(false);
-              }}
-            >
-              <LucideIcons.X size={16} />
-            </button>
-          </div>
-          <div className="t8-model-help-panel__body">
-            <div className="t8-model-help-panel__text">
-              {MODEL_USAGE_HELP_SECTIONS.map((section) => (
-                <section className="t8-model-help-panel__section" key={section.title}>
-                  <h3>{section.title}：</h3>
-                  {section.paragraphs?.map((paragraph) => (
-                    <p key={paragraph}>{paragraph}</p>
-                  ))}
-                  {section.items ? (
-                    <ul>
-                      {section.items.map((item) => (
-                        <li key={item}>{item}</li>
-                      ))}
-                    </ul>
-                  ) : null}
-                </section>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
     </>
   );
+  const tapStudioEmptyStarter = visualStyle === 'tap-studio' && nodes.length === 0 ? (
+    <div
+      className="t8-tap-empty-starter nodrag nopan"
+      data-canvas-floating-ui="tap-empty-starter"
+      role="status"
+      aria-label="空画布快速开始"
+    >
+      <div className="t8-tap-empty-starter__cue">
+        <span className="t8-tap-empty-starter__spark" aria-hidden="true">
+          <LucideIcons.Sparkles size={16} />
+        </span>
+        <strong>双击</strong>
+        <span>画布自由生成，或查看模板</span>
+      </div>
+      <div className="t8-tap-empty-starter__chips" aria-hidden="true">
+        <span className="t8-tap-empty-starter__chip">
+          <LucideIcons.Video size={14} />
+          文字生视频
+        </span>
+        <span className="t8-tap-empty-starter__chip">
+          <LucideIcons.Image size={14} />
+          图片换背景
+        </span>
+        <span className="t8-tap-empty-starter__chip">
+          <LucideIcons.WandSparkles size={14} />
+          首帧生成视频
+        </span>
+        <span className="t8-tap-empty-starter__chip">
+          <LucideIcons.LayoutTemplate size={14} />
+          模板
+        </span>
+      </div>
+    </div>
+  ) : null;
 
   return (
     <div
+      ref={setCanvasShellElement}
       className={`t8-canvas-shell flex-1 relative${connectionPanModeActive ? ' connection-pan-mode-active' : ''}${edgeMotionReduced ? ' t8-edge-motion-reduced' : ''}${viewportMoving ? ' t8-viewport-moving' : ''}${nodeDragging ? ' t8-node-dragging' : ''}`}
       data-theme-visual={visualStyle}
       data-theme-mode={theme}
+      data-canvas-focus-root
+      tabIndex={-1}
       data-edge-motion={edgeMotionMode}
       data-edge-load={heavyEdgeMotion ? 'heavy' : undefined}
       data-canvas-surface-load={heavyCanvasSurface ? 'heavy' : 'normal'}
+      data-canvas-lod={canvasPerformance.lodLevel}
+      data-canvas-heavy-content-hidden={canvasPerformance.hideHeavyNodeContent ? 'true' : 'false'}
+      data-canvas-heavy-overlays-hidden={canvasPerformance.hideHeavyOverlays ? 'true' : 'false'}
       data-canvas-node-count={nodes.length}
       data-canvas-edge-count={edges.length}
       style={{ background: bgColor }}
@@ -10308,6 +10289,17 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
                     ))}
                   </span>
                 ) : null}
+                {item.operationBatchId && item.event === 'agent:verification' && item.status === 'done' ? (
+                  <button
+                    type="button"
+                    className="t8-agent-activity__undo"
+                    onClick={() => void handleAgentOperationUndo(item)}
+                    title="撤销本轮 Codex 画布操作"
+                  >
+                    <LucideIcons.Undo2 size={11} />
+                    撤销本轮
+                  </button>
+                ) : null}
               </span>
             </div>
           ))}
@@ -10343,53 +10335,6 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         onExportResourcePackage={handleExportResourcePackage}
         onAlignSelection={handleAlignSelection}
       >
-        {isFarmStory && (
-          <button
-            type="button"
-            className={`t8-toolbar-button t8-farm-story-toolbar-toggle relative flex h-8 w-8 items-center justify-center rounded-md transition-colors${farmStoryPanelOpen ? ' is-active' : ''}`}
-            data-farm-control-console-toggle="toolbar"
-            data-farm-control-console-priority={farmStoryToolbarHint?.tone}
-            data-farm-control-console-priority-label={farmStoryToolbarHint?.primary}
-            data-farm-control-console-priority-section={farmStoryToolbarHint?.section}
-            data-farm-control-console-priority-section-label={farmStoryToolbarHint?.sectionLabel}
-            data-farm-control-console-priority-count={farmStoryToolbarHint?.count}
-            data-farm-control-console-state={farmStoryPanelOpen ? 'open' : 'closed'}
-            data-farm-control-console-focus-request={farmStoryPriorityFocusRequestId || undefined}
-            aria-label={farmStoryToolbarHint?.title || (farmStoryPanelOpen ? '收起牧场控制台' : '展开牧场控制台')}
-            title={farmStoryToolbarHint?.title || (farmStoryPanelOpen ? '收起牧场控制台' : '展开牧场控制台')}
-            aria-expanded={farmStoryPanelOpen}
-            aria-pressed={farmStoryPanelOpen}
-            onClick={(event) => {
-              event.stopPropagation();
-              const nextOpen = !farmStoryPanelOpen;
-              if (nextOpen) {
-                setRadialSettingsOpen(false);
-                setModelHelpOpen(false);
-                setCreativeDeskEditing(false);
-                setFarmStoryPriorityFocusRequestId((value) => value + 1);
-              }
-              setFarmStoryPanelOpen(nextOpen);
-            }}
-          >
-            <LucideIcons.Sprout size={15} />
-            <span aria-hidden="true" data-farm-toolbar-priority-dot="true" />
-          </button>
-        )}
-        <TetrisPanel
-            visualStyle={visualStyle}
-            viewportMoving={viewportMoving}
-          nodeDragging={nodeDragging}
-        />
-        <DragonBallRadar
-          visualStyle={visualStyle}
-          viewportMoving={viewportMoving}
-          nodeDragging={nodeDragging}
-        />
-        <SaintSeiyaSanctuary
-          visualStyle={visualStyle}
-          viewportMoving={viewportMoving}
-          nodeDragging={nodeDragging}
-        />
       </CanvasToolbar>
       <GenerationHistoryPanel
         open={generationHistoryOpen}
@@ -10397,62 +10342,8 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         onClose={() => setGenerationHistoryOpen(false)}
         onFocusNode={focusGenerationHistoryNode}
       />
-      <FarmStoryPanel
-        visualStyle={visualStyle}
-        themeMode={theme}
-        open={farmStoryPanelOpen}
-        onOpenChange={setFarmStoryPanelOpen}
-        showInlineToggle={false}
-        priorityFocusRequestId={farmStoryPriorityFocusRequestId}
-        viewportMoving={viewportMoving}
-        nodeDragging={nodeDragging}
-        farmCanvas={farmCanvas}
-        editing={farmCanvasEditing}
-        feedback={farmCanvasFeedback}
-        soundEnabled={farmSoundEnabled}
-        devToolsEnabled={farmDevToolsEnabled}
-        onToggleEditing={handleFarmToggleEditing}
-        onToggleSound={handleFarmToggleSound}
-        onGrantDevMaterials={handleFarmGrantDevMaterials}
-        onSelectTool={handleFarmSelectTool}
-        onSelectBuilding={handleFarmSelectBuilding}
-        onSelectDecor={handleFarmSelectDecor}
-        resourceDecorItems={farmResourceDecorItems}
-        resourceDecorLoading={farmResourceDecorLoading}
-        onRefreshResourceDecor={loadFarmResourceDecorItems}
-        onSelectResourceDecor={handleFarmSelectResourceDecor}
-        onJumpToMature={handleFarmJumpToMature}
-        onAdvanceDay={handleFarmAdvanceDay}
-        onCompleteOrder={handleFarmCompleteOrder}
-        onCompleteNpcVisit={handleFarmCompleteNpcVisit}
-        onFollowupCanvasHint={handleFarmFollowupCanvasHint}
-      />
-      {isFarmStory && farmTopNotice && (
-        <div
-          className={`t8-farm-followup-notice is-${farmTopNotice.tone}`}
-          data-canvas-floating-ui="farm-followup-notice"
-          data-farm-followup-notice="top-quick-board"
-          data-farm-followup-notice-state={farmFollowupNotice ? 'active' : 'idle'}
-          data-farm-followup-notice-tone={farmTopNotice.tone}
-          data-farm-followup-notice-route-target={farmTopNotice.routeTarget || undefined}
-          data-farm-followup-notice-route-label={farmTopNotice.routeLabel || undefined}
-          data-farm-followup-notice-created-at={farmTopNotice.createdAt}
-          role="status"
-          aria-live="polite"
-        >
-          <span className="t8-farm-followup-notice__rail" aria-hidden="true" />
-          <span className="t8-farm-followup-notice__icon" aria-hidden="true">
-            <LucideIcons.ClipboardList size={15} />
-          </span>
-          <span className="t8-farm-followup-notice__copy">
-            <span>牧场公告</span>
-            <b>{farmTopNotice.routeTitle || farmTopNotice.routeLabel || '下一步提示'}</b>
-            <small>{farmTopNotice.message}</small>
-          </span>
-          <em>{farmTopNotice.routeLabel ? `路线 ${farmTopNotice.routeLabel}` : farmFollowupNotice ? '已更新' : '常驻'}</em>
-        </div>
-      )}
       <TerminalPanel />
+      {tapStudioEmptyStarter}
       {connectionPanModeActive && (
         <div className="t8-connection-pan-hud" data-canvas-floating-ui="connection-pan-hud">
           <span className="t8-connection-pan-hud__signal" aria-hidden="true" />
@@ -10528,6 +10419,8 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
           slots={radialSlots}
           nodesByType={radialNodesByType}
           activeIndex={radialMenu.activeIndex}
+          onSelect={handleRadialMenuSelect}
+          onCancel={closeRadialMenu}
         />
       )}
       <input
@@ -10545,6 +10438,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
+        onReconnect={onReconnect}
         onConnectStart={onConnectStart}
         onConnectEnd={onConnectEnd}
         isValidConnection={onIsValidConnection}
@@ -10555,6 +10449,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         onNodeDrag={onNodeDrag}
         onNodeDragStop={onNodeDragStop}
         onMoveStart={handleViewportMoveStart}
+        onMove={handleViewportMove}
         onMoveEnd={handleViewportMoveEnd}
         onSelectionContextMenu={onSelectionContextMenu}
         onNodeContextMenu={onNodeContextMenu}
@@ -10572,33 +10467,12 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         snapGrid={SNAP_GRID}
         minZoom={CANVAS_MIN_ZOOM}
         elevateNodesOnSelect={false}
-        onlyRenderVisibleElements={shouldCullOffscreenElements}
+        onlyRenderVisibleElements={canvasPerformance.renderVisibleElementsOnly}
         fitView
         fitViewOptions={CANVAS_OVERVIEW_FIT_OPTIONS}
         proOptions={memoProOptions}
         defaultEdgeOptions={memoDefaultEdgeOptions}
       >
-        {!canvasInteractionBusy && (
-          <Background
-            variant={BackgroundVariant.Dots}
-            gap={20}
-            size={isPixel ? 1.6 : 1.2}
-            color={dotColor}
-          />
-        )}
-        <FarmCanvasLayer
-          farmCanvas={farmCanvas}
-          editing={farmCanvasEditing}
-          visualStyle={visualStyle}
-          resourceDecorItems={farmResourceDecorItems}
-          viewportMoving={viewportMoving}
-          nodeDragging={nodeDragging}
-          feedbacks={farmFloatingFeedbacks}
-          highlightedObjectId={farmJumpHighlightObjectId}
-          onAction={handleFarmCanvasAction}
-          onCancelContinuousAction={handleFarmCancelContinuousAction}
-          onFinishContinuousAction={handleFarmFinishContinuousAction}
-        />
         {!creativeDeskEditing && (
           <CreativeDeskLayer
             creativeDesk={creativeDesk}
@@ -10661,80 +10535,6 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
               ))}
             </svg>
           </ViewportPortal>
-        )}
-        {!canvasInteractionBusy && (
-          <MiniMap
-            pannable
-            zoomable
-            onClick={(_e, position) => {
-              // 点击小地图任意位置 → 平滑居中到该 flow 坐标,保持当前缩放级别
-              const { zoom } = getViewport();
-              setCenter(position.x, position.y, { zoom, duration: 400 });
-            }}
-            style={{
-            width: isFarmStory ? 214 : isOp ? 144 : isNaruto ? 182 : isEva ? 258 : isYyh ? 224 : isSlamdunk ? 214 : isSoccer ? 224 : isDragonBall ? 192 : undefined,
-            height: isFarmStory ? 136 : isOp ? 144 : isNaruto ? 122 : isEva ? 172 : isYyh ? 144 : isSlamdunk ? 128 : isSoccer ? 136 : isDragonBall ? 192 : undefined,
-            background: isFarmStory
-              ? themeTokens.panelBg
-              : isOp
-              ? themeTokens.panelBg
-              : isNaruto
-                ? themeTokens.panelBg
-              : isEva
-                ? themeTokens.panelBg
-              : isYyh
-                ? themeTokens.panelBg
-              : isSlamdunk
-                ? themeTokens.panelBg
-              : isSoccer
-                ? themeTokens.panelBg
-              : isDragonBall
-                ? themeTokens.panelBg
-              : isDark ? 'rgba(20,20,22,.9)' : 'rgba(255,255,255,.9)',
-            border: isFarmStory
-              ? `3px solid ${themeTokens.secondary}`
-              : isOp
-              ? `4px double ${themeTokens.textMain}`
-              : isNaruto
-                ? `3px solid ${themeTokens.textMain}`
-              : isEva
-                  ? `2px solid ${themeTokens.borderStrong}`
-              : isYyh
-                  ? `2px solid ${themeTokens.accent}`
-              : isSlamdunk
-                  ? `3px solid ${themeTokens.textMain}`
-              : isSoccer
-                  ? `3px solid ${themeTokens.textMain}`
-              : isDragonBall
-                  ? `3px solid ${themeTokens.warning}`
-                : `1px solid ${isDark ? 'rgba(255,255,255,.1)' : 'rgba(0,0,0,.08)'}`,
-            borderRadius: isFarmStory ? 10 : isOp ? 999 : isNaruto ? '18px 18px 12px 12px' : isEva ? 8 : isYyh ? 12 : isSlamdunk ? 10 : isSoccer ? 12 : isDragonBall ? 999 : 8,
-            right: isFarmStory ? 24 : isOp ? 24 : isNaruto ? 24 : isEva ? 24 : isYyh ? 24 : isSlamdunk ? 24 : isSoccer ? 24 : isDragonBall ? 28 : undefined,
-            bottom: isFarmStory ? 32 : isOp ? 42 : isNaruto ? 40 : isEva ? 24 : isYyh ? 28 : isSlamdunk ? 32 : isSoccer ? 32 : isDragonBall ? 34 : undefined,
-            boxShadow: isFarmStory
-              ? `0 0 0 5px ${themeTokens.warning}, 5px 5px 0 ${themeTokens.edge}, 0 18px 46px rgba(76,49,20,.24)`
-              : isOp
-              ? `0 0 0 7px ${themeTokens.warning}, 5px 5px 0 ${themeTokens.textMain}`
-              : isNaruto
-                ? themeTokens.shadowPanel
-              : isEva
-                  ? `0 0 0 4px ${themeTokens.panelBgElevated}, 0 0 0 6px ${themeTokens.borderStrong}, 0 18px 46px rgba(0,0,0,.5), inset 0 0 34px ${themeTokens.accent}22`
-              : isYyh
-                  ? `0 0 0 4px ${themeTokens.panelBgElevated}, 0 0 0 6px ${themeTokens.borderStrong}, 0 18px 46px rgba(0,0,0,.46), inset 0 0 34px ${themeTokens.secondary}22`
-              : isSlamdunk
-                  ? `0 0 0 5px ${themeTokens.secondary}, 5px 5px 0 ${themeTokens.textMain}, 0 18px 46px rgba(0,0,0,.28)`
-              : isSoccer
-                  ? `0 0 0 5px ${themeTokens.secondary}, 5px 5px 0 ${themeTokens.textMain}, 0 18px 46px rgba(0,0,0,.24)`
-              : isDragonBall
-                  ? `0 0 0 5px ${themeTokens.secondary}, 5px 5px 0 ${themeTokens.textMain}, 0 18px 46px rgba(0,0,0,.28), inset 0 0 34px ${themeTokens.warning}33`
-              : undefined,
-            cursor: 'pointer',
-            overflow: isFarmStory || isOp || isNaruto || isEva || isYyh || isSlamdunk || isSoccer || isDragonBall ? 'hidden' : undefined,
-            display: (viewportMoving || nodeDragging) && heavyCanvasSurface ? 'none' : undefined,
-          }}
-          maskColor={isFarmStory ? 'rgba(111,191,74,.22)' : isOp ? 'rgba(15,124,140,.28)' : isNaruto ? 'rgba(255,91,31,.22)' : isEva ? 'rgba(156,255,0,.18)' : isYyh ? 'rgba(67,247,255,.16)' : isSlamdunk ? 'rgba(240,123,34,.22)' : isSoccer ? 'rgba(18,107,216,.22)' : isDragonBall ? 'rgba(255,176,0,.22)' : isDark ? 'rgba(0,0,0,.6)' : 'rgba(255,255,255,.6)'}
-          nodeColor={() => (isFarmStory ? themeTokens.secondary : isOp ? themeTokens.secondary : isNaruto ? themeTokens.accent : isEva ? themeTokens.danger : isYyh ? themeTokens.success : isSlamdunk ? themeTokens.accent : isSoccer ? themeTokens.accent : isDragonBall ? themeTokens.warning : isDark ? '#a1a1aa' : '#52525b')}
-        />
         )}
         {farmMiniMapVisible && (
           <div
@@ -11084,6 +10884,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         onSaveToResource={handleSaveSendMaterialsToResource}
         onSendToEagle={handleSendMaterialsToEagle}
         onSendToFigma={handleSendMaterialsToFigma}
+        onSendToPhotoshop={handleSendMaterialsToPhotoshop}
       />
 
       {/* 右键菜单(框选 右键 或 节点右键) */}
@@ -11483,6 +11284,75 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
                   </button>
                 );
               })}
+            </div>
+          </>
+        );
+      })()}
+
+      {/* 连线中点「插入节点」菜单: 复用快速添加菜单视觉, 按连线端口类型过滤候选 */}
+      {edgeInsertMenu && (() => {
+        const INSERT_CANDIDATES = listEdgeInsertCandidates(edgeInsertMenu.portType)
+          .map((cand) => NODE_REGISTRY.find((meta) => meta.type === cand.type))
+          .filter((meta): meta is NodeMeta => Boolean(meta) && !meta!.hidden);
+        const COLOR_HEX: Record<string, string> = {
+          sky: '#7dd3fc', amber: '#fcd34d', rose: '#fda4af', fuchsia: '#f0abfc',
+          violet: '#c4b5fd', emerald: '#6ee7b7', cyan: '#67e8f9', indigo: '#a5b4fc',
+          orange: '#fdba74', pink: '#f9a8d4', slate: '#cbd5e1', teal: '#5eead4',
+        };
+        return (
+          <>
+            {/* 遮罩层 */}
+            <div
+              data-canvas-floating-ui="edge-insert-backdrop"
+              className="fixed inset-0 z-30"
+              onClick={() => setEdgeInsertMenu(null)}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                setEdgeInsertMenu(null);
+              }}
+            />
+            <div
+              data-canvas-floating-ui="edge-insert-menu"
+              className="fixed z-40 overflow-hidden t8-context-menu t8-context-menu--quick-add t8-context-menu--edge-insert"
+              style={{
+                left: Math.min(edgeInsertMenu.x, window.innerWidth - 220),
+                top: Math.min(edgeInsertMenu.y, window.innerHeight - 360),
+                width: 200,
+              }}
+            >
+              <div className="t8-context-menu__header">
+                插入节点
+              </div>
+              <div className="overflow-y-auto" style={{ maxHeight: 320 }}>
+                {INSERT_CANDIDATES.length === 0 && (
+                  <div className="t8-context-menu__empty">
+                    没有可插入的节点
+                  </div>
+                )}
+                {INSERT_CANDIDATES.map((meta) => {
+                  const Icon = (LucideIcons as any)[meta.icon] || LucideIcons.Box;
+                  const color = COLOR_HEX[meta.color] || COLOR_HEX.slate;
+                  return (
+                    <button
+                      key={meta.type}
+                      className="t8-context-menu__item"
+                      onClick={() => {
+                        const menu = edgeInsertMenu;
+                        setEdgeInsertMenu(null);
+                        insertNodeIntoEdge(menu.edgeId, meta.type as NodeType, { x: menu.x, y: menu.y });
+                      }}
+                    >
+                      <span
+                        className="t8-context-menu__node-icon"
+                        style={{ '--t8-menu-icon-color': color } as CSSProperties}
+                      >
+                        <Icon size={13} />
+                      </span>
+                      <span className="flex-1 truncate">{meta.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </>
         );

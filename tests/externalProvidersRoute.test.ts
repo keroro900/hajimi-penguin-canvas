@@ -253,3 +253,156 @@ test('external provider fetch-models endpoint groups models and masks provider s
   assert.equal(fetched.data.provider.apiKey, '****cdef');
   assert.equal(JSON.stringify(fetched).includes('sk-secret-abcdef'), false);
 });
+
+test('external image route falls back to remote urls when local output download fails', async (t) => {
+  const express = require('express');
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 't8-external-image-fallback-'));
+  t.after(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  const config = require('../backend/src/config.js');
+  const oldConfig = {
+    SETTINGS_FILE: config.SETTINGS_FILE,
+    OUTPUT_DIR: config.OUTPUT_DIR,
+    DEFAULT_LOCAL_SAVE_DIR: config.DEFAULT_LOCAL_SAVE_DIR,
+    DEFAULT_CANVAS_AUTO_SAVE_DIR: config.DEFAULT_CANVAS_AUTO_SAVE_DIR,
+    DEFAULT_RESOURCE_LIBRARY_DIR: config.DEFAULT_RESOURCE_LIBRARY_DIR,
+    DEFAULT_THEME_TEMPLATE_DIR: config.DEFAULT_THEME_TEMPLATE_DIR,
+  };
+  t.after(() => Object.assign(config, oldConfig));
+  config.SETTINGS_FILE = path.join(tmpDir, 'settings.json');
+  config.OUTPUT_DIR = path.join(tmpDir, 'output');
+  config.DEFAULT_LOCAL_SAVE_DIR = path.join(tmpDir, 'save');
+  config.DEFAULT_CANVAS_AUTO_SAVE_DIR = path.join(tmpDir, 'canvas');
+  config.DEFAULT_RESOURCE_LIBRARY_DIR = path.join(tmpDir, 'resources');
+  config.DEFAULT_THEME_TEMPLATE_DIR = path.join(tmpDir, 'themes');
+
+  const upstream = express();
+  upstream.use(express.json({ limit: '1mb' }));
+  upstream.post('/v1/images/generations', (req, res) => {
+    assert.equal(req.get('authorization'), 'Bearer sk-secret-abcdef');
+    res.json({ data: [{ url: `${upstreamBase}/missing-image.png` }] });
+  });
+  upstream.get('/missing-image.png', (req, res) => {
+    res.status(403).send('hotlink blocked');
+  });
+  const upstreamServer = await new Promise<any>((resolve) => {
+    const s = upstream.listen(0, '127.0.0.1', () => resolve(s));
+  });
+  t.after(() => upstreamServer.close());
+  const upstreamBase = `http://127.0.0.1:${upstreamServer.address().port}`;
+
+  const externalProvidersRouter = require('../backend/src/routes/externalProviders.js');
+  const app = express();
+  app.use(express.json({ limit: '1mb' }));
+  app.use('/api/proxy/external', externalProvidersRouter);
+  const server = await new Promise<any>((resolve) => {
+    const s = app.listen(0, '127.0.0.1', () => resolve(s));
+  });
+  t.after(() => server.close());
+  const base = `http://127.0.0.1:${server.address().port}`;
+
+  const generated = await fetch(`${base}/api/proxy/external/image`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      provider: {
+        id: 'custom-openai',
+        label: 'Custom OpenAI',
+        protocol: 'openai-compatible',
+        enabled: true,
+        baseUrl: `${upstreamBase}/v1`,
+        apiKey: 'sk-secret-abcdef',
+        imageModels: ['gpt-image-1'],
+      },
+      providerModel: 'gpt-image-1',
+      prompt: 'tiny penguin',
+    }),
+  }).then((res) => res.json());
+
+  assert.equal(generated.success, true);
+  assert.deepEqual(generated.data.remoteImageUrls, [`${upstreamBase}/missing-image.png`]);
+  assert.deepEqual(generated.data.imageUrls, [`${upstreamBase}/missing-image.png`]);
+  assert.equal(generated.data.outputSaveFailed, true);
+  assert.match(generated.data.outputSaveWarnings[0], /HTTP 403/);
+});
+
+test('external video route falls back to remote urls when local output download fails', async (t) => {
+  const express = require('express');
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 't8-external-video-fallback-'));
+  t.after(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  const config = require('../backend/src/config.js');
+  const oldConfig = {
+    SETTINGS_FILE: config.SETTINGS_FILE,
+    OUTPUT_DIR: config.OUTPUT_DIR,
+    DEFAULT_LOCAL_SAVE_DIR: config.DEFAULT_LOCAL_SAVE_DIR,
+    DEFAULT_CANVAS_AUTO_SAVE_DIR: config.DEFAULT_CANVAS_AUTO_SAVE_DIR,
+    DEFAULT_RESOURCE_LIBRARY_DIR: config.DEFAULT_RESOURCE_LIBRARY_DIR,
+    DEFAULT_THEME_TEMPLATE_DIR: config.DEFAULT_THEME_TEMPLATE_DIR,
+  };
+  t.after(() => Object.assign(config, oldConfig));
+  config.SETTINGS_FILE = path.join(tmpDir, 'settings.json');
+  config.OUTPUT_DIR = path.join(tmpDir, 'output');
+  config.DEFAULT_LOCAL_SAVE_DIR = path.join(tmpDir, 'save');
+  config.DEFAULT_CANVAS_AUTO_SAVE_DIR = path.join(tmpDir, 'canvas');
+  config.DEFAULT_RESOURCE_LIBRARY_DIR = path.join(tmpDir, 'resources');
+  config.DEFAULT_THEME_TEMPLATE_DIR = path.join(tmpDir, 'themes');
+
+  const upstream = express();
+  upstream.use(express.json({ limit: '1mb' }));
+  upstream.post('/v1/videos/generations', (req, res) => {
+    assert.equal(req.get('authorization'), 'Bearer sk-secret-abcdef');
+    res.json({
+      data: {
+        task_id: 'video-1',
+        video_url: `${upstreamBase}/missing-video.mp4`,
+      },
+    });
+  });
+  upstream.get('/missing-video.mp4', (req, res) => {
+    res.status(403).send('hotlink blocked');
+  });
+  const upstreamServer = await new Promise<any>((resolve) => {
+    const s = upstream.listen(0, '127.0.0.1', () => resolve(s));
+  });
+  t.after(() => upstreamServer.close());
+  const upstreamBase = `http://127.0.0.1:${upstreamServer.address().port}`;
+
+  const externalProvidersRouter = require('../backend/src/routes/externalProviders.js');
+  const app = express();
+  app.use(express.json({ limit: '1mb' }));
+  app.use('/api/proxy/external', externalProvidersRouter);
+  const server = await new Promise<any>((resolve) => {
+    const s = app.listen(0, '127.0.0.1', () => resolve(s));
+  });
+  t.after(() => server.close());
+  const base = `http://127.0.0.1:${server.address().port}`;
+
+  const generated = await fetch(`${base}/api/proxy/external/video`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      provider: {
+        id: 'custom-openai',
+        label: 'Custom OpenAI',
+        protocol: 'openai-compatible',
+        enabled: true,
+        baseUrl: `${upstreamBase}/v1`,
+        apiKey: 'sk-secret-abcdef',
+        videoModels: ['sora-2'],
+      },
+      providerModel: 'sora-2',
+      prompt: 'tiny penguin waves',
+    }),
+  }).then((res) => res.json());
+
+  assert.equal(generated.success, true);
+  assert.deepEqual(generated.data.remoteVideoUrls, [`${upstreamBase}/missing-video.mp4`]);
+  assert.deepEqual(generated.data.videoUrls, [`${upstreamBase}/missing-video.mp4`]);
+  assert.equal(generated.data.outputSaveFailed, true);
+  assert.match(generated.data.outputSaveWarnings[0], /HTTP 403/);
+});

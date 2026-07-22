@@ -26,6 +26,61 @@ async function safeJsonResponse(response: Response, label: string): Promise<any>
   }
 }
 
+function runtimeErrorText(error: any): string {
+  const name = String(error?.name || error?.constructor?.name || 'Error');
+  const message = String(error?.message || error || 'unknown error');
+  return `${name}: ${message}`;
+}
+
+function browserRuntimeContext(): { origin: string; href: string; electron: 'yes' | 'no' } {
+  const win = typeof window !== 'undefined' ? (window as any) : null;
+  const origin = typeof win?.location?.origin === 'string' && win.location.origin
+    ? win.location.origin
+    : 'unknown';
+  const href = typeof win?.location?.href === 'string' && win.location.href
+    ? win.location.href
+    : 'unknown';
+  const electron = win?.t8pc ? 'yes' : 'no';
+  return { origin, href, electron };
+}
+
+async function probeBackendStatus(fetchImpl: typeof fetch): Promise<string> {
+  try {
+    const response = await fetchImpl('/api/status', { method: 'GET', cache: 'no-store' });
+    let payload: any = null;
+    try {
+      payload = await response.json();
+    } catch {
+      payload = null;
+    }
+    if (!response.ok) return `http_error(HTTP ${response.status})`;
+    const service = typeof payload?.service === 'string' ? ` service=${payload.service}` : '';
+    const port = payload?.port != null ? ` port=${payload.port}` : '';
+    return `ok(HTTP ${response.status}${service}${port})`;
+  } catch (error: any) {
+    return `failed(${runtimeErrorText(error)})`;
+  }
+}
+
+async function fetchWithDebugContext(input: string, init: RequestInit | undefined, label: string): Promise<Response> {
+  const fetchImpl = globalThis.fetch?.bind(globalThis) as typeof fetch | undefined;
+  if (typeof fetchImpl !== 'function') {
+    throw new Error(`${label} 网络请求失败：fetch API 不可用 · request=${input} · origin=unknown · page=unknown · electron=no · backendProbe=unavailable`);
+  }
+  try {
+    return await fetchImpl(input, init);
+  } catch (error: any) {
+    if (error?.name === 'AbortError' || init?.signal?.aborted) {
+      throw error?.name === 'AbortError' ? error : new DOMException('Aborted', 'AbortError');
+    }
+    const runtime = browserRuntimeContext();
+    const backendProbe = await probeBackendStatus(fetchImpl);
+    throw new Error(
+      `${label} 网络请求失败：${runtimeErrorText(error)} · request=${input} · origin=${runtime.origin} · page=${runtime.href} · electron=${runtime.electron} · backendProbe=${backendProbe}`,
+    );
+  }
+}
+
 export interface GenerateImageRequest {
   model: string;          // 节点 id (gpt-image-2 / nano-banana-2 / nano-banana-pro / grok-image)
   apiModel?: string;       // 上游真实模型名(优先使用)
@@ -55,11 +110,11 @@ export interface GenerateImageResult {
 }
 
 export async function generateImage(req: GenerateImageRequest): Promise<GenerateImageResult> {
-  const r = await fetch('/api/proxy/image', {
+  const r = await fetchWithDebugContext('/api/proxy/image', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(req),
-  });
+  }, '核心图像生成');
   const data = await safeJsonResponse(r, '核心图像生成');
   if (!r.ok || !data.success) {
     throw new Error(data?.error || `HTTP ${r.status}`);
@@ -72,6 +127,7 @@ export interface GenerateExternalImageRequest {
   provider?: AdvancedProviderConfig;
   providerModel?: string;
   model?: string;
+  paramKind?: 'gpt-size' | 'banana-ratio' | 'grok-image' | 'mj' | string;
   prompt?: string;
   size?: string;
   width?: number;
@@ -105,11 +161,11 @@ export interface GenerateExternalImageResult {
 }
 
 export async function generateExternalImage(req: GenerateExternalImageRequest): Promise<GenerateExternalImageResult> {
-  const r = await fetch('/api/proxy/external/image', {
+  const r = await fetchWithDebugContext('/api/proxy/external/image', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(req),
-  });
+  }, '扩展图像生成');
   const data = await safeJsonResponse(r, '扩展图像生成');
   if (!r.ok || !data.success) {
     throw new Error(data?.error || `HTTP ${r.status}`);
@@ -131,12 +187,23 @@ export interface GenerateExternalVideoRequest {
   providerId: string;
   providerModel?: string;
   model?: string;
+  protocolModel?: string;
+  providerKind?: string;
   prompt: string;
   aspect_ratio?: string;
   ratio?: string;
   duration?: number | string;
   resolution?: string;
   seed?: number;
+  size?: string;
+  enhance_prompt?: boolean;
+  enable_upsample?: boolean;
+  private?: boolean;
+  is_private?: boolean;
+  generate_audio?: boolean;
+  return_last_frame?: boolean;
+  watermark?: boolean;
+  web_search?: boolean;
   images?: string[];
   videos?: string[];
   audios?: string[];
@@ -152,12 +219,12 @@ export interface GenerateExternalVideoResult {
 }
 
 export async function generateExternalVideo(req: GenerateExternalVideoRequest): Promise<GenerateExternalVideoResult> {
-  const r = await fetch('/api/proxy/external/video', {
+  const r = await fetchWithDebugContext('/api/proxy/external/video', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(req),
-  });
-  const data = await safeJsonResponse(r, '图像异步提交');
+  }, '扩展视频生成');
+  const data = await safeJsonResponse(r, '扩展视频生成');
   if (!r.ok || !data.success) {
     throw new Error(data?.error || `HTTP ${r.status}`);
   }
@@ -187,7 +254,7 @@ export interface ImageSubmitResult {
 }
 
 export async function submitImageAsync(req: GenerateImageRequest): Promise<ImageSubmitResult> {
-  const r = await fetch('/api/proxy/image/submit', {
+  const r = await fetchWithDebugContext('/api/proxy/image/submit', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -196,8 +263,8 @@ export async function submitImageAsync(req: GenerateImageRequest): Promise<Image
       forceAsync: true,
       sync_mode: false,
     }),
-  });
-  const data = await safeJsonResponse(r, '图像任务轮询');
+  }, '图像异步提交');
+  const data = await safeJsonResponse(r, '图像异步提交');
   if (!r.ok || !data.success) throw new Error(data?.error || `HTTP ${r.status}`);
   return data.data;
 }
@@ -213,8 +280,8 @@ export interface ImageQueryResult {
 // (否则 hint 为空时会 fallback 到通用 zhenzhenApiKey，分类 key 失效)
 export async function queryImageStatus(taskId: string, apiModel?: string): Promise<ImageQueryResult> {
   const qs = apiModel ? `?model=${encodeURIComponent(apiModel)}` : '';
-  const r = await fetch(`/api/proxy/image/status/${encodeURIComponent(taskId)}${qs}`);
-  const data = await safeJsonResponse(r, 'FAL 图像提交');
+  const r = await fetchWithDebugContext(`/api/proxy/image/status/${encodeURIComponent(taskId)}${qs}`, undefined, '图像任务轮询');
+  const data = await safeJsonResponse(r, '图像任务轮询');
   if (!r.ok) throw new Error(data?.error || `HTTP ${r.status}`);
   // 失败状态下 success=false 但返回 body 中仍包含 status:'failed'
   return data.data || { status: data.success ? 'pending' : 'failed', progress: '0%', error: data?.error };
@@ -274,12 +341,12 @@ export interface FalSubmitResult {
 }
 
 export async function submitImageFal(req: FalSubmitRequest): Promise<FalSubmitResult> {
-  const r = await fetch('/api/proxy/image/fal/submit', {
+  const r = await fetchWithDebugContext('/api/proxy/image/fal/submit', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(req),
-  });
-  const data = await safeJsonResponse(r, 'FAL 图像轮询');
+  }, 'FAL 图像提交');
+  const data = await safeJsonResponse(r, 'FAL 图像提交');
   if (!r.ok || !data.success) throw new Error(data?.error || `HTTP ${r.status}`);
   return data.data;
 }
@@ -292,12 +359,12 @@ export interface FalQueryResult {
 }
 
 export async function queryImageFal(params: { responseUrl?: string; endpoint?: string; requestId?: string }): Promise<FalQueryResult> {
-  const r = await fetch('/api/proxy/image/fal/query', {
+  const r = await fetchWithDebugContext('/api/proxy/image/fal/query', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params),
-  });
-  const data = await r.json();
+  }, 'FAL 图像轮询');
+  const data = await safeJsonResponse(r, 'FAL 图像轮询');
   // 后端在 FAILED 时会 success=false 但 data.status='failed',这里返回结果供上层判断
   if (!r.ok && !data.data) throw new Error(data?.error || `HTTP ${r.status}`);
   return data.data || { status: 'failed', error: data?.error || 'unknown' };
@@ -362,11 +429,11 @@ export interface MjImagineResult {
 }
 
 export async function submitMjImagine(req: MjImagineRequest): Promise<MjImagineResult> {
-  const r = await fetch('/api/proxy/mj/imagine', {
+  const r = await fetchWithDebugContext('/api/proxy/mj/imagine', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(req),
-  });
+  }, 'MJ 提交');
   const data = await r.json();
   if (!r.ok || !data.success) throw new Error(data?.error || `HTTP ${r.status}`);
   const upstream = data.data || {};
@@ -389,7 +456,7 @@ export interface MjTaskResult {
 }
 
 export async function queryMjTask(taskId: string, speed: MjSpeed = 'fast'): Promise<MjTaskResult> {
-  const r = await fetch(`/api/proxy/mj/task/${encodeURIComponent(taskId)}?speed=${encodeURIComponent(speed)}`);
+  const r = await fetchWithDebugContext(`/api/proxy/mj/task/${encodeURIComponent(taskId)}?speed=${encodeURIComponent(speed)}`, undefined, 'MJ 任务轮询');
   const data = await r.json();
   if (!r.ok || !data.success) throw new Error(data?.error || `HTTP ${r.status}`);
   const d = data.data || {};
@@ -422,11 +489,11 @@ export async function queryMjTask(taskId: string, speed: MjSpeed = 'fast'): Prom
 /** 上传参考图(sref/oref)并取 URL — 对应主项目 uploadMJImage L4407 */
 export async function uploadMjImage(file: File, speed: MjSpeed = 'fast'): Promise<string> {
   const dataUrl = await fileToDataUrl(file);
-  const r = await fetch('/api/proxy/mj/upload', {
+  const r = await fetchWithDebugContext('/api/proxy/mj/upload', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ base64Data: dataUrl, speed }),
-  });
+  }, 'MJ 参考图上传');
   const data = await r.json();
   if (!r.ok || !data.success) throw new Error(data?.error || `HTTP ${r.status}`);
   const url = data.data?.url || '';
@@ -449,17 +516,16 @@ export interface LlmMessage {
 
 export interface GenerateLlmRequest {
   model: string;
+  modelSource?: 'llm-direct' | 'zhenzhen';
   messages: LlmMessage[];
   temperature?: number;
   max_tokens?: number;
-  /** 视频传入方式：frames 默认用内置 ffmpeg 抽关键帧；native-base64 发送压缩原视频；url 转绝对 URL。 */
-  llmVideoMode?: 'frames' | 'native-base64' | 'compressed-base64' | 'url';
+  /** 视频传入方式：native-base64 发送压缩后的完整视频；url 转绝对 URL。Gemini 视频会强制走原生 inlineData。 */
+  llmVideoMode?: 'native-base64' | 'compressed-base64' | 'url';
   videoMaxWidth?: number;
   videoMaxHeight?: number;
   videoMaxBase64Mb?: number;
   videoCrf?: number;
-  /** 关键帧模式下抽取的帧数，后端会按视频时长均匀抽取。 */
-  videoFrameCount?: number;
   /** 流式开关;默认 false(非流式) */
   stream?: boolean;
 }
@@ -474,12 +540,16 @@ export interface GenerateLlmResult {
   model: string;
 }
 
-export async function generateLlm(req: GenerateLlmRequest): Promise<GenerateLlmResult> {
-  const r = await fetch('/api/proxy/llm', {
+export async function generateLlm(
+  req: GenerateLlmRequest,
+  options: { signal?: AbortSignal } = {},
+): Promise<GenerateLlmResult> {
+  const r = await fetchWithDebugContext('/api/proxy/llm', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ ...req, stream: false }),
-  });
+    signal: options.signal,
+  }, 'LLM 生成');
   const data = await r.json();
   if (!r.ok || !data.success) {
     throw new Error(data?.error || `HTTP ${r.status}`);
@@ -493,12 +563,16 @@ export interface GenerateExternalLlmRequest extends Omit<GenerateLlmRequest, 'st
   providerParams?: Record<string, any>;
 }
 
-export async function generateExternalLlm(req: GenerateExternalLlmRequest): Promise<GenerateLlmResult> {
-  const r = await fetch('/api/proxy/external/llm', {
+export async function generateExternalLlm(
+  req: GenerateExternalLlmRequest,
+  options: { signal?: AbortSignal } = {},
+): Promise<GenerateLlmResult> {
+  const r = await fetchWithDebugContext('/api/proxy/external/llm', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(req),
-  });
+    signal: options.signal,
+  }, '扩展 LLM 生成');
   const data = await r.json();
   if (!r.ok || !data.success) {
     throw new Error(data?.error || `HTTP ${r.status}`);
@@ -526,12 +600,12 @@ export async function generateLlmStream(
   req: GenerateLlmRequest,
   opts: { onDelta?: (chunk: string) => void; signal?: AbortSignal } = {}
 ): Promise<{ content: string; finishReason?: string; truncated?: boolean }> {
-  const r = await fetch('/api/proxy/llm', {
+  const r = await fetchWithDebugContext('/api/proxy/llm', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ ...req, stream: true }),
     signal: opts.signal,
-  });
+  }, 'LLM 流式生成');
   if (!r.ok) {
     // 后端在 stream 错路仍返 JSON
     let msg = `HTTP ${r.status}`;
@@ -605,7 +679,7 @@ export function fileToDataUrl(file: File): Promise<string> {
 export async function uploadFile(file: File): Promise<{ url: string; filename: string }> {
   const fd = new FormData();
   fd.append('file', file);
-  const r = await fetch('/api/files/upload', { method: 'POST', body: fd });
+  const r = await fetchWithDebugContext('/api/files/upload', { method: 'POST', body: fd }, '文件上传');
   const data = await r.json();
   if (!r.ok || !data.success) {
     throw new Error(data?.error || `HTTP ${r.status}`);
@@ -670,11 +744,11 @@ export interface VideoFalSubmitResult {
 }
 
 export async function submitVideoFal(req: VideoFalSubmitRequest): Promise<VideoFalSubmitResult> {
-  const r = await fetch('/api/proxy/video/fal/submit', {
+  const r = await fetchWithDebugContext('/api/proxy/video/fal/submit', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(req),
-  });
+  }, 'FAL 视频提交');
   const data = await r.json();
   if (!r.ok || !data.success) throw new Error(data?.error || `HTTP ${r.status}`);
   return data.data;
@@ -688,11 +762,11 @@ export interface VideoFalQueryResult {
 }
 
 export async function queryVideoFal(params: { responseUrl?: string; endpoint?: string; requestId?: string }): Promise<VideoFalQueryResult> {
-  const r = await fetch('/api/proxy/video/fal/query', {
+  const r = await fetchWithDebugContext('/api/proxy/video/fal/query', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params),
-  });
+  }, 'FAL 视频轮询');
   const data = await r.json();
   if (!r.ok && !data.data) throw new Error(data?.error || `HTTP ${r.status}`);
   return data.data || { status: 'failed', error: data?.error || 'unknown' };
@@ -749,11 +823,11 @@ export interface VideoSubmitResult {
 }
 
 export async function submitVideo(req: VideoSubmitRequest): Promise<VideoSubmitResult> {
-  const r = await fetch('/api/proxy/video/submit', {
+  const r = await fetchWithDebugContext('/api/proxy/video/submit', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(req),
-  });
+  }, '视频异步提交');
   const data = await r.json();
   if (!r.ok || !data.success) throw new Error(data?.error || `HTTP ${r.status}`);
   return data.data;
@@ -763,13 +837,14 @@ export interface VideoQueryResult {
   status: 'PENDING' | 'SUCCESS' | 'FAILURE' | 'RUNNING' | string;
   progress?: string;
   videoUrl?: string | null;
+  videoUrls?: string[];
   failReason?: string | null;
 }
 
 // model 透传给后端，让轮询阶段复用与 submit 一致的分类 API Key
 export async function queryVideo(taskId: string, model?: string): Promise<VideoQueryResult> {
   const extra = model ? `&model=${encodeURIComponent(model)}` : '';
-  const r = await fetch(`/api/proxy/video/query?taskId=${encodeURIComponent(taskId)}${extra}`);
+  const r = await fetchWithDebugContext(`/api/proxy/video/query?taskId=${encodeURIComponent(taskId)}${extra}`, undefined, '视频任务轮询');
   const data = await r.json();
   if (!r.ok || !data.success) throw new Error(data?.error || `HTTP ${r.status}`);
   return data.data;
@@ -804,8 +879,8 @@ export interface SeedanceSubmitRequest {
   firstFrame?: string;
   /** 末帧参考(需与 firstFrame 同时传) */
   lastFrame?: string;
-  /** 参考图多张(reference_image) */
-  refImages?: string[];
+  /** 参考图/多模态 refImages，多张 reference_image 或 {url,name,type} 对象 */
+  refImages?: Array<string | Record<string, any>>;
   /** 参考视频 URL 多个 */
   videos?: string[];
   /** 参考音频 URL 多个 */
@@ -821,11 +896,11 @@ export interface SeedanceSubmitResult {
 }
 
 export async function submitSeedance(req: SeedanceSubmitRequest): Promise<SeedanceSubmitResult> {
-  const r = await fetch('/api/proxy/seedance/submit', {
+  const r = await fetchWithDebugContext('/api/proxy/seedance/submit', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(req),
-  });
+  }, 'Seedance 提交');
   const data = await r.json();
   if (!r.ok || !data.success) throw new Error(data?.error || `HTTP ${r.status}`);
   return data.data;
@@ -836,12 +911,13 @@ export interface SeedanceQueryResult {
   status: string;
   progress?: string;
   videoUrl?: string | null;
+  videoUrls?: string[];
   failReason?: string | null;
 }
 
 export async function querySeedance(taskId: string, model?: string): Promise<SeedanceQueryResult> {
   const extra = model ? `&model=${encodeURIComponent(model)}` : '';
-  const r = await fetch(`/api/proxy/seedance/query?taskId=${encodeURIComponent(taskId)}${extra}`);
+  const r = await fetchWithDebugContext(`/api/proxy/seedance/query?taskId=${encodeURIComponent(taskId)}${extra}`, undefined, 'Seedance 轮询');
   const data = await r.json();
   if (!r.ok || !data.success) throw new Error(data?.error || `HTTP ${r.status}`);
   return data.data;
@@ -861,6 +937,7 @@ export interface AudioSubmitRequest {
    * Suno 版本号：推荐传主项目原始值 (v3.0 / v3.5 / v4 / v4.5 / v4.5+ / v5 / v5.5)。
    * 后端 resolveSunoMv() 同时兼容带 'suno-' 前缀的旧调用方 (如 'suno-v5.5')。
    */
+  model?: string;
   version?: string;
   seed?: number;
   continue_clip_id?: string;
@@ -872,11 +949,11 @@ export interface AudioSubmitRequest {
 export async function submitAudio(
   req: AudioSubmitRequest,
 ): Promise<{ taskId: string; clipIds: string[] }> {
-  const r = await fetch('/api/proxy/audio/submit', {
+  const r = await fetchWithDebugContext('/api/proxy/audio/submit', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(req),
-  });
+  }, 'Suno 提交');
   const data = await r.json();
   if (!r.ok || !data.success) throw new Error(data?.error || `HTTP ${r.status}`);
   return data.data;
@@ -908,7 +985,7 @@ export interface AudioQueryResult {
 export async function queryAudio(clipIds: string[], saveLocal: boolean = true): Promise<AudioQueryResult> {
   const ids = clipIds.join(',');
   const params = new URLSearchParams({ clipIds: ids, saveLocal: String(saveLocal) });
-  const r = await fetch(`/api/proxy/audio/query?${params.toString()}`);
+  const r = await fetchWithDebugContext(`/api/proxy/audio/query?${params.toString()}`, undefined, 'Suno 轮询');
   const data = await r.json();
   if (!r.ok || !data.success) throw new Error(data?.error || `HTTP ${r.status}`);
   return data.data;
@@ -927,78 +1004,7 @@ export async function uploadAudioForSuno(
   if (providerParams && Object.keys(providerParams).length > 0) {
     fd.append('providerParams', JSON.stringify(providerParams));
   }
-  const r = await fetch('/api/proxy/audio/upload', { method: 'POST', body: fd });
-  const data = await r.json();
-  if (!r.ok || !data.success) throw new Error(data?.error || `HTTP ${r.status}`);
-  return data.data;
-}
-
-// ========================================================================
-// RunningHub 工作流(异步)
-// v1.2.9.16: 取消 rhWalletApiKey / useWallet 分路 ——
-// RH 钱包应用节点与普通 RunningHub 节点统一使用 settings.rhApiKey。
-// ========================================================================
-export interface RhSubmitRequest {
-  webappId: string;
-  nodeInfoList?: Array<{ nodeId: string; fieldName: string; fieldValue: any }>;
-  instanceType?: string;
-}
-
-export async function submitRh(req: RhSubmitRequest): Promise<{ taskId: string }> {
-  const r = await fetch('/api/proxy/runninghub/submit', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(req),
-  });
-  const data = await r.json();
-  if (!r.ok || !data.success) throw new Error(data?.error || `HTTP ${r.status}`);
-  return data.data;
-}
-
-export interface RhQueryResult {
-  status: 'PENDING' | 'SUCCESS' | 'RUNNING' | 'QUEUED' | 'FAILED' | string;
-  urls: string[];
-  failReason?: string | null;
-  code?: number;
-}
-
-export async function queryRh(taskId: string): Promise<RhQueryResult> {
-  const url = `/api/proxy/runninghub/query?taskId=${encodeURIComponent(taskId)}`;
-  const r = await fetch(url);
-  const data = await r.json();
-  if (!r.ok || !data.success) throw new Error(data?.error || `HTTP ${r.status}`);
-  return data.data;
-}
-
-export async function cancelRh(taskId: string): Promise<{ taskId: string; raw?: any }> {
-  const r = await fetch('/api/proxy/runninghub/cancel', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ taskId }),
-  });
-  const data = await safeJsonResponse(r, 'RunningHub 取消任务');
-  if (!r.ok || !data.success) throw new Error(data?.error || `HTTP ${r.status}`);
-  return data.data;
-}
-
-export async function fetchRhAppInfo(webappId: string): Promise<any> {
-  const url = `/api/proxy/runninghub/app-info?webappId=${encodeURIComponent(webappId)}`;
-  const r = await fetch(url);
-  const data = await r.json();
-  if (!r.ok || !data.success) throw new Error(data?.error || `HTTP ${r.status}`);
-  return data.data;
-}
-
-/**
- * 上传任意本地/远程素材到 RunningHub，拿到内部 fileName。
- * 用于 RhConfigNode / RunningHubNode 中 valueType=image|video|audio 的条目提交前的资源转换。
- */
-export async function uploadRhAsset(url: string): Promise<{ fileName: string; fileType: string }> {
-  const r = await fetch('/api/proxy/runninghub/upload-asset', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ url }),
-  });
+  const r = await fetchWithDebugContext('/api/proxy/audio/upload', { method: 'POST', body: fd }, 'Suno 音频上传');
   const data = await r.json();
   if (!r.ok || !data.success) throw new Error(data?.error || `HTTP ${r.status}`);
   return data.data;

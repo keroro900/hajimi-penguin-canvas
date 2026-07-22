@@ -72,6 +72,27 @@ function withUpdatedNode(canvas, nodeId, patch) {
   return { ...canvas, nodes: nextNodes };
 }
 
+function readNodeResult(canvas, nodeId) {
+  const node = (Array.isArray(canvas?.nodes) ? canvas.nodes : []).find((item) => item.id === nodeId);
+  if (!node) throw new Error(`Node not found: ${nodeId}`);
+  const data = node.data && typeof node.data === 'object' ? node.data : {};
+  const urls = [];
+  for (const key of ['imageUrl', 'videoUrl', 'audioUrl', 'modelUrl', 'url', 'outputUrl']) {
+    if (typeof data[key] === 'string' && data[key].trim()) urls.push(data[key]);
+  }
+  for (const key of ['imageUrls', 'videoUrls', 'audioUrls', 'modelUrls', 'urls', 'images', 'videos']) {
+    if (Array.isArray(data[key])) data[key].forEach((url) => typeof url === 'string' && url.trim() && urls.push(url));
+  }
+  return {
+    nodeId,
+    type: node.type,
+    status: data.status || data.runStatus || 'idle',
+    error: data.error || '',
+    resultUrls: [...new Set(urls)],
+    node,
+  };
+}
+
 export const HAKIMI_MCP_TOOLS = [
   {
     name: 'hakimi_get_capabilities',
@@ -292,6 +313,70 @@ export const HAKIMI_MCP_TOOLS = [
       beforeSnapshot: JsonValue.optional(),
     }),
     handler: async (args) => ok(await api('/api/agent/canvas/plans/verify', 'POST', args)),
+  },
+  {
+    name: 'hakimi_canvas_node_capabilities',
+    title: 'Hakimi Canvas Node Capabilities',
+    description: 'Read the exact capabilities, editable fields, ports, and result outputs for one canvas node type.',
+    inputSchema: z.object({ nodeType: z.string().min(1) }),
+    handler: async ({ nodeType }) => {
+      const catalog = buildHakimiCanvasCatalog();
+      const node = catalog.nodes.find((item) => item.type === nodeType);
+      if (!node) throw new Error(`Unknown Hakimi node type: ${nodeType}`);
+      return ok(node);
+    },
+  },
+  {
+    name: 'hakimi_canvas_configure_generation',
+    title: 'Hakimi Canvas Configure Generation',
+    description: 'Configure an existing image/video generation node through CanvasPlan normalization so model-specific parameters stay valid.',
+    inputSchema: z.object({
+      canvasId: CanvasId,
+      nodeId: NodeId,
+      data: JsonValue,
+      run: z.boolean().default(false),
+      agentId: z.string().default('codex'),
+    }),
+    handler: async ({ canvasId, nodeId, data, run, agentId }) => ok(await api('/api/agent/canvas/plans/apply', 'POST', {
+      canvasId,
+      agentId,
+      drivingMode: 'autopilot',
+      approvalPolicy: 'never',
+      plan: {
+        title: '配置生成节点',
+        updates: [{ nodeId, data }],
+        runNodeIds: run ? [nodeId] : [],
+      },
+    })),
+  },
+  {
+    name: 'hakimi_canvas_run_node',
+    title: 'Hakimi Canvas Run Node',
+    description: 'Trigger one existing canvas node through the visible agent action/event pipeline.',
+    inputSchema: z.object({ canvasId: CanvasId, nodeId: NodeId, agentId: z.string().default('codex'), runId: z.string().optional() }),
+    handler: async ({ canvasId, nodeId, agentId, runId }) => ok(await api('/api/agent/canvas/actions', 'POST', {
+      canvasId,
+      agentId,
+      runId,
+      mode: 'commit',
+      drivingMode: 'autopilot',
+      approvalPolicy: 'never',
+      actions: [{ type: 'run_node', payload: { nodeId } }],
+    })),
+  },
+  {
+    name: 'hakimi_canvas_read_node_result',
+    title: 'Hakimi Canvas Read Node Result',
+    description: 'Read one node status, error, full node data, and real result URLs after execution.',
+    inputSchema: z.object({ canvasId: CanvasId, nodeId: NodeId }),
+    handler: async ({ canvasId, nodeId }) => ok(readNodeResult(await loadCanvas(canvasId), nodeId)),
+  },
+  {
+    name: 'hakimi_canvas_undo_batch',
+    title: 'Hakimi Canvas Undo Batch',
+    description: 'Undo one CanvasPlan/action operation batch. Refuses when later canvas edits would be overwritten unless force is explicitly confirmed.',
+    inputSchema: z.object({ operationBatchId: z.string().min(1), canvasId: CanvasId.optional(), force: z.boolean().default(false) }),
+    handler: async ({ operationBatchId, canvasId, force }) => ok(await api(`/api/agent/canvas/operations/${encodeURIComponent(operationBatchId)}/undo`, 'POST', { canvasId, force })),
   },
   {
     name: 'hakimi_canvas_generate_image',

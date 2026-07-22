@@ -39,7 +39,6 @@ import {
 } from 'lucide-react';
 import { useThemeStore } from '../../stores/theme';
 import { opCrop, opGridCrop, uploadDataUrl, uploadFileBlob } from '../../services/imageOps';
-import { runRhImageCutout } from '../../services/rhToolboxCapabilities';
 import { createMaxCropBoxForAspect, fitCropBoxToAspect, resizeCropBoxWithAspect } from '../../utils/imageCropAspect';
 
 /**
@@ -413,8 +412,6 @@ const ImageEditModal = ({ srcUrl, onClose, onProduce }: Props) => {
   const [busy, setBusy] = useState(false);
   const [errMsg, setErrMsg] = useState<string | null>(null);
   const [workingSrcUrl, setWorkingSrcUrl] = useState(srcUrl);
-  const [rhCutoutRunning, setRhCutoutRunning] = useState(false);
-  const [rhCutoutMessage, setRhCutoutMessage] = useState<string | null>(null);
 
   // ---- mask / brush ----
   const [maskStrokes, setMaskStrokes] = useState<DrawStroke[]>([]);
@@ -495,7 +492,6 @@ const ImageEditModal = ({ srcUrl, onClose, onProduce }: Props) => {
   useEffect(() => {
     setWorkingSrcUrl(srcUrl);
     setNaturalSize(null);
-    setRhCutoutMessage(null);
   }, [srcUrl]);
 
   const selectedComposeImageLayer = useMemo(() => {
@@ -1106,62 +1102,6 @@ const ImageEditModal = ({ srcUrl, onClose, onProduce }: Props) => {
       arr.map((l) => (l.id === id ? ({ ...l, ...patch } as ImageLayer) : l)),
     );
   };
-
-  async function applyRhCutoutToCurrentImage() {
-    if (mode === 'compose' && !selectedComposeImageLayer) {
-      setErrMsg('请先选中一个图像图层再抠图');
-      return;
-    }
-    if (selectedComposeImageLayer?.locked) {
-      setErrMsg('选中图层已锁定，无法抠图');
-      return;
-    }
-    const sourceUrl = selectedComposeImageLayer?.src || workingSrcUrl;
-    if (!sourceUrl) {
-      setErrMsg('缺少可抠图的图片');
-      return;
-    }
-
-    setBusy(true);
-    setRhCutoutRunning(true);
-    setErrMsg(null);
-    setRhCutoutMessage('RH工具箱抠图中...');
-    try {
-      const result = await runRhImageCutout(sourceUrl, {
-        onProgress: (progress) => setRhCutoutMessage(progress.message),
-      });
-
-      if (selectedComposeImageLayer) {
-        pushComposeHistory();
-        updateLayer(selectedComposeImageLayer.id, {
-          src: result.outputUrl,
-          name: `${selectedComposeImageLayer.name || '图层'} RH抠图`,
-        });
-        setSelectedIds([selectedComposeImageLayer.id]);
-      } else {
-        setWorkingSrcUrl(result.outputUrl);
-        const img = await loadImage(result.outputUrl).catch(() => null);
-        if (img) setNaturalSize({ w: img.naturalWidth, h: img.naturalHeight });
-        setMaskStrokes([]);
-        setMaskHistory([]);
-        setMaskRedo([]);
-        setBrushStrokes([]);
-        setBrushHistory([]);
-        setBrushRedo([]);
-        setCustomLines([]);
-        setHistory([]);
-        setCrop({ x: 0.1, y: 0.1, w: 0.8, h: 0.8 });
-      }
-
-      setRhCutoutMessage(`已完成 RH抠图：${result.tool.title}`);
-    } catch (e: any) {
-      setErrMsg(e?.message || 'RH抠图失败');
-      setRhCutoutMessage(null);
-    } finally {
-      setRhCutoutRunning(false);
-      setBusy(false);
-    }
-  }
 
   // 应用 compose: 离屏 canvas 渲染 → toDataURL → uploadDataUrl → onProduce
   async function applyCompose() {
@@ -2292,34 +2232,6 @@ const ImageEditModal = ({ srcUrl, onClose, onProduce }: Props) => {
             fontSize: 12,
           }}
         >
-          <button
-            type="button"
-            style={btnBase}
-            onClick={applyRhCutoutToCurrentImage}
-            disabled={
-              busy ||
-              (mode === 'compose' && (!selectedComposeImageLayer || selectedComposeImageLayer.locked))
-            }
-            title={
-              mode === 'compose'
-                ? selectedComposeImageLayer
-                  ? selectedComposeImageLayer.locked
-                    ? '选中图层已锁定，无法抠图'
-                    : '调用 RH工具箱自动抠图并替换选中图层'
-                  : '请先选中一个图像图层'
-                : '调用 RH工具箱自动抠图并替换当前图片'
-            }
-          >
-            {rhCutoutRunning ? (
-              <>
-                <Loader2 size={13} className="animate-spin" /> RH抠图中...
-              </>
-            ) : (
-              <>
-                <Scissors size={13} /> RH抠图
-              </>
-            )}
-          </button>
           {mode === 'crop' && (
             <>
               <span style={{ color: subText }}>框尺寸</span>
@@ -3402,9 +3314,6 @@ const ImageEditModal = ({ srcUrl, onClose, onProduce }: Props) => {
         >
           {errMsg && (
             <div style={{ color: '#EF4444', fontSize: 12, fontWeight: 600 }}>{errMsg}</div>
-          )}
-          {!errMsg && rhCutoutMessage && (
-            <div style={{ color: subText, fontSize: 12, fontWeight: 600 }}>{rhCutoutMessage}</div>
           )}
           <div style={{ flex: 1 }} />
           <button style={btnBase} onClick={onClose} disabled={busy}>

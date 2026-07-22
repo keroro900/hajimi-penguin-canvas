@@ -40,15 +40,9 @@ const BpNode = (p: NodeProps) => {
 
   return (
     <div
-      className={`relative rounded-xl border-2 transition-all ${
-        p.selected ? 'shadow-2xl' : 'border-white/15 hover:border-white/30'
-      }`}
+      className={`t8-node relative rounded-xl transition-all ${p.selected ? 'is-selected' : ''}`}
       style={{
-        background: 'rgba(20,20,22,.92)',
-        backdropFilter: 'blur(8px)',
         width: 280,
-        borderColor: p.selected ? COLOR : undefined,
-        boxShadow: p.selected ? `0 0 0 1px ${COLOR}, 0 16px 32px rgba(148,163,184,.2)` : undefined,
       }}
     >
       <Handle type="source" position={Position.Right} style={{ background: COLOR, border: 0 }} />

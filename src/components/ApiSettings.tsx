@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ChevronDown, ChevronRight, CloudUpload, Download, ExternalLink, Eye, EyeOff, FileUp, Info, KeyRound, Loader2, Lock, Plus, Save, Settings2, TestTube2, Trash2, X, FolderOpen, ServerCog, Volume2 } from 'lucide-react';
-import { useApiKeysStore, DEFAULT_ZHENZHEN_BASE, RH_BASE, HAKIMI_MCP_DEFAULT_BACKEND_URL } from '../stores/apiKeys';
+import { useApiKeysStore, DEFAULT_ZHENZHEN_BASE, HAKIMI_MCP_DEFAULT_BACKEND_URL } from '../stores/apiKeys';
+import DynamicModelCatalogEditor from './DynamicModelCatalogEditor';
 import { taskCompletionSound as taskCompletionSoundController } from '../stores/taskCompletionSound';
 import { useThemeStore } from '../stores/theme';
 import type { AdvancedProviderConfig, AdvancedProviderProtocol, ApiSettings, CloudUploadProvider, CloudUploadTargetConfig } from '../types/canvas';
@@ -8,7 +9,7 @@ import { fetchAdvancedProviderModels, fetchZhenzhenModels, getRawSettings, reset
 import { playTaskCompletionSound } from '../utils/taskCompletionSound';
 import { UI_FONT_PRESETS, resolveUiFontStack } from '../utils/uiFont';
 import MODEL_PROTOCOL_REGISTRY from '../../shared/modelProtocolRegistry.json' with { type: 'json' };
-import { parseModelList, stringifyModelList } from '../providers/models';
+import { LLM_MODEL_OVERRIDE_KEY, parseModelList, stringifyModelList } from '../providers/models';
 import {
   advancedProviderSummary as summarizeAdvancedProviderForm,
   normalizeModelscopeLoraStrength,
@@ -40,7 +41,6 @@ interface ApiSettingsModalProps {
 // 主 Key 字段名类型
 type KeyField =
   | 'zhenzhenApiKey'
-  | 'rhApiKey'
   | 'llmApiKey'
   | 'gptImageApiKey'
   | 'nanoBananaApiKey'
@@ -60,25 +60,31 @@ interface KeySpec {
 
 const COMMON_KEYS: KeySpec[] = [
   { field: 'zhenzhenApiKey', label: '通用服务 API Key', desc: '· 通用后备 · 用于图像/视频/音频生成', bullet: 'bg-amber-400' },
-  { field: 'rhApiKey', label: 'RunningHub API Key', desc: '· RunningHub 节点与 RH 钱包应用节点共用', bullet: 'bg-cyan-400' },
   { field: 'llmApiKey', label: 'LLM 独立 API Key', desc: '· 额度隔离 · 用于 LLM/Vision', bullet: 'bg-emerald-400' },
 ];
 
 const COMMON_KEY_BASE_URL_FIELDS: Partial<Record<KeyField, keyof ApiSettings>> = {
   zhenzhenApiKey: 'zhenzhenBaseUrl',
-  rhApiKey: 'rhBaseUrl',
   llmApiKey: 'llmBaseUrl',
 };
 
 const COMMON_KEY_BASE_URL_PLACEHOLDERS: Partial<Record<KeyField, string>> = {
   zhenzhenApiKey: 'https://api.example.com',
-  rhApiKey: RH_BASE,
   llmApiKey: 'https://api.example.com/v1',
 };
 
 type ModelOverrideField = { id: string; label: string; placeholder: string };
-type ImageModelProtocol = 'images' | 'images-generations' | 'images-edits' | 'openai-chat' | 'gemini-native';
+type ImageModelProtocol =
+  | 'images'
+  | 'images-generations'
+  | 'images-edits'
+  | 'openai-chat'
+  | 'gemini-generate-content'
+  | 'gemini-interactions'
+  | 'gemini-native';
+type VideoModelProtocol = 'seedance-v3' | 'videos';
 type ImageProtocolOption = { value: ImageModelProtocol; label: string };
+type VideoProtocolOption = { value: VideoModelProtocol; label: string };
 
 const MODEL_REGISTRY_DEFAULT_SERVICE = (MODEL_PROTOCOL_REGISTRY as any).defaultService || {};
 const MODEL_REGISTRY_ADVANCED_PROVIDERS = (MODEL_PROTOCOL_REGISTRY as any).advancedProviders || {};
@@ -113,8 +119,22 @@ const IMAGE_MODEL_PROTOCOL_OPTIONS = (
 const OPENAI_COMPAT_IMAGE_PROTOCOL_OPTIONS = (
   Array.isArray(MODEL_REGISTRY_DEFAULT_SERVICE.openaiCompatibleImageProtocolOptions)
     ? MODEL_REGISTRY_DEFAULT_SERVICE.openaiCompatibleImageProtocolOptions
-    : IMAGE_MODEL_PROTOCOL_OPTIONS.filter((option) => option.value !== 'gemini-native')
+    : IMAGE_MODEL_PROTOCOL_OPTIONS.filter((option) => !option.value.startsWith('gemini-'))
 ) as readonly ImageProtocolOption[];
+
+const VIDEO_MODEL_PROTOCOL_OPTIONS = (
+  Array.isArray(MODEL_REGISTRY_DEFAULT_SERVICE.videoProtocolOptions)
+    ? MODEL_REGISTRY_DEFAULT_SERVICE.videoProtocolOptions
+    : [{ value: 'seedance-v3', label: 'Seedance v3' }]
+) as readonly VideoProtocolOption[];
+
+function defaultVideoModelProtocol(modelId: string): VideoModelProtocol {
+  const configured = String(((MODEL_REGISTRY_DEFAULT_SERVICE as any).defaultVideoModelProtocols || {})[String(modelId || '').trim()] || '').trim();
+  if (VIDEO_MODEL_PROTOCOL_OPTIONS.some((option) => option.value === configured)) {
+    return configured as VideoModelProtocol;
+  }
+  return 'seedance-v3';
+}
 
 function stringifyImageModelOverrides(value: unknown): string {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return '';
@@ -154,6 +174,15 @@ function normalizeImageModelProtocolInputs(values: Record<string, string>): Reco
       .map(([key, value]) => [key, String(value || '').trim() as ImageModelProtocol])
     .filter(([, value]) => allowed.has(value as ImageModelProtocol)),
   ) as Record<string, ImageModelProtocol>;
+}
+
+function normalizeVideoModelProtocolInputs(values: Record<string, string>): Record<string, VideoModelProtocol> {
+  const allowed = new Set<VideoModelProtocol>(VIDEO_MODEL_PROTOCOL_OPTIONS.map((option) => option.value));
+  return Object.fromEntries(
+    Object.entries(values)
+      .map(([key, value]) => [key, String(value || '').trim() as VideoModelProtocol])
+      .filter(([, value]) => allowed.has(value as VideoModelProtocol)),
+  ) as Record<string, VideoModelProtocol>;
 }
 
 function compactModelText(value: string): string {
@@ -210,6 +239,8 @@ const CLASSIFIED_KEYS: KeySpec[] = [
   { field: 'seedanceApiKey', label: 'seedance 系列', desc: 'Seedance 视频专用', bullet: 'bg-teal-400' },
   { field: 'sunoApiKey', label: 'suno 系列', desc: 'Suno 音乐专用', bullet: 'bg-rose-400' },
 ];
+
+const MODEL_FETCH_FIELDS = new Set<KeyField>(['zhenzhenApiKey', 'llmApiKey', ...CLASSIFIED_KEYS.map((k) => k.field)]);
 
 const ALL_FIELDS: KeyField[] = [
   ...COMMON_KEYS.map((k) => k.field),
@@ -526,12 +557,12 @@ function AdvancedProviderFormBlock({
 }
 
 const emptyMap = (): Record<KeyField, string> => ({
-  zhenzhenApiKey: '', rhApiKey: '', llmApiKey: '',
+  zhenzhenApiKey: '', llmApiKey: '',
   gptImageApiKey: '', nanoBananaApiKey: '', mjApiKey: '', veoApiKey: '',
   soraApiKey: '', grokApiKey: '', seedanceApiKey: '', sunoApiKey: '',
 });
 const emptyShow = (): Record<KeyField, boolean> => ({
-  zhenzhenApiKey: false, rhApiKey: false, llmApiKey: false,
+  zhenzhenApiKey: false, llmApiKey: false,
   gptImageApiKey: false, nanoBananaApiKey: false, mjApiKey: false, veoApiKey: false,
   soraApiKey: false, grokApiKey: false, seedanceApiKey: false, sunoApiKey: false,
 });
@@ -578,9 +609,11 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
   const [hakimiMcpBackendUrlInput, setHakimiMcpBackendUrlInput] = useState<string>(HAKIMI_MCP_DEFAULT_BACKEND_URL);
   const [zhenzhenImageModelOverridesInput, setZhenzhenImageModelOverridesInput] = useState<Record<string, string>>({});
   const [zhenzhenVideoModelOverridesInput, setZhenzhenVideoModelOverridesInput] = useState<Record<string, string>>({});
+  const [zhenzhenLlmModelOverridesInput, setZhenzhenLlmModelOverridesInput] = useState<Record<string, string>>({});
   const [zhenzhenImageModelProtocolsInput, setZhenzhenImageModelProtocolsInput] = useState<Record<string, string>>({});
+  const [zhenzhenVideoModelProtocolsInput, setZhenzhenVideoModelProtocolsInput] = useState<Record<string, string>>({});
   const [modelOverridesOpen, setModelOverridesOpen] = useState(false);
-  const [modelOverrideTab, setModelOverrideTab] = useState<'image' | 'video'>('image');
+  const [modelOverrideTab, setModelOverrideTab] = useState<'image' | 'video' | 'llm'>('image');
   const [zhenzhenFetchedModels, setZhenzhenFetchedModels] = useState<string[]>([]);
   const [zhenzhenModelFetchStatus, setZhenzhenModelFetchStatus] = useState<{ loading?: boolean; ok?: boolean; message?: string }>({});
   const [uiFontSettingsOpen, setUiFontSettingsOpen] = useState(false);
@@ -619,7 +652,6 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
       setInputs(emptyMap());
       setBaseUrlInputs({
         zhenzhenBaseUrl: (settings as any)?.zhenzhenBaseUrl || DEFAULT_ZHENZHEN_BASE,
-        rhBaseUrl: (settings as any)?.rhBaseUrl || RH_BASE,
         llmBaseUrl: (settings as any)?.llmBaseUrl || (settings as any)?.zhenzhenBaseUrl || DEFAULT_ZHENZHEN_BASE,
       });
       setShows(emptyShow());
@@ -660,7 +692,9 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
       setHakimiMcpBackendUrlInput((settings as any)?.hakimiMcpBackendUrl || HAKIMI_MCP_DEFAULT_BACKEND_URL);
       setZhenzhenImageModelOverridesInput((settings as any)?.zhenzhenImageModelOverrides || {});
       setZhenzhenVideoModelOverridesInput((settings as any)?.zhenzhenVideoModelOverrides || {});
+      setZhenzhenLlmModelOverridesInput((settings as any)?.zhenzhenLlmModelOverrides || {});
       setZhenzhenImageModelProtocolsInput((settings as any)?.zhenzhenImageModelProtocols || {});
+      setZhenzhenVideoModelProtocolsInput((settings as any)?.zhenzhenVideoModelProtocols || {});
       setModelOverridesOpen(false);
       setModelOverrideTab('image');
       setUiFontSettingsOpen(false);
@@ -692,7 +726,6 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
 
   const getCurrentEditableSettings = (): Partial<ApiSettings> => ({
     zhenzhenApiKey: inputs.zhenzhenApiKey.trim(),
-    rhApiKey: inputs.rhApiKey.trim(),
     llmApiKey: inputs.llmApiKey.trim(),
     gptImageApiKey: inputs.gptImageApiKey.trim(),
     nanoBananaApiKey: inputs.nanoBananaApiKey.trim(),
@@ -949,12 +982,22 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
     if (stringifyImageModelOverrides(nextVideoModelOverrides) !== oldVideoModelOverridesText) {
       (patch as any).zhenzhenVideoModelOverrides = nextVideoModelOverrides;
     }
+    const nextLlmModelOverrides = parseImageModelOverrideInputs(zhenzhenLlmModelOverridesInput);
+    const oldLlmModelOverridesText = stringifyImageModelOverrides((settings as any)?.zhenzhenLlmModelOverrides);
+    if (stringifyImageModelOverrides(nextLlmModelOverrides) !== oldLlmModelOverridesText) {
+      (patch as any).zhenzhenLlmModelOverrides = nextLlmModelOverrides;
+    }
     const nextModelProtocols = normalizeImageModelProtocolInputs(zhenzhenImageModelProtocolsInput);
     const oldModelProtocols = normalizeImageModelProtocolInputs((settings as any)?.zhenzhenImageModelProtocols || {});
     if (JSON.stringify(nextModelProtocols) !== JSON.stringify(oldModelProtocols)) {
       (patch as any).zhenzhenImageModelProtocols = nextModelProtocols;
     }
-    for (const field of ['zhenzhenBaseUrl', 'rhBaseUrl', 'llmBaseUrl'] as const) {
+    const nextVideoModelProtocols = normalizeVideoModelProtocolInputs(zhenzhenVideoModelProtocolsInput);
+    const oldVideoModelProtocols = normalizeVideoModelProtocolInputs((settings as any)?.zhenzhenVideoModelProtocols || {});
+    if (JSON.stringify(nextVideoModelProtocols) !== JSON.stringify(oldVideoModelProtocols)) {
+      (patch as any).zhenzhenVideoModelProtocols = nextVideoModelProtocols;
+    }
+    for (const field of ['zhenzhenBaseUrl', 'llmBaseUrl'] as const) {
       const next = String(baseUrlInputs[field] || '').trim();
       const old = String((settings as any)?.[field] || '').trim();
       if (next && next !== old) {
@@ -978,6 +1021,11 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
       setSaved(false);
       onClose();
     }, 800);
+  };
+
+  const handleAutoSaveAndClose = () => {
+    if (loading) return;
+    void handleSave();
   };
 
   const inputCls = isPixel
@@ -1078,32 +1126,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
     }
   };
 
-  // 每个字段费应的「获取 APIKey」按钮配置
-  const renderGetKeyButtons = (field: KeyField) => {
-    if (field === 'rhApiKey') {
-      return (
-        <>
-          <button
-            type="button"
-            onClick={() => openExternal('https://www.runninghub.cn/')}
-            className={linkBtnCls}
-            title="国内用户·前往 runninghub.cn 获取 APIKEY"
-          >
-            <ExternalLink size={11} /> 获取 APIKey：国内用户
-          </button>
-          <button
-            type="button"
-            onClick={() => openExternal('https://www.runninghub.ai/')}
-            className={linkBtnAltCls}
-            title="国外用户·前往 runninghub.ai 获取 APIKEY"
-          >
-            <ExternalLink size={11} /> 国外用户
-          </button>
-        </>
-      );
-    }
-    return null;
-  };
+  const renderGetKeyButtons = (_field: KeyField) => null;
 
   const advancedSummary = summarizeAdvancedProviderForm(advancedProvidersInput);
   const activeAdvancedProvider = advancedProvidersInput.find((provider) => provider.id === activeAdvancedProviderId)
@@ -1184,12 +1207,26 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
     return out;
   };
 
-  const handleFetchZhenzhenModels = async () => {
+  const handleFetchZhenzhenModels = async (sourceField: KeyField = 'zhenzhenApiKey') => {
     setZhenzhenModelFetchStatus({ loading: true });
     try {
+      const explicitKey = String(inputs[sourceField] || '').trim();
+      const baseField = COMMON_KEY_BASE_URL_FIELDS[sourceField] || 'zhenzhenBaseUrl';
+      const draftBaseUrl = String(baseUrlInputs[baseField] || '').trim();
+      const fetchSettingsPatch: Partial<ApiSettings> = {};
+      if (draftBaseUrl && draftBaseUrl !== String((settings as any)?.[baseField] || '').trim()) {
+        (fetchSettingsPatch as any)[baseField] = draftBaseUrl;
+      }
+      if (explicitKey) {
+        (fetchSettingsPatch as any)[sourceField] = explicitKey;
+      }
+      if (Object.keys(fetchSettingsPatch).length > 0) {
+        await save(fetchSettingsPatch);
+      }
       const result = await fetchZhenzhenModels({
-        baseUrl: String(baseUrlInputs.zhenzhenBaseUrl || '').trim(),
-        apiKey: inputs.zhenzhenApiKey.trim(),
+        baseUrl: draftBaseUrl,
+        apiKey: explicitKey,
+        apiKeyField: sourceField,
         timeoutMs: 30000,
       });
       if (!result.ok) {
@@ -1202,7 +1239,16 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
         ...(result.chatModels || []),
       ]);
       setZhenzhenFetchedModels(models);
+      await load();
       if (models.length > 0) {
+        if (sourceField === 'llmApiKey') {
+          const chatModels = Array.isArray(result.chatModels) ? result.chatModels : [];
+          setZhenzhenLlmModelOverridesInput((prev) => ({
+            ...prev,
+            [LLM_MODEL_OVERRIDE_KEY]: stringifyModelList(mergeModelLists(parseModelList(prev[LLM_MODEL_OVERRIDE_KEY] || ''), chatModels)),
+          }));
+          setModelOverrideTab('llm');
+        }
         setZhenzhenImageModelOverridesInput((prev) => {
           const next = { ...prev };
           for (const field of IMAGE_MODEL_OVERRIDE_FIELDS) {
@@ -1242,11 +1288,13 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
       }
       const imageModels = Array.isArray(result.imageModels) ? result.imageModels : [];
       const videoModels = Array.isArray(result.videoModels) ? result.videoModels : [];
+      const audioModels = Array.isArray(result.audioModels) ? result.audioModels : [];
       const chatModels = Array.isArray(result.chatModels) ? result.chatModels : [];
-      const total = imageModels.length + videoModels.length + chatModels.length;
+      const total = imageModels.length + videoModels.length + audioModels.length + chatModels.length;
       updateAdvancedProvider(provider.id, {
         imageModels: mergeModelLists(provider.imageModels, imageModels),
         videoModels: mergeModelLists(provider.videoModels, videoModels),
+        audioModels: mergeModelLists(provider.audioModels, audioModels),
         chatModels: mergeModelLists(provider.chatModels, chatModels),
       });
       setAdvancedModelFetchStatus((prev) => ({
@@ -1254,7 +1302,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
         [provider.id]: {
           ok: total > 0,
           message: total > 0
-            ? `已添加 ${total} 个模型：图像 ${imageModels.length} / 视频 ${videoModels.length} / 聊天 ${chatModels.length}。保存后节点可选择。`
+            ? `已添加 ${total} 个模型：图像 ${imageModels.length} / 视频 ${videoModels.length} / 音频 ${audioModels.length} / 文本 ${chatModels.length}。保存后节点可选择。`
             : (result.message || '模型列表接口可达，但没有解析到模型。'),
         },
       }));
@@ -2913,6 +2961,22 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
               {pendingClear ? <X size={16} /> : <Trash2 size={16} />}
             </button>
           )}
+          {MODEL_FETCH_FIELDS.has(f) && (
+            <button
+              type="button"
+              onClick={() => {
+                setModelOverridesOpen(true);
+                setModelOverrideTab(f === 'llmApiKey' ? 'llm' : 'image');
+                void handleFetchZhenzhenModels(f);
+              }}
+              className={`${eyeBtnCls} disabled:opacity-40 disabled:cursor-not-allowed`}
+              title={`使用${spec.label} Key 和对应 Base URL 拉取模型列表`}
+              aria-label={`${spec.label}拉取模型覆盖`}
+              disabled={pendingClear || !!zhenzhenModelFetchStatus.loading}
+            >
+              {zhenzhenModelFetchStatus.loading ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+            </button>
+          )}
         </div>
         {baseUrlField && (
           <label className="block space-y-1">
@@ -2926,10 +2990,13 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
                 className={inputCls}
                 autoComplete="off"
               />
-              {f === 'zhenzhenApiKey' && (
+              {(f === 'zhenzhenApiKey' || f === 'llmApiKey') && (
                 <button
                   type="button"
-                  onClick={() => setModelOverridesOpen(true)}
+                  onClick={() => {
+                    setModelOverridesOpen(true);
+                    setModelOverrideTab(f === 'llmApiKey' ? 'llm' : 'image');
+                  }}
                   className={isPixel ? 't8-api-settings-secondary-btn px-btn text-[11px] px-2 py-1 shrink-0' : 't8-api-settings-secondary-btn px-2 py-1 text-[11px] rounded border shrink-0'}
                   aria-label="打开默认服务模型覆盖"
                   data-legacy-aria-label="打开默认服务图像模型覆盖"
@@ -2956,7 +3023,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
         isPixel ? 'px-modal-mask' : 'bg-black/60'
       }`}
       onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (e.target === e.currentTarget) handleAutoSaveAndClose();
       }}
     >
       <div
@@ -2986,7 +3053,8 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
             </p>
           </div>
           <button
-            onClick={onClose}
+            onClick={handleAutoSaveAndClose}
+            aria-label="关闭设置"
             className={
               isPixel
                 ? 't8-api-settings-icon-btn px-btn px-btn--icon px-btn--ghost'
@@ -3085,7 +3153,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
             )}
           </div>
 
-          {/* 三套通用 Key */}
+          {/* 通用服务与 LLM 独立 Key */}
           {renderKey(COMMON_KEYS[0])}
           <LocalSettingsAddonSlot
             open={open}
@@ -3095,7 +3163,6 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
             onSaved={load}
           />
           {renderKey(COMMON_KEYS[1])}
-          {renderKey(COMMON_KEYS[2])}
 
           {/* 分类独立 Key（默认折叠，点击展开 —— 新手友好） */}
           <div className="t8-api-settings-divider pt-3 border-t">
@@ -3181,7 +3248,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
             </button>
             {!advancedOpen && (
               <div className={`text-[11px] mt-2 ${hintCls}`}>
-                未配置或未启用时不会影响通用服务、RunningHub、LLM 独立 Key 等主流程。
+                未配置或未启用时不会影响通用服务、LLM 独立 Key 等主流程。
               </div>
             )}
             {advancedOpen && (
@@ -3675,6 +3742,13 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
           </button>
         </div>
         {modelOverridesOpen && (
+          <DynamicModelCatalogEditor
+            onClose={() => setModelOverridesOpen(false)}
+            onRefresh={() => handleFetchZhenzhenModels('zhenzhenApiKey')}
+            refreshStatus={zhenzhenModelFetchStatus}
+          />
+        )}
+        {false && modelOverridesOpen && (
           <div
             className="absolute inset-0 z-10 flex items-center justify-center bg-black/55 p-4"
             onMouseDown={(e) => {
@@ -3690,7 +3764,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
                 <div className="min-w-0 flex-1">
                   <div className={`text-sm font-black ${labelCls}`}>默认服务模型覆盖</div>
                   <div className={`mt-1 max-w-[58ch] text-[11px] leading-relaxed ${hintCls}`}>
-                    只影响默认服务通道；图片模型即原默认服务图像模型覆盖，视频模型用于把节点预设映射到你的中转站上游模型。留空表示使用内置默认。
+                    只影响默认服务通道；图片、视频和 LLM 模型都使用这里保存的真实上游模型名。LLM 留空时节点会提示先配置模型。
                   </div>
                 </div>
                 <button
@@ -3714,7 +3788,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
                     </div>
                     <button
                       type="button"
-                      onClick={handleFetchZhenzhenModels}
+                      onClick={() => handleFetchZhenzhenModels('zhenzhenApiKey')}
                       disabled={!!zhenzhenModelFetchStatus.loading}
                       className={isPixel ? 't8-api-settings-secondary-btn px-btn text-xs px-3 py-2 inline-flex items-center gap-2 shrink-0 disabled:opacity-60' : 't8-api-settings-secondary-btn rounded-md border px-3 py-2 text-xs inline-flex items-center gap-2 shrink-0 disabled:opacity-60'}
                       title="使用当前通用服务 Base URL 和 API Key 拉取模型列表"
@@ -3730,7 +3804,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
                   )}
                 </div>
                 <div
-                  className={isPixel ? 'grid grid-cols-2 gap-1 px-card p-1' : 'grid grid-cols-2 gap-1 rounded-lg border border-white/10 bg-white/[0.04] p-1'}
+                  className={isPixel ? 'grid grid-cols-3 gap-1 px-card p-1' : 'grid grid-cols-3 gap-1 rounded-lg border border-white/10 bg-white/[0.04] p-1'}
                   role="tablist"
                   aria-label="默认服务模型覆盖类型"
                 >
@@ -3753,6 +3827,16 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
                     className={isPixel ? 't8-api-settings-toggle px-btn px-3 py-2 text-xs' : 't8-api-settings-toggle rounded-md px-3 py-2 text-xs font-bold transition'}
                   >
                     视频模型
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={modelOverrideTab === 'llm'}
+                    data-active={modelOverrideTab === 'llm'}
+                    onClick={() => setModelOverrideTab('llm')}
+                    className={isPixel ? 't8-api-settings-toggle px-btn px-3 py-2 text-xs' : 't8-api-settings-toggle rounded-md px-3 py-2 text-xs font-bold transition'}
+                  >
+                    LLM模型
                   </button>
                 </div>
                 <div className={isPixel ? 'px-card overflow-hidden' : 'overflow-hidden rounded-lg border border-white/10'}>
@@ -3859,11 +3943,12 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
                         );
                       })}
                     </>
-                  ) : (
+                  ) : modelOverrideTab === 'video' ? (
                     <>
-                      <div className={`hidden sm:grid grid-cols-[minmax(0,160px)_minmax(0,1fr)] gap-3 px-3 py-2 text-[10px] font-bold uppercase tracking-normal ${hintCls} ${isPixel ? '' : 'bg-white/[0.03]'}`}>
+                      <div className={`hidden sm:grid grid-cols-[minmax(0,160px)_minmax(0,1fr)_minmax(0,150px)] gap-3 px-3 py-2 text-[10px] font-bold uppercase tracking-normal ${hintCls} ${isPixel ? '' : 'bg-white/[0.03]'}`}>
                         <span>预设</span>
                         <span>提交给上游的模型</span>
+                        <span>协议</span>
                       </div>
                       {VIDEO_MODEL_OVERRIDE_FIELDS.map((field) => {
                         const selectedVideoModels = parseModelList(zhenzhenVideoModelOverridesInput[field.id] || '');
@@ -3872,8 +3957,8 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
                           <div
                             key={field.id}
                             className={isPixel
-                              ? 'grid gap-2 p-3 sm:grid-cols-[minmax(0,160px)_minmax(0,1fr)] sm:items-center border-t border-[var(--px-ink)] first:border-t-0'
-                              : 'grid gap-2 border-t border-white/10 p-3 first:border-t-0 sm:grid-cols-[minmax(0,160px)_minmax(0,1fr)] sm:items-center'}
+                              ? 'grid gap-2 p-3 sm:grid-cols-[minmax(0,160px)_minmax(0,1fr)_minmax(0,150px)] sm:items-center border-t border-[var(--px-ink)] first:border-t-0'
+                              : 'grid gap-2 border-t border-white/10 p-3 first:border-t-0 sm:grid-cols-[minmax(0,160px)_minmax(0,1fr)_minmax(0,150px)] sm:items-center'}
                           >
                             <span className="min-w-0">
                               <span className={`block truncate text-xs font-bold ${labelCls}`}>{field.label}</span>
@@ -3945,9 +4030,110 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
                                 />
                               )}
                             </span>
+                            <span className="min-w-0">
+                              <select
+                                value={zhenzhenVideoModelProtocolsInput[field.id] || defaultVideoModelProtocol(field.id)}
+                                onChange={(e) => setZhenzhenVideoModelProtocolsInput((prev) => ({ ...prev, [field.id]: e.target.value }))}
+                                className={`${inputCls} w-full`}
+                                title="选择这个预设提交给默认服务时使用的视频协议"
+                              >
+                                {VIDEO_MODEL_PROTOCOL_OPTIONS.map((option) => (
+                                  <option key={`${field.id}:video-protocol:${option.value}`} value={option.value}>{option.label}</option>
+                                ))}
+                              </select>
+                            </span>
                           </div>
                         );
                       })}
+                    </>
+                  ) : (
+                    <>
+                      <div className={`hidden sm:grid grid-cols-[minmax(0,160px)_minmax(0,1fr)] gap-3 px-3 py-2 text-[10px] font-bold uppercase tracking-normal ${hintCls} ${isPixel ? '' : 'bg-white/[0.03]'}`}>
+                        <span>来源</span>
+                        <span>节点可选 LLM 模型</span>
+                      </div>
+                      {(() => {
+                        const selectedLlmModels = parseModelList(zhenzhenLlmModelOverridesInput[LLM_MODEL_OVERRIDE_KEY] || '');
+                        const modelChoices = mergeModelLists(selectedLlmModels, zhenzhenFetchedModels);
+                        return (
+                          <div
+                            className={isPixel
+                              ? 'grid gap-2 p-3 sm:grid-cols-[minmax(0,160px)_minmax(0,1fr)] sm:items-start border-t border-[var(--px-ink)] first:border-t-0'
+                              : 'grid gap-2 border-t border-white/10 p-3 first:border-t-0 sm:grid-cols-[minmax(0,160px)_minmax(0,1fr)] sm:items-start'}
+                          >
+                            <span className="min-w-0">
+                              <span className={`block truncate text-xs font-bold ${labelCls}`}>LLM 独立 Key</span>
+                              <span className={`mt-0.5 block truncate text-[10px] ${hintCls}`}>内置键：{LLM_MODEL_OVERRIDE_KEY}</span>
+                            </span>
+                            <span className="min-w-0">
+                              {zhenzhenFetchedModels.length > 0 ? (
+                                <div className={isPixel ? 'space-y-2' : 'space-y-2 rounded-lg border border-white/10 bg-black/20 p-2'}>
+                                  <div className="flex min-h-[26px] flex-wrap items-center gap-1.5">
+                                    {selectedLlmModels.length > 0 ? selectedLlmModels.map((model) => (
+                                      <button
+                                        key={`${LLM_MODEL_OVERRIDE_KEY}:llm-chip:${model}`}
+                                        type="button"
+                                        onClick={() => {
+                                          const next = selectedLlmModels.filter((item) => item !== model);
+                                          setZhenzhenLlmModelOverridesInput((prev) => ({ ...prev, [LLM_MODEL_OVERRIDE_KEY]: stringifyModelList(next) }));
+                                        }}
+                                        className="max-w-full truncate rounded-md border border-emerald-400/30 bg-emerald-400/10 px-2 py-1 text-left text-[11px] font-medium text-emerald-100 hover:border-emerald-300/60 hover:bg-emerald-400/20"
+                                        title={`移除 ${model}`}
+                                      >
+                                        {model}
+                                      </button>
+                                    )) : (
+                                      <span className={`px-1 text-[11px] ${hintCls}`}>未配置 LLM 模型</span>
+                                    )}
+                                    {selectedLlmModels.length > 0 && (
+                                      <button
+                                        type="button"
+                                        onClick={() => setZhenzhenLlmModelOverridesInput((prev) => ({ ...prev, [LLM_MODEL_OVERRIDE_KEY]: '' }))}
+                                        className="rounded-md px-2 py-1 text-[11px] text-white/55 hover:bg-white/10 hover:text-white"
+                                      >
+                                        清空
+                                      </button>
+                                    )}
+                                  </div>
+                                  <div className="max-h-36 overflow-auto rounded-md border border-white/10 bg-zinc-950/40 p-1">
+                                    {modelChoices.map((model) => {
+                                      const checked = selectedLlmModels.includes(model);
+                                      return (
+                                        <label
+                                          key={`${LLM_MODEL_OVERRIDE_KEY}:${model}`}
+                                          className={`flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs transition ${checked ? 'bg-emerald-400/15 text-emerald-50' : 'text-white/80 hover:bg-white/8 hover:text-white'}`}
+                                        >
+                                          <input
+                                            type="checkbox"
+                                            checked={checked}
+                                            onChange={(e) => {
+                                              const next = e.currentTarget.checked
+                                                ? mergeModelLists(selectedLlmModels, [model])
+                                                : selectedLlmModels.filter((item) => item !== model);
+                                              setZhenzhenLlmModelOverridesInput((prev) => ({ ...prev, [LLM_MODEL_OVERRIDE_KEY]: stringifyModelList(next) }));
+                                            }}
+                                            className="h-3.5 w-3.5 accent-emerald-400"
+                                          />
+                                          <span className="min-w-0 flex-1 truncate">{model}</span>
+                                        </label>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              ) : (
+                                <textarea
+                                  value={zhenzhenLlmModelOverridesInput[LLM_MODEL_OVERRIDE_KEY] || ''}
+                                  onChange={(e) => setZhenzhenLlmModelOverridesInput((prev) => ({ ...prev, [LLM_MODEL_OVERRIDE_KEY]: e.target.value }))}
+                                  placeholder="每行一个真实 LLM 模型名"
+                                  className={`${inputCls} min-h-[96px] w-full resize-y`}
+                                  autoComplete="off"
+                                  spellCheck={false}
+                                />
+                              )}
+                            </span>
+                          </div>
+                        );
+                      })()}
                     </>
                   )}
                 </div>
@@ -3959,8 +4145,11 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
                     if (modelOverrideTab === 'image') {
                       setZhenzhenImageModelOverridesInput({});
                       setZhenzhenImageModelProtocolsInput({});
-                    } else {
+                    } else if (modelOverrideTab === 'video') {
                       setZhenzhenVideoModelOverridesInput({});
+                      setZhenzhenVideoModelProtocolsInput({});
+                    } else {
+                      setZhenzhenLlmModelOverridesInput({});
                     }
                   }}
                   className={isPixel ? 't8-api-settings-secondary-btn px-btn px-3 py-2 text-xs' : 't8-api-settings-secondary-btn rounded border px-3 py-2 text-xs'}

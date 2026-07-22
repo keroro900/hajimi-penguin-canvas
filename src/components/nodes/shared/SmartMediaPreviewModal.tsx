@@ -14,7 +14,7 @@ interface SmartMediaPreviewModalProps {
   open: boolean;
   url: string | null | undefined;
   title?: string;
-  kind?: 'image';
+  kind?: 'image' | 'video';
   meta?: string;
   infoRows?: SmartMediaPreviewInfoRow[];
   onClose: () => void;
@@ -68,7 +68,7 @@ export default function SmartMediaPreviewModal({
     startScrollTop: number;
   } | null>(null);
   const safeUrl = String(url || '');
-  const previewTitle = title || fileNameFromUrl(safeUrl) || '图片预览';
+  const previewTitle = title || fileNameFromUrl(safeUrl) || (kind === 'video' ? '视频预览' : '图片预览');
   const canZoomOut = zoom > MIN_ZOOM;
   const canZoomIn = zoom < MAX_ZOOM;
   const fitSize = useMemo(() => {
@@ -319,7 +319,7 @@ export default function SmartMediaPreviewModal({
             <div className="t8-smart-media-preview__meta">{displayedMeta}</div>
           </div>
           <div className="t8-smart-media-preview__tools">
-            <button
+            {kind === 'image' && <button
               type="button"
               className="t8-btn t8-smart-media-preview__tool"
               onClick={(e) => {
@@ -332,9 +332,9 @@ export default function SmartMediaPreviewModal({
               aria-label="缩小"
             >
               <ZoomOut size={15} />
-            </button>
-            <span className="t8-smart-media-preview__zoom">{Math.round(zoom * 100)}%</span>
-            <button
+            </button>}
+            {kind === 'image' && <span className="t8-smart-media-preview__zoom">{Math.round(zoom * 100)}%</span>}
+            {kind === 'image' && <button
               type="button"
               className="t8-btn t8-smart-media-preview__tool"
               onClick={(e) => {
@@ -347,8 +347,8 @@ export default function SmartMediaPreviewModal({
               aria-label="放大"
             >
               <ZoomIn size={15} />
-            </button>
-            <button
+            </button>}
+            {kind === 'image' && <button
               type="button"
               className="t8-btn t8-smart-media-preview__tool"
               onClick={(e) => {
@@ -360,7 +360,7 @@ export default function SmartMediaPreviewModal({
               aria-label="适应窗口"
             >
               <RotateCcw size={15} />
-            </button>
+            </button>}
             {onSaveResource && (
               <button
                 type="button"
@@ -380,7 +380,7 @@ export default function SmartMediaPreviewModal({
               href={safeUrl}
               target="_blank"
               rel="noopener noreferrer"
-              download={mediaDownloadFileName('image', safeUrl, 0)}
+              download={mediaDownloadFileName(kind, safeUrl, 0)}
               className="t8-btn t8-smart-media-preview__tool"
               title="下载"
               aria-label="下载"
@@ -388,7 +388,7 @@ export default function SmartMediaPreviewModal({
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                void downloadMediaUrl('image', safeUrl, 0);
+                void downloadMediaUrl(kind, safeUrl, 0);
               }}
             >
               <Download size={15} />
@@ -412,11 +412,11 @@ export default function SmartMediaPreviewModal({
           ref={viewportRef}
           className="t8-smart-media-preview__viewport"
           data-panning={isPanning ? 'true' : 'false'}
-          onWheel={handleWheel}
-          onPointerDown={handlePanPointerDown}
-          onPointerMove={handlePanPointerMove}
-          onPointerUp={handlePanPointerEnd}
-          onPointerCancel={handlePanPointerEnd}
+          onWheel={kind === 'image' ? handleWheel : undefined}
+          onPointerDown={kind === 'image' ? handlePanPointerDown : undefined}
+          onPointerMove={kind === 'image' ? handlePanPointerMove : undefined}
+          onPointerUp={kind === 'image' ? handlePanPointerEnd : undefined}
+          onPointerCancel={kind === 'image' ? handlePanPointerEnd : undefined}
         >
           {kind === 'image' && (
             <div className="t8-smart-media-preview__canvas" style={canvasStyle}>
@@ -440,10 +440,29 @@ export default function SmartMediaPreviewModal({
               </div>
             </div>
           )}
+          {kind === 'video' && (
+            <div className="t8-smart-media-preview__video-stage">
+              <video
+                src={safeUrl}
+                className="t8-smart-media-preview__video"
+                controls
+                autoPlay
+                playsInline
+                preload="metadata"
+                onLoadedMetadata={(event) => {
+                  const videoWidth = event.currentTarget.videoWidth;
+                  const videoHeight = event.currentTarget.videoHeight;
+                  if (videoWidth > 0 && videoHeight > 0) {
+                    setNaturalSize({ width: videoWidth, height: videoHeight });
+                  }
+                }}
+              />
+            </div>
+          )}
         </div>
         <div className="t8-smart-media-preview__info">
           <span title={safeUrl}>{safeUrl}</span>
-          <MediaMetadataBadge kind="image" url={safeUrl} />
+          <MediaMetadataBadge kind={kind} url={safeUrl} />
           {infoRows.slice(0, 5).map((row) => (
             <span key={row.label} title={row.value}>
               {row.label}: {row.value}

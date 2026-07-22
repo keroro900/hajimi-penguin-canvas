@@ -12,7 +12,11 @@ const config = require('../config');
 const { getWhitePng } = require('../utils/whitePng');
 const { tryDecodeDuckPayload } = require('../utils/duckPayload');
 const { normalizeLlmMessageMedia } = require('../providers/llmMedia');
-const { runLocalHooks } = require('../extensions/runtimeHooks');
+const {
+  buildGeminiLlmPayload,
+  isGeminiLlmModel,
+  normalizeGeminiLlmResponse,
+} = require('../providers/geminiLlm');
 const settingsRouter = require('./settings');
 const MODEL_PROTOCOL_REGISTRY = require('../../../shared/modelProtocolRegistry.json');
 
@@ -66,141 +70,6 @@ function isRemoteMediaUrl(url) {
   return /^(https?:\/\/|\/\/|[a-z0-9][a-z0-9.-]*\.[a-z]{2,}(?::\d+)?\/)/i.test(text);
 }
 
-async function parseJsonResponse(response, label) {
-  const text = await response.text();
-  const trimmed = String(text || '').trim();
-  if (!trimmed) return {};
-  try {
-    return JSON.parse(trimmed);
-  } catch (error) {
-    const contentType = response.headers?.get?.('content-type') || 'unknown';
-    const preview = trimmed.replace(/\s+/g, ' ').slice(0, 240);
-    const err = new Error(`${label} 返回非 JSON：HTTP ${response.status} ${contentType} · ${preview}`);
-    err.status = response.status;
-    err.contentType = contentType;
-    err.preview = preview;
-    throw err;
-  }
-}
-
-function inferRemoteOutputExt(url, contentType) {
-  const tail = String(url || '').split(/[?#]/)[0];
-  const m = tail.match(/\.([a-z0-9]{2,8})$/i);
-  return safeOutputExt(m ? m[1] : extFromContentType(contentType), 'png');
-}
-
-function isRunningHubOutputUrl(value) {
-  return /^(https?:\/\/|data:(image|video|audio)\/|\/files\/|\/output\/|\/input\/)/i.test(String(value || '').trim());
-}
-
-const RUNNINGHUB_OUTPUT_URL_KEYS = [
-  'fileUrl',
-  'file_url',
-  'url',
-  'src',
-  'href',
-  'downloadUrl',
-  'download_url',
-  'resultUrl',
-  'result_url',
-  'outputUrl',
-  'output_url',
-  'imageUrl',
-  'image_url',
-  'videoUrl',
-  'video_url',
-  'audioUrl',
-  'audio_url',
-  'ossUrl',
-  'oss_url',
-  'signedUrl',
-  'signed_url',
-  'publicUrl',
-  'public_url',
-  'originUrl',
-  'origin_url',
-  'originalUrl',
-  'original_url',
-  'previewUrl',
-  'preview_url',
-  'thumbnailUrl',
-  'thumbnail_url',
-  'thumbUrl',
-  'thumb_url',
-  'largeImageUrl',
-  'large_image_url',
-  'file',
-  'path',
-  'fileName',
-  'file_name',
-  'filename',
-];
-
-function collectRunningHubOutputItems(value, out = [], seen = new Set()) {
-  const pushRemote = (remote, source = {}) => {
-    const text = String(remote || '').trim();
-    if (!text || !isRunningHubOutputUrl(text) || seen.has(text)) return;
-    seen.add(text);
-    out.push({
-      ...source,
-      fileUrl: text,
-      url: text,
-      fileType: source.fileType || source.file_type || source.type || '',
-    });
-  };
-  if (value == null) return out;
-  if (typeof value === 'string') {
-    pushRemote(value);
-    return out;
-  }
-  if (Array.isArray(value)) {
-    for (const item of value) collectRunningHubOutputItems(item, out, seen);
-    return out;
-  }
-  if (typeof value !== 'object') return out;
-
-  for (const key of RUNNINGHUB_OUTPUT_URL_KEYS) {
-    if (typeof value[key] === 'string') pushRemote(value[key], value);
-  }
-
-  for (const child of Object.values(value)) {
-    collectRunningHubOutputItems(child, out, seen);
-  }
-  return out;
-}
-
-function summarizeRunningHubOutputShape(value, depth = 0, seen = new WeakSet()) {
-  if (value == null) return value;
-  const type = typeof value;
-  if (type !== 'object') {
-    if (type === 'string') {
-      const text = value.trim();
-      return isRunningHubOutputUrl(text) ? `url(${text.slice(0, 48)})` : `string(${text.length})`;
-    }
-    return type;
-  }
-  if (seen.has(value)) return '[Circular]';
-  seen.add(value);
-  if (depth >= 3) {
-    return Array.isArray(value)
-      ? { type: 'array', length: value.length }
-      : { type: 'object', keys: Object.keys(value).slice(0, 30) };
-  }
-  if (Array.isArray(value)) {
-    return {
-      type: 'array',
-      length: value.length,
-      sample: value.slice(0, 3).map((item) => summarizeRunningHubOutputShape(item, depth + 1, seen)),
-    };
-  }
-  const keys = Object.keys(value);
-  const sample = {};
-  for (const key of keys.slice(0, 24)) {
-    sample[key] = summarizeRunningHubOutputShape(value[key], depth + 1, seen);
-  }
-  return { type: 'object', keys: keys.slice(0, 60), sample };
-}
-
 // ========== 工具:加载 Settings 明文 ==========
 function loadRawSettings() {
   if (!fs.existsSync(config.SETTINGS_FILE)) return null;
@@ -238,12 +107,40 @@ function isGaiscBaseUrl(baseUrl) {
   }
 }
 
+function isSkyleeNewApiBaseUrl(baseUrl) {
+  try {
+    const host = new URL(String(baseUrl || '').trim()).hostname.toLowerCase();
+    return host === 'api.skylee9.cloudns.ch' || host === 'api-direct.skylee9.cloudns.ch';
+  } catch {
+    return false;
+  }
+}
+
+function isOfficialGeminiBaseUrl(baseUrl) {
+  try {
+    const host = new URL(String(baseUrl || '').trim()).hostname.toLowerCase();
+    return host === 'generativelanguage.googleapis.com'
+      || host === 'ai.google.dev'
+      || host.endsWith('.googleapis.com');
+  } catch {
+    return false;
+  }
+}
+
 function gaiscGeminiEndpointUrl(baseUrl, model) {
   const clean = String(baseUrl || '').trim().replace(/\/+$/, '');
   const apiBase = clean.endsWith('/v1')
     ? `${clean.slice(0, -3)}/v1beta`
     : (clean.endsWith('/v1beta') ? clean : `${clean}/v1beta`);
   return `${apiBase}/models/${encodeURIComponent(model)}:generateContent`;
+}
+
+function gaiscGeminiInteractionsEndpointUrl(baseUrl) {
+  const clean = String(baseUrl || '').trim().replace(/\/+$/, '');
+  const apiBase = clean.endsWith('/v1')
+    ? `${clean.slice(0, -3)}/v1beta`
+    : (clean.endsWith('/v1beta') ? clean : `${clean}/v1beta`);
+  return `${apiBase}/interactions`;
 }
 
 function gaiscChatCompletionsEndpointUrl(baseUrl) {
@@ -259,8 +156,20 @@ function llmBaseUrl(settings) {
   return String(s.llmBaseUrl || s.zhenzhenBaseUrl || config.ZHENZHEN_BASE_URL).trim().replace(/\/+$/, '');
 }
 
-function rhBaseUrl(settings) {
-  return String((settings || currentSettings()).rhBaseUrl || config.RH_BASE_URL).trim().replace(/\/+$/, '');
+function resolveLlmCredentials(settings, requestedSource) {
+  const source = requestedSource === 'zhenzhen' ? 'zhenzhen' : 'llm-direct';
+  if (source === 'zhenzhen') {
+    return {
+      source,
+      baseUrl: String(settings?.zhenzhenBaseUrl || config.ZHENZHEN_BASE_URL).trim().replace(/\/+$/, ''),
+      apiKey: String(settings?.zhenzhenApiKey || '').trim(),
+    };
+  }
+  return {
+    source,
+    baseUrl: llmBaseUrl(settings),
+    apiKey: String(settings?.llmApiKey || settings?.zhenzhenApiKey || '').trim(),
+  };
 }
 
 // ========== 工具: 按提示词（模型名 / endpoint / 路由名）选择分类 API Key ==========
@@ -284,10 +193,11 @@ function pickApiKey(settings, hint = '') {
 }
 
 function normalizeImageApiModel(model) {
-  const raw = String(model || '').trim();
-  const alias = MODEL_PROTOCOL_REGISTRY.defaultService?.imageAliases?.[raw];
-  if (alias) return alias;
-  return raw;
+  return String(model || '').trim();
+}
+
+function resolveConfiguredImageApiModel(_settings, _routeModelId, model) {
+  return normalizeImageApiModel(model);
 }
 
 function gptImage2ZhenzhenVariantSize(model) {
@@ -311,8 +221,8 @@ function isGeminiImagePreviewModel(model) {
 
 function imageModelProtocol(settings, modelId) {
   const raw = String((settings?.zhenzhenImageModelProtocols || {})[String(modelId || '').trim()] || '').trim();
-  if (raw === 'openai-chat' || raw === 'gemini-native') return raw;
-  if (raw === 'images' || raw === 'images-generations' || raw === 'images-edits') return raw;
+  if (raw === 'openai-chat' || raw === 'gemini-native' || raw === 'gemini-generate-content' || raw === 'gemini-interactions') return raw;
+  if (raw === 'images' || raw === 'azure-gpt-image' || raw === 'images-generations' || raw === 'images-edits') return raw;
   return '';
 }
 
@@ -361,28 +271,68 @@ function firstConfiguredVideoModel(value) {
     .filter(Boolean)[0] || '';
 }
 
-function resolveVideoModelOverride(settings, model) {
-  const raw = String((settings?.zhenzhenVideoModelOverrides || {})[String(model || '').trim()] || '').trim();
-  return firstConfiguredVideoModel(raw) || String(model || '').trim();
+function parseConfiguredModelList(value) {
+  return String(value || '')
+    .split(/[\r\n,，;；]+/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .filter((item, index, arr) => arr.indexOf(item) === index);
 }
 
-function resolveSeedanceVideoModelOverride(settings, model) {
-  const overrides = settings?.zhenzhenVideoModelOverrides || {};
+function videoModelProtocol(settings, modelId) {
+  const raw = String((settings?.zhenzhenVideoModelProtocols || {})[String(modelId || '').trim()] || '').trim();
+  if (raw === 'seedance-v3' || raw === 'videos') return raw;
+  return '';
+}
+
+function isNewApiGrokImagineVideoModel(modelId) {
+  const text = String(modelId || '').trim().toLowerCase();
+  return text.includes('grok-imagine') && text.includes('video');
+}
+
+function isFetchedDefaultVideoModel(settings, ...modelIds) {
+  const fetchedModels = Array.isArray(settings?.zhenzhenModelCatalog?.videoModels)
+    ? settings.zhenzhenModelCatalog.videoModels
+    : [];
+  if (!fetchedModels.length) return false;
+  const fetched = new Set(fetchedModels.map((item) => String(item || '').trim()).filter(Boolean));
+  return modelIds.some((modelId) => fetched.has(String(modelId || '').trim()));
+}
+
+function defaultVideoSubmitProtocol(settings, requestedModel, effectiveModel, routeModel) {
+  if (isFetchedDefaultVideoModel(settings, requestedModel, effectiveModel, routeModel)) return 'videos';
+  if (isNewApiGrokImagineVideoModel(effectiveModel) || isNewApiGrokImagineVideoModel(requestedModel)) return 'videos';
+  return '';
+}
+
+function resolveVideoSubmitProtocol(settings, requestedModel, effectiveModel, routeModel) {
+  return videoModelProtocol(settings, routeModel)
+    || videoModelProtocol(settings, requestedModel)
+    || videoModelProtocol(settings, effectiveModel)
+    || defaultVideoSubmitProtocol(settings, requestedModel, effectiveModel, routeModel)
+    || '';
+}
+
+function resolveSeedanceSubmitProtocol(settings, requestedModel, effectiveModel) {
+  const explicitProtocol = videoModelProtocol(settings, requestedModel)
+    || videoModelProtocol(settings, effectiveModel)
+    || videoModelProtocol(settings, 'seedance-2.0');
+  if (explicitProtocol) return explicitProtocol;
+  if (firstConfiguredVideoModel(settings?.zhenzhenVideoModelOverrides?.['seedance-2.0'])) return 'videos';
+  return 'seedance-v3';
+}
+
+function resolveVideosApiSeedanceModel(_settings, requestedModel, effectiveModel) {
+  const requested = String(requestedModel || '').trim();
+  const effective = String(effectiveModel || '').trim();
+  if (requested) return requested;
+  if (effective) return effective;
+  return effective || requested;
+}
+
+function resolveSeedanceVideoModelOverride(_settings, model) {
   const raw = String(model || '').trim();
-  const aliases = {
-    'seedance-2-0-fast': 'doubao-seedance-2-0-fast-260128',
-    'seedance-2-0': 'doubao-seedance-2-0-260128',
-    'seedance-2.0-mini': 'doubao-seedance-2.0-mini',
-  };
-  const canonical = aliases[raw] || raw;
-  const candidates = raw
-    ? [raw, canonical].filter(Boolean)
-    : ['doubao-seedance-2-0-fast-260128'];
-  for (const key of candidates) {
-    const value = firstConfiguredVideoModel(overrides[key]);
-    if (value) return value;
-  }
-  return canonical;
+  return raw;
 }
 
 // ========== 工具: 以提示词为准，将 settings.zhenzhenApiKey 临时覆盖为分类 key ==========
@@ -449,12 +399,13 @@ function ensureDefaultZhenzhenKey(settings, res, label = '通用服务') {
 // submit 阶段根据 hint 选了分类 key 后，将 (taskId → key) 记下，
 // query/status 阶段优先从该 Map 恢复 key，
 // 防止前端未透传 model 时轮询错误 fallback 到通用 key 导致“令牌不合法”。
-// 30 分钟过期自清。
+// 3 小时过期自清：前端视频轮询最长 60 分钟，长任务/页面恢复不能在中途丢 key/protocol。
+const TASK_KEY_TTL_MS = 3 * 60 * 60 * 1000;
 const taskKeyMap = new Map();
 function rememberTaskKey(taskId, apiKey, meta = {}) {
   if (!taskId || !apiKey) return;
   taskKeyMap.set(String(taskId), { apiKey, ...meta });
-  const timer = setTimeout(() => taskKeyMap.delete(String(taskId)), 30 * 60 * 1000);
+  const timer = setTimeout(() => taskKeyMap.delete(String(taskId)), TASK_KEY_TTL_MS);
   if (typeof timer.unref === 'function') timer.unref();
 }
 function recallTaskMeta(taskId) {
@@ -465,97 +416,6 @@ function recallTaskMeta(taskId) {
 }
 function recallTaskKey(taskId) {
   return recallTaskMeta(taskId)?.apiKey || null;
-}
-
-function normalizeProviderParams(value) {
-  return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
-}
-
-function parseProviderParams(value) {
-  if (!value) return {};
-  if (typeof value === 'string') {
-    try {
-      return normalizeProviderParams(JSON.parse(value));
-    } catch {
-      return {};
-    }
-  }
-  return normalizeProviderParams(value);
-}
-
-function hasSelectedProviderGroup(providerParams) {
-  const params = normalizeProviderParams(providerParams);
-  return !!String(params.zhenzhenGroup || params.t8Group || params.group || '').trim();
-}
-
-function ensureKeyOrSelectedGroup(settings, res, hint = '', label = '', providerParams = {}) {
-  if (!settings) {
-    res.status(400).json({ success: false, error: '未找到 settings 文件，请先在【设置】中配置 API Key' });
-    return false;
-  }
-  applyClassifiedKey(settings, hint || '');
-  if (settings.zhenzhenApiKey || hasSelectedProviderGroup(providerParams)) {
-    return ensureDefaultServiceBaseUrl(settings, res, '通用服务');
-  }
-  const tip = label
-    ? `未配置 ${label} 专属 API Key，且通用服务 API Key 也为空（如已绑定 New API 分组令牌，请在节点上选择分组）`
-    : '未配置通用服务 API Key（请在【设置】中填写，或绑定 New API 后在节点选择分组）';
-  res.status(400).json({ success: false, error: tip });
-  return false;
-}
-
-async function applyZhenzhenProviderContext(settings, options = {}) {
-  if (!settings) {
-    return {
-      apiKey: '',
-      taskMeta: {},
-    };
-  }
-  const providerParams = normalizeProviderParams(options.providerParams);
-  const selectedGroup = String(providerParams.zhenzhenGroup || providerParams.t8Group || providerParams.group || '').trim();
-  const result = await runLocalHooks('zhenzhen.resolveApiKey', {
-    provider: 'zhenzhen',
-    route: options.route || '',
-    kind: options.kind || '',
-    model: options.model || options.hint || '',
-    hint: options.hint || options.model || '',
-    apiKey: settings.zhenzhenApiKey,
-    providerParams,
-  });
-  if (result?.apiKey && typeof result.apiKey === 'string') {
-    settings.zhenzhenApiKey = result.apiKey;
-  }
-  if (selectedGroup && !settings.zhenzhenApiKey) {
-    throw new Error('已选择分组令牌，但当前未找到可用 API Key；请在 API Key 设置里启用并绑定 New API 分组令牌，或改用通用服务 API Key');
-  }
-  const taskMeta = {
-    ...(result?.taskMeta && typeof result.taskMeta === 'object' ? result.taskMeta : {}),
-  };
-  if (result?.group) taskMeta.group = result.group;
-  if (result?.groupLabel) taskMeta.groupLabel = result.groupLabel;
-  if (result?.model) taskMeta.model = result.model;
-  return {
-    apiKey: settings.zhenzhenApiKey,
-    taskMeta,
-  };
-}
-
-function isInvalidApiKeyError(errorText) {
-  return /无效的令牌|令牌无效|invalid\s+(?:access\s+)?token|unauthorized/i.test(String(errorText || ''));
-}
-
-async function invalidateZhenzhenProviderKey(providerContext, apiKey, errorText) {
-  const group = providerContext?.taskMeta?.group || providerContext?.taskMeta?.selectedGroup;
-  if (!group || !apiKey || !isInvalidApiKeyError(errorText)) return;
-  try {
-    await runLocalHooks('zhenzhen.invalidateApiKey', {
-      group,
-      apiKey,
-      error: String(errorText || '').slice(0, 500),
-    });
-  } catch (error) {
-    console.warn('[zhenzhen] invalidate group token failed:', error?.message || error);
-  }
 }
 
 // ========== 工具:保存上游返回的图像到本地 ==========
@@ -637,6 +497,8 @@ const GPT_SIZE_MAP = {
   '1:2_1k': '1024x2048', '1:2_2k': '1344x2688', '1:2_4k': '1920x3840',
   '21:9_1k': '1456x624', '21:9_2k': '3024x1296', '21:9_4k': '3696x1584',
   '9:21_1k': '624x1456', '9:21_2k': '1296x3024', '9:21_4k': '1584x3696',
+  '3:1_1k': '1536x512', '3:1_2k': '3072x1024', '3:1_4k': '3840x1280',
+  '1:3_1k': '512x1536', '1:3_2k': '1024x3072', '1:3_4k': '1280x3840',
 };
 
 // 将 (aspectRatio + sizeLevel) 用主项目 GPT_SIZE_MAP 映射成像素串;Auto 返 'auto'
@@ -647,6 +509,21 @@ function aspectToGptSize(aspectRatio, sizeLevel) {
   if (isAuto) return 'auto';
   const key = `${ar}_${lvl}`;
   return GPT_SIZE_MAP[key] || '1024x1024';
+}
+
+const AZURE_GPT_IMAGE_RATIO_ALIASES = {
+  '4:1': '3:1',
+  '8:1': '3:1',
+  '1:4': '1:3',
+  '1:8': '1:3',
+};
+
+function aspectToAzureGptImageSize(aspectRatio, sizeLevel) {
+  const rawAspect = String(aspectRatio || '').trim();
+  const isAuto = !rawAspect || rawAspect === 'Auto' || rawAspect === 'AUTO' || rawAspect === 'empty';
+  if (isAuto) return 'auto';
+  const azureAspect = AZURE_GPT_IMAGE_RATIO_ALIASES[rawAspect] || rawAspect;
+  return aspectToGptSize(azureAspect, sizeLevel);
 }
 
 const GPT_OPENAI_IMAGE_SIZES = new Set([
@@ -745,6 +622,7 @@ function appendGptImageSizeFields(target, fields, values) {
 }
 
 function buildAsyncImageRetryMeta({
+  routeModelId,
   originalApiModel,
   finalApiModel,
   paramKind,
@@ -763,6 +641,7 @@ function buildAsyncImageRetryMeta({
   const fallbackSize = aspectToGptOpenAiSize(ar, lvlLower);
   if (!fallbackSize || fallbackSize === initialSize) return null;
   return {
+    routeModelId,
     originalApiModel,
     finalApiModel,
     paramKind,
@@ -786,6 +665,7 @@ async function retryImageTaskAfterAsyncFailure({ settings, apiKey, oldTaskId, me
   console.warn('[upstream] GPT2 async task size retry after status failure:', retry.initialSize || retry.size || 'auto', '→', fallbackSize);
   const r = await callImageUpstreamAsync({
     settings,
+    routeModelId: retry.routeModelId,
     apiKey,
     originalApiModel: retry.originalApiModel,
     finalApiModel: retry.finalApiModel,
@@ -1027,6 +907,161 @@ async function refToBuffer(ref) {
   return null;
 }
 
+function mediaUploadEndpointCandidates(settings) {
+  const configured = zhenzhenBaseUrl(settings).replace(/\/+$/, '');
+  const root = configured.replace(/\/v1$/i, '');
+  return [
+    `${root}/v1/media/uploads/presign`,
+    `${root}/api/media/uploads/presign`,
+  ].filter((item, index, arr) => item && arr.indexOf(item) === index);
+}
+
+function mediaUploadFilename(ref, kind, ext) {
+  const text = String(ref || '').trim();
+  const fallbackExt = safeOutputExt(ext, kind === 'video' ? 'mp4' : kind === 'audio' ? 'mp3' : 'png');
+  if (text && !text.startsWith('data:')) {
+    try {
+      const clean = text.split(/[?#]/)[0].replace(/\\/g, '/');
+      const base = clean.split('/').filter(Boolean).pop() || '';
+      if (base && /\.[a-z0-9]{2,8}$/i.test(base)) return base.replace(/[^\w.\-\u4e00-\u9fa5]/g, '_');
+    } catch {}
+  }
+  return `reference_${Date.now()}.${fallbackExt}`;
+}
+
+function presignUploadInfo(data) {
+  const root = data && typeof data === 'object' ? data : {};
+  const nested = root.data && typeof root.data === 'object' ? root.data : {};
+  const uploadUrl = root.upload_url || root.uploadUrl || root.url || nested.upload_url || nested.uploadUrl || nested.url;
+  const publicUrl = root.public_url || root.publicUrl || root.file_url || root.fileUrl || nested.public_url || nested.publicUrl || nested.file_url || nested.fileUrl;
+  return {
+    uploadUrl: String(uploadUrl || '').trim(),
+    publicUrl: String(publicUrl || '').trim(),
+  };
+}
+
+async function newApiPublicMediaUrl(settings, apiKey, ref, kind = 'image') {
+  const text = String(ref || '').trim();
+  if (!text) return '';
+  if (/^(https?:\/\/|asset:\/\/)/i.test(text)) return text;
+  const conv = await refToBuffer(text);
+  if (!conv?.buf) return '';
+  const fallbackMime = kind === 'video' ? 'video/mp4' : kind === 'audio' ? 'audio/mpeg' : 'image/png';
+  const mime = String(conv.mime || fallbackMime).split(';')[0].trim() || fallbackMime;
+  if (kind === 'image' && !mime.toLowerCase().startsWith('image/')) return '';
+  if (kind === 'video' && !mime.toLowerCase().startsWith('video/')) return '';
+  if (kind === 'audio' && !mime.toLowerCase().startsWith('audio/')) return '';
+  if (!apiKey) return '';
+  const filename = mediaUploadFilename(text, kind, conv.ext || extFromContentType(mime));
+  const body = {
+    filename,
+    content_type: mime,
+    contentType: mime,
+    size: conv.buf.length,
+  };
+  let lastError = '';
+  for (const endpoint of mediaUploadEndpointCandidates(settings)) {
+    try {
+      const presign = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify(body),
+      });
+      const presignText = await presign.text();
+      let presignData = {};
+      try { presignData = presignText ? JSON.parse(presignText) : {}; } catch {
+        lastError = `presign 非 JSON ${presign.status}: ${presignText.slice(0, 160)}`;
+        continue;
+      }
+      if (!presign.ok) {
+        lastError = getUpstreamErrorMessage(presignData, presignText, presign.status);
+        continue;
+      }
+      const info = presignUploadInfo(presignData);
+      if (!info.uploadUrl || !info.publicUrl) {
+        lastError = `presign 未返回 upload_url/public_url: ${presignText.slice(0, 180)}`;
+        continue;
+      }
+      const uploaded = await fetch(info.uploadUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': mime },
+        body: conv.buf,
+      });
+      if (!uploaded.ok) {
+        let uploadText = '';
+        try { uploadText = await uploaded.text(); } catch {}
+        lastError = `PUT 上传 HTTP ${uploaded.status}: ${uploadText.slice(0, 160)}`;
+        continue;
+      }
+      return info.publicUrl;
+    } catch (error) {
+      lastError = error?.message || String(error || '');
+    }
+  }
+  try {
+    const root = zhenzhenBaseUrl(settings).replace(/\/+$/, '').replace(/\/v1$/i, '');
+    const form = new FormData();
+    form.append('file', new Blob([conv.buf], { type: mime }), filename);
+    const direct = await fetch(`${root}/v1/media/uploads`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}` },
+      body: form,
+    });
+    const directText = await direct.text();
+    let directData = {};
+    try { directData = directText ? JSON.parse(directText) : {}; } catch {}
+    if (direct.ok) {
+      const info = presignUploadInfo(directData);
+      if (info.publicUrl) return info.publicUrl;
+    }
+    lastError = getUpstreamErrorMessage(directData, directText, direct.status);
+  } catch (error) {
+    lastError = error?.message || String(error || '');
+  }
+  if (lastError) console.warn('[newapi] media upload failed:', lastError);
+  return '';
+}
+
+async function newApiPublicMediaUrlList(settings, apiKey, refs, kind = 'image') {
+  const rawRefs = Array.isArray(refs) ? refs : [];
+  const out = [];
+  for (const ref of rawRefs) {
+    const url = await newApiPublicMediaUrl(settings, apiKey, ref, kind);
+    if (url && !out.includes(url)) out.push(url);
+  }
+  return out;
+}
+
+async function publicizeChatMessageMedia(settings, apiKey, messages) {
+  if (!Array.isArray(messages) || !apiKey) return messages;
+  const out = JSON.parse(JSON.stringify(messages));
+  for (const msg of out) {
+    if (!msg || !Array.isArray(msg.content)) continue;
+    for (const part of msg.content) {
+      if (!part || typeof part !== 'object') continue;
+      const imageUrl = part.image_url && typeof part.image_url === 'object' ? part.image_url : null;
+      if (imageUrl && typeof imageUrl.url === 'string') {
+        const publicUrl = await newApiPublicMediaUrl(settings, apiKey, imageUrl.url, 'image');
+        if (publicUrl) imageUrl.url = publicUrl;
+      }
+      const videoUrl = part.video_url && typeof part.video_url === 'object' ? part.video_url : null;
+      if (videoUrl && typeof videoUrl.url === 'string') {
+        const publicUrl = await newApiPublicMediaUrl(settings, apiKey, videoUrl.url, 'video');
+        if (publicUrl) videoUrl.url = publicUrl;
+      }
+      const inputVideo = part.input_video && typeof part.input_video === 'object' ? part.input_video : null;
+      if (inputVideo && typeof inputVideo.url === 'string') {
+        const publicUrl = await newApiPublicMediaUrl(settings, apiKey, inputVideo.url, 'video');
+        if (publicUrl) inputVideo.url = publicUrl;
+      }
+    }
+  }
+  return out;
+}
+
 function summarizeImageRef(ref, index) {
   const text = String(ref || '').trim();
   if (!text) return `#${index + 1} 空引用`;
@@ -1076,12 +1111,12 @@ async function collectConvertedImageRefs(refs, label = '参考图') {
   return convertedRefs;
 }
 
-function appendConvertedImagesToForm(form, convertedRefs) {
+function appendConvertedImagesToForm(form, convertedRefs, fieldName = 'image') {
   for (let i = 0; i < convertedRefs.length; i++) {
     const conv = convertedRefs[i];
     const blob = new Blob([conv.buf], { type: conv.mime || 'image/png' });
     const ext = safeOutputExt(conv.ext, 'png');
-    form.append('image', blob, `image_${Number.isFinite(conv.index) ? conv.index : i}.${ext}`);
+    form.append(fieldName, blob, `image_${Number.isFinite(conv.index) ? conv.index : i}.${ext}`);
   }
 }
 
@@ -1202,6 +1237,60 @@ function imageError(result) {
   return '';
 }
 
+function summarizeImageDebugPayload(value, max = 500) {
+  if (value == null) return '';
+  if (typeof value === 'string') return value.replace(/\s+/g, ' ').trim().slice(0, max);
+  try {
+    return JSON.stringify(value).replace(/\s+/g, ' ').trim().slice(0, max);
+  } catch {
+    return String(value).replace(/\s+/g, ' ').trim().slice(0, max);
+  }
+}
+
+function extractImageUpstreamRequestId(result) {
+  const fromText = (text) => {
+    const s = String(text || '');
+    if (!s) return '';
+    const m = s.match(/request[_\s-]*id\s*[:：]\s*([A-Za-z0-9._:-]+)/i);
+    return m?.[1] ? String(m[1]) : '';
+  };
+  const walk = (value, depth = 0) => {
+    if (!value || depth > 4) return '';
+    if (typeof value === 'string') return fromText(value);
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        const found = walk(item, depth + 1);
+        if (found) return found;
+      }
+      return '';
+    }
+    if (typeof value !== 'object') return '';
+    for (const key of ['request_id', 'requestId', 'req_id', 'reqId', 'id']) {
+      const raw = value[key];
+      if (typeof raw === 'string' && raw.trim()) return raw.trim();
+    }
+    for (const key of ['message', 'detail']) {
+      const found = fromText(value[key]);
+      if (found) return found;
+    }
+    for (const key of ['error', 'data']) {
+      const found = walk(value[key], depth + 1);
+      if (found) return found;
+    }
+    return '';
+  };
+  return walk(result);
+}
+
+function buildImageUpstreamErrorMessage(result, fallback = '') {
+  const base = imageError(result) || String(fallback || '').trim() || '上游图像任务失败';
+  const requestId = extractImageUpstreamRequestId(result);
+  if (!requestId || new RegExp(`request[_\\s-]*id\\s*[:：]\\s*${requestId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i').test(base)) {
+    return base;
+  }
+  return `${base} (request id: ${requestId})`;
+}
+
 function imageApiFailed(result) {
   if (!result || typeof result !== 'object' || Array.isArray(result)) return false;
   const code = String(result.code ?? '').toLowerCase();
@@ -1227,9 +1316,9 @@ function imageStatus(result) {
 function imageStatusUrlCandidates(settings, taskId, preferredKind = '') {
   const tid = String(taskId || '').trim();
   const imageApiRoot = zhenzhenBaseUrl(settings).endsWith('/v1') ? zhenzhenBaseUrl(settings) : `${zhenzhenBaseUrl(settings)}/v1`;
-  const order = preferredKind === 'edits'
-    ? ['tasks', 'edits', 'generations']
-    : (preferredKind === 'generations' ? ['generations', 'tasks', 'edits'] : ['tasks', 'edits', 'generations']);
+  const order = preferredKind === 'generations'
+    ? ['tasks', 'generations', 'edits']
+    : ['tasks', 'edits', 'generations'];
   return order.map((kind) => ({
     kind,
     url: `${imageApiRoot}/images/${kind}/${encodeURIComponent(tid)}`,
@@ -1240,9 +1329,20 @@ function isTransientImageTaskHttpStatus(status) {
   return [408, 409, 425, 429, 500, 502, 503, 504, 520, 521, 522, 523, 524].includes(Number(status));
 }
 
+function isExplicitImageTaskFailure(result) {
+  const status = String(imageStatus(result) || '').toLowerCase();
+  return ['failure', 'failed', 'error', 'cancelled', 'canceled'].includes(status);
+}
+
+function isTransientImageTaskState(result) {
+  const status = String(imageStatus(result) || '').toLowerCase();
+  return status === 'terminated';
+}
+
 async function fetchImageTaskStatus(settings, taskId, apiKey, preferredKind = '') {
   const candidates = imageStatusUrlCandidates(settings, taskId, preferredKind);
   let last = null;
+  let completedWithoutOutput = null;
   for (let i = 0; i < candidates.length; i++) {
     const candidate = candidates[i];
     const r = await fetch(candidate.url, { headers: { Authorization: `Bearer ${apiKey}` } });
@@ -1250,14 +1350,26 @@ async function fetchImageTaskStatus(settings, taskId, apiKey, preferredKind = ''
     let data; try { data = JSON.parse(text); } catch { data = { _raw: text }; }
     const errorText = data?.error?.message || data?.message || imageError(data) || `上游 HTTP ${r.status}`;
     last = { response: r, data, errorText, candidate };
-    if (r.ok && !imageApiFailed(data)) return last;
+    if (r.ok && !imageApiFailed(data)) {
+      const status = String(imageStatus(data) || '').toLowerCase();
+      const urls = normalizeImageItems(data);
+      if (urls.length) return last;
+      if (['success', 'completed', 'complete', 'done', 'finished'].includes(status)) {
+        completedWithoutOutput = last;
+        if (i < candidates.length - 1) {
+          console.warn('[upstream] image status completed without output, probing result endpoint:', candidate.kind, '→', candidates[i + 1].kind);
+          continue;
+        }
+      }
+      return completedWithoutOutput || last;
+    }
     const routingMismatch = r.status === 400
       || r.status === 404
       || /no access to model|unknown task|not found|unsupported|invalid endpoint|不存在|无权限|没有权限/i.test(String(errorText || ''));
     if (!routingMismatch || i === candidates.length - 1) return last;
     console.warn('[upstream] image status fallback:', candidate.kind, '→', candidates[i + 1].kind, String(errorText || '').slice(0, 180));
   }
-  return last;
+  return completedWithoutOutput || last;
 }
 
 function imageItems(result) {
@@ -1279,8 +1391,10 @@ function imageItems(result) {
   if (result.url || result.image_url || result.b64_json || result.base64 || result.image_base64) return [result];
   if (result.imageUrl || result.outputUrl || result.output_url || result.mediaUrl || result.media_url || result.fileUrl || result.file_url) return [result];
   if (result.inlineData || result.inline_data) return [result];
+  if (normalizeGeminiFileDataImageUrl(result)) return [result];
+  if ((result.mime_type || result.mimeType) && typeof result.data === 'string') return [result];
   const out = [];
-  for (const k of ['media', 'media_url', 'mediaUrl', 'media_urls', 'mediaUrls', 'Media URL', 'Media URLs', 'images', 'image_urls', 'imageUrls', 'image', 'url', 'output', 'outputs', 'output_url', 'outputUrl', 'output_urls', 'outputUrls', 'file_url', 'fileUrl', 'data', 'result', 'results', 'choices', 'message', 'candidates', 'content', 'parts']) {
+  for (const k of ['media', 'media_url', 'mediaUrl', 'media_urls', 'mediaUrls', 'Media URL', 'Media URLs', 'images', 'image_urls', 'imageUrls', 'image', 'output_image', 'outputImage', 'url', 'output', 'outputs', 'output_url', 'outputUrl', 'output_urls', 'outputUrls', 'file_url', 'fileUrl', 'data', 'result', 'results', 'choices', 'message', 'candidates', 'content', 'parts']) {
     const v = result[k];
     if (!v) continue;
     if (Array.isArray(v)) {
@@ -1314,14 +1428,30 @@ function normalizeInlineImageData(value, fallbackMime = 'image/png') {
   return `data:${mime};base64,${data}`;
 }
 
+function normalizeGeminiFileDataImageUrl(value) {
+  if (!value || typeof value !== 'object') return '';
+  const fileData = value.fileData || value.file_data || value;
+  if (!fileData || typeof fileData !== 'object') return '';
+  const mime = String(fileData.mimeType || fileData.mime_type || '').trim().toLowerCase();
+  if (mime && !mime.startsWith('image/')) return '';
+  const fileUri = String(fileData.fileUri || fileData.file_uri || '').trim();
+  return isRemoteMediaUrl(fileUri) ? normalizeRemoteMediaUrl(fileUri) : '';
+}
+
 function normalizeImageItems(result) {
-  return imageItems(result).map((item) => {
+  const normalized = imageItems(result).map((item) => {
     if (typeof item === 'string') {
       return isRemoteMediaUrl(item) ? { url: normalizeRemoteMediaUrl(item) } : { b64_json: item.startsWith('data:image') ? item : item };
     }
     if (item && typeof item === 'object') {
       const inlineImage = normalizeInlineImageData(item);
       if (inlineImage) return { b64_json: inlineImage };
+      const geminiFileUrl = normalizeGeminiFileDataImageUrl(item);
+      if (geminiFileUrl) return { url: geminiFileUrl };
+      if ((item.mime_type || item.mimeType) && typeof item.data === 'string' && item.data.trim()) {
+        const mime = item.mime_type || item.mimeType || 'image/png';
+        return { b64_json: `data:${mime};base64,${String(item.data).trim()}` };
+      }
       const directUrl = item.url
         || item.image_url
         || item.imageUrl
@@ -1340,6 +1470,13 @@ function normalizeImageItems(result) {
     }
     return null;
   }).filter(Boolean);
+  const seen = new Set();
+  return normalized.filter((item) => {
+    const key = item.url ? `url:${item.url}` : `b64:${item.b64_json || ''}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 async function saveImageItemsFromResult(result) {
@@ -1427,31 +1564,80 @@ async function refToGeminiImagePart(ref) {
   return null;
 }
 
-async function callGaiscGeminiImageAsync({ settings, apiKey, finalApiModel, prompt, aspect_ratio, image_size, refs, n }) {
+async function refToGeminiInteractionInputItem(ref) {
+  const conv = await refToBuffer(ref);
+  if (conv?.buf) {
+    const mime = String(conv.mime || 'image/png');
+    if (!mime.toLowerCase().startsWith('image/')) return null;
+    return {
+      type: 'image',
+      mime_type: mime,
+      data: conv.buf.toString('base64'),
+    };
+  }
+  const dataUrl = await refToBananaImage(ref);
+  const match = String(dataUrl || '').match(/^data:(image\/[^;,]+);base64,(.+)$/i);
+  if (match) {
+    return {
+      type: 'image',
+      mime_type: match[1] || 'image/png',
+      data: match[2],
+    };
+  }
+  return null;
+}
+
+async function callGaiscGeminiGenerateContentImageAsync({ settings, apiKey, finalApiModel, prompt, aspect_ratio, image_size, refs, forceAsync = false }) {
+  const baseUrl = zhenzhenBaseUrl(settings);
   const parts = [{ text: prompt }];
   const hasRefs = Array.isArray(refs) && refs.length > 0;
   if (hasRefs) {
     for (const ref of refs) {
       const part = await refToGeminiImagePart(ref);
-      const inline = part?.inlineData;
-      const file = part?.fileData;
-      if (inline?.data) {
-        parts.push({
-          inlineData: {
-            mimeType: inline.mimeType || 'image/png',
-            data: inline.data,
-          },
-        });
-      } else if (file?.fileUri) {
-        parts.push({
-          fileData: {
-            mimeType: file.mimeType || 'image/png',
-            fileUri: file.fileUri,
-          },
-        });
-      }
+      if (part) parts.push(part);
     }
     if (parts.length === 1) {
+      throw new Error('Gemini generateContent 参考图读取失败，已中止生成，避免按无参考图生成');
+    }
+  }
+  const ar = String(aspect_ratio || '').trim();
+  const isAuto = !ar || ar === 'Auto' || ar === 'AUTO' || ar === 'empty';
+  const imageConfig = {};
+  if (!isAuto) imageConfig.aspectRatio = ar;
+  if (image_size) imageConfig.imageSize = String(image_size);
+  const body = {
+    contents: [{ role: 'user', parts }],
+    generationConfig: {
+      responseModalities: ['TEXT', 'IMAGE'],
+      ...(Object.keys(imageConfig).length ? { imageConfig } : {}),
+    },
+  };
+  const url = imageAsyncUrl(gaiscGeminiEndpointUrl(baseUrl, finalApiModel), forceAsync);
+  const headers = {
+    Accept: 'application/json',
+    'Content-Type': 'application/json',
+  };
+  const authMode = isOfficialGeminiBaseUrl(baseUrl) ? 'x-goog-api-key' : 'bearer';
+  if (authMode === 'x-goog-api-key') headers['x-goog-api-key'] = apiKey;
+  else headers.Authorization = `Bearer ${apiKey}`;
+  console.log('[upstream] Gemini generateContent image model:', finalApiModel, 'aspect_ratio:', isAuto ? 'Auto' : ar, 'size:', image_size || 'auto', 'auth:', authMode, { requested: refs?.length || 0, converted: parts.length - 1 });
+  return await fetch(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+  });
+}
+
+async function callGaiscGeminiInteractionsImageAsync({ settings, apiKey, finalApiModel, prompt, aspect_ratio, image_size, refs, n }) {
+  const baseUrl = zhenzhenBaseUrl(settings);
+  const input = [{ type: 'text', text: prompt }];
+  const hasRefs = Array.isArray(refs) && refs.length > 0;
+  if (hasRefs) {
+    for (const ref of refs) {
+      const item = await refToGeminiInteractionInputItem(ref);
+      if (item?.data) input.push(item);
+    }
+    if (input.length === 1) {
       throw new Error('G-AISC nano-banana 参考图读取失败，已中止生成，避免按无参考图生成');
     }
   }
@@ -1459,38 +1645,53 @@ async function callGaiscGeminiImageAsync({ settings, apiKey, finalApiModel, prom
   const isAuto = !ar || ar === 'Auto' || ar === 'AUTO' || ar === 'empty';
   const body = {
     model: finalApiModel,
-    contents: [
-      {
-        role: 'user',
-        parts,
-      },
-    ],
-    generationConfig: {
-      responseModalities: ['IMAGE'],
+    input,
+    response_format: {
+      type: 'image',
     },
   };
-  if (!isAuto || image_size) {
-    const hints = [];
-    if (!isAuto) hints.push(`aspect ratio: ${ar}`);
-    if (image_size) hints.push(`image size: ${image_size}`);
-    if (hints.length) parts[0].text = `${prompt}\n\n${hints.join('\n')}`;
-  }
-  // 同时作为真正的 body 字段下发：New API / apishu 等中转按 JSON 字段识别比例/清晰度，
-  // 仅靠上面的文本提示无法被解析（会回落到默认 1:1 / 1K）。ratio / resolution 为同义兜底。
-  if (!isAuto) { body.aspect_ratio = ar; body.ratio = ar; }
-  if (image_size) { body.image_size = String(image_size); body.resolution = String(image_size); }
-  body.n = Number(n) || 1;
-  const url = gaiscGeminiEndpointUrl(zhenzhenBaseUrl(settings), finalApiModel);
-  console.log('[upstream] G-AISC nano-banana Gemini native model:', finalApiModel, 'aspect_ratio:', isAuto ? 'Auto' : ar, 'size:', image_size || '2K', { requested: refs?.length || 0, converted: parts.length - 1 });
-  return await fetch(url, {
+  if (!isAuto) body.response_format.aspect_ratio = ar;
+  if (image_size) body.response_format.image_size = String(image_size);
+  const count = Number(n) || 1;
+  if (count > 1) body.n = count;
+  const url = gaiscGeminiInteractionsEndpointUrl(baseUrl);
+  const headers = {
+    Accept: 'application/json',
+    'Content-Type': 'application/json',
+  };
+  const authMode = isOfficialGeminiBaseUrl(baseUrl) ? 'x-goog-api-key' : 'bearer';
+  if (authMode === 'x-goog-api-key') headers['x-goog-api-key'] = apiKey;
+  else headers.Authorization = `Bearer ${apiKey}`;
+  console.log('[upstream] G-AISC nano-banana Gemini interactions model:', finalApiModel, 'aspect_ratio:', isAuto ? 'Auto' : ar, 'size:', image_size || '2K', 'auth:', authMode, { requested: refs?.length || 0, converted: input.length - 1 });
+  console.log('[upstream] Gemini interactions request:', summarizeImageDebugPayload({
+    url,
+    model: finalApiModel,
+    auth: authMode,
+    input,
+    response_format: body.response_format,
+    n: body.n || 1,
+  }, 800));
+  const response = await fetch(url, {
     method: 'POST',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
+    headers,
     body: JSON.stringify(body),
   });
+  let responsePreview = '';
+  try {
+    if (typeof response?.clone === 'function') responsePreview = await response.clone().text();
+  } catch {
+    responsePreview = '';
+  }
+  console.log('[upstream] Gemini interactions response:', summarizeImageDebugPayload({
+    status: response?.status,
+    ok: !!response?.ok,
+    body: responsePreview,
+  }, 800));
+  return response;
+}
+
+async function callGaiscGeminiImageAsync(options) {
+  return await callGaiscGeminiInteractionsImageAsync(options);
 }
 
 async function callGaiscOpenAiCompatibleImageAsync({ settings, apiKey, finalApiModel, prompt, aspect_ratio, image_size, refs, n }) {
@@ -1601,7 +1802,27 @@ function appendAsyncFormFields(form, forceAsync) {
   return form;
 }
 
-async function callImageUpstreamAsync({ settings, apiKey, originalApiModel, finalApiModel, paramKind, prompt, n, aspect_ratio, image_size, refs, size, quality, forceAsync = false }) {
+function isTransientFetchConnectionError(error) {
+  const code = String(error?.cause?.code || error?.code || '').toUpperCase();
+  return ['UND_ERR_CONNECT_TIMEOUT', 'ECONNRESET', 'ETIMEDOUT', 'EAI_AGAIN'].includes(code);
+}
+
+async function fetchWithConnectionRetry(url, initFactory, maxAttempts = 3) {
+  let lastError;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fetch(url, initFactory());
+    } catch (error) {
+      lastError = error;
+      if (!isTransientFetchConnectionError(error) || attempt >= maxAttempts) throw error;
+      console.warn(`[upstream] connection failed (${error?.cause?.code || error?.code || 'unknown'}), retrying ${attempt}/${maxAttempts - 1}`);
+      await new Promise((resolve) => setTimeout(resolve, attempt * 300));
+    }
+  }
+  throw lastError;
+}
+
+async function callImageUpstreamAsync({ settings, routeModelId, apiKey, originalApiModel, finalApiModel, paramKind, prompt, n, aspect_ratio, image_size, refs, size, quality, forceAsync = false }) {
   const imageApiRoot = zhenzhenBaseUrl(settings).endsWith('/v1') ? zhenzhenBaseUrl(settings) : `${zhenzhenBaseUrl(settings)}/v1`;
   const upstreamBase = `${imageApiRoot}/images`;
   const auth = `Bearer ${apiKey}`;
@@ -1619,13 +1840,15 @@ async function callImageUpstreamAsync({ settings, apiKey, originalApiModel, fina
     image_size: lvlUpper,
     refs,
     n,
+    forceAsync,
   };
 
-  if (paramKind === 'banana-ratio') {
-    const protocol = imageModelProtocol(settings, originalApiModel) || imageModelProtocol(settings, finalApiModel) || 'images';
-    if (protocol === 'openai-chat') return await callGaiscOpenAiCompatibleImageAsync(geminiFallbackOptions);
-    if (protocol === 'gemini-native') return await callGaiscGeminiImageAsync(geminiFallbackOptions);
-  }
+  const selectedProtocol = imageModelProtocol(settings, routeModelId)
+    || imageModelProtocol(settings, originalApiModel)
+    || imageModelProtocol(settings, finalApiModel);
+  if (selectedProtocol === 'openai-chat') return await callGaiscOpenAiCompatibleImageAsync(geminiFallbackOptions);
+  if (selectedProtocol === 'gemini-generate-content') return await callGaiscGeminiGenerateContentImageAsync(geminiFallbackOptions);
+  if (selectedProtocol === 'gemini-interactions' || selectedProtocol === 'gemini-native') return await callGaiscGeminiInteractionsImageAsync(geminiFallbackOptions);
 
   // ===== Grok Image 路径(对齐 gpt-image-2-web Tab 12,默认参考图 Base64) =====
   if (paramKind === 'grok-image') {
@@ -1641,8 +1864,8 @@ async function callImageUpstreamAsync({ settings, apiKey, originalApiModel, fina
     }
     const body = appendAsyncJsonFields({ model: finalApiModel, prompt, aspect_ratio: isAuto ? '1:1' : ar }, forceAsync);
     if (grokRefs.length) body.image = grokRefs;
-    const url = imageAsyncUrl(`${upstreamBase}/generations?async=true`, forceAsync);
-    console.log('[upstream] Grok Image JSON → /generations?async=true model:', finalApiModel, 'aspect_ratio:', body.aspect_ratio, { requested: refs?.length || 0, converted: grokRefs.length });
+    const url = imageAsyncUrl(`${upstreamBase}/generations`, forceAsync);
+    console.log('[upstream] Grok Image JSON →', url.replace(upstreamBase, ''), 'model:', finalApiModel, 'aspect_ratio:', body.aspect_ratio, { requested: refs?.length || 0, converted: grokRefs.length });
     return await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: auth },
@@ -1653,10 +1876,24 @@ async function callImageUpstreamAsync({ settings, apiKey, originalApiModel, fina
   // ===== GPT2 文生图走 Images API；图生图走 New API edits 异步 =====
   if (paramKind === 'gpt-size') {
     const explicitProtocol = imageModelProtocol(settings, originalApiModel) || imageModelProtocol(settings, finalApiModel);
-    const useImagesProtocol = !explicitProtocol || explicitProtocol === 'images' || explicitProtocol === 'images-generations' || explicitProtocol === 'images-edits';
+    const isAzureGptImageProtocol = explicitProtocol === 'azure-gpt-image';
+    const upstreamForceAsync = forceAsync && !isAzureGptImageProtocol;
+    const includeAsyncPayloadFields = upstreamForceAsync;
+    const fetchImageRequest = (url, initFactory) => (
+      isAzureGptImageProtocol
+        ? fetchWithConnectionRetry(url, initFactory)
+        : fetch(url, initFactory())
+    );
+    const azureQuality = String(quality || '').trim().toLowerCase();
+    const hasAzureQuality = ['low', 'medium', 'high'].includes(azureQuality);
+    const useImagesProtocol = !explicitProtocol || explicitProtocol === 'images' || isAzureGptImageProtocol || explicitProtocol === 'images-generations' || explicitProtocol === 'images-edits';
     const routeKind = imageProtocolRouteKind(explicitProtocol || 'images', hasRefs);
-    const px = size || aspectToGptSize(ar, lvlLower);
-    const fallbackPx = useImagesProtocol ? aspectToGptOpenAiSize(ar, lvlLower) : px;
+    const px = isAzureGptImageProtocol
+      ? aspectToAzureGptImageSize(ar, lvlLower)
+      : (size || aspectToGptSize(ar, lvlLower));
+    const fallbackPx = isAzureGptImageProtocol
+      ? px
+      : (useImagesProtocol ? aspectToGptOpenAiSize(ar, lvlLower) : px);
     const sizeFieldValues = (nextSize) => ({
       pixelSize: nextSize,
       aspectRatio: ar,
@@ -1672,29 +1909,43 @@ async function callImageUpstreamAsync({ settings, apiKey, originalApiModel, fina
 
     const submitGenerations = async () => {
       const requestProtocol = imageRequestProtocolConfig('gpt-size', 'generations');
-      const primaryFields = requestProtocolFields(requestProtocol, 'primary', ['size', 'resolution', 'image_size']);
-      const pixelOnlyFields = requestProtocolFields(requestProtocol, 'pixelOnly', ['size']);
-      const refDataUrls = convertedImageRefsToDataUrls(convertedRefs);
-      const buildBody = (nextSize, fields = primaryFields) => appendAsyncJsonFields(appendGptImageSizeFields({
-        model: finalApiModel,
-        prompt,
-        n: Number(n) || 1,
-        quality: quality || 'auto',
-      }, fields, sizeFieldValues(nextSize)), forceAsync);
+      const primaryFields = isAzureGptImageProtocol
+        ? ['size']
+        : requestProtocolFields(requestProtocol, 'primary', ['size', 'resolution', 'image_size']);
+      const pixelOnlyFields = isAzureGptImageProtocol
+        ? ['size']
+        : requestProtocolFields(requestProtocol, 'pixelOnly', ['size']);
+      const publicRefUrls = await newApiPublicMediaUrlList(settings, apiKey, refs, 'image');
+      const refDataUrls = publicRefUrls.length ? publicRefUrls : convertedImageRefsToDataUrls(convertedRefs);
+      const buildBody = (nextSize, fields = primaryFields) => {
+        const body = appendGptImageSizeFields({
+          model: finalApiModel,
+          prompt,
+          n: Number(n) || 1,
+        }, fields, sizeFieldValues(nextSize));
+        if (!isAzureGptImageProtocol || hasAzureQuality) {
+          body.quality = isAzureGptImageProtocol ? azureQuality : (quality || 'auto');
+        }
+        if (isAzureGptImageProtocol) {
+          body.output_format = 'png';
+          body.background = 'auto';
+        }
+        return appendAsyncJsonFields(body, includeAsyncPayloadFields);
+      };
       const body = buildBody(px);
       if (refDataUrls.length) {
         body.images = refDataUrls;
         body.image = refDataUrls[0];
         body.image_urls = refDataUrls;
       }
-      const url = imageAsyncUrl(`${upstreamBase}/generations`, forceAsync);
+      const url = imageAsyncUrl(`${upstreamBase}/generations`, upstreamForceAsync);
       console.log('[upstream] GPT2 Images API JSON → /generations model:', finalApiModel, 'size:', body.size || 'auto', { requested: refs.length, imageUrls: refDataUrls.length });
       let currentSize = px;
-      let response = await fetch(url, {
+      let response = await fetchImageRequest(url, () => ({
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: auth },
         body: JSON.stringify(body),
-      });
+      }));
       let responseText = '';
       if (fallbackPx && fallbackPx !== px) {
         responseText = await responseTextForRetry(response);
@@ -1702,11 +1953,11 @@ async function callImageUpstreamAsync({ settings, apiKey, originalApiModel, fina
           const retryBody = buildBody(fallbackPx);
           console.warn('[upstream] GPT2 Images API size retry:', px, '→', fallbackPx);
           currentSize = fallbackPx;
-          response = await fetch(url, {
+          response = await fetchImageRequest(url, () => ({
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Authorization: auth },
             body: JSON.stringify(retryBody),
-          });
+          }));
           responseText = '';
         }
       }
@@ -1715,11 +1966,11 @@ async function callImageUpstreamAsync({ settings, apiKey, originalApiModel, fina
         if (shouldRetryGptImageFieldStrategy(response, responseText)) {
           const retryBody = buildBody(currentSize, pixelOnlyFields);
           console.warn('[upstream] GPT2 Images API field retry with pixel-only size fields:', primaryFields.join(','), '→', pixelOnlyFields.join(','));
-          response = await fetch(url, {
+          response = await fetchImageRequest(url, () => ({
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Authorization: auth },
             body: JSON.stringify(retryBody),
-          });
+          }));
         }
       }
       return markImageStatusKind(response, 'generations');
@@ -1727,38 +1978,48 @@ async function callImageUpstreamAsync({ settings, apiKey, originalApiModel, fina
 
     const submitEdits = async () => {
       const requestProtocol = imageRequestProtocolConfig('gpt-size', 'edits');
-      const primaryFields = requestProtocolFields(requestProtocol, 'primary', ['size', 'aspectRatio', 'resolution', 'image_size']);
-      const pixelOnlyFields = requestProtocolFields(requestProtocol, 'pixelOnly', ['size', 'aspectRatio']);
+      const primaryFields = isAzureGptImageProtocol
+        ? ['size']
+        : requestProtocolFields(requestProtocol, 'primary', ['size', 'aspectRatio', 'resolution', 'image_size']);
+      const pixelOnlyFields = isAzureGptImageProtocol
+        ? ['size']
+        : requestProtocolFields(requestProtocol, 'pixelOnly', ['size', 'aspectRatio']);
       const buildForm = (nextSize, fields = primaryFields) => {
         const form = new FormData();
         form.append('prompt', prompt);
         form.append('model', finalApiModel);
         form.append('n', String(n || 1));
-        form.append('quality', quality || 'auto');
-        form.append('moderation', 'auto');
+        if (!isAzureGptImageProtocol || hasAzureQuality) {
+          form.append('quality', isAzureGptImageProtocol ? azureQuality : (quality || 'auto'));
+        }
+        if (!isAzureGptImageProtocol) form.append('moderation', 'auto');
+        if (isAzureGptImageProtocol) {
+          form.append('output_format', 'png');
+          form.append('background', 'auto');
+        }
         appendGptImageSizeFields(form, fields, sizeFieldValues(nextSize));
         if (hasRefs) {
-          appendConvertedImagesToForm(form, convertedRefs);
+          appendConvertedImagesToForm(form, convertedRefs, isAzureGptImageProtocol ? 'image[]' : 'image');
         } else {
           // 主项目 line 2861: 无参考图时创建 1024x1024 白图占位
           const whiteBuf = getWhitePng(1024, 1024);
           const blob = new Blob([whiteBuf], { type: 'image/png' });
           form.append('image', blob, 'blank.png');
         }
-        return appendAsyncFormFields(form, forceAsync);
+        return appendAsyncFormFields(form, includeAsyncPayloadFields);
       };
 
-      const url = imageAsyncUrl(`${upstreamBase}/edits?async=true`, forceAsync);
-      console.log('[upstream] GPT2 multipart → /edits?async=true model:', finalApiModel, 'size:', px, 'aspectRatio:', ar, 'resolution:', lvlLower, { requested: refs.length, converted: convertedRefs.length });
+      const url = imageAsyncUrl(`${upstreamBase}/edits`, upstreamForceAsync);
+      console.log('[upstream] GPT2 multipart →', url.replace(upstreamBase, ''), 'model:', finalApiModel, 'size:', px, 'aspectRatio:', ar, 'resolution:', lvlLower, { requested: refs.length, converted: convertedRefs.length });
       let currentSize = px;
-      let response = await fetch(url, { method: 'POST', headers: { Authorization: auth }, body: buildForm(px) });
+      let response = await fetchImageRequest(url, () => ({ method: 'POST', headers: { Authorization: auth }, body: buildForm(px) }));
       let responseText = '';
       if (fallbackPx && fallbackPx !== px) {
         responseText = await responseTextForRetry(response);
         if (shouldRetryGptImageSize(response, responseText)) {
           console.warn('[upstream] GPT2 multipart size retry:', px, '→', fallbackPx);
           currentSize = fallbackPx;
-          response = await fetch(url, { method: 'POST', headers: { Authorization: auth }, body: buildForm(fallbackPx) });
+          response = await fetchImageRequest(url, () => ({ method: 'POST', headers: { Authorization: auth }, body: buildForm(fallbackPx) }));
           responseText = '';
         }
       }
@@ -1766,7 +2027,7 @@ async function callImageUpstreamAsync({ settings, apiKey, originalApiModel, fina
         responseText = responseText || await responseTextForRetry(response);
         if (shouldRetryGptImageFieldStrategy(response, responseText)) {
           console.warn('[upstream] GPT2 multipart field retry with pixel-only size fields:', primaryFields.join(','), '→', pixelOnlyFields.join(','));
-          response = await fetch(url, { method: 'POST', headers: { Authorization: auth }, body: buildForm(currentSize, pixelOnlyFields) });
+          response = await fetchImageRequest(url, () => ({ method: 'POST', headers: { Authorization: auth }, body: buildForm(currentSize, pixelOnlyFields) }));
         }
       }
       return markImageStatusKind(response, 'edits');
@@ -1799,8 +2060,8 @@ async function callImageUpstreamAsync({ settings, apiKey, originalApiModel, fina
     const convertedRefs = await collectConvertedImageRefs(refs, 'nano-banana 参考图');
     appendConvertedImagesToForm(form, convertedRefs);
     appendAsyncFormFields(form, forceAsync);
-    const url = imageAsyncUrl(`${upstreamBase}/edits?async=true`, forceAsync);
-    console.log('[upstream] nano-banana multipart → /edits?async=true model:', finalApiModel, 'aspect_ratio:', ar, 'image_size:', lvlUpper, { requested: refs.length, converted: convertedRefs.length });
+    const url = imageAsyncUrl(`${upstreamBase}/edits`, forceAsync);
+    console.log('[upstream] nano-banana multipart →', url.replace(upstreamBase, ''), 'model:', finalApiModel, 'aspect_ratio:', ar, 'image_size:', lvlUpper, { requested: refs.length, converted: convertedRefs.length });
     const response = await fetch(url, { method: 'POST', headers: { Authorization: auth }, body: form });
     return await retryBananaWithGeminiIfUnsupported(response, geminiFallbackOptions);
   }
@@ -1808,8 +2069,8 @@ async function callImageUpstreamAsync({ settings, apiKey, originalApiModel, fina
   const body = appendAsyncJsonFields({ prompt, model: finalApiModel, aspect_ratio: isAuto ? '1:1' : ar }, forceAsync);
   body.image_size = lvlUpper;
   body.n = Number(n) || 1;
-  const url = imageAsyncUrl(`${upstreamBase}/generations?async=true`, forceAsync);
-  console.log('[upstream] nano-banana JSON → /generations?async=true model:', finalApiModel, 'aspect_ratio:', body.aspect_ratio, 'image_size:', body.image_size);
+  const url = imageAsyncUrl(`${upstreamBase}/generations`, forceAsync);
+  console.log('[upstream] nano-banana JSON →', url.replace(upstreamBase, ''), 'model:', finalApiModel, 'aspect_ratio:', body.aspect_ratio, 'image_size:', body.image_size);
   const response = await fetch(url, {
     method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: auth },
     body: JSON.stringify(body),
@@ -1836,14 +2097,14 @@ router.post('/image', async (req, res) => {
     model, apiModel, paramKind: paramKindIn,
     prompt, n,
     aspect_ratio, image_size,
-    images, image, size, quality, providerParams,
+    images, image, size, quality,
   } = req.body || {};
   // v1.2.9.15: 一体化「专属优先 fallback 通用」校验
-  if (!ensureKeyOrSelectedGroup(settings, res, apiModel || model || '', '图像', providerParams)) return;
+  if (!ensureKey(settings, res, apiModel || model || '', '图像')) return;
   if (!prompt) return res.status(400).json({ success: false, error: 'prompt 必填' });
   const originalApiModel = String(apiModel || model || '');
   const gptImage2ForcedSize = gptImage2ZhenzhenVariantSize(originalApiModel);
-  const finalApiModel = normalizeImageApiModel(originalApiModel);
+  const finalApiModel = resolveConfiguredImageApiModel(settings, model, originalApiModel);
   const ml = `${originalApiModel} ${finalApiModel}`.toLowerCase();
   const paramKind = paramKindIn || (ml.includes('grok') && ml.includes('image') ? 'grok-image' : (isBananaImageModel(ml) ? 'banana-ratio' : 'gpt-size'));
   if (!finalApiModel) return res.status(400).json({ success: false, error: 'model 必填' });
@@ -1852,36 +2113,31 @@ router.post('/image', async (req, res) => {
   const hasRefs = refs.length > 0;
 
   try {
-    const providerContext = await applyZhenzhenProviderContext(settings, {
-      route: 'image',
-      kind: 'image',
-      model: finalApiModel,
-      hint: apiModel || model || '',
-      providerParams,
-    });
     const r = await callImageUpstreamAsync({
       settings,
+      routeModelId: model,
       originalApiModel,
       apiKey: settings.zhenzhenApiKey, finalApiModel, paramKind,
       prompt, n, aspect_ratio, image_size: gptImage2ForcedSize || image_size, refs, size: gptImage2ForcedSize ? undefined : size, quality,
-      forceAsync: true,
+      forceAsync: false,
     });
     const text = await r.text();
     let data; try { data = JSON.parse(text); } catch {
       return res.status(500).json({ success: false, error: '上游响应非 JSON: ' + text.slice(0, 300) });
     }
     if (!r.ok) {
-      const errorText = data?.error?.message || data?.message || `上游 HTTP ${r.status}`;
-      await invalidateZhenzhenProviderKey(providerContext, settings.zhenzhenApiKey, errorText);
+      const errorText = buildImageUpstreamErrorMessage(data, `上游 HTTP ${r.status}`);
       return res.status(r.status).json({
         success: false,
         error: errorText,
+        upstreamRequestId: extractImageUpstreamRequestId(data) || undefined,
+        raw: data,
       });
     }
     const norm = await normalizeImageResponse(data);
     if (norm.kind === 'failed') {
-      await invalidateZhenzhenProviderKey(providerContext, settings.zhenzhenApiKey, norm.error);
-      return res.status(500).json({ success: false, error: norm.error || '上游图像任务失败', raw: data });
+      const errorText = buildImageUpstreamErrorMessage(data, norm.error || '上游图像任务失败');
+      return res.status(500).json({ success: false, error: errorText, upstreamRequestId: extractImageUpstreamRequestId(data) || undefined, raw: data });
     }
     if (norm.kind === 'sync') {
       return res.json({ success: true, data: { urls: norm.urls, raw: data, model: finalApiModel, prompt } });
@@ -1889,9 +2145,18 @@ router.post('/image', async (req, res) => {
     if (norm.kind === 'async') {
       // 同步接口需要同步返回结果 → 内部轮询
       const imageStatusKind = r.__t8ImageStatusKind || (hasRefs && paramKind === 'gpt-size' ? 'edits' : '');
-      const urls = await pollImageTask(settings, norm.taskId, settings.zhenzhenApiKey, undefined, undefined, imageStatusKind);
-      if (!urls.length) return res.status(500).json({ success: false, error: '异步任务轮询超时/失败', taskId: norm.taskId });
-      return res.json({ success: true, data: { urls, raw: data, taskId: norm.taskId, model: finalApiModel, prompt } });
+      const pollResult = await pollImageTaskDetailed(settings, norm.taskId, settings.zhenzhenApiKey, undefined, undefined, imageStatusKind);
+      if (!pollResult.ok) {
+        return res.status(500).json({
+          success: false,
+          error: pollResult.error || '异步任务轮询超时/失败',
+          taskId: norm.taskId,
+          status: pollResult.status,
+          progress: pollResult.progress,
+          raw: pollResult.raw,
+        });
+      }
+      return res.json({ success: true, data: { urls: pollResult.urls, raw: data, taskId: norm.taskId, model: finalApiModel, prompt } });
     }
     return res.status(500).json({ success: false, error: '上游未返回图片也未返 task_id: ' + JSON.stringify(data).slice(0, 300) });
   } catch (e) {
@@ -1909,13 +2174,13 @@ router.post('/image/submit', async (req, res) => {
   const settings = currentSettings();
   try {
     const { model, apiModel, paramKind: paramKindIn, prompt, n,
-            aspect_ratio, image_size, images, image, size, quality, providerParams } = req.body || {};
+            aspect_ratio, image_size, images, image, size, quality } = req.body || {};
     // v1.2.9.15: 一体化「专属优先 fallback 通用」校验
-    if (!ensureKeyOrSelectedGroup(settings, res, apiModel || model || '', '图像', providerParams)) return;
+    if (!ensureKey(settings, res, apiModel || model || '', '图像')) return;
     if (!prompt) return res.status(400).json({ success: false, error: 'prompt 不得为空' });
     const originalApiModel = String(apiModel || model || '');
     const gptImage2ForcedSize = gptImage2ZhenzhenVariantSize(originalApiModel);
-    const finalApiModel = normalizeImageApiModel(originalApiModel);
+    const finalApiModel = resolveConfiguredImageApiModel(settings, model, originalApiModel);
     const ml = `${originalApiModel} ${finalApiModel}`.toLowerCase();
     const paramKind = paramKindIn || (ml.includes('grok') && ml.includes('image') ? 'grok-image' : (isBananaImageModel(ml) ? 'banana-ratio' : 'gpt-size'));
     if (!finalApiModel) return res.status(400).json({ success: false, error: 'model 必填' });
@@ -1924,15 +2189,9 @@ router.post('/image/submit', async (req, res) => {
     const hasRefs = refs.length > 0;
 
     // 完全对齐主项目 gpt-image-2-web:走 ?async=true,GPT2 强制 multipart edits + 白图占位
-    const providerContext = await applyZhenzhenProviderContext(settings, {
-      route: 'image/submit',
-      kind: 'image',
-      model: finalApiModel,
-      hint: apiModel || model || '',
-      providerParams,
-    });
     const r = await callImageUpstreamAsync({
       settings,
+      routeModelId: model,
       originalApiModel,
       apiKey: settings.zhenzhenApiKey, finalApiModel, paramKind,
       prompt, n, aspect_ratio, image_size: gptImage2ForcedSize || image_size, refs, size: gptImage2ForcedSize ? undefined : size, quality,
@@ -1941,21 +2200,21 @@ router.post('/image/submit', async (req, res) => {
     const text = await r.text();
     let data; try { data = JSON.parse(text); } catch { data = { _raw: text }; }
     if (!r.ok) {
-      const errorText = data?.error?.message || data?.message || `上游 HTTP ${r.status}`;
-      await invalidateZhenzhenProviderKey(providerContext, settings.zhenzhenApiKey, errorText);
-      return res.status(r.status).json({ success: false, error: errorText, raw: data });
+      const errorText = buildImageUpstreamErrorMessage(data, `上游 HTTP ${r.status}`);
+      return res.status(r.status).json({ success: false, error: errorText, upstreamRequestId: extractImageUpstreamRequestId(data) || undefined, raw: data });
     }
 
     const norm = await normalizeImageResponse(data);
     if (norm.kind === 'failed') {
-      await invalidateZhenzhenProviderKey(providerContext, settings.zhenzhenApiKey, norm.error);
-      return res.status(500).json({ success: false, error: norm.error || '上游图像任务失败', raw: data });
+      const errorText = buildImageUpstreamErrorMessage(data, norm.error || '上游图像任务失败');
+      return res.status(500).json({ success: false, error: errorText, upstreamRequestId: extractImageUpstreamRequestId(data) || undefined, raw: data });
     }
     if (norm.kind === 'sync') {
       return res.json({ success: true, data: { sync: true, status: 'completed', progress: '100%', urls: norm.urls, raw: data } });
     }
     if (norm.kind === 'async') {
       const imageRetry = buildAsyncImageRetryMeta({
+        routeModelId: model,
         originalApiModel,
         finalApiModel,
         paramKind,
@@ -1971,7 +2230,6 @@ router.post('/image/submit', async (req, res) => {
         model: finalApiModel,
         imageStatusKind: r.__t8ImageStatusKind || (hasRefs && paramKind === 'gpt-size' ? 'edits' : ''),
         ...(imageRetry ? { imageRetry } : {}),
-        ...providerContext.taskMeta,
       });
       return res.json({ success: true, data: { sync: false, taskId: norm.taskId, status: 'pending', progress: '0%', raw: data } });
     }
@@ -2000,9 +2258,21 @@ router.get('/image/status/:tid', async (req, res) => {
     const statusResult = await fetchImageTaskStatus(settings, effectiveTid, settings.zhenzhenApiKey, rememberedMeta?.imageStatusKind || '');
     const r = statusResult?.response;
     const data = statusResult?.data || {};
+    if (isTransientImageTaskState(data)) {
+      return res.json({
+        success: true,
+        data: {
+          status: 'pending',
+          progress: data?.data?.progress || data?.progress || '0%',
+          transient: true,
+          raw: data,
+        },
+      });
+    }
     if (!r.ok) {
       const errorText = statusResult?.errorText || data?.error?.message || data?.message || `上游 HTTP ${r.status}`;
-      if (isTransientImageTaskHttpStatus(r.status)) {
+      const explicitFailure = isExplicitImageTaskFailure(data);
+      if (isTransientImageTaskHttpStatus(r.status) && !explicitFailure) {
         return res.json({
           success: true,
           data: {
@@ -2014,7 +2284,17 @@ router.get('/image/status/:tid', async (req, res) => {
           },
         });
       }
-      await invalidateZhenzhenProviderKey({ taskMeta: rememberedMeta || {} }, settings.zhenzhenApiKey, errorText);
+      if (explicitFailure) {
+        return res.json({
+          success: false,
+          data: {
+            status: 'failed',
+            progress: data?.data?.progress || data?.progress || '0%',
+            error: errorText,
+            raw: data,
+          },
+        });
+      }
       return res.status(r.status).json({ success: false, error: errorText, raw: data });
     }
     if (imageApiFailed(data)) {
@@ -2032,7 +2312,6 @@ router.get('/image/status/:tid', async (req, res) => {
       if (retried?.kind === 'async') {
         return res.json({ success: true, data: { status: 'pending', progress: '5%', taskId: retried.taskId, raw: retried.raw } });
       }
-      await invalidateZhenzhenProviderKey({ taskMeta: rememberedMeta || {} }, settings.zhenzhenApiKey, errorText);
       return res.json({ success: false, data: { status: 'failed', progress: '0%', error: errorText, raw: data } });
     }
     const statusRaw = imageStatus(data);
@@ -2072,28 +2351,48 @@ router.get('/image/status/:tid', async (req, res) => {
 // ========== 图像异步任务轮询(同步代理内部使用,路径对齐主项目 /v1/images/tasks/) ==========
 // 轮询上限:1800 × 2s = 3600s = 60 分钟,与前端 ImageNode 标准路径保持一致,
 // 避免 GPT2 复杂 prompt / 多参考图任务被 120s 提前中断。
-async function pollImageTask(settings, taskId, apiKey, maxRetries = 1800, interval = 2000, preferredKind = '') {
+async function pollImageTaskDetailed(settings, taskId, apiKey, maxRetries = 1800, interval = 2000, preferredKind = '') {
+  let lastProgress = '0%';
+  let lastRaw = null;
+  let lastError = '';
   for (let i = 0; i < maxRetries; i++) {
     await new Promise(r => setTimeout(r, interval));
     try {
       const statusResult = await fetchImageTaskStatus(settings, taskId, apiKey, preferredKind);
       const r = statusResult?.response;
       const data = statusResult?.data || {};
-      if (!r.ok) continue;
+      lastRaw = data;
+      if (isTransientImageTaskState(data)) continue;
+      if (!r.ok) {
+        lastError = statusResult?.errorText || data?.error?.message || data?.message || imageError(data) || `上游 HTTP ${r.status}`;
+        const explicitFailure = isExplicitImageTaskFailure(data);
+        if (isTransientImageTaskHttpStatus(r.status) && !explicitFailure) continue;
+        return { ok: false, status: 'failed', progress: lastProgress, error: lastError, raw: data };
+      }
       const st = String(imageStatus(data) || '').toLowerCase();
+      const inner = data?.data && typeof data.data === 'object' ? data.data : {};
+      lastProgress = inner.progress || data?.progress || lastProgress;
       const urls = await saveImageItemsFromResult(data);
       if (['success', 'completed', 'complete', 'done', 'finished'].includes(st) || urls.length) {
-        return urls;
+        return { ok: true, status: 'completed', progress: '100%', urls, raw: data };
       }
       if (['failure', 'failed', 'error', 'cancelled', 'canceled'].includes(st) || imageApiFailed(data)) {
-        console.error('[poll] 任务失败:', imageError(data) || st);
-        return [];
+        lastError = imageError(data) || st;
+        console.error('[poll] 任务失败:', lastError);
+        return { ok: false, status: 'failed', progress: lastProgress, error: lastError, raw: data };
       }
     } catch (e) {
+      lastError = e.message;
       console.warn('[poll] 轮询异常:', e.message);
     }
   }
-  return [];
+  return { ok: false, status: 'timeout', progress: lastProgress, error: lastError || '异步任务轮询超时', raw: lastRaw };
+}
+
+async function pollImageTask(settings, taskId, apiKey, maxRetries = 1800, interval = 2000, preferredKind = '') {
+  const result = await pollImageTaskDetailed(settings, taskId, apiKey, maxRetries, interval, preferredKind);
+  if (!result.ok) return [];
+  return result.urls || [];
 }
 
 // ========================================================================
@@ -2521,49 +2820,68 @@ function hasLlmVideoParts(messages) {
 //   - 完全对齐 gpt-image-2-web _doSendChat (index.html L8128~L8305)
 router.post('/llm', async (req, res) => {
   const settings = currentSettings();
-  if (!settings?.llmApiKey) {
-    return res.status(400).json({ success: false, error: '未配置 LLM 独立 API Key' });
+  const credentials = resolveLlmCredentials(settings, req.body?.modelSource);
+  if (!credentials.apiKey) {
+    const label = credentials.source === 'zhenzhen' ? '通用服务' : 'LLM 独立';
+    return res.status(400).json({ success: false, error: `未配置${label} API Key` });
   }
   const { model, messages, temperature, max_tokens, stream } = req.body || {};
   if (!model || !messages) {
     return res.status(400).json({ success: false, error: 'model 和 messages 必填' });
   }
   const inputHadVideos = hasLlmVideoParts(messages);
+  const useNativeGeminiVideo = isGeminiLlmModel(model) && inputHadVideos;
 
   // 预处理 messages 中的 image_url / video_url:
   //   - 图片: 本地 /files/* 转 base64 dataURL
-  //   - 视频: 默认用项目内置 ffmpeg 抽关键帧转 image_url；或按用户选择发送原视频 Base64 / URL
+  //   - 视频: 完整视频压缩为 Base64，Gemini 走原生 inlineData 协议
   // 避免上游 LLM 服务拿着本地相对路径报 convert_request_failed。
   let normalizedMessages;
   try {
-    normalizedMessages = await normalizeLlmMessageMedia(messages, req.body || {}, {
+    const sourceMessages = useNativeGeminiVideo
+      ? messages
+      : await publicizeChatMessageMedia(settings, credentials.apiKey, messages);
+    const mediaOptions = useNativeGeminiVideo
+      ? { ...(req.body || {}), llmVideoMode: 'native-base64' }
+      : (req.body || {});
+    normalizedMessages = await normalizeLlmMessageMedia(sourceMessages, mediaOptions, {
       baseUrl: `http://127.0.0.1:${config.PORT}`,
+      requireVideoBase64: useNativeGeminiVideo,
     });
   } catch (e) {
     return res.status(400).json({ success: false, error: e.message || '多模态素材预处理失败' });
   }
 
-  const upstream = `${llmBaseUrl(settings)}/v1/chat/completions`;
-  const payload = {
-    model,
-    messages: normalizedMessages,
-    temperature: temperature ?? 0.7,
-    max_tokens: max_tokens ?? 16384,
-    stream: !!stream && !inputHadVideos,
-  };
+  const baseUrl = credentials.baseUrl;
+  const upstream = useNativeGeminiVideo
+    ? gaiscGeminiEndpointUrl(baseUrl, model)
+    : `${baseUrl}/v1/chat/completions`;
+  const payload = useNativeGeminiVideo
+    ? buildGeminiLlmPayload({
+      messages: normalizedMessages,
+      temperature,
+      maxTokens: max_tokens,
+    })
+    : {
+      model,
+      messages: normalizedMessages,
+      temperature: temperature ?? 0.7,
+      max_tokens: max_tokens ?? 16384,
+      stream: !!stream && !inputHadVideos,
+    };
 
   try {
     const r = await fetch(upstream, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${settings.llmApiKey}`,
+        Authorization: `Bearer ${credentials.apiKey}`,
       },
       body: JSON.stringify(payload),
     });
 
     // ===== 流式分支:SSE pass-through =====
-    if (payload.stream) {
+    if (!useNativeGeminiVideo && payload.stream) {
       if (!r.ok) {
         const errText = await r.text();
         return res.status(r.status).json({
@@ -2604,6 +2922,12 @@ router.post('/llm', async (req, res) => {
       return res.status(r.status).json({
         success: false,
         error: data?.error?.message || `上游 HTTP ${r.status}`,
+      });
+    }
+    if (useNativeGeminiVideo) {
+      return res.json({
+        success: true,
+        data: normalizeGeminiLlmResponse(data, model),
       });
     }
     // 处理 content 可能是字符串或多模态数组(gpt-image-2-all 出图)
@@ -2659,7 +2983,7 @@ router.post('/llm', async (req, res) => {
 
 // 上传本地/远端参考素材到上游 /v1/files 取 URL
 // 对齐 gpt-image-2-web 的 uploadFileToAPI: Seedance 的图像、视频、音频都不能直接传 /files/* 本地 URL。
-async function uploadRefToZhenzhen(settings, ref, apiKey, label = '参考素材') {
+async function uploadRefToZhenzhen(settings, ref, apiKey, label = '参考素材', options = {}) {
   if (typeof ref !== 'string' || !ref) throw new Error(`${label} 上传失败: 引用为空`);
   const trimmed = ref.trim();
   if (/^asset-[a-z0-9_-]+$/i.test(trimmed)) return trimmed;
@@ -2688,6 +3012,12 @@ async function uploadRefToZhenzhen(settings, ref, apiKey, label = '参考素材'
     throw new Error(`${label} 上传失败: 不支持的引用地址`);
   }
   const fd = new FormData();
+  const modelName = String(options?.modelName || options?.model_name || '').trim();
+  if (modelName) {
+    fd.append('model_name', modelName);
+    fd.append('model', modelName);
+    fd.append('modelName', modelName);
+  }
   const blob = new Blob([buf], { type: mime });
   fd.append('file', blob, `ref_${Date.now()}.${ext}`);
   const upR = await fetch(`${llmBaseUrl(settings)}/v1/files`, {
@@ -2768,16 +3098,27 @@ function looseObjectKey(key) {
   return String(key || '').toLowerCase().replace(/[^a-z0-9\u4e00-\u9fa5]/g, '');
 }
 
-function findLooseVideoUrl(value, seen = new WeakSet()) {
-  if (!value || typeof value !== 'object') return '';
-  if (seen.has(value)) return '';
+function pushUniqueVideoUrl(out, value) {
+  const text = String(value || '').trim();
+  if (!text) return;
+  if (!/^(https?:\/\/|\/\/|data:video\/|\/files\/|\/output\/)/i.test(text)) return;
+  if (!out.includes(text)) out.push(text);
+}
+
+function collectLooseVideoUrls(value, out = [], seen = new WeakSet(), acceptString = false) {
+  if (!value) return out;
+  if (typeof value === 'string') {
+    if (acceptString) pushUniqueVideoUrl(out, value);
+    return out;
+  }
+  if (typeof value !== 'object') return out;
+  if (seen.has(value)) return out;
   seen.add(value);
   if (Array.isArray(value)) {
     for (const item of value) {
-      const nested = findLooseVideoUrl(item, seen);
-      if (nested) return nested;
+      collectLooseVideoUrls(item, out, seen, acceptString);
     }
-    return '';
+    return out;
   }
   const preferredKeys = new Set([
     'videourl',
@@ -2802,21 +3143,55 @@ function findLooseVideoUrl(value, seen = new WeakSet()) {
   ]);
   for (const [key, item] of Object.entries(value)) {
     if (!preferredKeys.has(looseObjectKey(key))) continue;
-    if (typeof item === 'string' && /^(https?:\/\/|\/\/|data:video\/|\/files\/|\/output\/)/i.test(item.trim())) {
-      return item.trim();
-    }
-    if (Array.isArray(item)) {
-      const found = item.find((entry) => typeof entry === 'string' && entry.trim());
-      if (found) return String(found).trim();
-    }
-    const nested = findLooseVideoUrl(item, seen);
-    if (nested) return nested;
+    if (typeof item === 'string') pushUniqueVideoUrl(out, item);
+    else collectLooseVideoUrls(item, out, seen, true);
   }
   for (const item of Object.values(value)) {
-    const nested = findLooseVideoUrl(item, seen);
-    if (nested) return nested;
+    collectLooseVideoUrls(item, out, seen, false);
   }
-  return '';
+  return out;
+}
+
+function findLooseVideoUrl(value, seen = new WeakSet()) {
+  const urls = collectLooseVideoUrls(value, [], seen);
+  return urls[0] || '';
+}
+
+async function saveRemoteVideos(urls) {
+  const out = [];
+  for (const url of Array.isArray(urls) ? urls : []) {
+    const local = await saveRemoteVideo(url);
+    if (local && !out.includes(local)) out.push(local);
+  }
+  return out;
+}
+
+function collectMetadataResultUrls(meta, out) {
+  if (!meta || typeof meta !== 'object') return;
+  const resultUrls = meta.result_urls || meta.resultUrls;
+  if (Array.isArray(resultUrls)) {
+    for (const url of resultUrls) pushUniqueVideoUrl(out, url);
+  }
+  pushUniqueVideoUrl(out, meta.result_url || meta.resultUrl || meta.url);
+}
+
+function extractApishuVideoUrls(data) {
+  const out = [];
+  pushUniqueVideoUrl(out, data?.video_url);
+  pushUniqueVideoUrl(out, data?.videoUrl);
+  pushUniqueVideoUrl(out, data?.url);
+  collectMetadataResultUrls(data?.metadata, out);
+  pushUniqueVideoUrl(out, data?.data?.video_url);
+  pushUniqueVideoUrl(out, data?.data?.videoUrl);
+  pushUniqueVideoUrl(out, data?.data?.url);
+  collectMetadataResultUrls(data?.data?.metadata, out);
+  collectLooseVideoUrls(data, out);
+  return out;
+}
+
+function extractApishuVideoUrl(data) {
+  const urls = extractApishuVideoUrls(data);
+  return urls[0] || '';
 }
 
 function findLooseValueByKeys(value, keys, seen = new WeakSet()) {
@@ -2854,8 +3229,15 @@ function isApishuSeedanceVideoModel(model) {
 }
 
 function isApishuVeoOmniModel(model) {
-  return ['veo-omni-flash', 'veo-omni-flash-video-edit']
-    .includes(String(model || '').trim().toLowerCase());
+  return /^(?:veo-)?omni-flash(?:-(?:components|edit|video-edit))?$/
+    .test(String(model || '').trim().toLowerCase());
+}
+
+function apishuVeoOmniMode(model) {
+  const normalized = String(model || '').trim().toLowerCase().replace(/^veo-/, '');
+  if (normalized.endsWith('-video-edit') || normalized.endsWith('-edit')) return 'edit';
+  if (normalized.endsWith('-components')) return 'components';
+  return 'flash';
 }
 
 function apishuVideosEndpoint(settings, taskId = '') {
@@ -2876,6 +3258,169 @@ async function apishuSeedanceImageRef(ref) {
   return `data:${mime};base64,${Buffer.from(conv.buf).toString('base64')}`;
 }
 
+async function videosApiMediaRef(settings, apiKey, ref, kind = 'image') {
+  const text = String(ref || '').trim();
+  if (!text) return '';
+  if (/^(https?:\/\/|asset:\/\/)/i.test(text)) return text;
+  if (text.startsWith('data:')) {
+    const mime = text.match(/^data:([^;,]+)/)?.[1] || '';
+    if (kind === 'image' && !/^image\//i.test(mime)) return '';
+    if (kind === 'video' && !/^video\//i.test(mime)) return '';
+    if (kind === 'audio' && !/^audio\//i.test(mime)) return '';
+    return await newApiPublicMediaUrl(settings, apiKey, text, kind) || text;
+  }
+  const publicUrl = await newApiPublicMediaUrl(settings, apiKey, text, kind);
+  if (publicUrl) return publicUrl;
+  const conv = await refToBuffer(text);
+  if (!conv?.buf) return '';
+  const fallbackMime = kind === 'video' ? 'video/mp4' : kind === 'audio' ? 'audio/mpeg' : 'image/png';
+  const mime = String(conv.mime || fallbackMime).split(';')[0].trim() || fallbackMime;
+  if (kind === 'image' && !mime.toLowerCase().startsWith('image/')) return '';
+  if (kind === 'video' && !mime.toLowerCase().startsWith('video/')) return '';
+  if (kind === 'audio' && !mime.toLowerCase().startsWith('audio/')) return '';
+  return `data:${mime};base64,${Buffer.from(conv.buf).toString('base64')}`;
+}
+
+function videosApiRefObjectUrl(ref) {
+  if (!ref || typeof ref !== 'object' || Array.isArray(ref)) return '';
+  const direct = ref.url || ref.file_url || ref.fileUrl || ref.src || ref.href;
+  if (typeof direct === 'string' && direct.trim()) return direct.trim();
+  const nested = ref.image_url || ref.imageUrl || ref.video_url || ref.videoUrl || ref.audio_url || ref.audioUrl;
+  if (typeof nested === 'string' && nested.trim()) return nested.trim();
+  if (nested && typeof nested === 'object' && typeof nested.url === 'string') return nested.url.trim();
+  return '';
+}
+
+function videosApiRefObjectKind(ref, fallback = 'image') {
+  const raw = String(ref?.type || ref?.kind || ref?.mediaType || fallback || 'image').trim().toLowerCase();
+  if (raw.includes('video')) return 'video';
+  if (raw.includes('audio')) return 'audio';
+  return 'image';
+}
+
+async function videosApiStructuredRefs(settings, apiKey, refs, fallbackKind = 'image') {
+  const rawRefs = Array.isArray(refs) ? refs : [];
+  const out = [];
+  for (const ref of rawRefs) {
+    if (!ref || typeof ref !== 'object' || Array.isArray(ref)) continue;
+    const kind = videosApiRefObjectKind(ref, fallbackKind);
+    const rawUrl = videosApiRefObjectUrl(ref);
+    if (!rawUrl) continue;
+    const url = await videosApiMediaRef(settings, apiKey, rawUrl, kind);
+    if (!url) continue;
+    out.push({
+      ...ref,
+      type: ref.type || kind,
+      url,
+    });
+  }
+  return out;
+}
+
+async function xsTokenMediaUrlList(settings, apiKey, refs, kind = 'image') {
+  const rawRefs = Array.isArray(refs) ? refs : [];
+  const out = [];
+  for (const ref of rawRefs) {
+    const text = String(ref || '').trim();
+    if (!text) continue;
+    let url = '';
+    if (kind === 'image' || kind === 'video' || kind === 'audio') {
+      url = await videosApiMediaRef(settings, apiKey, text, kind);
+    }
+    if (url && !out.includes(url)) out.push(url);
+  }
+  return out;
+}
+
+function xsTokenVideoResolution(model, inputResolution) {
+  const raw = String(inputResolution || '').trim().toLowerCase();
+  const modelText = String(model || '').trim().toLowerCase();
+  if (modelText.includes('1080p')) return '1080p';
+  if (['480p', '720p', '1080p'].includes(raw)) return raw;
+  return '720p';
+}
+
+async function buildVideosApiPayload(input = {}) {
+  const settings = input.settings || null;
+  const apiKey = input.apiKey || '';
+  const providerParams = input.providerParams && typeof input.providerParams === 'object' ? input.providerParams : {};
+  const model = String(input.model || '').trim();
+  if (!model) throw new Error('XS-Token 视频模型不能为空');
+  const prompt = String(input.prompt || '').trim();
+  const duration = Math.max(4, Math.min(15, parseInt(input.duration ?? providerParams.duration ?? 5, 10) || 5));
+  const ratio = String(input.ratio || input.aspect_ratio || providerParams.ratio || providerParams.aspect_ratio || '16:9');
+  const resolution = xsTokenVideoResolution(model, input.resolution || providerParams.resolution);
+
+  const imageCandidates = [];
+  if (input.firstFrame) imageCandidates.push(input.firstFrame);
+  if (input.lastFrame) imageCandidates.push(input.lastFrame);
+  const refImageObjects = [];
+  if (Array.isArray(input.refImages)) {
+    for (const ref of input.refImages) {
+      if (ref && typeof ref === 'object' && !Array.isArray(ref)) refImageObjects.push(ref);
+      else imageCandidates.push(ref);
+    }
+  }
+  const imageUrls = await xsTokenMediaUrlList(settings, apiKey, imageCandidates.slice(0, 9), 'image');
+  const structuredRefs = await videosApiStructuredRefs(settings, apiKey, refImageObjects.slice(0, 9), 'image');
+  const videoUrls = await xsTokenMediaUrlList(settings, apiKey, Array.isArray(input.videos) ? input.videos.slice(0, 3) : [], 'video');
+  const audioUrls = await xsTokenMediaUrlList(settings, apiKey, Array.isArray(input.audios) ? input.audios.slice(0, 3) : [], 'audio');
+
+  if (/sora/i.test(model)) {
+    const payload = {
+      model,
+      prompt,
+      duration,
+      video_config: {
+        aspect_ratio: ratio,
+        resolution_name: resolution,
+      },
+    };
+    if (imageUrls.length === 1) {
+      payload.image_url = imageUrls[0];
+      payload.video_config.reference_mode = 'image_reference';
+    } else if (imageUrls.length > 1) {
+      payload.reference_image_urls = imageUrls;
+      payload.video_config.reference_mode = imageUrls.length >= 2 ? 'start_end' : 'auto';
+    }
+    if (structuredRefs.length) {
+      payload.refImages = structuredRefs;
+      payload.video_config.reference_mode = payload.video_config.reference_mode || 'auto';
+    }
+    if (videoUrls.length === 1) payload.reference_video = videoUrls[0];
+    if (videoUrls.length > 1) payload.reference_videos = videoUrls;
+    return payload;
+  }
+
+  const payload = {
+    model,
+    mode: 'text_to_video',
+    prompt,
+    resolution,
+    duration,
+    ratio,
+    generate_audio: input.generate_audio !== false,
+  };
+  if (imageUrls.length) {
+    payload.image_urls = imageUrls;
+    payload.mode = input.firstFrame && input.lastFrame && imageUrls.length >= 2 ? 'first_last_frame' : 'image_to_video';
+  }
+  if (videoUrls.length) {
+    payload.video_urls = videoUrls;
+    payload.mode = 'multi_ref';
+  }
+  if (audioUrls.length) {
+    payload.audio_urls = audioUrls;
+    payload.mode = 'multi_ref';
+  }
+  if (structuredRefs.length) {
+    payload.refImages = structuredRefs;
+    payload.mode = 'multi_ref';
+  }
+  if (typeof input.seed === 'number' && input.seed !== -1) payload.seed = input.seed;
+  return payload;
+}
+
 async function apishuVeoOmniMediaRef(ref, expectedKind = 'image') {
   const text = String(ref || '').trim();
   if (!text) return '';
@@ -2888,6 +3433,14 @@ async function apishuVeoOmniMediaRef(ref, expectedKind = 'image') {
   if (expectedKind === 'video' && !mime.toLowerCase().startsWith('video/')) return '';
   if (expectedKind === 'image' && !mime.toLowerCase().startsWith('image/')) return '';
   return `data:${mime};base64,${Buffer.from(conv.buf).toString('base64')}`;
+}
+
+async function skyleeOmniPublicMediaRef(settings, apiKey, ref, expectedKind = 'image') {
+  const text = String(ref || '').trim();
+  if (!text) return '';
+  if (/^https?:\/\//i.test(text)) return text;
+  const publicUrl = await newApiPublicMediaUrl(settings, apiKey, text, expectedKind);
+  return /^https?:\/\//i.test(publicUrl) ? publicUrl : '';
 }
 
 function apishuSeedanceReferenceName(url, index, kind) {
@@ -2942,7 +3495,50 @@ async function buildApishuSeedancePayload(input = {}) {
 async function buildApishuVeoOmniPayload(input = {}) {
   const providerParams = input.providerParams && typeof input.providerParams === 'object' ? input.providerParams : {};
   const model = String(input.model || '').trim();
-  const isEdit = model === 'veo-omni-flash-video-edit';
+  const mode = apishuVeoOmniMode(model);
+  const isLegacyModel = /^veo-/i.test(model);
+
+  if (!isLegacyModel) {
+    const allowedSeconds = new Set([4, 6, 8, 10]);
+    const requestedSeconds = parseInt(input.seconds ?? input.duration ?? providerParams.seconds ?? providerParams.duration ?? 6, 10);
+    const seconds = allowedSeconds.has(requestedSeconds) ? requestedSeconds : 6;
+    const requestedResolution = String(input.resolution || providerParams.resolution || '720p').trim().toLowerCase();
+    const resolution = ['720p', '1080p', '4k'].includes(requestedResolution) ? requestedResolution : '720p';
+    const aspectRatio = String(input.aspect_ratio || input.ratio || providerParams.aspect_ratio || providerParams.ratio || '16:9');
+    const payload = {
+      model,
+      prompt: String(input.prompt || '').trim(),
+      resolution,
+      aspect_ratio: aspectRatio,
+      seconds,
+    };
+
+    if (mode === 'edit') {
+      const rawVideos = Array.isArray(input.videos)
+        ? input.videos
+        : [input.video_url || input.video || providerParams.video_url || providerParams.videoUrl || providerParams.video].filter(Boolean);
+      const videoUrl = await skyleeOmniPublicMediaRef(input.settings, input.apiKey, rawVideos[0], 'video');
+      if (!videoUrl) throw new Error('omni-flash-edit 需要 1 个源视频，且素材必须可公开上传');
+      payload.video_urls = [videoUrl];
+      return payload;
+    }
+
+    const rawImages = Array.isArray(input.images) ? input.images : [];
+    const maxImages = mode === 'components' ? 9 : 1;
+    const imageUrls = [];
+    for (const ref of rawImages.slice(0, maxImages)) {
+      const url = await skyleeOmniPublicMediaRef(input.settings, input.apiKey, ref, 'image');
+      if (!url) throw new Error('Omni 参考图无法上传为公开 URL，请重新选择素材');
+      if (!imageUrls.includes(url)) imageUrls.push(url);
+    }
+    if (mode === 'components' && imageUrls.length === 0) {
+      throw new Error('omni-flash-components 至少需要 1 张参考图');
+    }
+    if (imageUrls.length) payload.image_urls = imageUrls;
+    return payload;
+  }
+
+  const isEdit = mode === 'edit';
   const payload = {
     model,
     prompt: String(input.prompt || '').trim(),
@@ -2979,39 +3575,17 @@ async function buildApishuVeoOmniPayload(input = {}) {
     return payload;
   }
 
-  const mode = String(providerParams.veoOmniMode || providerParams.mode || '').trim().toLowerCase();
-  if (mode === 'frames') {
+  const legacyMode = String(providerParams.veoOmniMode || providerParams.mode || '').trim().toLowerCase();
+  if (legacyMode === 'frames') {
     payload.mode = 'frames';
     if (images.length) payload.images = images.slice(0, 2);
-  } else if (mode === 'text') {
+  } else if (legacyMode === 'text') {
     payload.mode = 'text';
   } else if (images.length) {
     payload.mode = 'reference';
     payload.Ingredients_images = images;
   }
   return payload;
-}
-
-function extractApishuVideoUrl(data) {
-  const resultUrls = data?.metadata?.result_urls || data?.metadata?.resultUrls || data?.data?.metadata?.result_urls;
-  const fromResultUrls = Array.isArray(resultUrls)
-    ? resultUrls.find((item) => typeof item === 'string' && item.trim())
-    : '';
-  return data?.video_url
-    || data?.videoUrl
-    || data?.url
-    || data?.metadata?.result_url
-    || data?.metadata?.resultUrl
-    || data?.metadata?.url
-    || data?.data?.video_url
-    || data?.data?.videoUrl
-    || data?.data?.url
-    || data?.data?.metadata?.result_url
-    || data?.data?.metadata?.resultUrl
-    || data?.data?.metadata?.url
-    || fromResultUrls
-    || findLooseVideoUrl(data)
-    || getFalVideoUrl(data);
 }
 
 function splitSoraCharacterIds(raw) {
@@ -3162,6 +3736,25 @@ async function saveRemoteVideo(url) {
   }
 }
 
+async function saveAuthenticatedVideoContent(settings, apiKey, taskId) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), SAVE_REMOTE_VIDEO_TIMEOUT_MS);
+  try {
+    const response = await fetch(`${apishuVideosEndpoint(settings, taskId)}/content`, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error(`视频内容下载失败: HTTP ${response.status}`);
+    const contentType = response.headers.get('content-type') || 'video/mp4';
+    const ext = safeOutputExt(extFromContentType(contentType), 'mp4');
+    const filename = `vid_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
+    fs.writeFileSync(path.join(config.OUTPUT_DIR, filename), Buffer.from(await response.arrayBuffer()));
+    return `/files/output/${filename}`;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // POST /api/proxy/video/fal/submit
 router.post('/video/fal/submit', async (req, res) => {
   const settings = currentSettings();
@@ -3225,6 +3818,7 @@ router.post('/video/fal/submit', async (req, res) => {
     } else if (reg.paramKind === 'grok-fal') {
       // ===== Grok Video FAL (主项目 runGrokFal line 3787) =====
       const isV15 = effectiveApiModel === 'grok-imagine-video-1.5';
+      const grokUploadOptions = { modelName: effectiveApiModel };
       const mode = isV15
         ? 'image_to_video'
         : String(gkMode || 'image_to_video') === 'reference_to_video' ? 'reference_to_video' : 'image_to_video';
@@ -3245,7 +3839,7 @@ router.post('/video/fal/submit', async (req, res) => {
         if (!hasImg) throw new Error('Grok Video 1.5 requires one uploaded image');
         const imgData = useBase64
           ? await refToBananaImage(trimmedRefs[0])
-          : await uploadRefToZhenzhen(settings, trimmedRefs[0], apiKey);
+          : await uploadRefToZhenzhen(settings, trimmedRefs[0], apiKey, 'Grok Video 1.5 参考图', grokUploadOptions);
         if (imgData) payload.image_url = imgData;
         else throw new Error('Grok Video 1.5 参考图处理失败');
       } else if (mode === 'reference_to_video') {
@@ -3255,7 +3849,7 @@ router.post('/video/fal/submit', async (req, res) => {
         for (let i = 0; i < uploadRefs.length && referenceImageUrls.length < 7; i++) {
           const imgData = useBase64
             ? await refToBananaImage(uploadRefs[i])
-            : await uploadRefToZhenzhen(settings, uploadRefs[i], apiKey);
+            : await uploadRefToZhenzhen(settings, uploadRefs[i], apiKey, `Grok FAL 参考图 #${i + 1}`, grokUploadOptions);
           if (imgData) referenceImageUrls.push(imgData);
           else throw new Error(`Grok FAL 参考图 #${i + 1} 处理失败`);
         }
@@ -3271,7 +3865,7 @@ router.post('/video/fal/submit', async (req, res) => {
         if (hasImg) {
           const imgData = useBase64
             ? await refToBananaImage(trimmedRefs[0])
-            : await uploadRefToZhenzhen(settings, trimmedRefs[0], apiKey);
+            : await uploadRefToZhenzhen(settings, trimmedRefs[0], apiKey, 'Grok FAL 参考图', grokUploadOptions);
           if (imgData) payload.image_url = imgData;
           else throw new Error('Grok FAL 参考图处理失败');
         }
@@ -3607,7 +4201,7 @@ function falToolboxHasOutput(result) {
   return Boolean(result.urls.length || result.textOutputs.length || result.jsonOutputs.length);
 }
 
-async function resolveFalToolboxMediaPayload(payload, mediaFields, apiKey) {
+async function resolveFalToolboxMediaPayload(settings, payload, mediaFields, apiKey) {
   const next = { ...(payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {}) };
   const fields = Array.isArray(mediaFields) ? mediaFields : [];
   for (const field of fields) {
@@ -3654,7 +4248,7 @@ router.post('/fal-toolbox/submit', async (req, res) => {
     return res.status(400).json({ success: false, error: `非法 FAL endpoint: ${endpoint || ''}` });
   }
   try {
-    const finalPayload = await resolveFalToolboxMediaPayload(payload, mediaFields, apiKey);
+    const finalPayload = await resolveFalToolboxMediaPayload(settings, payload, mediaFields, apiKey);
     const falUrl = `${baseUrl}/fal/${endpoint}`;
     console.log('[fal-toolbox/submit]', toolId || title || endpoint, '→', falUrl, '| payload keys:', Object.keys(finalPayload));
     const upstream = await fetch(falUrl, {
@@ -3807,14 +4401,15 @@ router.post('/video/submit', async (req, res) => {
     seed, private: privateVideo, is_private, watermark, images, videos, video_url, video, referenceVideos, videoUrls, providerParams, size, protocolModel: protocolModelInput,
   } = req.body || {};
   // v1.2.9.15: 一体化「专属优先 fallback 通用」校验
-  if (!ensureKeyOrSelectedGroup(settings, res, protocolModelInput || model || '', '视频', providerParams)) return;
+  if (!ensureKey(settings, res, protocolModelInput || model || '', '视频')) return;
   if (!model || !prompt) {
     return res.status(400).json({ success: false, error: 'model 和 prompt 必填' });
   }
   const requestedModel = String(model || '').trim();
-  const effectiveModel = resolveVideoModelOverride(settings, requestedModel);
+  const effectiveModel = requestedModel;
   const protocolModel = requestedModel || effectiveModel;
   const routeModel = String(protocolModelInput || protocolModel).trim() || protocolModel;
+  const submitProtocol = resolveVideoSubmitProtocol(settings, requestedModel, effectiveModel, routeModel);
   const lowerModel = String(routeModel).toLowerCase();
   const effectiveLowerModel = String(effectiveModel).toLowerCase();
   const isApishuVeoOmni = isApishuVeoOmniModel(lowerModel) || isApishuVeoOmniModel(effectiveLowerModel);
@@ -3826,19 +4421,62 @@ router.post('/video/submit', async (req, res) => {
   let body;
 
   try {
-    const providerContext = await applyZhenzhenProviderContext(settings, {
-      route: 'video/submit',
-      kind: 'video',
-      model: effectiveModel,
-      hint: routeModel || effectiveModel || '',
-      providerParams,
-    });
     const apiKey = settings.zhenzhenApiKey;
-    if (isApishuVeoOmni) {
+    if (submitProtocol === 'videos' && !isApishuVeoOmni) {
+      const mediaVideos = Array.isArray(videos)
+        ? videos
+        : (Array.isArray(referenceVideos) ? referenceVideos : (Array.isArray(videoUrls) ? videoUrls : []));
+      const payload = await buildVideosApiPayload({
+        settings,
+        apiKey,
+        model: requestedModel || effectiveModel,
+        prompt,
+        duration,
+        ratio: ratio || aspect_ratio,
+        resolution,
+        firstFrame: Array.isArray(images) ? images[0] : undefined,
+        refImages: Array.isArray(images) ? images.slice(1) : [],
+        videos: mediaVideos,
+        providerParams,
+        seed,
+      });
+      console.log('[upstream] Videos API → /v1/videos model:', payload.model,
+        'duration:', payload.duration,
+        'ratio:', payload.ratio || payload.video_config?.aspect_ratio,
+        'resolution:', payload.resolution || payload.video_config?.resolution_name,
+        'mode:', payload.mode || payload.video_config?.reference_mode || 'video_config');
+      const r = await fetch(apishuVideosEndpoint(settings), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify(payload),
+      });
+      const text = await r.text();
+      let data;
+      try { data = JSON.parse(text); } catch {
+        return res.status(500).json({ success: false, error: '上游响应非 JSON: ' + text.slice(0, 200) });
+      }
+      if (!r.ok) {
+        const errorText = getUpstreamErrorMessage(data, text, r.status);
+        return res.status(r.status).json({ success: false, error: errorText, raw: data });
+      }
+      const taskId = data?.task_id || data?.id;
+      if (!taskId) return res.status(500).json({ success: false, error: '未获取到 task_id: ' + text.slice(0, 200) });
+      rememberTaskKey(taskId, apiKey, {
+        model: payload.model,
+        effectiveModel,
+        requestedModel,
+        routeModel,
+        protocol: 'videos-api',
+      });
+      return res.json({ success: true, data: { taskId, protocol: 'videos-api', effectiveModel: payload.model, requestedModel, raw: data } });
+    } else if (isApishuVeoOmni) {
       const payload = await buildApishuVeoOmniPayload({
+        settings,
+        apiKey,
         model: effectiveModel,
         prompt,
         duration,
+        resolution,
         aspect_ratio,
         ratio,
         images,
@@ -3864,7 +4502,6 @@ router.post('/video/submit', async (req, res) => {
       }
       if (!r.ok) {
         const errorText = getUpstreamErrorMessage(data, text, r.status);
-        await invalidateZhenzhenProviderKey(providerContext, apiKey, errorText);
         return res.status(r.status).json({ success: false, error: errorText, raw: data });
       }
       const taskId = data?.task_id || data?.id;
@@ -3874,7 +4511,6 @@ router.post('/video/submit', async (req, res) => {
         requestedModel,
         routeModel,
         protocol: 'apishu-veo-omni',
-        ...providerContext.taskMeta,
       });
       return res.json({ success: true, data: { taskId, protocol: 'apishu-veo-omni', effectiveModel, requestedModel, raw: data } });
     } else if (isVeoOmni) {
@@ -3912,12 +4548,11 @@ router.post('/video/submit', async (req, res) => {
       }
       if (!r.ok) {
         const errorText = getUpstreamErrorMessage(data, text, r.status);
-        await invalidateZhenzhenProviderKey(providerContext, apiKey, errorText);
         return res.status(r.status).json({ success: false, error: errorText, raw: data });
       }
       const taskId = data?.task_id || data?.id;
       if (!taskId) return res.status(500).json({ success: false, error: '未获取到 task_id: ' + text.slice(0, 200) });
-      rememberTaskKey(taskId, apiKey, { model: VEO_OMNI_PUBLIC_MODEL, effectiveModel, routeModel, ...providerContext.taskMeta });
+      rememberTaskKey(taskId, apiKey, { model: VEO_OMNI_PUBLIC_MODEL, effectiveModel, routeModel });
       return res.json({ success: true, data: { taskId, raw: data } });
     } else if (isGrokVideo15New) {
       // ===== Grok Video 1.5 New 协议(参考 Comfly_grok_video_1_5): POST /v1/videos multipart =====
@@ -3951,26 +4586,24 @@ router.post('/video/submit', async (req, res) => {
       }
       if (!r.ok) {
         const errorText = getUpstreamErrorMessage(data, text, r.status);
-        await invalidateZhenzhenProviderKey(providerContext, apiKey, errorText);
         return res.status(r.status).json({ success: false, error: errorText, raw: data });
       }
       const taskId = data?.task_id || data?.id;
       if (!taskId) return res.status(500).json({ success: false, error: '未获取到 task_id: ' + text.slice(0, 200) });
       {
         const model = routeModel;
-        rememberTaskKey(taskId, apiKey, { model, effectiveModel, ...providerContext.taskMeta });
+        rememberTaskKey(taskId, apiKey, { model, effectiveModel });
       }
       return res.json({ success: true, data: { taskId, raw: data } });
     } else if (isSoraZhenzhen) {
       // ===== Sora2 Zhenzhen API 协议(参考 gpt-image-2-web runSora2) =====
       body = {
         prompt,
-        model: 'sora-2',
+        model: effectiveModel,
         aspect_ratio: aspect_ratio || ratio || '16:9',
         duration: String(duration ?? 15),
         private: privateVideo !== false && is_private !== false,
       };
-      if (effectiveModel !== requestedModel) body.model = effectiveModel;
       if (seed && seed > 0) body.seed = seed;
       if (Array.isArray(images) && images.length) {
         const refs = images.slice(0, 1).map(stripDataUrlPrefix).filter(Boolean);
@@ -3991,7 +4624,7 @@ router.post('/video/submit', async (req, res) => {
         const refs = images.slice(0, 7); // Grok 最多 7 张
         const urls = [];
         for (let i = 0; i < refs.length; i++) {
-          const u = await uploadRefToZhenzhen(settings, refs[i], apiKey);
+          const u = await uploadRefToZhenzhen(settings, refs[i], apiKey, `参考图 #${i + 1}`, { modelName: effectiveModel });
           if (u) urls.push(u);
           else throw new Error(`参考图 #${i + 1} 上传失败`);
         }
@@ -4025,12 +4658,11 @@ router.post('/video/submit', async (req, res) => {
     }
     if (!r.ok) {
       const errorText = getUpstreamErrorMessage(data, text, r.status);
-      await invalidateZhenzhenProviderKey(providerContext, apiKey, errorText);
       return res.status(r.status).json({ success: false, error: errorText, raw: data });
     }
     const taskId = data?.task_id || data?.id;
     if (!taskId) return res.status(500).json({ success: false, error: '未获取到 task_id: ' + text.slice(0, 200) });
-    rememberTaskKey(taskId, apiKey, { model: routeModel, effectiveModel, ...providerContext.taskMeta });
+    rememberTaskKey(taskId, apiKey, { model: routeModel, effectiveModel });
     res.json({ success: true, data: { taskId, raw: data } });
   } catch (e) {
     console.error('proxy/video/submit 错误:', e);
@@ -4060,11 +4692,13 @@ router.get('/video/query', async (req, res) => {
   const usesLegacyV1VideoQuery = isVeoOmniModel(queryModel) || isGrokVideo15NewModel(queryModel)
     || isVeoOmniModel(protocolQueryModel)
     || isGrokVideo15NewModel(protocolQueryModel);
-  const usesV1VideoQuery = usesApishuVeoOmniQuery || usesLegacyV1VideoQuery;
+  const configuredQueryProtocol = resolveVideoSubmitProtocol(settings, queryModel, queryModel, protocolQueryModel);
+  const usesVideosApiQuery = rememberedMeta?.protocol === 'videos-api' || configuredQueryProtocol === 'videos';
+  const usesV1VideoQuery = usesApishuVeoOmniQuery || usesLegacyV1VideoQuery || usesVideosApiQuery;
   const upstream = usesApishuVeoOmniQuery
     ? apishuVideosEndpoint(settings, taskId)
     : usesV1VideoQuery
-      ? `${zhenzhenBaseUrl(settings)}/v1/videos/${encodeURIComponent(taskId)}`
+      ? apishuVideosEndpoint(settings, taskId)
     : `${zhenzhenBaseUrl(settings)}/v2/videos/generations/${encodeURIComponent(taskId)}`;
   try {
     const r = await fetch(upstream, {
@@ -4077,15 +4711,23 @@ router.get('/video/query', async (req, res) => {
     }
     if (!r.ok) {
       const errorText = getUpstreamErrorMessage(data, text, r.status);
-      await invalidateZhenzhenProviderKey({ taskMeta: rememberedMeta || {} }, settings.zhenzhenApiKey, errorText);
       return res.status(r.status).json({ success: false, error: errorText, raw: data });
     }
     const st = normalizeVideoTaskStatus(data);
     let videoUrl = null;
+    let videoUrls = [];
     if (st === 'SUCCESS') {
-      const remote = usesApishuVeoOmniQuery ? extractApishuVideoUrl(data) : getFalVideoUrl(data);
-      if (remote) {
-        videoUrl = await saveRemoteVideo(remote);
+      const remotes = (usesApishuVeoOmniQuery || usesVideosApiQuery) ? extractApishuVideoUrls(data) : [getFalVideoUrl(data)].filter(Boolean);
+      if (remotes.length) {
+        videoUrls = await saveRemoteVideos(remotes);
+        videoUrl = videoUrls[0] || null;
+      } else if (usesV1VideoQuery) {
+        try {
+          videoUrl = await saveAuthenticatedVideoContent(settings, settings.zhenzhenApiKey, taskId);
+          videoUrls = videoUrl ? [videoUrl] : [];
+        } catch (contentError) {
+          console.warn('[video/query] completed task content download failed:', contentError?.message || contentError);
+        }
       }
     }
     res.json({
@@ -4094,6 +4736,7 @@ router.get('/video/query', async (req, res) => {
         status: st || 'PENDING',
         progress: data?.progress == null ? '' : String(data.progress),
         videoUrl,
+        videoUrls,
         failReason: data?.fail_reason || data?.failure_details || data?.error || data?.message || null,
         raw: data,
       },
@@ -4133,22 +4776,60 @@ router.post('/seedance/submit', async (req, res) => {
     videos, audios,
     providerParams,
   } = req.body || {};
-  if (!ensureKeyOrSelectedGroup(settings, res, 'seedance', 'Seedance', providerParams)) return;
+  if (!ensureKey(settings, res, 'seedance', 'Seedance')) return;
+  apiKey = settings.zhenzhenApiKey;
 
   if (!model) return res.status(400).json({ success: false, error: 'model 必填' });
   if (!prompt) return res.status(400).json({ success: false, error: 'prompt 不得为空' });
   const requestedModel = String(model || '').trim();
   const effectiveModel = resolveSeedanceVideoModelOverride(settings, requestedModel);
+  const submitProtocol = resolveSeedanceSubmitProtocol(settings, requestedModel, effectiveModel);
 
   try {
-    const providerContext = await applyZhenzhenProviderContext(settings, {
-      route: 'seedance/submit',
-      kind: 'seedance',
-      model: effectiveModel,
-      hint: effectiveModel || requestedModel || 'seedance',
-      providerParams,
-    });
-    apiKey = settings.zhenzhenApiKey;
+    if (submitProtocol === 'videos') {
+      const videosApiModel = resolveVideosApiSeedanceModel(settings, requestedModel, effectiveModel);
+      const payload = await buildVideosApiPayload({
+        settings,
+        apiKey,
+        model: videosApiModel,
+        prompt,
+        duration,
+        ratio,
+        resolution,
+        generate_audio,
+        seed,
+        firstFrame,
+        lastFrame,
+        refImages,
+        videos,
+        audios,
+        providerParams,
+      });
+      console.log('[upstream] Videos API → /v1/videos model:', payload.model,
+        'duration:', payload.duration,
+        'ratio:', payload.ratio || payload.video_config?.aspect_ratio,
+        'resolution:', payload.resolution || payload.video_config?.resolution_name,
+        'mode:', payload.mode || payload.video_config?.reference_mode || 'video_config');
+      const r = await fetch(apishuVideosEndpoint(settings), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify(payload),
+      });
+      const text = await r.text();
+      let data;
+      try { data = JSON.parse(text); } catch {
+        return res.status(500).json({ success: false, error: '上游响应非 JSON: ' + text.slice(0, 200) });
+      }
+      if (!r.ok) {
+        const errorText = getUpstreamErrorMessage(data, text, r.status);
+        return res.status(r.status).json({ success: false, error: errorText, raw: data });
+      }
+      const taskId = data?.task_id || data?.id;
+      if (!taskId) return res.status(500).json({ success: false, error: '未获取到 task_id: ' + text.slice(0, 200) });
+      rememberTaskKey(taskId, apiKey, { model: payload.model, requestedModel, protocol: 'videos-api' });
+      return res.json({ success: true, data: { taskId, protocol: 'videos-api', effectiveModel: payload.model, requestedModel, raw: data } });
+    }
+
     if (isApishuSeedanceVideoModel(effectiveModel) || isApishuSeedanceVideoModel(requestedModel)) {
       const payload = await buildApishuSeedancePayload({
         model: effectiveModel,
@@ -4176,12 +4857,11 @@ router.post('/seedance/submit', async (req, res) => {
       }
       if (!r.ok) {
         const errorText = getUpstreamErrorMessage(data, text, r.status);
-        await invalidateZhenzhenProviderKey(providerContext, apiKey, errorText);
         return res.status(r.status).json({ success: false, error: errorText, raw: data });
       }
       const taskId = data?.task_id || data?.id;
       if (!taskId) return res.status(500).json({ success: false, error: '未获取到 task_id: ' + text.slice(0, 200) });
-      rememberTaskKey(taskId, apiKey, { model: effectiveModel, requestedModel, protocol: 'apishu-v1-videos', ...providerContext.taskMeta });
+      rememberTaskKey(taskId, apiKey, { model: effectiveModel, requestedModel, protocol: 'apishu-v1-videos' });
       return res.json({ success: true, data: { taskId, protocol: 'apishu-v1-videos', effectiveModel, requestedModel, raw: data } });
     }
 
@@ -4269,12 +4949,11 @@ router.post('/seedance/submit', async (req, res) => {
     }
     if (!r.ok) {
       const errorText = data?.error?.message || data?.message || `上游 HTTP ${r.status}`;
-      await invalidateZhenzhenProviderKey(providerContext, apiKey, errorText);
       return res.status(r.status).json({ success: false, error: errorText });
     }
     const taskId = data?.id || data?.task_id;
     if (!taskId) return res.status(500).json({ success: false, error: '未获取到 task_id: ' + text.slice(0, 200) });
-    rememberTaskKey(taskId, apiKey, { model: effectiveModel, requestedModel, ...providerContext.taskMeta });
+    rememberTaskKey(taskId, apiKey, { model: effectiveModel, requestedModel });
     res.json({ success: true, data: { taskId, raw: data } });
   } catch (e) {
     console.error('proxy/seedance/submit 错误:', e);
@@ -4302,6 +4981,7 @@ router.get('/seedance/query', async (req, res) => {
   const isApishuQuery = isApishuSeedanceVideoModel(queryModel)
     || isApishuSeedanceVideoModel(rememberedMeta?.model)
     || rememberedMeta?.protocol === 'apishu-v1-videos'
+    || rememberedMeta?.protocol === 'videos-api'
     || looksApishuV1Task;
   const upstream = `${baseUrl}/seedance/v3/contents/generations/tasks/${encodeURIComponent(taskId)}`;
 
@@ -4314,15 +4994,18 @@ router.get('/seedance/query', async (req, res) => {
     }
     if (!r.ok) {
       const errorText = data?.error?.message || data?.message || `上游 HTTP ${r.status}`;
-      await invalidateZhenzhenProviderKey({ taskMeta: rememberedMeta || {} }, apiKey, errorText);
       return res.status(r.status).json({ success: false, error: errorText });
     }
     if (isApishuQuery) {
       const st = normalizeVideoTaskStatus(data).toLowerCase();
       let videoUrl = null;
+      let videoUrls = [];
       if (st === 'success') {
-        const remote = extractApishuVideoUrl(data);
-        if (remote) videoUrl = await saveRemoteVideo(remote);
+        const remotes = extractApishuVideoUrls(data);
+        if (remotes.length) {
+          videoUrls = await saveRemoteVideos(remotes);
+          videoUrl = videoUrls[0] || null;
+        }
       }
       return res.json({
         success: true,
@@ -4330,6 +5013,7 @@ router.get('/seedance/query', async (req, res) => {
           status: st === 'success' ? 'succeeded' : (st === 'failure' ? 'failed' : (st || 'pending')),
           progress: data?.progress == null ? '' : String(data.progress),
           videoUrl,
+          videoUrls,
           failReason: data?.error?.message || data?.message || data?.fail_reason || data?.failReason || null,
           raw: data,
         },
@@ -4341,6 +5025,7 @@ router.get('/seedance/query', async (req, res) => {
     if (st === 'fail' || st === 'failure') st = 'failed';
 
     let videoUrl = null;
+    let videoUrls = [];
     if (st === 'succeeded') {
       // 多重路径解析 video_url(对齐 pollSeedance line 3287-3296)
       let vUrl = null;
@@ -4375,6 +5060,7 @@ router.get('/seedance/query', async (req, res) => {
       if (vUrl) {
         // 转存到本地
         videoUrl = await saveRemoteVideo(vUrl);
+        videoUrls = [videoUrl].filter(Boolean);
       }
     }
 
@@ -4384,6 +5070,7 @@ router.get('/seedance/query', async (req, res) => {
         status: st || 'pending',
         progress: data?.progress || '',
         videoUrl,
+        videoUrls,
         failReason: data?.fail_reason || data?.failReason || null,
         raw: data,
       },
@@ -4398,42 +5085,20 @@ router.get('/seedance/query', async (req, res) => {
 // 音频生成(Suno - 异步)
 // 协议: POST /suno/generate + GET /suno/feed/:clipIds + POST /suno/submit/music
 // 模式:generate / cover / extend
-// 严格对齐主项目 gpt-image-2-web 的 SUNO_MV_MAP (7 个版本)
+// 模型由渠道 /models 动态提供，mv 原样透传。
 // ========================================================================
-const SUNO_MV_MAP = {
-  'v3.0': 'chirp-v3.0',
-  'v3.5': 'chirp-v3.5',
-  'v4': 'chirp-v4',
-  'v4.5': 'chirp-auk',
-  'v4.5+': 'chirp-bluejay',
-  'v5': 'chirp-crow',
-  'v5.5': 'chirp-fenix',
-};
-
-// 兼容带 'suno-' 前缀的旧调用方 (如 'suno-v5.5')
-function resolveSunoMv(version) {
-  const v = String(version || 'v5.5').replace(/^suno-/i, '');
-  return SUNO_MV_MAP[v] || 'chirp-fenix';
-}
-
 router.post('/audio/submit', async (req, res) => {
   const settings = currentSettings();
   // v1.2.9.15: 一体化「专属优先 fallback 通用」校验 —— 先 applyClassifiedKey('suno') 再校验 effective key
-  const { mode, prompt, title, tags, version, seed, continue_clip_id, continue_at, cover_clip_id, providerParams } = req.body || {};
-  if (!ensureKeyOrSelectedGroup(settings, res, 'suno', 'Suno', providerParams)) return;
+  const { mode, prompt, title, tags, model, version, seed, continue_clip_id, continue_at, cover_clip_id } = req.body || {};
+  if (!ensureKey(settings, res, 'suno', 'Suno')) return;
   const m = mode || 'generate';
   if (!prompt && m !== 'extend') {
     return res.status(400).json({ success: false, error: 'prompt 必填' });
   }
-  const mv = resolveSunoMv(version);
+  const mv = String(model || version || '').trim();
+  if (!mv) return res.status(400).json({ success: false, error: '请先从渠道模型列表选择音频模型' });
   try {
-    const providerContext = await applyZhenzhenProviderContext(settings, {
-      route: 'audio/submit',
-      kind: 'audio',
-      model: `suno-${version || 'v5.5'}`,
-      hint: 'suno',
-      providerParams,
-    });
     const apiKey = settings.zhenzhenApiKey;
     const auth = { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' };
     if (m === 'generate') {
@@ -4444,14 +5109,13 @@ router.post('/audio/submit', async (req, res) => {
       let data; try { data = JSON.parse(text); } catch { return res.status(500).json({ success: false, error: '上游响应非 JSON: ' + text.slice(0, 200) }); }
       if (!r.ok) {
         const errorText = data?.error?.message || data?.message || `上游 HTTP ${r.status}`;
-        await invalidateZhenzhenProviderKey(providerContext, apiKey, errorText);
         return res.status(r.status).json({ success: false, error: errorText });
       }
       const taskId = data?.id;
       const clipIds = (data?.clips || []).map((c) => c.id).filter(Boolean);
       if (!taskId || clipIds.length < 1) return res.status(500).json({ success: false, error: '未获取到 task/clip: ' + text.slice(0, 200) });
-      rememberTaskKey(taskId, apiKey, { model: `suno-${version || 'v5.5'}`, ...providerContext.taskMeta });
-      for (const clipId of clipIds) rememberTaskKey(clipId, apiKey, { model: `suno-${version || 'v5.5'}`, taskId, ...providerContext.taskMeta });
+      rememberTaskKey(taskId, apiKey, { model: mv });
+      for (const clipId of clipIds) rememberTaskKey(clipId, apiKey, { model: mv, taskId });
       return res.json({ success: true, data: { taskId, clipIds, raw: data } });
     }
     if (m === 'extend') {
@@ -4463,14 +5127,13 @@ router.post('/audio/submit', async (req, res) => {
       let data; try { data = JSON.parse(text); } catch { return res.status(500).json({ success: false, error: '上游响应非 JSON: ' + text.slice(0, 200) }); }
       if (!r.ok) {
         const errorText = data?.error?.message || data?.message || `上游 HTTP ${r.status}`;
-        await invalidateZhenzhenProviderKey(providerContext, apiKey, errorText);
         return res.status(r.status).json({ success: false, error: errorText });
       }
       const taskId = data?.id;
       const clipIds = (data?.clips || []).map((c) => c.id).filter(Boolean);
       if (!taskId) return res.status(500).json({ success: false, error: '未获取 task' });
-      rememberTaskKey(taskId, apiKey, { model: `suno-${version || 'v5.5'}`, ...providerContext.taskMeta });
-      for (const clipId of clipIds) rememberTaskKey(clipId, apiKey, { model: `suno-${version || 'v5.5'}`, taskId, ...providerContext.taskMeta });
+      rememberTaskKey(taskId, apiKey, { model: mv });
+      for (const clipId of clipIds) rememberTaskKey(clipId, apiKey, { model: mv, taskId });
       return res.json({ success: true, data: { taskId, clipIds, raw: data } });
     }
     if (m === 'cover') {
@@ -4487,14 +5150,13 @@ router.post('/audio/submit', async (req, res) => {
       let data; try { data = JSON.parse(text); } catch { return res.status(500).json({ success: false, error: '上游响应非 JSON: ' + text.slice(0, 200) }); }
       if (!r.ok) {
         const errorText = data?.error?.message || data?.message || `上游 HTTP ${r.status}`;
-        await invalidateZhenzhenProviderKey(providerContext, apiKey, errorText);
         return res.status(r.status).json({ success: false, error: errorText });
       }
       const taskId = (typeof data?.data === 'string' ? data.data : data?.id) || '';
       const clipIds = Array.isArray(data?.data) ? data.data.map((c) => c.id || c.clip_id).filter(Boolean) : (data?.clips || []).map((c) => c.id);
       if (!taskId) return res.status(500).json({ success: false, error: '未获取 task: ' + text.slice(0, 200) });
-      rememberTaskKey(taskId, apiKey, { model: `suno-${version || 'v5.5'}`, ...providerContext.taskMeta });
-      for (const clipId of clipIds) rememberTaskKey(clipId, apiKey, { model: `suno-${version || 'v5.5'}`, taskId, ...providerContext.taskMeta });
+      rememberTaskKey(taskId, apiKey, { model: mv });
+      for (const clipId of clipIds) rememberTaskKey(clipId, apiKey, { model: mv, taskId });
       return res.json({ success: true, data: { taskId, clipIds, raw: data } });
     }
     return res.status(400).json({ success: false, error: `未知模式: ${m}` });
@@ -4526,7 +5188,6 @@ router.get('/audio/query', async (req, res) => {
     let data; try { data = JSON.parse(text); } catch { return res.status(500).json({ success: false, error: '上游响应非 JSON: ' + text.slice(0, 200) }); }
     if (!r.ok) {
       const errorText = data?.error?.message || data?.message || `上游 HTTP ${r.status}`;
-      await invalidateZhenzhenProviderKey({ taskMeta: rememberedMeta || {} }, settings.zhenzhenApiKey, errorText);
       return res.status(r.status).json({ success: false, error: errorText });
     }
     const clips = Array.isArray(data) ? data : (data?.clips || []);
@@ -4579,8 +5240,7 @@ router.post('/audio/upload', audioUpload.single('file'), async (req, res) => {
   // 导致 Suno cover/extend 上传步骤即使配置了 sunoApiKey 也始终用通用 zhenzhenApiKey，
   // 与 audio/submit · audio/query 的 key 不一致。改用 ensureKey 统一「专属优先 fallback 通用」。
   if (!req.file) return res.status(400).json({ success: false, error: '未接收到音频文件 (field=file)' });
-  const providerParams = parseProviderParams(req.body?.providerParams);
-  if (!ensureKeyOrSelectedGroup(settings, res, 'suno', 'Suno', providerParams)) return;
+  if (!ensureKey(settings, res, 'suno', 'Suno')) return;
   let apiKey = settings.zhenzhenApiKey;
   const baseUrl = zhenzhenBaseUrl(settings);
   const audioBuf = req.file.buffer;
@@ -4589,14 +5249,6 @@ router.post('/audio/upload', audioUpload.single('file'), async (req, res) => {
   const mimeMap = { mp3: 'audio/mpeg', wav: 'audio/wav', m4a: 'audio/mp4', ogg: 'audio/ogg', flac: 'audio/flac', aac: 'audio/aac', wma: 'audio/x-ms-wma' };
   const ct = mimeMap[ext] || req.file.mimetype || 'audio/mpeg';
   try {
-    const providerContext = await applyZhenzhenProviderContext(settings, {
-      route: 'audio/upload',
-      kind: 'audio',
-      model: 'suno-upload',
-      hint: 'suno',
-      providerParams,
-    });
-    apiKey = settings.zhenzhenApiKey;
     // 1) init
     const r1 = await fetch(`${baseUrl}/suno/uploads/audio`, {
       method: 'POST',
@@ -4605,7 +5257,6 @@ router.post('/audio/upload', audioUpload.single('file'), async (req, res) => {
     });
     if (!r1.ok) {
       const errorText = `Upload init failed: ${r1.status} ${await r1.text()}`;
-      await invalidateZhenzhenProviderKey(providerContext, apiKey, errorText);
       return res.status(r1.status).json({ success: false, error: errorText });
     }
     const r1Json = await r1.json();
@@ -4635,7 +5286,6 @@ router.post('/audio/upload', audioUpload.single('file'), async (req, res) => {
     });
     if (!r3.ok) {
       const errorText = `Upload finish failed: ${r3.status} ${await r3.text()}`;
-      await invalidateZhenzhenProviderKey(providerContext, apiKey, errorText);
       return res.status(500).json({ success: false, error: errorText });
     }
     // 4) poll status
@@ -4656,7 +5306,6 @@ router.post('/audio/upload', audioUpload.single('file'), async (req, res) => {
         });
         if (!r4.ok) {
           const errorText = `Initialize clip failed: ${r4.status} ${await r4.text()}`;
-          await invalidateZhenzhenProviderKey(providerContext, apiKey, errorText);
           return res.status(500).json({ success: false, error: errorText });
         }
         const r4Json = await r4.json();
@@ -4676,292 +5325,32 @@ router.post('/audio/upload', audioUpload.single('file'), async (req, res) => {
   }
 });
 
-// ========================================================================
-// RunningHub 工作流(异步)
-// 协议:POST /task/openapi/ai-app/run + POST /task/openapi/outputs
-// API Key 取自 settings.rhApiKey（与 settings.js / 前端 ApiSettings 字段保持一致；
-// 历史代码误写为 runninghubApiKey 导致永远读不到，已修正）
-// v1.2.9.16: 取消 rhWalletApiKey 单独字段 —— 普通 RH 节点 与 RH 钱包应用节点
-//            统一使用 settings.rhApiKey，简化用户配置心智。
-// ========================================================================
-// 统一选 key 工具：所有 RH 调用只用 settings.rhApiKey。
-function pickRhApiKey(settings) {
-  return settings?.rhApiKey || settings?.runninghubApiKey || '';
-}
-function missingRhKeyError() {
-  return '未配置 RunningHub API Key（请在设置中填写 RunningHub API Key）';
-}
-
-router.post('/runninghub/submit', async (req, res) => {
-  const settings = currentSettings();
-  const { webappId, nodeInfoList, instanceType } = req.body || {};
-  const apiKey = pickRhApiKey(settings);
-  if (!apiKey) return res.status(400).json({ success: false, error: missingRhKeyError() });
-  if (!webappId) return res.status(400).json({ success: false, error: 'webappId 必填' });
-  try {
-    const body = { apiKey, webappId, nodeInfoList: nodeInfoList || [] };
-    if (instanceType) body.instanceType = instanceType;
-    const r = await fetch(`${rhBaseUrl(settings)}/task/openapi/ai-app/run`, {
-      method: 'POST',
-      headers: { Host: 'www.runninghub.cn', 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify(body),
-    });
-    const data = await r.json();
-    if (data.code === 0) {
-      const taskId = data?.data?.taskId;
-      rememberTaskKey(taskId, apiKey, { provider: 'runninghub', webappId, instanceType: instanceType || '' });
-      console.log(`[RH/submit] webappId=${webappId} fields=${Array.isArray(nodeInfoList) ? nodeInfoList.length : 0} instance=${instanceType || 'default'} taskId=${taskId || ''}`);
-      return res.json({ success: true, data: { taskId, raw: data } });
-    }
-    console.warn(`[RH/submit] failed webappId=${webappId} code=${data.code} msg=${data.msg || ''}`);
-    return res.status(400).json({ success: false, error: data.msg || `RH 提交失败 code=${data.code}` });
-  } catch (e) {
-    console.error('proxy/rh/submit 错误:', e);
-    res.status(500).json({ success: false, error: e.message || '请求失败' });
-  }
-});
-
-router.get('/runninghub/query', async (req, res) => {
-  const settings = currentSettings();
-  const taskId = String(req.query.taskId || '').trim();
-  if (!taskId) return res.status(400).json({ success: false, error: 'taskId 必填' });
-  const apiKey = recallTaskKey(taskId) || pickRhApiKey(settings);
-  if (!apiKey) return res.status(400).json({ success: false, error: missingRhKeyError() });
-  try {
-    const r = await fetch(`${rhBaseUrl(settings)}/task/openapi/outputs`, {
-      method: 'POST',
-      headers: { Host: 'www.runninghub.cn', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ apiKey, taskId }),
-    });
-    const data = await r.json();
-    // code 0=成功 / 804=运行中 / 813=排队 / 805=失败
-    let status = 'PENDING';
-    let urls = [];
-    if (data.code === 0) {
-      status = 'SUCCESS';
-      // RH outputs 返回结构兼容：
-      //   ① data: [{fileUrl, fileType}, ...]                  // 常见 (AI 应用)
-      //   ② data: { outputs: [...] }                            // 包一层的变体
-      //   ③ data: { fileUrl, fileType }                         // 单产物对象
-      //   ④ data: { results: [...] } / { files: [...] }         // 边缘变体
-      //   ⑤ data: { data/output/images/... }                    // 应用市场嵌套变体
-      const arr = collectRunningHubOutputItems(data.data);
-      if (arr.length === 0) {
-        const shape = JSON.stringify(summarizeRunningHubOutputShape(data.data)).slice(0, 1800);
-        console.warn(`[RH/query] taskId=${taskId} code=0 but no output urls. shape=${shape}`);
-      }
-      // 转存所有产物到本地
-      for (const it of arr) {
-        const remote = it?.fileUrl || it?.file_url || it?.downloadUrl || it?.download_url || it?.resultUrl || it?.result_url || it?.outputUrl || it?.output_url || it?.signedUrl || it?.signed_url || it?.publicUrl || it?.public_url || it?.previewUrl || it?.preview_url || it?.url;
-        if (!remote) continue;
-        try {
-          const fr = await fetch(remote);
-          if (fr.ok) {
-            let buf = Buffer.from(await fr.arrayBuffer());
-            let ext = inferRemoteOutputExt(remote, fr.headers.get('content-type'));
-            const duck = await tryDecodeDuckPayload(buf);
-            if (duck?.decoded && duck.buffer) {
-              buf = duck.buffer;
-              ext = safeOutputExt(duck.ext, ext);
-              console.log(
-                '[RH/query][duck] decoded',
-                `bits=${duck.lsbBits}`,
-                `${duck.originalExt} -> ${ext}`,
-                `kind=${duck.kind}`,
-                `bytes=${buf.length}`,
-              );
-            } else if (duck?.passwordProtected) {
-              console.log('[RH/query][duck] password protected payload detected, keep original duck image');
-            }
-            const filename = `rh_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
-            fs.writeFileSync(path.join(config.OUTPUT_DIR, filename), buf);
-            urls.push(`/files/output/${filename}`);
-          } else {
-            urls.push(remote);
-          }
-        } catch (downloadError) {
-          console.warn(`[RH/query] save output failed taskId=${taskId} url=${String(remote).slice(0, 140)} error=${downloadError?.message || downloadError}`);
-          urls.push(remote);
-        }
-      }
-    } else if (data.code === 804) status = 'RUNNING';
-    else if (data.code === 813) status = 'QUEUED';
-    else if (data.code === 805) status = 'FAILED';
-    else status = 'UNKNOWN';
-    // failReason 序列化为字符串：ComfyUI 报错可能是 object（traceback/exception_message/...）
-    // 前端直接用于 setError 会造成 React JSX 渲染 object 崩溃。
-    let failReasonRaw = data?.data?.failedReason ?? data?.data?.failReason ?? null;
-    let failReasonStr = null;
-    if (failReasonRaw != null) {
-      if (typeof failReasonRaw === 'string') {
-        failReasonStr = failReasonRaw;
-      } else if (typeof failReasonRaw === 'object') {
-        failReasonStr = failReasonRaw.exception_message || failReasonRaw.message || JSON.stringify(failReasonRaw);
-      } else {
-        failReasonStr = String(failReasonRaw);
-      }
-    }
-    console.log(`[RH/query] taskId=${taskId} status=${status} code=${data.code} urls=${urls.length}${failReasonStr ? ` fail=${String(failReasonStr).slice(0, 160)}` : ''}`);
-    res.json({
-      success: true,
-      data: {
-        status,
-        urls,
-        failReason: failReasonStr,
-        code: data.code,
-        raw: data,
-      },
-    });
-  } catch (e) {
-    console.error('proxy/rh/query 错误:', e);
-    res.status(500).json({ success: false, error: e.message || '请求失败' });
-  }
-});
-
-router.post('/runninghub/cancel', async (req, res) => {
-  const settings = loadRawSettings();
-  const taskId = String(req.body?.taskId || '').trim();
-  if (!taskId) return res.status(400).json({ success: false, error: 'taskId 必填' });
-  const apiKey = recallTaskKey(taskId) || pickRhApiKey(settings);
-  if (!apiKey) return res.status(400).json({ success: false, error: missingRhKeyError() });
-  try {
-    const cancelUrl = `${config.RH_BASE_URL}/task/openapi/cancel`;
-    const r = await fetch(cancelUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({ apiKey, taskId }),
-    });
-    const data = await parseJsonResponse(r, 'RH 取消接口');
-    console.log(`[RH/cancel] taskId=${taskId} http=${r.status} code=${data?.code} msg=${data?.msg || ''}`);
-    if (String(data?.code) === '0') {
-      return res.json({ success: true, data: { taskId, raw: data } });
-    }
-    try {
-      console.warn(`[RH/cancel] failed taskId=${taskId} raw=${JSON.stringify(data).slice(0, 500)}`);
-    } catch {}
-    return res.status(400).json({ success: false, error: data?.msg || `RH 取消失败 code=${data?.code}` });
-  } catch (e) {
-    console.error('proxy/rh/cancel 错误:', e);
-    res.status(502).json({
-      success: false,
-      error: e.message || '请求失败',
-      data: {
-        taskId,
-        contentType: e.contentType || '',
-        preview: e.preview || '',
-      },
-    });
-  }
-});
-
-// ----------------------------------------------------------------
-// POST /runninghub/upload-asset
-// 通用素材→RH 上传转换：
-//   入参 JSON: { url: '/files/output/xxx.png' | 'https://....' }
-//   出参: { success, data: { fileName, fileType } }
-// 用途: RhConfigNode 中 valueType=image|video|audio 的条目，
-//       提交工作流前先把 url 转成 RH 内部 fileName，再写入 nodeInfoList.fieldValue。
-// 协议: POST {RH}/task/openapi/upload  (multipart: apiKey, fileType=input, file)
-// ----------------------------------------------------------------
-router.post('/runninghub/upload-asset', express.json({ limit: '20mb' }), async (req, res) => {
-  const settings = currentSettings();
-  const apiKey = pickRhApiKey(settings);
-  if (!apiKey) return res.status(400).json({ success: false, error: missingRhKeyError() });
-  const url = String(req.body?.url || '').trim();
-  if (!url) return res.status(400).json({ success: false, error: 'url 必填' });
-  try {
-    // 1) 拿到 buffer + mime + filename
-    let buf;
-    let mime = 'application/octet-stream';
-    let baseName = 'asset';
-    if (url.startsWith('/files/output/') || url.startsWith('/output/')) {
-      // 本地静态资源 - 输出目录
-      const rel = url.replace(/^\/files\/output\//, '').replace(/^\/output\//, '');
-      const full = path.join(config.OUTPUT_DIR, rel);
-      if (!fs.existsSync(full)) return res.status(404).json({ success: false, error: '本地文件不存在: ' + url });
-      buf = fs.readFileSync(full);
-      baseName = path.basename(full);
-    } else if (url.startsWith('/files/input/') || url.startsWith('/input/')) {
-      // 本地静态资源 - 上传目录（视频/音频/参考图上传节点的产物）
-      const rel = url.replace(/^\/files\/input\//, '').replace(/^\/input\//, '');
-      const full = path.join(config.INPUT_DIR, rel);
-      if (!fs.existsSync(full)) return res.status(404).json({ success: false, error: '本地文件不存在: ' + url });
-      buf = fs.readFileSync(full);
-      baseName = path.basename(full);
-    } else if (/^https?:\/\//i.test(url)) {
-      const fr = await fetch(url);
-      if (!fr.ok) return res.status(400).json({ success: false, error: `下载素材失败 HTTP ${fr.status}` });
-      buf = Buffer.from(await fr.arrayBuffer());
-      mime = fr.headers.get('content-type') || mime;
-      const tail = url.split(/[?#]/)[0];
-      baseName = tail.split('/').pop() || baseName;
-    } else {
-      return res.status(400).json({ success: false, error: '不支持的 url: ' + url });
-    }
-    // 2) 根据扩展名校正 mime
-    const extMatch = baseName.match(/\.([a-zA-Z0-9]+)$/);
-    const ext = extMatch ? extMatch[1].toLowerCase() : '';
-    const mimeMap = {
-      png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif', bmp: 'image/bmp',
-      mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime', m4v: 'video/x-m4v', mkv: 'video/x-matroska',
-      mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg', m4a: 'audio/mp4', flac: 'audio/flac',
-    };
-    if (mimeMap[ext]) mime = mimeMap[ext];
-    if (!ext) baseName += '.bin';
-    // 3) FormData 上传到 RH
-    const fd = new FormData();
-    fd.append('apiKey', apiKey);
-    fd.append('fileType', 'input');
-    const blob = new Blob([buf], { type: mime });
-    fd.append('file', blob, baseName);
-    const r = await fetch(`${rhBaseUrl(settings)}/task/openapi/upload`, {
-      method: 'POST',
-      headers: { Host: 'www.runninghub.cn' },
-      body: fd,
-    });
-    const data = await r.json();
-    console.log('[RH/upload-asset]', baseName, mime, buf.length, '→', data?.code, data?.data?.fileName);
-    if (data.code === 0 && data?.data?.fileName) {
-      return res.json({ success: true, data: { fileName: data.data.fileName, fileType: data.data.fileType || mime } });
-    }
-    return res.status(400).json({ success: false, error: data.msg || `RH 上传失败 code=${data.code}` });
-  } catch (e) {
-    console.error('proxy/rh/upload-asset 错误:', e);
-    res.status(500).json({ success: false, error: e.message || '请求失败' });
-  }
-});
-
-// 获取 AI 应用信息(nodeInfoList 等)
-router.get('/runninghub/app-info', async (req, res) => {
-  const settings = currentSettings();
-  const apiKey = pickRhApiKey(settings);
-  if (!apiKey) return res.status(400).json({ success: false, error: missingRhKeyError() });
-  const webappId = String(req.query.webappId || '').trim();
-  if (!webappId) return res.status(400).json({ success: false, error: 'webappId 必填' });
-  try {
-    const url = `${rhBaseUrl(settings)}/api/webapp/apiCallDemo?apiKey=${encodeURIComponent(apiKey)}&webappId=${encodeURIComponent(webappId)}`;
-    const r = await fetch(url, { method: 'GET', headers: { Host: 'www.runninghub.cn' } });
-    const data = await r.json();
-    if (data.code !== 0) return res.status(400).json({ success: false, error: data.msg || `RH 查询失败 code=${data.code}` });
-    res.json({ success: true, data: data.data || {} });
-  } catch (e) {
-    res.status(500).json({ success: false, error: e.message || '请求失败' });
-  }
-});
-
 router._testOnly = {
+  resolveLlmCredentials,
   apishuSeedanceUpstreamModel,
+  isApishuVeoOmniModel,
+  buildVideosApiPayload,
+  uploadRefToZhenzhen,
+  resolveVideoSubmitProtocol,
+  resolveSeedanceSubmitProtocol,
+  resolveSeedanceVideoModelOverride,
+  resolveVideosApiSeedanceModel,
+  buildImageUpstreamErrorMessage,
   buildApishuVeoOmniPayload,
+  saveAuthenticatedVideoContent,
   callImageUpstreamAsync,
+  extractImageUpstreamRequestId,
   extractApishuVideoUrl,
+  extractApishuVideoUrls,
   gptImage2ZhenzhenVariantSize,
+  fetchImageTaskStatus,
   imageTaskId,
   normalizeImageItems,
   normalizeImageApiModel,
+  resolveConfiguredImageApiModel,
   imageStatusUrlCandidates,
+  isExplicitImageTaskFailure,
+  isTransientImageTaskState,
   isTransientImageTaskHttpStatus,
   normalizeVideoTaskStatus,
   retryImageTaskAfterAsyncFailure,

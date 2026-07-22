@@ -77,12 +77,8 @@ const config = {
   // 数据文件
   CANVAS_FILE: path.join(DATA_ROOT, 'data', 'canvas_list.json'),
   SETTINGS_FILE: path.join(DATA_ROOT, 'data', 'settings.json'),
-  ACHIEVEMENTS_FILE: path.join(DATA_ROOT, 'data', 'achievements.json'),
   RH_APPS_FILE: path.join(DATA_ROOT, 'data', 'rh_apps.json'),
   // v1.2.10+ RH 工具节点专用数据（与 rh_apps.json 完全分开）
-  RH_TOOL_CATEGORIES_FILE: path.join(DATA_ROOT, 'data', 'rh_tool_categories.json'),
-  RH_TOOL_APPS_FILE: path.join(DATA_ROOT, 'data', 'rh_tool_apps.json'),
-  RH_TOOLBOX_MANIFEST_FILE: path.join(DATA_ROOT, 'data', 'rh_toolbox_manifest.json'),
   // 前端静态产物目录(打包后由 Express 同进程托管)
   FRONTEND_DIST: process.env.T8PC_FRONTEND_DIST || (IS_PACKAGED ? '' : path.join(PROJECT_DIR, 'dist')),
   // 缩略图配置
@@ -90,12 +86,11 @@ const config = {
   THUMBNAIL_QUALITY: 80,
 
   // 业务配置
-  MAX_FILE_SIZE: 20 * 1024 * 1024,
+  MAX_FILE_SIZE: 0,
 
-  // 三套 API Key 默认值(均可在 settings 中覆盖)
+  // API Key 默认值(均可在 settings 中覆盖)
   // 默认服务与 LLM 独立 Key 不预置个人 Base URL,由用户自行填写。
   ZHENZHEN_BASE_URL: process.env.HAJIMI_DEFAULT_SERVICE_BASE_URL || '',
-  RH_BASE_URL: 'https://www.runninghub.cn',
 
   // v1.2.10.2: 全局生成素材自动保存到本地的默认路径
   //   用户可在「API 设置 → 文件自动保存路径」覆盖。

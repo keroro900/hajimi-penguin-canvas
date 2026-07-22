@@ -35,18 +35,33 @@ export function useSmartNodePanelToggle({
     [ignoreSelector],
   );
 
+  const isResizeTarget = useCallback(
+    (target: EventTarget | null) =>
+      target instanceof HTMLElement && !!target.closest('.react-flow__resize-control'),
+    [],
+  );
+
   const clearPointer = useCallback(() => {
     pointerRef.current = null;
   }, []);
 
   const onPointerDown = useCallback(
     (event: React.PointerEvent<HTMLElement>) => {
-      if (disabled || isIgnoredTarget(event.target)) return;
+      if (disabled) return;
+      if (isResizeTarget(event.target)) {
+        pointerRef.current = null;
+        suppressClickRef.current = true;
+        handledClickRef.current = false;
+        onDragChange?.(true);
+        if (open) onDragClose?.();
+        return;
+      }
+      if (isIgnoredTarget(event.target)) return;
       pointerRef.current = { x: event.clientX, y: event.clientY, moved: false };
       suppressClickRef.current = false;
       onDragChange?.(false);
     },
-    [disabled, isIgnoredTarget, onDragChange],
+    [disabled, isIgnoredTarget, isResizeTarget, onDragChange, onDragClose, open],
   );
 
   const onPointerMove = useCallback(
@@ -67,7 +82,11 @@ export function useSmartNodePanelToggle({
   const onPointerUp = useCallback(
     (event: React.PointerEvent<HTMLElement>) => {
       const pointer = pointerRef.current;
-      if (!pointer || disabled) return;
+      if (disabled) return;
+      if (!pointer) {
+        if (suppressClickRef.current) onDragChange?.(false);
+        return;
+      }
 
       const moved = pointer.moved || Math.hypot(event.clientX - pointer.x, event.clientY - pointer.y) > threshold;
       pointerRef.current = null;
@@ -121,5 +140,6 @@ export function useSmartNodePanelToggle({
     suppressClickRef,
     handledClickRef,
     isIgnoredTarget,
+    isResizeTarget,
   };
 }

@@ -5,10 +5,15 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { generateLlmStream } from '../src/services/generation.ts';
+import { generateLlm, generateLlmStream } from '../src/services/generation.ts';
+import { buildLlmConversationMessages } from '../src/utils/llmConversation.ts';
 
 const require = createRequire(import.meta.url);
 const { normalizeLlmMessageMedia, resolveBundledFfmpeg } = require('../backend/src/providers/llmMedia.js');
+const {
+  buildGeminiLlmPayload,
+  normalizeGeminiLlmResponse,
+} = require('../backend/src/providers/geminiLlm.js');
 
 const ROOT = path.resolve(process.cwd());
 
@@ -23,11 +28,25 @@ test('LLM node accepts video ports and builds video_url payloads', () => {
 
   assert.match(ports, /llm:\s*\{\s*inputs:\s*\['text', 'image', 'video'\]/);
   assert.match(generation, /type:\s*'video_url'/);
-  assert.match(node, /video_url:\s*\{\s*url:\s*u\s*\}/);
+  const messages = buildLlmConversationMessages({
+    systemPrompt: '',
+    history: [],
+    userText: 'describe this video',
+    userImages: [],
+    userVideos: ['data:video/mp4;base64,dmlkZW8='],
+  });
+  assert.deepEqual(messages[0], {
+    role: 'user',
+    content: [
+      { type: 'text', text: 'describe this video' },
+      { type: 'video_url', video_url: { url: 'data:video/mp4;base64,dmlkZW8=' } },
+    ],
+  });
   assert.match(node, /groups=\{\['text', 'image', 'video'\]\}/);
   assert.match(node, /accepts:\s*\['image', 'video', 'text'\]/);
-  assert.match(node, /关键帧优先/);
-  assert.match(node, /videoFrameCount/);
+  assert.match(node, /完整视频 ·/);
+  assert.match(node, /: 'native-base64';/);
+  assert.doesNotMatch(node, /<option value="frames"/);
   assert.match(node, /userVideos\.length === 0/);
   assert.match(node, /llmVideoMode/);
 });
@@ -41,6 +60,23 @@ test('LLM node uses a higher default output token budget for long replies', () =
   assert.match(node, /d\?\.maxTokens === 'number' \? d\.maxTokens : 16384/);
   assert.match(node, /Number\(e\.target\.value\) \|\| 16384/);
   assert.match(proxy, /max_tokens:\s*max_tokens \?\? 16384/);
+});
+
+test('LLM node uses configured common and independent chat models instead of hardcoded options', () => {
+  const settingsType = read('src/types/canvas.ts');
+  const settingsRoute = read('backend/src/routes/settings.js');
+  const models = read('src/providers/models.ts');
+  const node = read('src/components/nodes/LLMNode.tsx');
+
+  assert.match(settingsType, /zhenzhenLlmModelOverrides\?:\s*Record<string,\s*string>/);
+  assert.match(settingsRoute, /zhenzhenLlmModelOverrides:\s*\{\}/);
+  assert.match(models, /export const DEFAULT_LLM_MODEL = ''/);
+  assert.match(models, /resolveConfiguredLlmChoice/);
+  assert.match(models, /llmModelChoicesFromSettings/);
+  assert.match(node, /llmModelChoicesFromSettings\(apiSettings\)/);
+  assert.match(node, /modelSource:\s*selectedModelSource/);
+  assert.doesNotMatch(node, /LLM_MODELS\.map/);
+  assert.doesNotMatch(node, /Gemini 3\.5 Flash|GPT-5|gpt-4o/);
 });
 
 test('streaming LLM responses expose token-length truncation instead of silently ending', async () => {
@@ -178,7 +214,127 @@ test('LLM media normalizer preserves Base64 video mode as native video_url', asy
   }
 });
 
-test('LLM media normalizer extracts requested evenly-spread keyframes', async () => {
+test('non-streaming LLM requests can be aborted', async () => {
+  const originalFetch = globalThis.fetch;
+  const controller = new AbortController();
+  let receivedSignal: AbortSignal | null | undefined;
+  try {
+    globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+      receivedSignal = init?.signal;
+      if (init?.signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+      return new Response(JSON.stringify({ success: true, data: { content: 'ok', raw: {}, model: 'test' } }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }) as typeof fetch;
+
+    controller.abort();
+    const pending = generateLlm({
+      model: 'gemini-3.5-flash',
+      messages: [{ role: 'user', content: 'hello' }],
+    }, { signal: controller.signal });
+
+    await assert.rejects(pending, (error: any) => error?.name === 'AbortError');
+    assert.equal(receivedSignal, controller.signal);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('native complete-video mode downloads remote videos into Base64', async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = async () => new Response(Buffer.from('remote-complete-video'), {
+      status: 200,
+      headers: { 'Content-Type': 'video/mp4' },
+    });
+    const normalized = await normalizeLlmMessageMedia([{
+      role: 'user',
+      content: [{
+        type: 'video_url',
+        video_url: { url: 'https://cdn.example.com/complete.mp4' },
+      }],
+    }], { llmVideoMode: 'native-base64' }, { requireVideoBase64: true });
+
+    assert.match(normalized[0].content[0].video_url.url, /^data:video\/mp4;base64,/);
+    assert.equal(
+      Buffer.from(normalized[0].content[0].video_url.url.split(',')[1], 'base64').toString(),
+      'remote-complete-video',
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Gemini native LLM payload sends the complete video as inlineData', () => {
+  const videoBase64 = Buffer.from('complete-video-bytes').toString('base64');
+  const payload = buildGeminiLlmPayload({
+    messages: [
+      { role: 'system', content: '只描述实际看到的内容' },
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: '分析这段完整视频' },
+          {
+            type: 'video_url',
+            video_url: { url: `data:video/mp4;base64,${videoBase64}` },
+          },
+        ],
+      },
+    ],
+    temperature: 0.25,
+    maxTokens: 2048,
+  });
+
+  assert.deepEqual(payload.systemInstruction, {
+    parts: [{ text: '只描述实际看到的内容' }],
+  });
+  assert.deepEqual(payload.contents[0], {
+    role: 'user',
+    parts: [
+      { text: '分析这段完整视频' },
+      { inlineData: { mimeType: 'video/mp4', data: videoBase64 } },
+    ],
+  });
+  assert.equal(payload.generationConfig.temperature, 0.25);
+  assert.equal(payload.generationConfig.maxOutputTokens, 2048);
+  assert.equal(JSON.stringify(payload).includes('data:video/mp4;base64,'), false);
+  assert.equal(JSON.stringify(payload).includes('关键帧'), false);
+});
+
+test('Gemini native LLM response is normalized to the existing frontend contract', () => {
+  const normalized = normalizeGeminiLlmResponse({
+    modelVersion: 'gemini-3.5-flash',
+    candidates: [{
+      finishReason: 'MAX_TOKENS',
+      content: {
+        parts: [
+          { text: '第一段' },
+          { text: '第二段' },
+          { inlineData: { mimeType: 'image/png', data: 'aGVsbG8=' } },
+        ],
+      },
+    }],
+  }, 'gemini-3.5-flash');
+
+  assert.equal(normalized.content, '第一段第二段');
+  assert.deepEqual(normalized.imageUrls, ['data:image/png;base64,aGVsbG8=']);
+  assert.equal(normalized.model, 'gemini-3.5-flash');
+  assert.equal(normalized.finishReason, 'MAX_TOKENS');
+  assert.equal(normalized.truncated, true);
+});
+
+test('Gemini video requests are routed through native generateContent', () => {
+  const proxy = read('backend/src/routes/proxy.js');
+
+  assert.match(proxy, /useNativeGeminiVideo\s*=\s*isGeminiLlmModel\(model\)\s*&&\s*inputHadVideos/);
+  assert.match(proxy, /useNativeGeminiVideo\s*\?\s*gaiscGeminiEndpointUrl\(baseUrl, model\)/);
+  assert.match(proxy, /buildGeminiLlmPayload\(\{[\s\S]*messages:\s*normalizedMessages/);
+  assert.match(proxy, /useNativeGeminiVideo\s*\?\s*messages\s*:\s*await publicizeChatMessageMedia/);
+  assert.match(proxy, /llmVideoMode:\s*'native-base64'/);
+});
+
+test('legacy keyframe mode is migrated to complete-video Base64', async () => {
   const ffmpegPath = resolveBundledFfmpeg();
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 't8-llm-video-frames-test-'));
   const videoPath = path.join(dir, 'sample.mp4');
@@ -217,11 +373,11 @@ test('LLM media normalizer extracts requested evenly-spread keyframes', async ()
     });
 
     const content = normalized[0].content;
-    const imageParts = content.filter((part: any) => part.type === 'image_url');
-    assert.equal(content.some((part: any) => part.type === 'video_url'), false);
-    assert.equal(content.some((part: any) => part.type === 'text' && /均匀抽取的 4 张关键帧/.test(part.text)), true);
-    assert.equal(imageParts.length, 4);
-    assert.equal(imageParts.every((part: any) => /^data:image\/jpeg;base64,/.test(part.image_url.url)), true);
+    assert.equal(content.some((part: any) => part.type === 'image_url'), false);
+    assert.equal(content.some((part: any) => part.type === 'text' && /关键帧/.test(part.text)), false);
+    assert.equal(content.some((part: any) => (
+      part.type === 'video_url' && /^data:video\/mp4;base64,/.test(part.video_url.url)
+    )), true);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

@@ -1,0 +1,951 @@
+/*
+ * Tap Studio inspired visual skin
+ * 黑底 AI 创作台：深色画布、柔彩玻璃节点、蓝色操作焦点。
+ * 不使用第三方 logo 或素材，只复用黑底/玻璃/柔彩工作流语言。
+ */
+
+html[data-theme-visual="tap-studio"] {
+  --tap-accent: var(--t8-accent);
+  --tap-accent-hover: var(--t8-accent-hover);
+  --tap-secondary: var(--t8-secondary);
+  --tap-success: var(--t8-success);
+  --tap-warning: var(--t8-warning);
+  --tap-canvas-solid: #030303;
+  --tap-island-bg: color-mix(in srgb, #202124 82%, transparent);
+  --tap-island-bg-elev: color-mix(in srgb, #2a2b2f 84%, transparent);
+  --tap-island-border: rgba(255, 255, 255, 0.10);
+  --tap-card-bg: color-mix(in srgb, var(--tap-island-bg) 92%, transparent);
+  --tap-card-bg-elev: color-mix(in srgb, var(--tap-island-bg-elev) 94%, transparent);
+  --tap-muted-bg: color-mix(in srgb, #1b1c20 84%, transparent);
+  --tap-node-inner: color-mix(in srgb, var(--t8-bg-panel-muted) 62%, transparent);
+  --tap-node-inner-strong: color-mix(in srgb, var(--t8-bg-panel-elevated) 72%, #000 10%);
+  --tap-node-line: color-mix(in srgb, var(--tap-accent) 22%, var(--t8-border));
+  --tap-border: color-mix(in srgb, var(--t8-text-main) 10%, transparent);
+  --tap-border-strong: color-mix(in srgb, var(--tap-accent) 54%, var(--t8-border));
+  --tap-ink: var(--t8-text-main);
+  --tap-ink-muted: var(--t8-text-muted);
+  --tap-ink-dim: var(--t8-text-dim);
+  --tap-radius: 20px;
+  --tap-radius-sm: 14px;
+  --tap-radius-pill: 9999px;
+  --tap-shadow: 0 18px 46px rgba(0, 0, 0, 0.42), 0 0 0 1px rgba(255, 255, 255, 0.035);
+  --tap-shadow-soft: 0 12px 30px rgba(0, 0, 0, 0.30), 0 0 18px color-mix(in srgb, var(--tap-accent) 8%, transparent);
+  --tap-shadow-focus: 0 0 0 1px var(--tap-border-strong), 0 0 26px color-mix(in srgb, var(--tap-accent) 18%, transparent), 0 18px 48px rgba(0, 0, 0, 0.38);
+  --tap-transition: 160ms ease-out;
+  --tap-topbar-bg: color-mix(in srgb, var(--t8-bg-app) 88%, #000 12%);
+  --tap-topbar-brand-glow: color-mix(in srgb, var(--tap-accent) 34%, transparent);
+  --tap-topbar-chip-bg: color-mix(in srgb, var(--t8-bg-panel-muted) 72%, #000 28%);
+  --tap-topbar-chip-border: color-mix(in srgb, var(--tap-accent) 24%, rgba(255, 255, 255, 0.08));
+  --t8-flow-controls-bg: color-mix(in srgb, var(--tap-card-bg-elev) 86%, #000 14%);
+  --t8-flow-controls-fg: var(--tap-ink);
+  --t8-flow-controls-muted: var(--tap-ink-dim);
+  --t8-flow-controls-border: color-mix(in srgb, var(--tap-accent) 34%, var(--tap-border));
+  --t8-flow-controls-button-bg: color-mix(in srgb, var(--tap-muted-bg) 82%, #000 18%);
+  --t8-flow-controls-button-hover-bg: color-mix(in srgb, var(--tap-accent) 20%, var(--tap-card-bg-elev));
+  --t8-flow-controls-accent: var(--tap-accent-hover);
+  --t8-cut-cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 24 24' fill='none'><path d='M4 12h16' stroke='%231FA2DC' stroke-width='2.2' stroke-linecap='round'/><path d='M6 9h12' stroke='%23E896C9' stroke-width='1.2' stroke-linecap='round' opacity='0.9'/><path d='M8 15h8' stroke='%237CD5A7' stroke-width='1.2' stroke-linecap='round' opacity='0.9'/></svg>") 14 14, crosshair;
+  --t8-cut-color: var(--tap-accent);
+  --t8-cut-track: color-mix(in srgb, var(--tap-accent) 72%, var(--tap-secondary));
+  --t8-cut-button-bg: var(--tap-card-bg-elev);
+  --t8-cut-button-fg: var(--tap-secondary);
+  --t8-cut-button-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect fill='black' x='3' y='11' width='18' height='2.2' rx='1.1'/><rect fill='black' x='6' y='8' width='12' height='1.4' rx='0.7'/><rect fill='black' x='6' y='14.6' width='12' height='1.4' rx='0.7'/></svg>");
+}
+
+html[data-theme-visual="tap-studio"][data-theme-mode="light"] {
+  --tap-canvas-solid: #030303;
+  --tap-island-bg: color-mix(in srgb, #202124 82%, transparent);
+  --tap-island-bg-elev: color-mix(in srgb, #2a2b2f 84%, transparent);
+  --tap-island-border: rgba(255, 255, 255, 0.10);
+  --tap-card-bg: color-mix(in srgb, var(--tap-island-bg) 92%, transparent);
+  --tap-card-bg-elev: color-mix(in srgb, var(--tap-island-bg-elev) 94%, transparent);
+  --tap-muted-bg: color-mix(in srgb, #1b1c20 84%, transparent);
+  --tap-node-inner: color-mix(in srgb, #202124 62%, transparent);
+  --tap-node-inner-strong: color-mix(in srgb, #2a2b2f 72%, #000 10%);
+  --tap-node-line: color-mix(in srgb, var(--tap-accent) 22%, rgba(255, 255, 255, 0.12));
+  --tap-border: color-mix(in srgb, #fff 10%, transparent);
+  --tap-ink: #f5f5f5;
+  --tap-ink-muted: rgba(245, 245, 245, 0.68);
+  --tap-ink-dim: rgba(245, 245, 245, 0.46);
+  --tap-shadow: 0 18px 46px rgba(0, 0, 0, 0.42), 0 0 0 1px rgba(255, 255, 255, 0.035);
+  --tap-shadow-soft: 0 12px 30px rgba(0, 0, 0, 0.30), 0 0 18px color-mix(in srgb, var(--tap-accent) 8%, transparent);
+}
+
+html[data-theme-visual="tap-studio"] body,
+html[data-theme-visual="tap-studio"] #root {
+  background: var(--t8-bg-app);
+  color: var(--tap-ink);
+  font-family: var(--t8-font-family);
+}
+
+html[data-theme-visual="tap-studio"] .t8-app-shell {
+  background: var(--tap-canvas-solid) !important;
+}
+
+html[data-theme-visual="tap-studio"] .t8-topbar {
+  min-height: 48px;
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--tap-accent) 6%, transparent), transparent 38%),
+    var(--tap-topbar-bg) !important;
+  border-bottom: 1px solid color-mix(in srgb, var(--tap-accent) 18%, var(--tap-border)) !important;
+  box-shadow:
+    inset 0 -1px 0 color-mix(in srgb, var(--tap-accent) 28%, transparent),
+    0 12px 28px rgba(0, 0, 0, 0.24) !important;
+  backdrop-filter: blur(16px);
+}
+
+html[data-theme-visual="tap-studio"] .t8-topbar > div:first-child {
+  min-width: 0;
+  gap: 8px !important;
+  padding: 3px 4px 3px 0;
+  border-radius: var(--tap-radius-pill);
+}
+
+html[data-theme-visual="tap-studio"] .t8-topbar h1 {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 24px;
+  color: var(--tap-ink) !important;
+  font-family: var(--t8-font-display, var(--t8-font-family)) !important;
+  font-size: 14px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0;
+  text-shadow: 0 0 14px var(--tap-topbar-brand-glow);
+  white-space: nowrap;
+}
+
+html[data-theme-visual="tap-studio"] .t8-topbar h1::before {
+  content: "";
+  display: block;
+  width: 3px;
+  height: 15px;
+  border-radius: var(--tap-radius-pill);
+  background: linear-gradient(180deg, var(--tap-accent-hover), var(--tap-secondary));
+  box-shadow: 0 0 12px var(--tap-topbar-brand-glow);
+}
+
+html[data-theme-visual="tap-studio"] .t8-sidebar,
+html[data-theme-visual="tap-studio"] .t8-sidebar-scroll {
+  background: color-mix(in srgb, var(--tap-card-bg) 90%, #000 10%) !important;
+  border-right: 1px solid var(--tap-border) !important;
+  backdrop-filter: blur(14px);
+}
+
+html[data-theme-visual="tap-studio"] .t8-sidebar .border-b,
+html[data-theme-visual="tap-studio"] .t8-sidebar .border-t,
+html[data-theme-visual="tap-studio"] .t8-modal .border-b,
+html[data-theme-visual="tap-studio"] .t8-drawer .border-b {
+  border-color: var(--tap-border) !important;
+}
+
+html[data-theme-visual="tap-studio"] .t8-topbar-status-chip {
+  position: relative;
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 9px !important;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, #fff 4%, transparent), transparent),
+    var(--tap-topbar-chip-bg) !important;
+  border: 1px solid var(--tap-topbar-chip-border) !important;
+  border-radius: var(--tap-radius-pill) !important;
+  color: var(--tap-ink-muted) !important;
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, #fff 3%, transparent),
+    0 0 14px color-mix(in srgb, var(--tap-accent) 9%, transparent) !important;
+  font-size: 11px !important;
+  font-weight: 650;
+  letter-spacing: 0;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+html[data-theme-visual="tap-studio"] .t8-chip {
+  background: color-mix(in srgb, var(--tap-muted-bg) 86%, transparent) !important;
+  border: 1px solid var(--tap-border) !important;
+  border-radius: var(--tap-radius-pill) !important;
+  color: var(--tap-ink-muted) !important;
+  box-shadow: none !important;
+}
+
+html[data-theme-visual="tap-studio"] .t8-topbar-status-chip::before {
+  content: "";
+  display: block;
+  width: 5px;
+  height: 5px;
+  border-radius: var(--tap-radius-pill);
+  background: currentColor;
+  box-shadow: 0 0 9px currentColor;
+  opacity: 0.82;
+}
+
+html[data-theme-visual="tap-studio"] .t8-topbar-status-chip svg {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
+  color: currentColor !important;
+  filter: drop-shadow(0 0 6px currentColor);
+  opacity: 0.88;
+}
+
+html[data-theme-visual="tap-studio"] .t8-topbar-status-chip[class*="text-[10px]"] {
+  min-height: 22px;
+  padding: 0 8px !important;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, #fff 5%, transparent), transparent),
+    color-mix(in srgb, var(--tap-card-bg-elev) 76%, #000 24%) !important;
+  border-color: color-mix(in srgb, #fff 12%, var(--tap-border)) !important;
+  color: color-mix(in srgb, var(--tap-ink-muted) 88%, #fff 12%) !important;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, #fff 4%, transparent) !important;
+  font-size: 10px !important;
+  font-weight: 700;
+}
+
+html[data-theme-visual="tap-studio"] .t8-topbar-status-chip[class*="text-[10px]"]::before {
+  display: none;
+}
+
+html[data-theme-visual="tap-studio"] .t8-topbar-status-chip[class*="text-emerald"],
+html[data-theme-visual="tap-studio"] .t8-topbar-status-chip[class*="emerald-"],
+html[data-theme-visual="tap-studio"] .t8-smart-node-status--success {
+  color: var(--tap-success) !important;
+  border-color: color-mix(in srgb, var(--tap-success) 42%, transparent) !important;
+}
+
+html[data-theme-visual="tap-studio"] .t8-topbar-status-chip[class*="text-emerald"]::before {
+  background: color-mix(in srgb, var(--tap-success) 90%, #fff 10%);
+  box-shadow:
+    0 0 8px color-mix(in srgb, var(--tap-success) 78%, transparent),
+    0 0 16px color-mix(in srgb, var(--tap-success) 28%, transparent);
+}
+
+html[data-theme-visual="tap-studio"] .t8-topbar-status-chip[class*="text-red"],
+html[data-theme-visual="tap-studio"] .t8-topbar-status-chip[class*="red-"],
+html[data-theme-visual="tap-studio"] .t8-smart-node-status--error,
+html[data-theme-visual="tap-studio"] .t8-smart-node-status--danger {
+  color: var(--t8-danger) !important;
+  border-color: color-mix(in srgb, var(--t8-danger) 42%, transparent) !important;
+}
+
+html[data-theme-visual="tap-studio"] .t8-topbar-status-chip[class*="text-yellow"],
+html[data-theme-visual="tap-studio"] .t8-topbar-status-chip[class*="yellow-"],
+html[data-theme-visual="tap-studio"] .t8-smart-node-status--warning,
+html[data-theme-visual="tap-studio"] .t8-smart-node-status--pending {
+  color: var(--tap-warning) !important;
+  border-color: color-mix(in srgb, var(--tap-warning) 42%, transparent) !important;
+}
+
+html[data-theme-visual="tap-studio"] .t8-card,
+html[data-theme-visual="tap-studio"] .t8-sidebar-node,
+html[data-theme-visual="tap-studio"] .t8-modal,
+html[data-theme-visual="tap-studio"] .t8-drawer {
+  background: var(--tap-card-bg) !important;
+  border: 1px solid var(--tap-border) !important;
+  border-radius: var(--tap-radius) !important;
+  box-shadow: var(--tap-shadow) !important;
+  color: var(--tap-ink) !important;
+  backdrop-filter: blur(16px);
+}
+
+html[data-theme-visual="tap-studio"] .t8-panel,
+html[data-theme-visual="tap-studio"] .t8-context-menu {
+  background: var(--t8-bg-panel-elevated) !important;
+  border: 1px solid var(--t8-border) !important;
+  border-radius: var(--t8-radius-panel) !important;
+  box-shadow: var(--t8-shadow-panel) !important;
+  color: var(--tap-ink) !important;
+}
+
+html[data-theme-visual="tap-studio"] .t8-card:hover,
+html[data-theme-visual="tap-studio"] .t8-sidebar-node:hover {
+  border-color: var(--tap-border-strong) !important;
+  box-shadow: var(--tap-shadow-focus) !important;
+}
+
+html[data-theme-visual="tap-studio"] .t8-topbar button:not(.px-btn):not(.t8-topbar-status-chip),
+html[data-theme-visual="tap-studio"] .t8-sidebar button:not(.t8-sidebar-node):not(.px-btn):not([class*="uppercase tracking-wider"]),
+html[data-theme-visual="tap-studio"] .react-flow__node:not(.react-flow__node-groupBox) button:not(.react-flow__controls-button):not([class*="text-red"]):not([class*="bg-red"]):not([title*="删除"]):not([aria-label*="删除"]),
+html[data-theme-visual="tap-studio"] .t8-btn,
+html[data-theme-visual="tap-studio"] .t8-mini-icon-button {
+  background: color-mix(in srgb, var(--tap-muted-bg) 88%, transparent) !important;
+  border: 1px solid var(--tap-border) !important;
+  border-radius: var(--tap-radius-sm) !important;
+  box-shadow: none !important;
+  color: var(--tap-ink) !important;
+  transition: background var(--tap-transition), border-color var(--tap-transition), color var(--tap-transition), box-shadow var(--tap-transition), transform 100ms ease-out !important;
+}
+
+html[data-theme-visual="tap-studio"] .t8-topbar button:not(.px-btn):not(.t8-topbar-status-chip):hover,
+html[data-theme-visual="tap-studio"] .t8-sidebar button:not(.t8-sidebar-node):not(.px-btn):not([class*="uppercase tracking-wider"]):hover,
+html[data-theme-visual="tap-studio"] .react-flow__node:not(.react-flow__node-groupBox) button:not(.react-flow__controls-button):not([class*="text-red"]):not([class*="bg-red"]):not([title*="删除"]):not([aria-label*="删除"]):hover,
+html[data-theme-visual="tap-studio"] .t8-btn:hover,
+html[data-theme-visual="tap-studio"] .t8-mini-icon-button:hover {
+  background: color-mix(in srgb, var(--tap-accent) 14%, var(--tap-muted-bg)) !important;
+  border-color: var(--tap-border-strong) !important;
+  color: var(--tap-ink) !important;
+  box-shadow: var(--tap-shadow-soft) !important;
+}
+
+html[data-theme-visual="tap-studio"] .t8-btn-primary,
+html[data-theme-visual="tap-studio"] .t8-btn--primary,
+html[data-theme-visual="tap-studio"] .px-btn--mint,
+html[data-theme-visual="tap-studio"] .t8-topbar button[aria-pressed="true"],
+html[data-theme-visual="tap-studio"] .t8-topbar button[class*="emerald-"]:not(:hover) {
+  background: linear-gradient(180deg, var(--tap-accent-hover), var(--tap-accent)) !important;
+  border-color: color-mix(in srgb, var(--tap-accent-hover) 74%, transparent) !important;
+  color: var(--t8-accent-text) !important;
+  box-shadow: 0 10px 24px color-mix(in srgb, var(--tap-accent) 24%, transparent) !important;
+}
+
+html[data-theme-visual="tap-studio"] .t8-btn:active,
+html[data-theme-visual="tap-studio"] .t8-mini-icon-button:active {
+  transform: scale(0.98);
+}
+
+html[data-theme-visual="tap-studio"] .t8-sidebar-search-box,
+html[data-theme-visual="tap-studio"] .react-flow__node:not(.react-flow__node-groupBox) input,
+html[data-theme-visual="tap-studio"] .react-flow__node:not(.react-flow__node-groupBox) select,
+html[data-theme-visual="tap-studio"] .react-flow__node:not(.react-flow__node-groupBox) textarea,
+html[data-theme-visual="tap-studio"] .t8-input,
+html[data-theme-visual="tap-studio"] .t8-select,
+html[data-theme-visual="tap-studio"] textarea {
+  background: color-mix(in srgb, var(--tap-muted-bg) 90%, #000 10%) !important;
+  border: 1px solid var(--tap-border) !important;
+  border-radius: var(--tap-radius-sm) !important;
+  box-shadow: none !important;
+  color: var(--tap-ink) !important;
+  transition: border-color var(--tap-transition), box-shadow var(--tap-transition), background var(--tap-transition) !important;
+}
+
+html[data-theme-visual="tap-studio"] input::placeholder,
+html[data-theme-visual="tap-studio"] textarea::placeholder {
+  color: var(--tap-ink-dim) !important;
+  opacity: 0.82;
+}
+
+html[data-theme-visual="tap-studio"] .t8-sidebar-search-box:focus-within,
+html[data-theme-visual="tap-studio"] .react-flow__node:not(.react-flow__node-groupBox) input:focus,
+html[data-theme-visual="tap-studio"] .react-flow__node:not(.react-flow__node-groupBox) select:focus,
+html[data-theme-visual="tap-studio"] .react-flow__node:not(.react-flow__node-groupBox) textarea:focus,
+html[data-theme-visual="tap-studio"] .t8-input:focus,
+html[data-theme-visual="tap-studio"] .t8-select:focus,
+html[data-theme-visual="tap-studio"] textarea:focus {
+  outline: none !important;
+  border-color: var(--tap-accent) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--tap-accent) 18%, transparent) !important;
+}
+
+html[data-theme-visual="tap-studio"] select option {
+  background: var(--t8-bg-panel-elevated) !important;
+  color: var(--tap-ink) !important;
+}
+
+html[data-theme-visual="tap-studio"] select option:checked {
+  background: color-mix(in srgb, var(--tap-accent) 22%, var(--t8-bg-panel-elevated)) !important;
+}
+
+html[data-theme-visual="tap-studio"] .react-flow__node:not(.react-flow__node-groupBox) .t8-node-header,
+html[data-theme-visual="tap-studio"] .t8-node-header {
+  background: var(--t8-bg-node-header) !important;
+  border-bottom: 1px solid var(--tap-border) !important;
+  border-radius: var(--tap-radius) var(--tap-radius) 0 0 !important;
+  color: var(--tap-ink) !important;
+  font-family: var(--t8-font-display, var(--t8-font-family)) !important;
+  font-weight: 720 !important;
+  letter-spacing: 0;
+}
+
+html[data-theme-visual="tap-studio"] .t8-output-card,
+html[data-theme-visual="tap-studio"] .t8-material-set-classic {
+  background: var(--t8-bg-node) !important;
+  border: 1px solid var(--tap-border) !important;
+  border-radius: var(--tap-radius) !important;
+  color: var(--tap-ink) !important;
+  box-shadow: var(--tap-shadow) !important;
+  backdrop-filter: blur(14px);
+}
+
+html[data-theme-visual="tap-studio"] .t8-smart-node-card--selected,
+html[data-theme-visual="tap-studio"] .t8-output-card.t8-smart-node-card--selected,
+html[data-theme-visual="tap-studio"] .t8-material-set-classic--selected {
+  border-color: var(--t8-accent) !important;
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--t8-accent) 80%, transparent),
+    0 0 30px color-mix(in srgb, var(--t8-accent) 22%, transparent),
+    var(--t8-shadow-node) !important;
+}
+
+html[data-theme-visual="tap-studio"] .t8-smart-node-card--accepting,
+html[data-theme-visual="tap-studio"] .t8-output-card.t8-smart-node-card--accepting {
+  border-color: color-mix(in srgb, var(--tap-success) 68%, var(--tap-border-strong)) !important;
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--tap-success) 22%, transparent),
+    0 0 26px color-mix(in srgb, var(--tap-success) 18%, transparent),
+    var(--tap-shadow) !important;
+}
+
+html[data-theme-visual="tap-studio"] .t8-smart-node-card--regenerating {
+  border-color: color-mix(in srgb, var(--tap-secondary) 64%, var(--tap-border-strong)) !important;
+}
+
+html[data-theme-visual="tap-studio"] .t8-smart-node-card__header,
+html[data-theme-visual="tap-studio"] .t8-output-header,
+html[data-theme-visual="tap-studio"] .t8-material-set-classic__header {
+  min-height: 44px;
+  background: var(--t8-bg-node-header) !important;
+  border-bottom: 1px solid var(--tap-node-line) !important;
+  color: var(--tap-ink) !important;
+}
+
+html[data-theme-visual="tap-studio"] .t8-smart-node-card__header svg,
+html[data-theme-visual="tap-studio"] .t8-node-header svg,
+html[data-theme-visual="tap-studio"] .t8-output-header svg,
+html[data-theme-visual="tap-studio"] .t8-material-set-classic__header svg {
+  color: color-mix(in srgb, var(--tap-accent-hover) 80%, var(--tap-ink)) !important;
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--tap-accent) 32%, transparent));
+}
+
+html[data-theme-visual="tap-studio"] .t8-smart-node-status,
+html[data-theme-visual="tap-studio"] .t8-smart-mini-status,
+html[data-theme-visual="tap-studio"] .t8-smart-audio-status,
+html[data-theme-visual="tap-studio"] .t8-smart-video-status,
+html[data-theme-visual="tap-studio"] .t8-smart-fal-status {
+  background: color-mix(in srgb, var(--tap-node-inner) 82%, transparent) !important;
+  border: 1px solid var(--tap-border) !important;
+  border-radius: var(--tap-radius-pill) !important;
+  color: var(--tap-ink-muted) !important;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, #fff 3%, transparent) !important;
+}
+
+html[data-theme-visual="tap-studio"] .t8-smart-node-status--generating,
+html[data-theme-visual="tap-studio"] .t8-smart-node-status--running,
+html[data-theme-visual="tap-studio"] .t8-smart-node-status--submitting,
+html[data-theme-visual="tap-studio"] .t8-smart-node-status--polling {
+  color: var(--tap-accent-hover) !important;
+  border-color: color-mix(in srgb, var(--tap-accent) 48%, transparent) !important;
+  box-shadow: 0 0 14px color-mix(in srgb, var(--tap-accent) 18%, transparent) !important;
+}
+
+html[data-theme-visual="tap-studio"] .t8-node-serial-badge {
+  background: color-mix(in srgb, var(--tap-card-bg-elev) 90%, transparent) !important;
+  border: 1px solid color-mix(in srgb, var(--tap-accent) 42%, var(--tap-border)) !important;
+  border-radius: var(--tap-radius-pill) !important;
+  color: var(--tap-accent-hover) !important;
+  box-shadow: 0 0 12px color-mix(in srgb, var(--tap-accent) 20%, transparent) !important;
+  font-family: var(--t8-font-display, var(--t8-font-family)) !important;
+}
+
+html[data-theme-visual="tap-studio"] .t8-smart-field > span,
+html[data-theme-visual="tap-studio"] .t8-output-section-label,
+html[data-theme-visual="tap-studio"] .t8-material-set-classic__subtitle,
+html[data-theme-visual="tap-studio"] .t8-material-preview-header,
+html[data-theme-visual="tap-studio"] .t8-material-preview-count {
+  color: var(--tap-ink-muted) !important;
+}
+
+html[data-theme-visual="tap-studio"] .t8-smart-segment,
+html[data-theme-visual="tap-studio"] .t8-smart-prompt-shell,
+html[data-theme-visual="tap-studio"] .t8-material-preview-section,
+html[data-theme-visual="tap-studio"] .t8-material-set-classic__drop,
+html[data-theme-visual="tap-studio"] .t8-material-set-classic__empty,
+html[data-theme-visual="tap-studio"] .t8-material-set-classic__grid,
+html[data-theme-visual="tap-studio"] .t8-smart-material-set-grid,
+html[data-theme-visual="tap-studio"] .t8-smart-material-set-empty,
+html[data-theme-visual="tap-studio"] .t8-smart-material-set-cover {
+  background: var(--tap-node-inner) !important;
+  border-color: var(--tap-border) !important;
+  border-radius: var(--tap-radius-sm) !important;
+}
+
+html[data-theme-visual="tap-studio"] .t8-smart-segment__item {
+  border-radius: calc(var(--tap-radius-sm) - 2px) !important;
+  color: var(--tap-ink-muted) !important;
+}
+
+html[data-theme-visual="tap-studio"] .t8-smart-segment__item:hover,
+html[data-theme-visual="tap-studio"] .t8-smart-segment__item[data-active="true"] {
+  background: color-mix(in srgb, var(--tap-accent) 18%, var(--tap-node-inner-strong)) !important;
+  color: var(--tap-ink) !important;
+}
+
+html[data-theme-visual="tap-studio"] .t8-smart-segment__item[data-active="true"] {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tap-accent) 52%, transparent);
+}
+
+html[data-theme-visual="tap-studio"] .t8-output-body,
+html[data-theme-visual="tap-studio"] .t8-material-set-classic__body {
+  background: linear-gradient(180deg, transparent, color-mix(in srgb, #000 8%, transparent)) !important;
+}
+
+html[data-theme-visual="tap-studio"] .t8-output-media-card,
+html[data-theme-visual="tap-studio"] .t8-output-media-frame,
+html[data-theme-visual="tap-studio"] .t8-output-audio-surface,
+html[data-theme-visual="tap-studio"] .t8-material-set-classic__thumb,
+html[data-theme-visual="tap-studio"] .t8-smart-material-set-thumb,
+html[data-theme-visual="tap-studio"] .t8-material-preview-rail,
+html[data-theme-visual="tap-studio"] .t8-material-preview-upload {
+  background: var(--tap-node-inner-strong) !important;
+  border-color: color-mix(in srgb, var(--tap-accent) 18%, var(--tap-border)) !important;
+  border-radius: var(--tap-radius-sm) !important;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, #fff 3%, transparent) !important;
+}
+
+html[data-theme-visual="tap-studio"] .t8-output-media-card:hover,
+html[data-theme-visual="tap-studio"] .t8-material-set-classic__thumb:hover,
+html[data-theme-visual="tap-studio"] .t8-smart-material-set-thumb:hover {
+  border-color: var(--tap-border-strong) !important;
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, #fff 5%, transparent),
+    0 0 18px color-mix(in srgb, var(--tap-accent) 16%, transparent) !important;
+}
+
+html[data-theme-visual="tap-studio"] .t8-output-media-meta,
+html[data-theme-visual="tap-studio"] .t8-output-media-dimensions,
+html[data-theme-visual="tap-studio"] .t8-material-set-classic__thumb-index,
+html[data-theme-visual="tap-studio"] .t8-material-set-classic__thumb-pin,
+html[data-theme-visual="tap-studio"] .t8-smart-material-set-thumb__index,
+html[data-theme-visual="tap-studio"] .t8-smart-material-set-thumb__remove {
+  background: color-mix(in srgb, var(--tap-card-bg) 82%, transparent) !important;
+  border-color: var(--tap-border) !important;
+  color: var(--tap-ink-muted) !important;
+  backdrop-filter: blur(8px);
+}
+
+html[data-theme-visual="tap-studio"] .t8-output-header__icon,
+html[data-theme-visual="tap-studio"] .t8-output-audio-icon,
+html[data-theme-visual="tap-studio"] .t8-material-set-classic__icon {
+  background: color-mix(in srgb, var(--tap-accent) 16%, var(--tap-node-inner-strong)) !important;
+  border-color: color-mix(in srgb, var(--tap-accent) 44%, transparent) !important;
+  color: var(--tap-accent-hover) !important;
+  box-shadow: 0 0 14px color-mix(in srgb, var(--tap-accent) 18%, transparent) !important;
+}
+
+html[data-theme-visual="tap-studio"] .t8-output-quick-action,
+html[data-theme-visual="tap-studio"] .t8-output-quick-action-icon,
+html[data-theme-visual="tap-studio"] .t8-material-action-button,
+html[data-theme-visual="tap-studio"] .t8-material-set-classic__icon-btn,
+html[data-theme-visual="tap-studio"] .t8-smart-material-set-icon-action {
+  background: color-mix(in srgb, var(--tap-card-bg-elev) 82%, transparent) !important;
+  border: 1px solid var(--tap-border) !important;
+  border-radius: var(--tap-radius-sm) !important;
+  color: var(--tap-ink-muted) !important;
+}
+
+html[data-theme-visual="tap-studio"] .t8-output-quick-action:hover,
+html[data-theme-visual="tap-studio"] .t8-output-quick-action-icon:hover,
+html[data-theme-visual="tap-studio"] .t8-material-action-button:hover,
+html[data-theme-visual="tap-studio"] .t8-material-set-classic__icon-btn:hover,
+html[data-theme-visual="tap-studio"] .t8-smart-material-set-icon-action:hover {
+  background: color-mix(in srgb, var(--tap-accent) 16%, var(--tap-card-bg-elev)) !important;
+  border-color: var(--tap-border-strong) !important;
+  color: var(--tap-accent-hover) !important;
+}
+
+html[data-theme-visual="tap-studio"] .t8-material-delete-button:hover,
+html[data-theme-visual="tap-studio"] .t8-smart-material-set-thumb__remove:hover {
+  background: color-mix(in srgb, var(--t8-danger) 24%, var(--tap-card-bg-elev)) !important;
+  border-color: color-mix(in srgb, var(--t8-danger) 58%, transparent) !important;
+  color: color-mix(in srgb, var(--t8-danger) 86%, #fff) !important;
+}
+
+html[data-theme-visual="tap-studio"] .t8-smart-node-error,
+html[data-theme-visual="tap-studio"] .t8-material-set-classic__error {
+  background: color-mix(in srgb, var(--t8-danger) 12%, var(--tap-node-inner-strong)) !important;
+  border: 1px solid color-mix(in srgb, var(--t8-danger) 42%, var(--tap-border)) !important;
+  border-radius: var(--tap-radius-sm) !important;
+  color: color-mix(in srgb, var(--t8-danger) 82%, var(--tap-ink)) !important;
+}
+
+html[data-theme-visual="tap-studio"] .t8-smart-prompt-input,
+html[data-theme-visual="tap-studio"] .t8-smart-select,
+html[data-theme-visual="tap-studio"] .t8-smart-input,
+html[data-theme-visual="tap-studio"] .t8-material-set-classic__textarea {
+  background: var(--tap-node-inner-strong) !important;
+  border-color: var(--tap-border) !important;
+  color: var(--tap-ink) !important;
+}
+
+html[data-theme-visual="tap-studio"] .react-flow__resize-control.handle.t8-resize-handle {
+  width: 10px !important;
+  height: 10px !important;
+  border: 1px solid color-mix(in srgb, var(--tap-accent) 76%, #fff) !important;
+  border-radius: 4px !important;
+  background: color-mix(in srgb, var(--tap-card-bg-elev) 84%, var(--tap-accent) 16%) !important;
+  box-shadow: 0 0 12px color-mix(in srgb, var(--tap-accent) 32%, transparent) !important;
+}
+
+html[data-theme-visual="tap-studio"] .react-flow__resize-control.line {
+  border-color: color-mix(in srgb, var(--tap-accent) 44%, transparent) !important;
+}
+
+html[data-theme-visual="tap-studio"] .react-flow__node-groupBox > div:first-child,
+html[data-theme-visual="tap-studio"] .t8-group-box {
+  border-radius: var(--tap-radius) !important;
+  box-shadow: var(--tap-shadow-soft) !important;
+  backdrop-filter: blur(8px);
+}
+
+html[data-theme-visual="tap-studio"] .react-flow__node-groupBox.selected > div:first-child,
+html[data-theme-visual="tap-studio"] .t8-group-box[data-selected="true"] {
+  box-shadow: 0 0 0 1px var(--tap-accent), 0 0 22px color-mix(in srgb, var(--tap-accent) 22%, transparent), var(--tap-shadow-soft) !important;
+}
+
+html[data-theme-visual="tap-studio"] .t8-group-box__header {
+  border-top-left-radius: var(--tap-radius) !important;
+  border-top-right-radius: var(--tap-radius) !important;
+  font-family: var(--t8-font-display, var(--t8-font-family)) !important;
+}
+
+html[data-theme-visual="tap-studio"] .t8-group-box__title,
+html[data-theme-visual="tap-studio"] .t8-group-box__count {
+  color: var(--tap-ink) !important;
+}
+
+html[data-theme-visual="tap-studio"] .t8-group-box__button:not(.t8-group-box__button--run) {
+  background: color-mix(in srgb, var(--tap-muted-bg) 84%, transparent) !important;
+  border: 1px solid var(--tap-border) !important;
+  border-radius: var(--tap-radius-sm) !important;
+  color: var(--tap-ink-muted) !important;
+}
+
+html[data-theme-visual="tap-studio"] .t8-group-box__button:not(.t8-group-box__button--run):hover {
+  border-color: var(--tap-border-strong) !important;
+  color: var(--tap-ink) !important;
+}
+
+html[data-theme-visual="tap-studio"] .react-flow__handle {
+  border: 1px solid color-mix(in srgb, var(--tap-accent) 76%, #fff) !important;
+  border-radius: 50% !important;
+  background: var(--tap-accent) !important;
+  box-shadow: 0 0 10px color-mix(in srgb, var(--tap-accent) 34%, transparent) !important;
+  transition: box-shadow var(--tap-transition), background-color var(--tap-transition) !important;
+}
+
+html[data-theme-visual="tap-studio"] .react-flow__handle:hover {
+  box-shadow: 0 0 16px color-mix(in srgb, var(--tap-accent) 52%, transparent) !important;
+}
+
+html[data-theme-visual="tap-studio"] .react-flow__handle.react-flow__handle-connecting {
+  background: var(--tap-warning) !important;
+  border-color: var(--tap-warning) !important;
+}
+
+html[data-theme-visual="tap-studio"] .react-flow__handle.react-flow__handle-valid {
+  background: var(--tap-success) !important;
+  border-color: var(--tap-success) !important;
+}
+
+html[data-theme-visual="tap-studio"] .react-flow__edge-path {
+  stroke: var(--t8-edge) !important;
+  stroke-width: 1.8 !important;
+  stroke-linecap: round !important;
+  transition: stroke var(--tap-transition), stroke-width var(--tap-transition), filter var(--tap-transition);
+}
+
+html[data-theme-visual="tap-studio"] .react-flow__edge.selected .react-flow__edge-path,
+html[data-theme-visual="tap-studio"] .react-flow__edge:hover .react-flow__edge-path {
+  stroke: var(--t8-edge-selected) !important;
+  stroke-width: 2.6 !important;
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--tap-accent) 42%, transparent));
+}
+
+html[data-theme-visual="tap-studio"] .react-flow__edge.t8-edge-theme-active .react-flow__edge-path {
+  stroke: color-mix(in srgb, var(--tap-accent) 72%, var(--tap-secondary)) !important;
+  stroke-width: 2.3 !important;
+  stroke-dasharray: 7 6;
+  animation: t8-tap-edge-flow 1.7s linear infinite;
+}
+
+@keyframes t8-tap-edge-flow {
+  to { stroke-dashoffset: -26; }
+}
+
+html[data-theme-visual="tap-studio"] .react-flow__selection {
+  background: var(--t8-selection-bg) !important;
+  border: 1px solid var(--t8-selection-border) !important;
+  border-radius: var(--tap-radius-sm) !important;
+}
+
+html[data-theme-visual="tap-studio"] .t8-theme-music-toggle {
+  background: var(--tap-island-bg) !important;
+  border: 1px solid var(--tap-island-border) !important;
+  border-radius: var(--tap-radius-pill) !important;
+  box-shadow: var(--tap-shadow-soft) !important;
+  backdrop-filter: blur(14px);
+}
+
+html[data-theme-visual="tap-studio"] .t8-canvas-toolbar {
+  top: 16px !important;
+  right: 16px !important;
+  gap: 8px !important;
+}
+
+html[data-theme-visual="tap-studio"] .t8-toolbar-panel {
+  min-height: 44px;
+  padding: 5px !important;
+  border: 1px solid var(--tap-island-border) !important;
+  border-radius: var(--tap-radius-pill) !important;
+  background: var(--tap-island-bg) !important;
+  color: var(--tap-ink-muted) !important;
+  box-shadow: var(--tap-shadow-soft) !important;
+  backdrop-filter: blur(18px);
+}
+
+html[data-theme-visual="tap-studio"] .t8-toolbar-button {
+  width: 34px !important;
+  height: 34px !important;
+  border-radius: var(--tap-radius-pill) !important;
+  color: var(--tap-ink-muted) !important;
+}
+
+html[data-theme-visual="tap-studio"] .t8-toolbar-button:hover,
+html[data-theme-visual="tap-studio"] .t8-toolbar-button[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--tap-accent) 16%, #fff 3%) !important;
+  color: var(--tap-ink) !important;
+}
+
+html[data-theme-visual="tap-studio"] .react-flow__controls {
+  background: var(--t8-bg-panel-elevated) !important;
+  border: 1px solid var(--t8-border) !important;
+  border-radius: var(--t8-radius-panel) !important;
+  box-shadow: var(--t8-shadow-panel) !important;
+}
+
+html[data-theme-visual="tap-studio"] .react-flow__controls-button {
+  background: var(--tap-card-bg) !important;
+  border: 1px solid var(--tap-border) !important;
+  border-radius: var(--tap-radius-sm) !important;
+  color: var(--tap-ink) !important;
+  margin: 2px 0 !important;
+  box-shadow: var(--tap-shadow-soft) !important;
+}
+
+html[data-theme-visual="tap-studio"] .react-flow__controls-button:hover {
+  background: color-mix(in srgb, var(--tap-accent) 16%, var(--tap-card-bg)) !important;
+  border-color: var(--tap-border-strong) !important;
+}
+
+html[data-theme-visual="tap-studio"] .t8-canvas-shell .t8-control-rail {
+  position: absolute !important;
+  z-index: 80 !important;
+  pointer-events: none;
+}
+
+html[data-theme-visual="tap-studio"] .t8-canvas-shell .t8-control-stack {
+  gap: 6px;
+  padding: 7px;
+  border: 1px solid var(--tap-island-border);
+  border-radius: 28px;
+  background: var(--tap-island-bg);
+  color: var(--tap-ink-muted);
+  box-shadow: var(--tap-shadow-soft);
+  backdrop-filter: blur(18px);
+}
+
+html[data-theme-visual="tap-studio"] .t8-canvas-shell .t8-control-rail-help {
+  width: 36px !important;
+  height: 36px !important;
+  border-radius: var(--tap-radius-pill) !important;
+  background: transparent !important;
+  border: 0 !important;
+  color: var(--tap-ink-muted) !important;
+  box-shadow: none !important;
+}
+
+html[data-theme-visual="tap-studio"] .t8-canvas-shell .t8-control-rail-help:hover,
+html[data-theme-visual="tap-studio"] .t8-canvas-shell .t8-control-rail-help.is-active {
+  background: color-mix(in srgb, var(--tap-accent) 16%, #fff 3%) !important;
+  color: var(--tap-ink) !important;
+}
+
+html[data-theme-visual="tap-studio"] .t8-canvas-shell .t8-control-rail .react-flow__controls {
+  z-index: 80;
+  display: inline-flex !important;
+  flex-direction: column;
+  overflow: hidden !important;
+  pointer-events: auto;
+  background: var(--t8-bg-panel-elevated) !important;
+  border: 1px solid var(--t8-border) !important;
+  border-radius: var(--t8-radius-panel) !important;
+  box-shadow: var(--t8-shadow-panel) !important;
+  backdrop-filter: none;
+}
+
+html[data-theme-visual="tap-studio"] .t8-canvas-shell .t8-control-rail .react-flow__controls-button {
+  width: 34px !important;
+  height: 34px !important;
+  min-width: 34px !important;
+  min-height: 34px !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-bottom: 0 !important;
+  border-radius: var(--tap-radius-pill) !important;
+  color: var(--tap-ink-muted) !important;
+  box-shadow: none !important;
+}
+
+html[data-theme-visual="tap-studio"] .t8-canvas-shell .t8-control-rail .react-flow__controls-button:hover {
+  background: color-mix(in srgb, var(--tap-accent) 16%, #fff 3%) !important;
+  color: var(--tap-ink) !important;
+}
+
+html[data-theme-visual="tap-studio"] .t8-canvas-shell .t8-control-rail .react-flow__controls-button svg {
+  color: currentColor !important;
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--tap-accent) 34%, transparent));
+}
+html[data-theme-visual="tap-studio"] [role="tooltip"],
+html[data-theme-visual="tap-studio"] .t8-tooltip,
+html[data-theme-visual="tap-studio"] .t8-node-action-bar {
+  background: var(--tap-card-bg-elev) !important;
+  border: 1px solid var(--tap-border-strong) !important;
+  border-radius: var(--tap-radius-sm) !important;
+  color: var(--tap-ink) !important;
+  box-shadow: var(--tap-shadow-focus) !important;
+  backdrop-filter: blur(14px);
+}
+
+html[data-theme-visual="tap-studio"] .t8-tap-empty-starter {
+  position: absolute;
+  left: 50%;
+  top: 52%;
+  z-index: 60;
+  display: grid;
+  width: min(640px, calc(100vw - 48px));
+  transform: translate(-50%, -50%);
+  gap: 14px;
+  justify-items: center;
+  pointer-events: none;
+  color: var(--tap-ink-muted);
+}
+
+html[data-theme-visual="tap-studio"] .t8-tap-empty-starter__cue {
+  display: inline-flex;
+  min-height: 42px;
+  max-width: 100%;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 14px 7px 8px;
+  border: 1px solid var(--tap-island-border);
+  border-radius: var(--tap-radius-pill);
+  background: color-mix(in srgb, var(--tap-island-bg) 86%, #000 14%);
+  box-shadow: var(--tap-shadow-soft);
+  backdrop-filter: blur(18px);
+  color: color-mix(in srgb, var(--tap-ink-muted) 88%, #fff 12%);
+  font-size: 14px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+html[data-theme-visual="tap-studio"] .t8-tap-empty-starter__cue strong {
+  color: var(--tap-ink);
+  font-size: 14px;
+  font-weight: 800;
+}
+
+html[data-theme-visual="tap-studio"] .t8-tap-empty-starter__spark {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--tap-radius-pill);
+  background: color-mix(in srgb, var(--tap-accent) 18%, #fff 5%);
+  color: var(--tap-accent-hover);
+}
+
+html[data-theme-visual="tap-studio"] .t8-tap-empty-starter__chips {
+  display: flex;
+  max-width: 100%;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+html[data-theme-visual="tap-studio"] .t8-tap-empty-starter__chip {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  gap: 7px;
+  padding: 0 13px;
+  border: 1px solid var(--tap-island-border);
+  border-radius: var(--tap-radius-pill);
+  background: color-mix(in srgb, var(--tap-island-bg) 70%, #000 30%);
+  color: color-mix(in srgb, var(--tap-ink-muted) 82%, #fff 18%);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.22);
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+html[data-theme-visual="tap-studio"] .react-flow,
+html[data-theme-visual="tap-studio"] .t8-agent-activity,
+html[data-theme-visual="tap-studio"] .t8-agent-cursor {
+  position: relative;
+  z-index: 1;
+}
+
+html[data-theme-visual="tap-studio"] .t8-cut-track {
+  stroke: var(--t8-cut-track) !important;
+  stroke-width: 2.2 !important;
+  stroke-dasharray: 10 5 !important;
+  opacity: 0.88;
+  filter: drop-shadow(0 0 7px color-mix(in srgb, var(--tap-accent) 46%, transparent));
+}
+
+html[data-theme-visual="tap-studio"] .t8-cut-button {
+  background: var(--t8-cut-button-bg) !important;
+  color: var(--t8-cut-button-fg) !important;
+  border: 1px solid var(--tap-border-strong) !important;
+  border-radius: var(--tap-radius-pill) !important;
+  box-shadow: var(--tap-shadow-focus) !important;
+}
+
+html[data-theme-visual="tap-studio"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) [class*="text-white"]:not(input):not(textarea):not(select),
+html[data-theme-visual="tap-studio"][data-theme-mode="light"] .t8-node [class*="text-white"]:not(input):not(textarea):not(select) {
+  color: var(--tap-ink) !important;
+}
+
+html[data-theme-visual="tap-studio"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) svg,
+html[data-theme-visual="tap-studio"][data-theme-mode="light"] .t8-node svg {
+  color: var(--tap-ink) !important;
+}
+
+html[data-theme-visual="tap-studio"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) [class*="bg-white/"]:not(input):not(textarea):not(select):not(img):not(video):not(canvas) {
+  background: var(--tap-card-bg-elev) !important;
+}
+
+html[data-theme-visual="tap-studio"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) [class*="bg-zinc-900"]:not(input):not(textarea):not(select):not(img):not(video):not(canvas),
+html[data-theme-visual="tap-studio"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) [class*="bg-zinc-950"]:not(input):not(textarea):not(select):not(img):not(video):not(canvas) {
+  background: var(--tap-muted-bg) !important;
+}
+
+html[data-theme-visual="tap-studio"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) [class*="border-white/"] {
+  border-color: var(--tap-border) !important;
+}
+
+html[data-theme-visual="tap-studio"][data-theme-mode="dark"] .t8-topbar button[class*="bg-sky-"],
+html[data-theme-visual="tap-studio"][data-theme-mode="dark"] .t8-topbar button[class*="bg-emerald-"],
+html[data-theme-visual="tap-studio"][data-theme-mode="dark"] .t8-topbar button[class*="bg-white/"] {
+  background: color-mix(in srgb, var(--tap-muted-bg) 88%, transparent) !important;
+  border-color: var(--tap-border) !important;
+}
+
+html[data-theme-visual="tap-studio"] .t8-canvas-shell.t8-viewport-moving .react-flow__edge.t8-edge-theme-active .react-flow__edge-path,
+html[data-theme-visual="tap-studio"] .t8-canvas-shell.t8-node-dragging .react-flow__edge.t8-edge-theme-active .react-flow__edge-path {
+  animation: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-theme-visual="tap-studio"] .t8-card,
+  html[data-theme-visual="tap-studio"] .t8-btn,
+  html[data-theme-visual="tap-studio"] .react-flow__handle,
+  html[data-theme-visual="tap-studio"] .react-flow__edge-path,
+  html[data-theme-visual="tap-studio"] .t8-topbar button,
+  html[data-theme-visual="tap-studio"] .t8-sidebar button {
+    transition: none !important;
+    animation: none !important;
+    filter: none !important;
+  }
+}

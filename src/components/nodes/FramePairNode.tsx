@@ -187,9 +187,7 @@ const FramePairNode = (p: NodeProps) => {
         background: 'var(--px-surface, #FFFFFF)',
         border: '2px solid var(--px-ink, #1A1410)',
         borderRadius: 0,
-        boxShadow: p.selected
-          ? '5px 5px 0 var(--px-ink, #1A1410)'
-          : '3px 3px 0 var(--px-ink, #1A1410)',
+        boxShadow: '3px 3px 0 var(--px-ink, #1A1410)',
         color: 'var(--px-ink, #1A1410)',
       }
     : isDark
@@ -198,22 +196,15 @@ const FramePairNode = (p: NodeProps) => {
         background: 'rgba(20,20,22,.92)',
         backdropFilter: 'blur(8px)',
         border: '2px solid rgba(255,255,255,.15)',
-        borderColor: p.selected ? COLOR : undefined,
         borderRadius: 12,
-        boxShadow: p.selected
-          ? `0 0 0 1px ${COLOR}, 0 16px 32px rgba(251,146,60,.2)`
-          : undefined,
       }
     : {
         width: 280,
         background: 'rgba(255,255,255,.95)',
         backdropFilter: 'blur(8px)',
         border: '2px solid rgba(0,0,0,.12)',
-        borderColor: p.selected ? COLOR : undefined,
         borderRadius: 12,
-        boxShadow: p.selected
-          ? `0 0 0 1px ${COLOR}, 0 16px 32px rgba(251,146,60,.18)`
-          : '0 4px 12px rgba(0,0,0,.06)',
+        boxShadow: '0 4px 12px rgba(0,0,0,.06)',
       };
 
   const headerBorder = isPixel
@@ -289,7 +280,7 @@ const FramePairNode = (p: NodeProps) => {
 
   // ===== 渲染 =====
   return (
-    <div className="relative" style={containerStyle}>
+    <div className={`t8-node relative ${p.selected ? 'is-selected' : ''}`} style={containerStyle}>
       {/* 输入: video */}
       <Handle
         type="target"

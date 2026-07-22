@@ -1,5 +1,4 @@
 import type { AdvancedProviderConfig, AdvancedProviderSummary, CanvasProviderSource } from '../types/canvas';
-import { registryModelsForProtocol } from './modelProtocolRegistry.ts';
 
 const MASKED_RE = /^\*{2,}/;
 
@@ -222,36 +221,6 @@ const IMAGE_PROTOCOLS = new Set(['openai-compatible', 'openai', 'apimart', 'gemi
 const VIDEO_PROTOCOLS = new Set(['openai-compatible', 'openai', 'apimart', 'volcengine', 'agnes', 'jimeng-cli']);
 const LLM_PROTOCOLS = new Set(['openai-compatible', 'openai', 'apimart', 'gemini', 'modelscope', 'volcengine', 'agnes']);
 
-const FALLBACK_MODELS: Record<AdvancedProviderNodeKind, Partial<Record<string, string[]>>> = {
-  image: {
-    'openai-compatible': registryModelsForProtocol('openai', 'image'),
-    openai: registryModelsForProtocol('openai', 'image'),
-    apimart: registryModelsForProtocol('apimart', 'image'),
-    gemini: registryModelsForProtocol('gemini', 'image'),
-    modelscope: registryModelsForProtocol('modelscope', 'image'),
-    volcengine: registryModelsForProtocol('volcengine', 'image'),
-    agnes: registryModelsForProtocol('agnes', 'image'),
-    'jimeng-cli': registryModelsForProtocol('jimeng-cli', 'image'),
-  },
-  video: {
-    'openai-compatible': registryModelsForProtocol('openai', 'video'),
-    openai: registryModelsForProtocol('openai', 'video'),
-    apimart: registryModelsForProtocol('apimart', 'video'),
-    agnes: registryModelsForProtocol('agnes', 'video'),
-    volcengine: registryModelsForProtocol('volcengine', 'video'),
-    'jimeng-cli': registryModelsForProtocol('jimeng-cli', 'video'),
-  },
-  llm: {
-    'openai-compatible': registryModelsForProtocol('openai', 'llm'),
-    openai: registryModelsForProtocol('openai', 'llm'),
-    apimart: registryModelsForProtocol('apimart', 'llm'),
-    gemini: registryModelsForProtocol('gemini', 'llm'),
-    modelscope: registryModelsForProtocol('modelscope', 'llm'),
-    volcengine: registryModelsForProtocol('volcengine', 'llm'),
-    agnes: registryModelsForProtocol('agnes', 'llm'),
-  },
-};
-
 function uniqueCompact(values: unknown[]): string[] {
   const out: string[] = [];
   for (const value of values) {
@@ -301,10 +270,7 @@ export function advancedProviderModelOptions(
       ? uniqueCompact([defaultModel, ...explicit])
       : explicit;
   }
-  return uniqueCompact([
-    defaultModelForKind(provider, kind),
-    ...(FALLBACK_MODELS[kind][provider.protocol] || []),
-  ]);
+  return [];
 }
 
 export function advancedProvidersForNode(
@@ -374,4 +340,25 @@ export function externalImageSizeFor(aspectRatio?: string, sizeLevel?: string): 
   const w = Math.max(256, Math.round((dims[0] * scale) / 64) * 64);
   const h = Math.max(256, Math.round((dims[1] * scale) / 64) * 64);
   return `${w}x${h}`;
+}
+
+const GPT_IMAGE_SIZE_MAP: Record<string, Record<string, string>> = {
+  '1:1': { '1K': '1024x1024', '2K': '2048x2048', '4K': '2880x2880' },
+  '3:2': { '1K': '1248x832', '2K': '2496x1664', '4K': '3504x2336' },
+  '2:3': { '1K': '832x1248', '2K': '1664x2496', '4K': '2336x3504' },
+  '4:3': { '1K': '1152x864', '2K': '2304x1728', '4K': '2880x2160' },
+  '3:4': { '1K': '864x1152', '2K': '1728x2304', '4K': '2160x2880' },
+  '5:4': { '1K': '1120x896', '2K': '2240x1792', '4K': '2800x2240' },
+  '4:5': { '1K': '896x1120', '2K': '1792x2240', '4K': '2240x2800' },
+  '16:9': { '1K': '1280x720', '2K': '2048x1152', '4K': '3840x2160' },
+  '9:16': { '1K': '720x1280', '2K': '1152x2048', '4K': '2160x3840' },
+  '21:9': { '1K': '1456x624', '2K': '3024x1296', '4K': '3696x1584' },
+  '9:21': { '1K': '624x1456', '2K': '1296x3024', '4K': '1584x3696' },
+};
+
+export function gptImageSizeFor(aspectRatio?: string, sizeLevel?: string): string {
+  const ratio = String(aspectRatio || '').trim();
+  const level = String(sizeLevel || '').trim().toUpperCase();
+  if (!ratio || ratio === 'Auto' || ratio === 'AUTO' || ratio === 'empty' || level === 'AUTO') return 'auto';
+  return GPT_IMAGE_SIZE_MAP[ratio]?.[level] || GPT_IMAGE_SIZE_MAP['1:1'][level] || '1024x1024';
 }

@@ -23,6 +23,7 @@ export interface VideoProbeResult {
   duration?: number;
   width?: number;
   height?: number;
+  rotation?: number;
   thumbnailUrl?: string;
   size?: number;
   mime?: string;

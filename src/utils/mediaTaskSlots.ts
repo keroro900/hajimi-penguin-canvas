@@ -38,6 +38,68 @@ const cleanUrls = (urls: unknown): string[] => (
     : [String(urls || '').trim()].filter(Boolean)
 );
 
+const MEDIA_TASK_SLOT_STATUSES = new Set<MediaTaskSlotStatus>([
+  'pending',
+  'running',
+  'success',
+  'failed',
+  'cancelled',
+]);
+
+export function resolveMediaResultSlots(
+  slots: unknown,
+  fallbackUrls: unknown,
+  maxCount = Number.POSITIVE_INFINITY,
+): MediaTaskSlot[] {
+  const limit = Number.isFinite(maxCount) ? Math.max(0, Math.floor(maxCount)) : Number.POSITIVE_INFINITY;
+  const rawSlots = Array.isArray(slots) ? slots.slice(0, limit) : [];
+  if (!rawSlots.length) {
+    return cleanUrls(fallbackUrls).slice(0, limit).map((url, index) => ({
+      index,
+      status: 'success',
+      url,
+      urls: [url],
+    }));
+  }
+
+  return rawSlots.map((rawSlot, slotIndex) => {
+    const slot = rawSlot && typeof rawSlot === 'object' ? rawSlot as Partial<MediaTaskSlot> : {};
+    const urls = cleanUrls(slot.urls);
+    const url = cleanUrls(slot.url)[0] || urls[0];
+    const rawStatus = String(slot.status || '').trim() as MediaTaskSlotStatus;
+    const status = MEDIA_TASK_SLOT_STATUSES.has(rawStatus) ? rawStatus : (url ? 'success' : 'pending');
+    const normalized: MediaTaskSlot = {
+      index: Number.isFinite(Number(slot.index)) ? Number(slot.index) : slotIndex,
+      status,
+    };
+
+    if (status === 'success' && url) {
+      normalized.url = url;
+      normalized.urls = urls.length ? urls : [url];
+    }
+    const taskId = String(slot.taskId || '').trim();
+    if (taskId) normalized.taskId = taskId;
+    if (status === 'failed' || status === 'cancelled') {
+      normalized.error = String(slot.error || (status === 'cancelled' ? '已停止' : '生成失败'));
+    }
+    return normalized;
+  });
+}
+
+export function successfulMediaSlotUrls(slots: unknown): string[] {
+  if (!Array.isArray(slots)) return [];
+  const seen = new Set<string>();
+  const urls: string[] = [];
+  for (const slot of slots) {
+    if (!slot || typeof slot !== 'object' || slot.status !== 'success') continue;
+    const url = cleanUrls(slot.url)[0];
+    if (!url || seen.has(url)) continue;
+    seen.add(url);
+    urls.push(url);
+  }
+  return urls;
+}
+
 export function createPendingMediaSlots(count: unknown): MediaTaskSlot[] {
   return Array.from({ length: normalizeCount(count) }, (_, index) => ({ index, status: 'pending' as const }));
 }

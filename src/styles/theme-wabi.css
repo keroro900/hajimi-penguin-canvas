@@ -1,0 +1,335 @@
+/*
+ * 侘寂 (Wabi-Sabi) visual skin
+ * 克制、留白与自然瑕疵呈现宁静与时间感。
+ * 低饱和灰绿灰褐、纸纤维纹理、手作纸卡、水墨连线。
+ * 阴影极轻，hover/active 变化极小，动效 200-300ms 淡入。
+ */
+
+html[data-theme-visual="wabi"] {
+  --wabi-accent: var(--t8-accent);
+  --wabi-accent-soft: color-mix(in srgb, var(--t8-accent) 14%, transparent);
+  --wabi-accent-line: color-mix(in srgb, var(--t8-accent) 28%, transparent);
+  --wabi-card-bg: var(--t8-bg-panel);
+  --wabi-card-bg-elev: var(--t8-bg-panel-elevated);
+  --wabi-muted-bg: var(--t8-bg-panel-muted);
+  --wabi-border: color-mix(in srgb, var(--t8-text-main) 10%, transparent);
+  --wabi-ink: var(--t8-text-main);
+  --wabi-ink-muted: var(--t8-text-muted);
+  --wabi-radius: 4px;
+  /* 纸纤维纹理：用多层 radial-gradient 模拟纤维颗粒，极低透明度。 */
+  --wabi-paper-texture:
+    radial-gradient(circle at 13% 21%, color-mix(in srgb, var(--t8-text-main) 2%, transparent) 0.5px, transparent 1px),
+    radial-gradient(circle at 47% 63%, color-mix(in srgb, var(--t8-text-main) 1.5%, transparent) 0.5px, transparent 1px),
+    radial-gradient(circle at 78% 12%, color-mix(in srgb, var(--t8-text-main) 2%, transparent) 0.5px, transparent 1px),
+    radial-gradient(circle at 31% 88%, color-mix(in srgb, var(--t8-text-main) 1.5%, transparent) 0.5px, transparent 1px),
+    radial-gradient(circle at 91% 76%, color-mix(in srgb, var(--t8-text-main) 2%, transparent) 0.5px, transparent 1px);
+  --wabi-paper-size: 48px 48px, 64px 64px, 52px 52px, 70px 70px, 56px 56px;
+  /* 水墨晕染：极低透明度的渐变，像宣纸上的淡墨。 */
+  --wabi-ink-wash: radial-gradient(ellipse at 30% 20%, color-mix(in srgb, var(--t8-accent) 4%, transparent), transparent 55%),
+                   radial-gradient(ellipse at 75% 80%, color-mix(in srgb, var(--t8-secondary) 3%, transparent), transparent 50%);
+  --wabi-transition: 280ms ease-out;
+
+  /* SHIFT 切断符号：水墨断笔——一道渐变细线，中段淡如断墨。 */
+  --t8-cut-cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%237a8471' stroke-width='1.4' stroke-linecap='round' opacity='0.75'><path d='M4 12c5 0 6-1 7-1s2 1 9 1' stroke-dasharray='0.5 2'/></svg>") 12 12, crosshair;
+  --t8-cut-color: var(--wabi-accent);
+  --t8-cut-track: color-mix(in srgb, var(--wabi-accent) 50%, transparent);
+  --t8-cut-button-bg: var(--wabi-card-bg);
+  --t8-cut-button-fg: var(--wabi-accent);
+  --t8-cut-button-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='black' d='M3 11c4 0 5-1.5 6-1.5s2 1.5 12 1.5v2c-10 0-11-1.5-12-1.5S7 13 3 13z'/></svg>");
+}
+
+html[data-theme-visual="wabi"] body,
+html[data-theme-visual="wabi"] #root {
+  background: var(--t8-bg-app);
+  color: var(--wabi-ink);
+  font-family: var(--t8-font-family);
+}
+
+/* 应用外壳：水墨晕染底，不喧宾夺主。 */
+html[data-theme-visual="wabi"] .t8-app-shell {
+  background:
+    var(--wabi-ink-wash),
+    linear-gradient(180deg, var(--t8-bg-app), var(--t8-bg-canvas)) !important;
+}
+
+/* 顶栏：极轻边框，无阴影。 */
+html[data-theme-visual="wabi"] .t8-topbar {
+  min-height: 48px;
+  background: var(--wabi-card-bg) !important;
+  border-bottom: 1px solid var(--wabi-border) !important;
+  box-shadow: none !important;
+}
+
+/* 侧栏：纸面质感。 */
+html[data-theme-visual="wabi"] .t8-sidebar,
+html[data-theme-visual="wabi"] .t8-sidebar-scroll {
+  background: var(--wabi-card-bg) !important;
+  border-right: 1px solid var(--wabi-border) !important;
+  background-image: var(--wabi-paper-texture) !important;
+  background-size: var(--wabi-paper-size) !important;
+}
+
+/* 通用卡片/面板：手作纸卡，极轻阴影。 */
+html[data-theme-visual="wabi"] .t8-card,
+html[data-theme-visual="wabi"] .t8-sidebar-node {
+  background: var(--wabi-card-bg) !important;
+  border: 1px solid var(--wabi-border) !important;
+  border-radius: var(--wabi-radius) !important;
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--t8-text-main) 6%, transparent) !important;
+  transition: filter var(--wabi-transition), border-color var(--wabi-transition) !important;
+}
+
+html[data-theme-visual="wabi"] .t8-panel {
+  background: var(--t8-bg-panel-elevated) !important;
+  border: 1px solid var(--t8-border) !important;
+  border-radius: var(--t8-radius-panel) !important;
+  box-shadow: var(--t8-shadow-panel) !important;
+}
+
+html[data-theme-visual="wabi"] .t8-card:hover,
+html[data-theme-visual="wabi"] .t8-sidebar-node:hover {
+  filter: brightness(1.03);
+  border-color: var(--wabi-accent-line) !important;
+}
+
+/* 节点标题：印章式标签——主色淡底，不加粗色块。 */
+html[data-theme-visual="wabi"] .react-flow__node:not(.react-flow__node-groupBox) .t8-node-header,
+html[data-theme-visual="wabi"] .t8-node-header {
+  background: var(--t8-node-header-bg) !important;
+  border-bottom: 1px solid var(--wabi-border) !important;
+  border-radius: var(--wabi-radius) var(--wabi-radius) 0 0 !important;
+  font-family: var(--t8-display-font) !important;
+  letter-spacing: 0.04em;
+}
+
+/* GroupBox：组背景更深一层的纸色，无立体感。 */
+html[data-theme-visual="wabi"] .react-flow__node-groupBox > div:first-child {
+  background: var(--wabi-muted-bg) !important;
+  border: 1px solid var(--wabi-border) !important;
+  border-radius: var(--wabi-radius) !important;
+  box-shadow: none !important;
+  background-image: var(--wabi-paper-texture) !important;
+  background-size: var(--wabi-paper-size) !important;
+}
+
+/* === 按钮：方正小圆角，印章式 === */
+html[data-theme-visual="wabi"] .react-flow__node:not(.react-flow__node-groupBox) button:not(.react-flow__controls-button):not([class*="text-red"]):not([class*="bg-red"]):not([title*="删除"]):not([aria-label*="删除"]),
+html[data-theme-visual="wabi"] .t8-btn,
+html[data-theme-visual="wabi"] .t8-mini-icon-button {
+  background: var(--wabi-card-bg) !important;
+  border: 1px solid var(--wabi-border) !important;
+  border-radius: var(--wabi-radius) !important;
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--t8-text-main) 5%, transparent) !important;
+  color: var(--wabi-ink) !important;
+  transition: filter var(--wabi-transition), border-color var(--wabi-transition) !important;
+}
+
+html[data-theme-visual="wabi"] .react-flow__node:not(.react-flow__node-groupBox) button:not(.react-flow__controls-button):not([class*="text-red"]):not([class*="bg-red"]):not([title*="删除"]):not([aria-label*="删除"]):hover,
+html[data-theme-visual="wabi"] .t8-btn:hover,
+html[data-theme-visual="wabi"] .t8-mini-icon-button:hover {
+  filter: brightness(1.04);
+  border-color: var(--wabi-accent-line) !important;
+}
+
+html[data-theme-visual="wabi"] .react-flow__node:not(.react-flow__node-groupBox) button:not(.react-flow__controls-button):not([class*="text-red"]):not([class*="bg-red"]):not([title*="删除"]):not([aria-label*="删除"]):active,
+html[data-theme-visual="wabi"] .t8-btn:active,
+html[data-theme-visual="wabi"] .t8-mini-icon-button:active {
+  filter: brightness(0.97);
+}
+
+/* 主按钮：印章式——主色淡底 + 主色文字，不亮瞎。 */
+html[data-theme-visual="wabi"] .t8-btn--primary,
+html[data-theme-visual="wabi"] button[class*="bg-"][class*="--accent"],
+html[data-theme-visual="wabi"] .px-btn--mint {
+  background: var(--wabi-accent-soft) !important;
+  color: var(--wabi-accent) !important;
+  border: 1px solid var(--wabi-accent-line) !important;
+  box-shadow: none !important;
+}
+
+html[data-theme-visual="wabi"] .t8-btn--primary:hover {
+  background: color-mix(in srgb, var(--t8-accent) 22%, transparent) !important;
+  border-color: var(--wabi-accent) !important;
+}
+
+/* === 输入框/选择框：刻在纸面，极轻 === */
+html[data-theme-visual="wabi"] .react-flow__node:not(.react-flow__node-groupBox) input,
+html[data-theme-visual="wabi"] .react-flow__node:not(.react-flow__node-groupBox) select,
+html[data-theme-visual="wabi"] .react-flow__node:not(.react-flow__node-groupBox) textarea,
+html[data-theme-visual="wabi"] .t8-input,
+html[data-theme-visual="wabi"] .t8-select,
+html[data-theme-visual="wabi"] textarea {
+  background: var(--wabi-muted-bg) !important;
+  border: 1px solid var(--wabi-border) !important;
+  border-radius: var(--wabi-radius) !important;
+  box-shadow: none !important;
+  color: var(--wabi-ink) !important;
+  transition: border-color var(--wabi-transition) !important;
+}
+
+html[data-theme-visual="wabi"] .react-flow__node:not(.react-flow__node-groupBox) input:focus,
+html[data-theme-visual="wabi"] .react-flow__node:not(.react-flow__node-groupBox) select:focus,
+html[data-theme-visual="wabi"] .react-flow__node:not(.react-flow__node-groupBox) textarea:focus,
+html[data-theme-visual="wabi"] .t8-input:focus,
+html[data-theme-visual="wabi"] .t8-select:focus,
+html[data-theme-visual="wabi"] textarea:focus {
+  outline: none !important;
+  border-color: var(--wabi-accent-line) !important;
+}
+
+/* select option：浅色/深色下拉项可读性兜底。 */
+html[data-theme-visual="wabi"] select option {
+  background: var(--wabi-card-bg-elev) !important;
+  color: var(--wabi-ink) !important;
+}
+
+html[data-theme-visual="wabi"] select option:checked {
+  background: var(--wabi-accent-soft) !important;
+  color: var(--wabi-ink) !important;
+}
+
+/* === 端口（Handle）：朴素小圆点，无立体阴影 === */
+html[data-theme-visual="wabi"] .react-flow__handle {
+  border-radius: 50% !important;
+  border: 1px solid var(--wabi-card-bg) !important;
+  background: var(--t8-accent) !important;
+  box-shadow: none !important;
+}
+
+html[data-theme-visual="wabi"] .react-flow__handle:hover {
+  filter: brightness(1.1);
+}
+
+html[data-theme-visual="wabi"] .react-flow__handle.react-flow__handle-connecting {
+  background: var(--t8-warning) !important;
+}
+
+html[data-theme-visual="wabi"] .react-flow__handle.react-flow__handle-valid {
+  background: var(--t8-success) !important;
+}
+
+/* === 连线：水墨细线，选中时稍浓 === */
+html[data-theme-visual="wabi"] .react-flow__edge-path {
+  stroke: var(--t8-edge) !important;
+  stroke-width: 1.5 !important;
+  stroke-linecap: round !important;
+}
+
+html[data-theme-visual="wabi"] .react-flow__edge.selected .react-flow__edge-path,
+html[data-theme-visual="wabi"] .react-flow__edge:hover .react-flow__edge-path {
+  stroke: var(--t8-edge-selected) !important;
+  stroke-width: 2 !important;
+}
+
+/* 框选：主色淡填充。 */
+html[data-theme-visual="wabi"] .react-flow__selection {
+  background: var(--t8-selection-bg) !important;
+  border: 1px solid var(--t8-selection-border) !important;
+  border-radius: var(--wabi-radius) !important;
+}
+
+/* === MiniMap / 音乐按钮：极简（controls 面板保持透明，仅按钮走纸卡） === */
+html[data-theme-visual="wabi"] .t8-theme-music-toggle {
+  background: var(--wabi-card-bg) !important;
+  border: 1px solid var(--wabi-border) !important;
+  border-radius: var(--wabi-radius) !important;
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--t8-text-main) 6%, transparent) !important;
+}
+
+/* controls 面板容器透明，只给内部按钮走纸卡质感。 */
+html[data-theme-visual="wabi"] .react-flow__controls {
+  background: var(--t8-bg-panel-elevated) !important;
+  border: 1px solid var(--t8-border) !important;
+  border-radius: var(--t8-radius-panel) !important;
+  box-shadow: var(--t8-shadow-panel) !important;
+}
+
+html[data-theme-visual="wabi"] .react-flow__controls-button {
+  background: var(--wabi-card-bg) !important;
+  border: 1px solid var(--wabi-border) !important;
+  border-radius: var(--wabi-radius) !important;
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--t8-text-main) 5%, transparent) !important;
+  color: var(--wabi-ink) !important;
+  margin: 2px 0 !important;
+}
+
+html[data-theme-visual="wabi"] .react-flow__controls-button:hover {
+  background: var(--wabi-accent-soft) !important;
+  color: var(--wabi-accent) !important;
+}
+/* === 右键菜单 / 弹窗 / 抽屉 === */
+html[data-theme-visual="wabi"] .t8-modal,
+html[data-theme-visual="wabi"] .t8-drawer {
+  background: var(--wabi-card-bg-elev) !important;
+  border: 1px solid var(--wabi-border) !important;
+  border-radius: var(--wabi-radius) !important;
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--t8-text-main) 10%, transparent) !important;
+  background-image: var(--wabi-paper-texture) !important;
+  background-size: var(--wabi-paper-size) !important;
+}
+
+html[data-theme-visual="wabi"] .t8-context-menu {
+  background: var(--t8-bg-panel-elevated) !important;
+  border: 1px solid var(--t8-border) !important;
+  border-radius: var(--t8-radius-panel) !important;
+  box-shadow: var(--t8-shadow-panel) !important;
+}
+
+/* === SHIFT 划线轨迹：水墨断笔 === */
+html[data-theme-visual="wabi"] .t8-cut-track {
+  stroke: var(--t8-cut-track) !important;
+  stroke-width: 1.5 !important;
+  stroke-dasharray: 0.5 3 !important;
+  stroke-linecap: round !important;
+  opacity: 0.6;
+}
+
+html[data-theme-visual="wabi"] .t8-cut-button {
+  background: var(--t8-cut-button-bg) !important;
+  color: var(--t8-cut-button-fg) !important;
+  border: 1px solid var(--wabi-border) !important;
+  border-radius: var(--wabi-radius) !important;
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--t8-text-main) 5%, transparent) !important;
+}
+
+/* === 浮层操作栏：极简 === */
+html[data-theme-visual="wabi"] .t8-node-action-bar {
+  background: var(--wabi-card-bg-elev) !important;
+  border: 1px solid var(--wabi-border) !important;
+  border-radius: var(--wabi-radius) !important;
+  box-shadow: 0 1px 4px color-mix(in srgb, var(--t8-text-main) 8%, transparent) !important;
+}
+
+/* === legacy 内部控件兜底：浅色模式下把节点里残留的暗色工具类映射回侘寂调色 === */
+html[data-theme-visual="wabi"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) [class*="text-white"]:not(input):not(textarea):not(select) {
+  color: var(--wabi-ink) !important;
+}
+
+/* 浅色模式 svg 图标：跟随父级焦墨色，不被 text-white/NN 冲淡 */
+html[data-theme-visual="wabi"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) svg,
+html[data-theme-visual="wabi"][data-theme-mode="light"] .t8-node svg {
+  color: var(--wabi-ink) !important;
+}
+
+html[data-theme-visual="wabi"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) [class*="bg-white/"]:not(input):not(textarea):not(select):not(img):not(video):not(canvas) {
+  background: var(--wabi-card-bg-elev) !important;
+}
+
+html[data-theme-visual="wabi"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) [class*="bg-zinc-900"]:not(input):not(textarea):not(select):not(img):not(video):not(canvas),
+html[data-theme-visual="wabi"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) [class*="bg-zinc-950"]:not(input):not(textarea):not(select):not(img):not(video):not(canvas) {
+  background: var(--wabi-muted-bg) !important;
+}
+
+html[data-theme-visual="wabi"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) [class*="border-white/"] {
+  border-color: var(--wabi-border) !important;
+}
+
+/* 减少动态效果偏好：关掉 filter 过渡。 */
+@media (prefers-reduced-motion: reduce) {
+  html[data-theme-visual="wabi"] .t8-card,
+  html[data-theme-visual="wabi"] .t8-btn,
+  html[data-theme-visual="wabi"] .react-flow__handle {
+    transition: none !important;
+    filter: none !important;
+  }
+}

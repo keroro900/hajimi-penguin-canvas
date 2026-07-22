@@ -21,11 +21,13 @@ import {
   clipProjectDuration,
   duplicateClipTimelineMaterial,
   duplicateClipTimelineVisual,
-  mergeProbedClipVisualDurations,
+  reconcileProbedClipAudioDurations,
+  reconcileClipVisualSourceDurations,
   reorderClipTimelineVisual,
   removeClipTimelineMaterial,
   removeClipTimelineVisual,
   reorderClipTimelineVisualByDropX,
+  resolveClipSpeedDuration,
   resolveClipTimelineInsertTiming,
   resolveClipRatioPreset,
   sanitizeClipGenerationState,
@@ -43,6 +45,8 @@ import {
   type ClipGenerationState,
   type ClipTimelineInsertTiming,
   type ClipTimelineVisualMaterial,
+  type ClipProbeDuration,
+  type ClipVisualSourceMetadata,
   type ClipVisualKeyframe,
   type QuickClipTemplateId,
 } from '../../utils/clipProject';
@@ -77,6 +81,7 @@ import { addResourceItem, getResourceItems, type ResourceItem } from '../../serv
 import { useMaterialDropTarget } from '../../hooks/useMaterialDropTarget';
 import type { MaterialPayload } from '../../stores/dragMaterial';
 import { useApiKeysStore } from '../../stores/apiKeys';
+import { modelsForKind } from '../../providers/modelCatalog';
 
 const COLOR = '#fb923c';
 type ClipRatioMode = 'auto' | 'manual';
@@ -89,6 +94,11 @@ type ClipGenerationInsertDraft = Partial<ClipTimelineInsertTiming> & {
 function toNumber(value: unknown, fallback: number) {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
+}
+
+function sanitizeClipSpeed(value: unknown) {
+  const speed = Number(value ?? 1);
+  return Number.isFinite(speed) ? Math.max(0.25, Math.min(4, Math.round(speed * 100) / 100)) : 1;
 }
 
 function formatSeconds(value: number) {
@@ -107,6 +117,40 @@ function recordValue(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 
+function normalizeVisualSourceUrl(value: unknown) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function visualSourceSignature(url: string, duration: number) {
+  return `${normalizeVisualSourceUrl(url)}\u0000${Math.round(duration * 1000)}`;
+}
+
+function serializeClipLocalVisuals(visuals: ClipTimelineVisualMaterial[]) {
+  return visuals.map((visual) => {
+    const { sourceInvalid: _sourceInvalid, ...persisted } = visual;
+    return persisted;
+  });
+}
+
+function clipUpstreamMaterialFingerprint(upstream: {
+  images: unknown[];
+  videos: unknown[];
+  audios: unknown[];
+  texts: unknown[];
+}) {
+  const fields = ['id', 'url', 'text', 'duration', 'sourceNodeId', 'width', 'height', 'aspectRatio', 'start', 'trimStart', 'trimEnd', 'speed', 'volume', 'fadeIn', 'fadeOut'] as const;
+  const materialFingerprint = (item: unknown) => {
+    const source = item && typeof item === 'object' ? item as Record<string, unknown> : {};
+    return fields.map((field) => source[field] ?? null);
+  };
+  return JSON.stringify([
+    upstream.images.map(materialFingerprint),
+    upstream.videos.map(materialFingerprint),
+    upstream.audios.map(materialFingerprint),
+    upstream.texts.map(materialFingerprint),
+  ]);
+}
+
 function objectList(value: unknown): Array<Record<string, any>> {
   return Array.isArray(value) ? value.filter((item) => item && typeof item === 'object') : [];
 }
@@ -119,6 +163,7 @@ function clipMaterialList(value: unknown): ClipMaterial[] {
     label: typeof item.label === 'string' ? item.label : undefined,
     start: typeof item.start === 'number' ? item.start : undefined,
     duration: typeof item.duration === 'number' ? item.duration : undefined,
+    trimStart: typeof item.trimStart === 'number' ? item.trimStart : undefined,
     volume: typeof item.volume === 'number' ? item.volume : undefined,
     fadeIn: typeof item.fadeIn === 'number' ? item.fadeIn : undefined,
     fadeOut: typeof item.fadeOut === 'number' ? item.fadeOut : undefined,
@@ -128,6 +173,7 @@ function clipMaterialList(value: unknown): ClipMaterial[] {
     y: typeof item.y === 'number' ? item.y : undefined,
     filter: typeof item.filter === 'string' ? item.filter as ClipFilterPreset : undefined,
     intensity: typeof item.intensity === 'number' ? item.intensity : undefined,
+    speed: typeof item.speed === 'number' ? item.speed : undefined,
   })).filter((item) => item.url || item.text);
 }
 
@@ -268,26 +314,6 @@ function probeLocalClipAspect(file: File, kind: 'image' | 'video' | 'audio'): Pr
   });
 }
 
-function mergeProbedClipAudioDurations({
-  audios,
-  probes,
-}: {
-  audios: ClipMaterial[];
-  probes: Array<{ url: string; duration?: number }>;
-}): { items: ClipMaterial[]; changed: boolean } {
-  const durationByUrl = new Map(probes.map((item) => [item.url, Number(item.duration || 0)]));
-  let changed = false;
-  const items = audios.map((item) => {
-    const url = item.url || '';
-    const duration = durationByUrl.get(url);
-    if (!url || !duration || duration <= 0) return item;
-    if (Math.abs(Number(item.duration || 0) - duration) <= 0.04) return item;
-    changed = true;
-    return { ...item, duration: Math.round(duration * 1000) / 1000 };
-  });
-  return { items, changed };
-}
-
 function cloneClipNodeSnapshot(value: Record<string, unknown>) {
   if (typeof structuredClone === 'function') return structuredClone(value);
   return JSON.parse(JSON.stringify(value));
@@ -367,8 +393,19 @@ const ClipStudioNode = ({ id, data, selected }: NodeProps) => {
   const nodes = useNodes();
   const hasAutoOutput = useHasAutoOutput(id);
   const apiSettings = useApiKeysStore((state) => state.settings);
+  const clipImageModels = useMemo(() => modelsForKind(apiSettings, 'image'), [apiSettings]);
+  const clipVideoModels = useMemo(() => modelsForKind(apiSettings, 'video'), [apiSettings]);
   const clipHistoryPastRef = useRef<Record<string, unknown>[]>([]);
   const clipHistoryFutureRef = useRef<Record<string, unknown>[]>([]);
+  const clipRenderInvocationRef = useRef(0);
+  const clipEditRevisionRef = useRef(0);
+  const upstreamMaterialFingerprint = clipUpstreamMaterialFingerprint(upstream);
+  const latestUpstreamMaterialFingerprintRef = useRef(upstreamMaterialFingerprint);
+  latestUpstreamMaterialFingerprintRef.current = upstreamMaterialFingerprint;
+  const visualProbePromisesByUrlRef = useRef(new Map<string, Promise<ClipProbeDuration[]>>());
+  const validatedVisualSourceSignaturesRef = useRef(new Set<string>());
+  const successfulVisualProbeDurationsByUrlRef = useRef(new Map<string, number>());
+  const activeVisualSourceUrlsRef = useRef(new Set<string>());
   const [localError, setLocalError] = useState('');
   const [editorOpen, setEditorOpen] = useState(false);
   const [resourceMaterials, setResourceMaterials] = useState<Material[]>([]);
@@ -389,6 +426,18 @@ const ClipStudioNode = ({ id, data, selected }: NodeProps) => {
   const removedAudioIds = useMemo(() => stringList(d.clipRemovedAudioIds), [d.clipRemovedAudioIds]);
   const removedTextIds = useMemo(() => stringList(d.clipRemovedTextIds), [d.clipRemovedTextIds]);
   const visualDurations = useMemo(() => recordValue(d.clipVisualDurations), [d.clipVisualDurations]);
+  const clipVisualSourceMetadata = useMemo<Record<string, ClipVisualSourceMetadata>>(() => {
+    const parsed: Record<string, ClipVisualSourceMetadata> = {};
+    Object.entries(recordValue(d.clipVisualSourceMetadata)).forEach(([visualId, value]) => {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) return;
+      const item = value as Record<string, unknown>;
+      const duration = Number(item.duration);
+      if (typeof item.url === 'string' && Number.isFinite(duration) && duration > 0) {
+        parsed[visualId] = { url: item.url, duration };
+      }
+    });
+    return parsed;
+  }, [d.clipVisualSourceMetadata]);
   const visualStarts = useMemo(() => recordValue(d.clipVisualStarts), [d.clipVisualStarts]);
   const visualFilters = useMemo(() => recordValue(d.clipVisualFilters), [d.clipVisualFilters]);
   const visualTransforms = useMemo(() => recordValue(d.clipVisualTransforms) as Record<string, ClipVisualTransform>, [d.clipVisualTransforms]);
@@ -424,9 +473,11 @@ const ClipStudioNode = ({ id, data, selected }: NodeProps) => {
     label: typeof item.label === 'string' ? item.label : undefined,
     start: typeof item.start === 'number' ? item.start : undefined,
     duration: typeof item.duration === 'number' ? item.duration : undefined,
+    trimStart: typeof item.trimStart === 'number' ? item.trimStart : undefined,
     volume: typeof item.volume === 'number' ? item.volume : undefined,
     fadeIn: typeof item.fadeIn === 'number' ? item.fadeIn : undefined,
     fadeOut: typeof item.fadeOut === 'number' ? item.fadeOut : undefined,
+    speed: typeof item.speed === 'number' ? item.speed : undefined,
   })).filter((item) => item.url), [d.clipLocalAudios, id]);
   const localTexts = useMemo(() => clipMaterialList(d.clipLocalTexts), [d.clipLocalTexts]);
   const audioEdits = useMemo(() => clipMaterialList(d.clipAudioEdits), [d.clipAudioEdits]);
@@ -450,7 +501,7 @@ const ClipStudioNode = ({ id, data, selected }: NodeProps) => {
     ...localVisuals,
   ], [localVisuals, upstream.images, upstream.videos]);
 
-  const timelineVisuals = useMemo(() => applyClipTimelineEdits(rawVisuals, {
+  const editedTimelineVisuals = useMemo(() => applyClipTimelineEdits(rawVisuals, {
     order: visualOrder,
     disabledIds: disabledVisualIds,
     removedIds: removedVisualIds,
@@ -461,6 +512,21 @@ const ClipStudioNode = ({ id, data, selected }: NodeProps) => {
     ...item,
     lane: visualLaneForItem(item, visualLanes),
   })), [disabledVisualIds, rawVisuals, removedVisualIds, visualDurations, visualFilters, visualLanes, visualOrder, visualStarts]);
+  const visualSourceReconciliation = useMemo(() => reconcileClipVisualSourceDurations({
+    visuals: editedTimelineVisuals,
+    currentDurations: visualDurations,
+    currentSourceMetadata: clipVisualSourceMetadata,
+    probes: [],
+  }), [clipVisualSourceMetadata, editedTimelineVisuals, visualDurations]);
+  const timelineVisuals = useMemo(() => {
+    const invalidVisualIds = new Set(visualSourceReconciliation.invalidIds);
+    return editedTimelineVisuals.map((item) => ({
+      ...item,
+      duration: Number(visualSourceReconciliation.durations[item.id || ''] ?? item.duration),
+      sourceInvalid: invalidVisualIds.has(item.id || ''),
+    }));
+  }, [editedTimelineVisuals, visualSourceReconciliation]);
+  const renderableTimelineVisuals = timelineVisuals.filter((item) => !item.sourceInvalid);
   const autoClipRatio = ratioFromMediaSize(timelineVisuals.find((item) => !item.disabled)?.width, timelineVisuals.find((item) => !item.disabled)?.height) || ratio;
   const activeClipRatio = previewRatioMode === 'manual' ? ratio : autoClipRatio;
   const exportSettings = useMemo(() => {
@@ -481,9 +547,11 @@ const ClipStudioNode = ({ id, data, selected }: NodeProps) => {
       label: item.label,
       start: typeof clip.start === 'number' ? clip.start : 0,
       duration: typeof clip.duration === 'number' ? clip.duration : undefined,
+      trimStart: typeof clip.trimStart === 'number' ? clip.trimStart : undefined,
       volume: typeof clip.volume === 'number' ? clip.volume : 1,
       fadeIn: typeof clip.fadeIn === 'number' ? clip.fadeIn : undefined,
       fadeOut: typeof clip.fadeOut === 'number' ? clip.fadeOut : undefined,
+      speed: typeof clip.speed === 'number' ? clip.speed : undefined,
     };
   }), [localAudios, upstream.audios]);
   const timelineAudios = useMemo<ClipMaterial[]>(() => {
@@ -532,20 +600,21 @@ const ClipStudioNode = ({ id, data, selected }: NodeProps) => {
   }, [id, nodes]);
 
   const draft = useMemo(() => buildClipDraftFromTimeline({
-    visuals: timelineVisuals,
+    visuals: renderableTimelineVisuals,
     audios: timelineAudios,
     texts: timelineTexts,
   }, exportSettings, {
     visualTransforms,
     visualKeyframes: clipVisualKeyframes,
-  }), [clipVisualKeyframes, exportSettings, timelineAudios, timelineTexts, timelineVisuals, visualTransforms]);
+  }), [clipVisualKeyframes, exportSettings, renderableTimelineVisuals, timelineAudios, timelineTexts, visualTransforms]);
 
   const estimatedDuration = clipProjectDuration(draft);
   const totalMaterials = upstream.images.length + upstream.videos.length + upstream.audios.length + upstream.texts.length;
-  const activeVisualCount = timelineVisuals.filter((item) => !item.disabled).length;
-  const canRender = activeVisualCount > 0;
+  const activeVisualCount = renderableTimelineVisuals.filter((item) => !item.disabled).length;
+  const canRender = timelineVisuals.some((item) => !item.disabled);
 
   const commitClipPatch = useCallback((payload: object) => {
+    clipEditRevisionRef.current += 1;
     const patchPayload = payload as Record<string, unknown>;
     if (!hasClipHistoryPatch(patchPayload)) {
       update(patchPayload);
@@ -563,12 +632,58 @@ const ClipStudioNode = ({ id, data, selected }: NodeProps) => {
     commitClipPatch(payload);
   }, [commitClipPatch]);
 
+  const probeVisualSourceUrls = useCallback(async (urls: string[]) => {
+    const requestedUrls = Array.from(new Set(urls.map(normalizeVisualSourceUrl).filter(Boolean)));
+    const hasValidatedCachedDuration = (url: string) => {
+      const cachedDuration = successfulVisualProbeDurationsByUrlRef.current.get(url);
+      return cachedDuration != null
+        && validatedVisualSourceSignaturesRef.current.has(visualSourceSignature(url, cachedDuration));
+    };
+    const freshUrls = requestedUrls.filter((url) => (
+      !visualProbePromisesByUrlRef.current.has(url)
+      && !hasValidatedCachedDuration(url)
+    ));
+    if (freshUrls.length > 0) {
+      const batchPromise = probeClipMedia(freshUrls);
+      freshUrls.forEach((url) => {
+        let promise: Promise<ClipProbeDuration[]>;
+        promise = batchPromise.then((probeItems) => {
+          if (!probeItems.some((probe) => normalizeVisualSourceUrl(probe.url) === url && Number.isFinite(Number(probe.duration)) && Number(probe.duration) > 0)) return [];
+          const matching = probeItems.filter((probe) => normalizeVisualSourceUrl(probe.url) === url && Number.isFinite(Number(probe.duration)) && Number(probe.duration) > 0);
+          matching.forEach((item) => {
+            const duration = Number(item.duration);
+            const normalizedUrl = normalizeVisualSourceUrl(item.url);
+            if (!activeVisualSourceUrlsRef.current.has(normalizedUrl)) return;
+            successfulVisualProbeDurationsByUrlRef.current.set(normalizedUrl, duration);
+            validatedVisualSourceSignaturesRef.current.add(visualSourceSignature(normalizedUrl, duration));
+          });
+          return matching;
+        }).finally(() => {
+          if (visualProbePromisesByUrlRef.current.get(url) === promise) {
+            visualProbePromisesByUrlRef.current.delete(url);
+          }
+        });
+        visualProbePromisesByUrlRef.current.set(url, promise);
+      });
+    }
+    const results = await Promise.all(requestedUrls.map((url) => {
+      const pending = visualProbePromisesByUrlRef.current.get(url);
+      if (pending) return pending;
+      const cachedDuration = successfulVisualProbeDurationsByUrlRef.current.get(url);
+      return cachedDuration != null && validatedVisualSourceSignaturesRef.current.has(visualSourceSignature(url, cachedDuration))
+        ? Promise.resolve([{ url, duration: cachedDuration }])
+        : Promise.resolve([]);
+    }));
+    return results.flat();
+  }, []);
+
   const undoClipEdit = useCallback(() => {
     const previous = clipHistoryPastRef.current.pop();
     if (!previous) return;
     const currentData = (nodes.find((node) => node.id === id)?.data || {}) as Record<string, unknown>;
     clipHistoryFutureRef.current.push(cloneClipNodeSnapshot(pickClipNodeHistorySnapshot(currentData)));
     setClipHistoryVersion((value) => value + 1);
+    clipEditRevisionRef.current += 1;
     update(previous);
   }, [id, nodes, update]);
 
@@ -578,6 +693,7 @@ const ClipStudioNode = ({ id, data, selected }: NodeProps) => {
     const currentData = (nodes.find((node) => node.id === id)?.data || {}) as Record<string, unknown>;
     clipHistoryPastRef.current.push(cloneClipNodeSnapshot(pickClipNodeHistorySnapshot(currentData)));
     setClipHistoryVersion((value) => value + 1);
+    clipEditRevisionRef.current += 1;
     update(next);
   }, [id, nodes, update]);
 
@@ -616,7 +732,7 @@ const ClipStudioNode = ({ id, data, selected }: NodeProps) => {
     } else {
       const nextVisualLanes = insertAsTopVisualLane ? shiftVisualLanesForTopInsert(timelineVisuals, visualLanes) : visualLanes;
       commitClipPatch({
-        clipLocalVisuals: [...localVisuals, imported],
+        clipLocalVisuals: serializeClipLocalVisuals([...localVisuals, imported as ClipTimelineVisualMaterial]),
         clipVisualLanes: {
           ...nextVisualLanes,
           [imported.id]: insertAsTopVisualLane ? 0 : clampVisualLane(insertTiming.lane),
@@ -731,52 +847,69 @@ const ClipStudioNode = ({ id, data, selected }: NodeProps) => {
   }, [editorOpen, refreshResourceLibrary]);
 
   useEffect(() => {
+    const activeUrls = new Set(editedTimelineVisuals
+      .filter((item) => item.kind === 'video')
+      .map((item) => normalizeVisualSourceUrl(item.url))
+      .filter(Boolean));
+    activeVisualSourceUrlsRef.current = activeUrls;
+    successfulVisualProbeDurationsByUrlRef.current.forEach((_duration, url) => {
+      if (!activeUrls.has(url)) successfulVisualProbeDurationsByUrlRef.current.delete(url);
+    });
+    validatedVisualSourceSignaturesRef.current.forEach((signature) => {
+      const signatureUrl = signature.split('\u0000', 1)[0];
+      if (!activeUrls.has(signatureUrl)) validatedVisualSourceSignaturesRef.current.delete(signature);
+    });
+  }, [editedTimelineVisuals]);
+
+  useEffect(() => {
     if (!editorOpen) return undefined;
-    const videosToProbe = timelineVisuals.filter((item) => {
+    const videosToProbe = editedTimelineVisuals.filter((item) => {
+      if (item.generation && item.generation.status !== 'success' && !item.url) return false;
       if (item.kind !== 'video' || !item.id || !item.url) return false;
-      const duration = Number(visualDurations[item.id]);
-      return !Number.isFinite(duration) || duration <= 0;
+      const persisted = clipVisualSourceMetadata[item.id];
+      if (normalizeVisualSourceUrl(persisted?.url) === normalizeVisualSourceUrl(item.url) && Number.isFinite(persisted?.duration) && Number(persisted?.duration) > 0) return false;
+      return true;
     });
     if (videosToProbe.length === 0) return undefined;
 
     let cancelled = false;
-    void probeClipMedia(Array.from(new Set(videosToProbe.map((item) => item.url || '').filter(Boolean))))
+    void probeVisualSourceUrls(videosToProbe.map((item) => item.url || ''))
       .then((probeItems) => {
-        if (cancelled) return;
-        const result = mergeProbedClipVisualDurations({
-          visuals: videosToProbe,
+        const freshReconciliation = reconcileClipVisualSourceDurations({
+          visuals: editedTimelineVisuals,
           currentDurations: visualDurations,
+          currentSourceMetadata: clipVisualSourceMetadata,
           probes: probeItems,
         });
-        if (result.changed) update({ clipVisualDurations: result.durations });
+        if (cancelled) return;
+        const patchValue: Record<string, unknown> = {};
+        if (freshReconciliation.durationsChanged) patchValue.clipVisualDurations = freshReconciliation.durations;
+        if (freshReconciliation.sourceMetadataChanged) patchValue.clipVisualSourceMetadata = freshReconciliation.sourceMetadata;
+        if (Object.keys(patchValue).length > 0) update(patchValue);
       })
-      .catch((error: any) => {
-        if (!cancelled) setLocalError(error?.message || '视频时长读取失败');
+      .catch(() => {
+        if (!cancelled) setLocalError('视频时长读取失败');
       });
 
     return () => {
       cancelled = true;
     };
-  }, [editorOpen, timelineVisuals, update, visualDurations]);
+  }, [clipVisualSourceMetadata, editedTimelineVisuals, editorOpen, probeVisualSourceUrls, update, visualDurations]);
 
   useEffect(() => {
     if (!editorOpen) return undefined;
-    const audiosToProbe = timelineAudios.filter((item) => {
-      if (!item.url) return false;
-      const duration = Number(item.duration);
-      return !Number.isFinite(duration) || duration <= 0;
-    });
+    const audiosToProbe = timelineAudios.filter((item) => Boolean(item.url));
     if (audiosToProbe.length === 0) return undefined;
 
     let cancelled = false;
     void probeClipMedia(Array.from(new Set(audiosToProbe.map((item) => item.url || '').filter(Boolean))))
       .then((probeItems) => {
         if (cancelled) return;
-        const mergedAudioDurations = mergeProbedClipAudioDurations({
+        const audioReconciliation = reconcileProbedClipAudioDurations({
           audios: timelineAudios,
           probes: probeItems,
         });
-        if (mergedAudioDurations.changed) update({ clipAudioEdits: mergedAudioDurations.items });
+        if (audioReconciliation.changed) update({ clipAudioEdits: audioReconciliation.items });
       })
       .catch((error: any) => {
         if (!cancelled) setLocalError(error?.message || '音频时长读取失败');
@@ -866,7 +999,7 @@ const ClipStudioNode = ({ id, data, selected }: NodeProps) => {
         : item
     ));
     commitClipPatch({
-      ...(hasLocalVisual ? { clipLocalVisuals: nextLocalVisuals } : {}),
+      ...(hasLocalVisual ? { clipLocalVisuals: serializeClipLocalVisuals(nextLocalVisuals) } : {}),
       clipVisualStarts: {
         ...visualStarts,
         [visualId]: Math.max(0, Math.round(Number(start || 0) * 1000) / 1000),
@@ -886,7 +1019,7 @@ const ClipStudioNode = ({ id, data, selected }: NodeProps) => {
       return localIds.has(itemId);
     });
     commitClipPatch({
-      clipLocalVisuals: nextLocalVisuals,
+      clipLocalVisuals: serializeClipLocalVisuals(nextLocalVisuals),
       clipVisualStarts: {},
       clipVisualOrder: nextVisuals.map((item) => item.id).filter(Boolean),
     });
@@ -1028,7 +1161,7 @@ const ClipStudioNode = ({ id, data, selected }: NodeProps) => {
         },
       };
     });
-    commitClipPatch({ clipLocalVisuals: nextLocalVisuals });
+    commitClipPatch({ clipLocalVisuals: serializeClipLocalVisuals(nextLocalVisuals) });
   }, [commitClipPatch, localVisuals]);
 
   const uploadGenerationRefs = useCallback(async (
@@ -1045,8 +1178,7 @@ const ClipStudioNode = ({ id, data, selected }: NodeProps) => {
       mainId: generation.mainId,
       apiModel: generation.apiModel,
       params: generation.params,
-      imageOverrides: apiSettings.zhenzhenImageModelOverrides,
-      videoOverrides: apiSettings.zhenzhenVideoModelOverrides,
+      catalogModels: generation.nodeType === 'image' ? clipImageModels : clipVideoModels,
     });
     const support = clipGenerationReferenceSupport(choice);
     const refs = [...(generation.refs || [])];
@@ -1069,12 +1201,12 @@ const ClipStudioNode = ({ id, data, selected }: NodeProps) => {
       });
     }
     updateGenerationClip(visualId, { refs });
-  }, [apiSettings.zhenzhenImageModelOverrides, apiSettings.zhenzhenVideoModelOverrides, timelineVisuals, updateGenerationClip]);
+  }, [clipImageModels, clipVideoModels, timelineVisuals, updateGenerationClip]);
 
   const createGenerationClip = useCallback((nodeType: ClipGenerationNodeType, insertAt?: ClipGenerationInsertDraft) => {
     const choice = nodeType === 'image'
-      ? resolveClipImageGenerationChoice({ imageOverrides: apiSettings.zhenzhenImageModelOverrides })
-      : resolveClipVideoGenerationChoice({ videoOverrides: apiSettings.zhenzhenVideoModelOverrides });
+      ? resolveClipImageGenerationChoice({ catalogModels: clipImageModels })
+      : resolveClipVideoGenerationChoice({ catalogModels: clipVideoModels });
     const clipDuration = nodeType === 'image' ? imageDuration : 5;
     const insertAsTopVisualLane = Number(insertAt?.lane) < 0;
     const insertTiming = resolveClipTimelineInsertTiming(timelineVisuals, {
@@ -1107,14 +1239,14 @@ const ClipStudioNode = ({ id, data, selected }: NodeProps) => {
     clip.lane = insertAsTopVisualLane ? 0 : insertTiming.lane;
     const nextVisualLanes = insertAsTopVisualLane ? shiftVisualLanesForTopInsert(timelineVisuals, visualLanes) : visualLanes;
     commitClipPatch({
-      clipLocalVisuals: [...localVisuals, clip],
+      clipLocalVisuals: serializeClipLocalVisuals([...localVisuals, clip]),
       clipVisualOrder: [...timelineVisuals.map((item) => item.id).filter(Boolean), clipId].filter(Boolean),
       clipVisualLanes: {
         ...nextVisualLanes,
         [clipId]: insertAsTopVisualLane ? 0 : clampVisualLane(insertTiming.lane),
       },
     });
-  }, [apiSettings.zhenzhenImageModelOverrides, apiSettings.zhenzhenVideoModelOverrides, commitClipPatch, estimatedDuration, imageDuration, localVisuals, timelineVisuals, visualLanes]);
+  }, [clipImageModels, clipVideoModels, commitClipPatch, estimatedDuration, imageDuration, localVisuals, timelineVisuals, visualLanes]);
 
   const runGenerationClip = useCallback(async (visualId: string) => {
     const visual = timelineVisuals.find((item) => item.id === visualId);
@@ -1133,7 +1265,7 @@ const ClipStudioNode = ({ id, data, selected }: NodeProps) => {
           mainId: generation.mainId,
           apiModel: generation.apiModel,
           params: generation.params,
-          imageOverrides: apiSettings.zhenzhenImageModelOverrides,
+          catalogModels: clipImageModels,
         });
         const { imageRefs } = clipGenerationRefsForRequest(generation.refs || [], choice);
         const imageRequest = buildClipImageGenerationRequest(choice, promptText, generation.params, { imageRefs });
@@ -1174,7 +1306,7 @@ const ClipStudioNode = ({ id, data, selected }: NodeProps) => {
         mainId: generation.mainId,
         apiModel: generation.apiModel,
         params: generation.params,
-        videoOverrides: apiSettings.zhenzhenVideoModelOverrides,
+        catalogModels: clipVideoModels,
       });
       const { imageRefs, videoRefs, audioRefs } = clipGenerationRefsForRequest(generation.refs || [], choice);
       const videoRequest = buildClipVideoGenerationRequest(choice, promptText, {
@@ -1236,7 +1368,7 @@ const ClipStudioNode = ({ id, data, selected }: NodeProps) => {
     } catch (error: any) {
       updateGenerationClip(visualId, { status: 'error', error: error?.message || '生成失败' });
     }
-  }, [apiSettings.zhenzhenImageModelOverrides, apiSettings.zhenzhenVideoModelOverrides, ratio, timelineVisuals, updateGenerationClip]);
+  }, [clipImageModels, clipVideoModels, ratio, timelineVisuals, updateGenerationClip]);
 
   const removeVisual = useCallback((visualId: string) => {
     const removed = new Set(removedVisualIds);
@@ -1257,7 +1389,7 @@ const ClipStudioNode = ({ id, data, selected }: NodeProps) => {
       if (item.id && item.kind === 'image' && item.duration) nextDurations[item.id] = item.duration;
     });
     commitClipPatch({
-      clipLocalVisuals: nextLocalVisuals,
+      clipLocalVisuals: serializeClipLocalVisuals(nextLocalVisuals),
       clipVisualOrder: nextVisuals.map((item) => item.id).filter(Boolean),
       clipVisualDurations: nextDurations,
       clipRemovedVisualIds: Array.from(new Set([...removedVisualIds, visualId])),
@@ -1275,7 +1407,7 @@ const ClipStudioNode = ({ id, data, selected }: NodeProps) => {
       if (item.id && item.duration) nextDurations[item.id] = item.duration;
     });
     commitClipPatch({
-      clipLocalVisuals: nextLocalVisuals,
+      clipLocalVisuals: serializeClipLocalVisuals(nextLocalVisuals),
       clipVisualOrder: nextVisuals.map((item) => item.id).filter(Boolean),
       clipVisualDurations: nextDurations,
       clipRemovedVisualIds: Array.from(new Set([...removedVisualIds, visualId])),
@@ -1296,7 +1428,7 @@ const ClipStudioNode = ({ id, data, selected }: NodeProps) => {
     });
     const localVisualIds = new Set(localVisuals.map((item) => item.id));
     commitClipPatch({
-      clipLocalVisuals: next.visuals?.filter((item) => localVisualIds.has(item.id || '') || item.id?.startsWith(`${visualId}-`)) || [],
+      clipLocalVisuals: serializeClipLocalVisuals(next.visuals?.filter((item) => localVisualIds.has(item.id || '') || item.id?.startsWith(`${visualId}-`)) || []),
       clipVisualOrder: next.visuals?.map((item) => item.id).filter(Boolean),
       clipVisualDurations: {
         ...visualDurations,
@@ -1323,7 +1455,7 @@ const ClipStudioNode = ({ id, data, selected }: NodeProps) => {
       return localIds.has(itemId) || itemId.startsWith(`${visualId}-copy-`);
     });
     commitClipPatch({
-      clipLocalVisuals: nextLocalVisuals,
+      clipLocalVisuals: serializeClipLocalVisuals(nextLocalVisuals),
       clipVisualOrder: nextVisuals.map((item) => item.id).filter(Boolean),
     });
   }, [commitClipPatch, localVisuals, timelineVisuals]);
@@ -1351,7 +1483,7 @@ const ClipStudioNode = ({ id, data, selected }: NodeProps) => {
       if (item.id && item.lane != null) nextLanes[item.id] = item.lane;
     });
     commitClipPatch({
-      clipLocalVisuals: nextLocalVisuals,
+      clipLocalVisuals: serializeClipLocalVisuals(nextLocalVisuals),
       clipVisualOrder: nextVisuals.map((item) => item.id).filter(Boolean),
       clipVisualLanes: nextLanes,
     });
@@ -1378,7 +1510,7 @@ const ClipStudioNode = ({ id, data, selected }: NodeProps) => {
       if (item.id && item.lane != null) nextLanes[item.id] = item.lane;
     });
     commitClipPatch({
-      clipLocalVisuals: nextLocalVisuals,
+      clipLocalVisuals: serializeClipLocalVisuals(nextLocalVisuals),
       clipVisualOrder: nextVisuals.map((item) => item.id).filter(Boolean),
       clipVisualStarts: {
         ...visualStarts,
@@ -1420,7 +1552,7 @@ const ClipStudioNode = ({ id, data, selected }: NodeProps) => {
     });
   }, [clipVisualKeyframes, commitClipPatch]);
 
-  const updateVisualFilter = useCallback((visualId: string, patchValue: Pick<ClipTimelineVisualMaterial, 'filter' | 'intensity' | 'lutPresetId' | 'lutName' | 'lutText' | 'lutAmount' | 'speed' | 'fadeIn' | 'fadeOut' | 'transition' | 'transitionDuration' | 'fit' | 'blendMode'>) => {
+  const updateVisualFilter = useCallback((visualId: string, patchValue: Pick<ClipTimelineVisualMaterial, 'filter' | 'intensity' | 'hue' | 'saturation' | 'brightness' | 'contrast' | 'lutPresetId' | 'lutName' | 'lutText' | 'lutAmount' | 'speed' | 'fadeIn' | 'fadeOut' | 'transition' | 'transitionDuration' | 'fit' | 'blendMode'>) => {
     const cleanFilter = (value: unknown): ClipFilterPreset => (
       CLIP_FILTER_PRESET_IDS.includes(value as ClipFilterPreset) ? value as ClipFilterPreset : 'none'
     );
@@ -1431,31 +1563,44 @@ const ClipStudioNode = ({ id, data, selected }: NodeProps) => {
       CLIP_TRANSITION_IDS.includes(value as ClipTransitionPreset) ? value as ClipTransitionPreset : 'none'
     );
     const n = Number(patchValue.intensity);
+    const hue = Number(patchValue.hue);
+    const saturation = Number(patchValue.saturation);
+    const brightness = Number(patchValue.brightness);
+    const contrast = Number(patchValue.contrast);
     const lutAmount = Number(patchValue.lutAmount);
-    const speed = Number(patchValue.speed);
     const fadeIn = Number(patchValue.fadeIn);
     const fadeOut = Number(patchValue.fadeOut);
     const transitionDuration = Number(patchValue.transitionDuration);
-    const speedPatchProvided = patchValue.speed != null;
     const currentVisual = timelineVisuals.find((item) => item.id === visualId);
-    const currentSpeed = Number(currentVisual?.speed || 1);
-    const nextSpeed = Number.isFinite(speed) ? Math.max(0.25, Math.min(4, Math.round(speed * 100) / 100)) : 1;
-    const sourceSpan = Math.max(0.25, Number(currentVisual?.duration || imageDuration) * currentSpeed);
-    const nextDuration = speedPatchProvided
-      ? Math.max(0.25, Math.round((sourceSpan / nextSpeed) * 1000) / 1000)
+    const currentSpeed = sanitizeClipSpeed(currentVisual?.speed);
+    const nextSpeed = sanitizeClipSpeed(patchValue.speed);
+    const speedChanged = nextSpeed !== currentSpeed;
+    const matchingSourceMetadata = clipVisualSourceMetadata[visualId]?.url === currentVisual?.url
+      ? clipVisualSourceMetadata[visualId]
       : undefined;
-    const speedDurationPatch = {
-      clipVisualDurations: speedPatchProvided ? {
-        ...visualDurations,
-        [visualId]: nextDuration,
-      } : visualDurations,
-    };
+    const nextDuration = speedChanged
+      ? resolveClipSpeedDuration({
+        timelineDuration: Number(currentVisual?.duration || imageDuration),
+        oldSpeed: currentSpeed,
+        newSpeed: nextSpeed,
+        trimStart: Number(currentVisual?.trimStart || 0),
+        sourceDuration: matchingSourceMetadata?.duration,
+      })
+      : undefined;
+    if (speedChanged && nextDuration != null && nextDuration < 0.1) {
+      setLocalError('片段过短，无法应用该倍速（最短 0.1 秒）');
+      return;
+    }
     commitClipPatch({
       clipVisualFilters: {
         ...visualFilters,
         [visualId]: {
           filter: cleanFilter(patchValue.filter),
           intensity: Number.isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : 65,
+          hue: Number.isFinite(hue) ? Math.max(-180, Math.min(180, Math.round(hue))) : 0,
+          saturation: Number.isFinite(saturation) ? Math.max(0, Math.min(200, Math.round(saturation))) : 100,
+          brightness: Number.isFinite(brightness) ? Math.max(0, Math.min(200, Math.round(brightness))) : 100,
+          contrast: Number.isFinite(contrast) ? Math.max(0, Math.min(200, Math.round(contrast))) : 100,
           lutPresetId: typeof patchValue.lutPresetId === 'string' && /^[a-z0-9][a-z0-9._-]{0,96}$/i.test(patchValue.lutPresetId) ? patchValue.lutPresetId : '',
           lutName: typeof patchValue.lutName === 'string' ? patchValue.lutName.trim().slice(0, 120) : '',
           lutText: typeof patchValue.lutText === 'string' && /LUT_3D_SIZE/i.test(patchValue.lutText) ? patchValue.lutText.slice(0, 3_000_000) : '',
@@ -1469,9 +1614,14 @@ const ClipStudioNode = ({ id, data, selected }: NodeProps) => {
           blendMode: patchValue.blendMode || 'normal',
         },
       },
-      ...(speedPatchProvided ? speedDurationPatch : {}),
+      ...(speedChanged ? {
+        clipVisualDurations: {
+          ...visualDurations,
+          [visualId]: nextDuration,
+        },
+      } : {}),
     });
-  }, [commitClipPatch, imageDuration, timelineVisuals, visualDurations, visualFilters]);
+  }, [clipVisualSourceMetadata, commitClipPatch, imageDuration, timelineVisuals, visualDurations, visualFilters]);
 
   const importFiles = useCallback(async (files: File[]) => {
     const accepted = files.map((file) => ({ file, kind: inferClipFileKind(file) })).filter((item): item is { file: File; kind: 'image' | 'video' | 'audio' } => !!item.kind);
@@ -1498,7 +1648,7 @@ const ClipStudioNode = ({ id, data, selected }: NodeProps) => {
         else nextVisuals.push({ ...imported, kind: item.kind });
       }
       commitClipPatch({
-        clipLocalVisuals: nextVisuals,
+        clipLocalVisuals: serializeClipLocalVisuals(nextVisuals),
         clipLocalAudios: nextAudios,
         ...(previewRatioMode === 'manual' ? {} : { clipRatioMode: 'auto' }),
       });
@@ -1516,6 +1666,7 @@ const ClipStudioNode = ({ id, data, selected }: NodeProps) => {
     setLocalError('');
     try {
       const uploaded = await uploadClipAsset(file);
+      clipEditRevisionRef.current += 1;
       update({
         clipCoverUrl: uploaded.url,
         clipCoverSource: 'local',
@@ -1526,6 +1677,22 @@ const ClipStudioNode = ({ id, data, selected }: NodeProps) => {
   }, [update]);
 
   const handleRender = useCallback(async () => {
+    const renderInvocation = ++clipRenderInvocationRef.current;
+    const editRevision = clipEditRevisionRef.current;
+    const renderUpstreamMaterialFingerprint = latestUpstreamMaterialFingerprintRef.current;
+    const isRenderRequestCurrent = () => (
+      clipRenderInvocationRef.current === renderInvocation
+      && clipEditRevisionRef.current === editRevision
+      && latestUpstreamMaterialFingerprintRef.current === renderUpstreamMaterialFingerprint
+    );
+    const discardStaleRender = () => {
+      if (isRenderRequestCurrent()) return false;
+      if (clipRenderInvocationRef.current !== renderInvocation) return true;
+      const message = '剪辑内容已更新，请重新导出';
+      setLocalError(message);
+      update({ status: 'error', error: message });
+      return true;
+    };
     setLocalError('');
     if (!canRender) {
       const message = '请至少连接 1 个图片或视频素材';
@@ -1535,7 +1702,7 @@ const ClipStudioNode = ({ id, data, selected }: NodeProps) => {
     }
     const pendingGeneration = timelineVisuals.find((item) => {
       const generation = sanitizeClipGenerationState(item.generation);
-      return generation && (generation.status !== 'success' || !(item.url || generation.outputUrl));
+      return !item.disabled && generation && (generation.status !== 'success' || !(item.url || generation.outputUrl));
     });
     if (pendingGeneration?.generation) {
       const message = `${pendingGeneration.generation.nodeType === 'image' ? '图像生成' : '视频生成'}片段尚未完成，完成后才能导出`;
@@ -1546,26 +1713,76 @@ const ClipStudioNode = ({ id, data, selected }: NodeProps) => {
 
     update({ status: 'running', error: '', videoUrl: '' });
     try {
-      const timedUrls = [...timelineVisuals.filter((item) => item.kind === 'video').map((item) => item.url || ''), ...timelineAudios.map((item) => item.url || '')].filter((url): url is string => Boolean(url));
-      const probeItems = timedUrls.length ? await probeClipMedia(timedUrls) : [];
-      const durationByUrl = new Map(probeItems.map((item) => [item.url, item.duration || 0]));
-      const mergedDurations = mergeProbedClipVisualDurations({
+      const activeVideoVisuals = timelineVisuals.filter((item) => !item.disabled && item.kind === 'video');
+      const activeVideoUrls = Array.from(new Set(activeVideoVisuals.map((item) => item.url || '').filter(Boolean)));
+      const audioUrls = Array.from(new Set(timelineAudios.map((item) => item.url || '').filter(Boolean)));
+      const videoProbeItems = activeVideoUrls.length ? await probeVisualSourceUrls(activeVideoUrls) : [];
+      if (discardStaleRender()) return;
+      const audioProbeItems = audioUrls.length ? await probeClipMedia(audioUrls) : [];
+      if (discardStaleRender()) return;
+      const exportReconciliation = reconcileClipVisualSourceDurations({
         visuals: timelineVisuals,
         currentDurations: visualDurations,
-        probes: probeItems,
+        currentSourceMetadata: clipVisualSourceMetadata,
+        probes: videoProbeItems,
       });
-      const mergedAudioDurations = mergeProbedClipAudioDurations({
-        audios: timelineAudios,
-        probes: probeItems,
+      const missingSourceMetadataVisual = activeVideoVisuals.find((item) => {
+        const metadata = exportReconciliation.sourceMetadata[item.id || ''];
+        return normalizeVisualSourceUrl(metadata?.url) !== normalizeVisualSourceUrl(item.url)
+          || !Number.isFinite(Number(metadata?.duration))
+          || Number(metadata?.duration) <= 0;
       });
-      const project = buildClipDraftFromTimeline({
-        visuals: timelineVisuals.map((item) => ({
+      if (missingSourceMetadataVisual) {
+        const message = '媒体时长预检失败：无法读取视频源时长';
+        setLocalError(message);
+        update({ status: 'error', error: message });
+        return;
+      }
+      const activeInvalidVisualId = exportReconciliation.invalidIds.find((visualId) => (
+        activeVideoVisuals.some((item) => item.id === visualId)
+      ));
+      if (activeInvalidVisualId) {
+        const message = '媒体边界错误：裁剪起点超出视频时长';
+        setLocalError(message);
+        update({ status: 'error', error: message });
+        return;
+      }
+      const exportInvalidVisualIds = new Set(exportReconciliation.invalidIds);
+      const reconciledVisuals = timelineVisuals
+        .map((item) => ({
           ...item,
-          duration: item.kind === 'video'
-            ? durationByUrl.get(item.url || '') || item.duration
-            : item.duration,
-        })),
-        audios: mergedAudioDurations.items,
+          duration: Number(exportReconciliation.durations[item.id || ''] ?? item.duration),
+          sourceInvalid: exportInvalidVisualIds.has(item.id || ''),
+        }))
+        .filter((item) => !exportInvalidVisualIds.has(item.id || ''));
+      const tooShortVisual = reconciledVisuals.find((item) => (
+        !item.disabled
+        && Number.isFinite(Number(item.duration))
+        && Number(item.duration) < 0.1
+      ));
+      if (tooShortVisual) {
+        const message = '媒体时长预检失败：存在短于 0.1 秒的片段';
+        setLocalError(message);
+        update({ status: 'error', error: message });
+        return;
+      }
+      const reconciledAudios = reconcileProbedClipAudioDurations({
+        audios: timelineAudios,
+        probes: audioProbeItems,
+      });
+      const tooShortAudio = reconciledAudios.items.find((item) => (
+        Number(item.duration) > 0
+        && Number(item.duration) < 0.1
+      ));
+      if (tooShortAudio) {
+        const message = '音频片段过短，无法导出（最短 0.1 秒）';
+        setLocalError(message);
+        update({ status: 'error', error: message });
+        return;
+      }
+      const project = buildClipDraftFromTimeline({
+        visuals: reconciledVisuals,
+        audios: reconciledAudios.items,
         texts: timelineTexts,
       }, exportSettings, {
         visualTransforms,
@@ -1578,6 +1795,7 @@ const ClipStudioNode = ({ id, data, selected }: NodeProps) => {
           url: coverSource === 'local' ? coverUrl : '',
         },
       });
+      if (discardStaleRender()) return;
       const nextCoverUrl = result.coverUrl || (coverSource === 'local' ? coverUrl : '') || '';
       update({
         status: 'success',
@@ -1594,15 +1812,17 @@ const ClipStudioNode = ({ id, data, selected }: NodeProps) => {
           coverUrl: nextCoverUrl,
           coverTime: result.coverTime ?? coverTime,
         },
-        ...(mergedDurations.changed ? { clipVisualDurations: mergedDurations.durations } : {}),
-        ...(mergedAudioDurations.changed ? { clipAudioEdits: mergedAudioDurations.items } : {}),
+        ...(exportReconciliation.durationsChanged ? { clipVisualDurations: exportReconciliation.durations } : {}),
+        ...(exportReconciliation.sourceMetadataChanged ? { clipVisualSourceMetadata: exportReconciliation.sourceMetadata } : {}),
+        ...(reconciledAudios.changed ? { clipAudioEdits: reconciledAudios.items } : {}),
       });
     } catch (error: any) {
+      if (discardStaleRender()) return;
       const message = error?.message || '剪辑导出失败';
       setLocalError(message);
       update({ status: 'error', error: message });
     }
-  }, [canRender, clipVisualKeyframes, coverSource, coverTime, coverUrl, exportSettings, timelineAudios, timelineTexts, timelineVisuals, update, visualDurations, visualTransforms]);
+  }, [canRender, clipVisualKeyframes, clipVisualSourceMetadata, coverSource, coverTime, coverUrl, exportSettings, probeVisualSourceUrls, timelineAudios, timelineTexts, timelineVisuals, update, visualDurations, visualTransforms]);
 
   useRunTrigger(id, async () => {
     if (status === 'running') return;
@@ -1614,11 +1834,10 @@ const ClipStudioNode = ({ id, data, selected }: NodeProps) => {
   const canRedoEdit = clipHistoryVersion >= 0 && clipHistoryFutureRef.current.length > 0;
 
   return (
-    <>
+    <div className="contents" data-canvas-node-root={true}>
     <div
       {...dropProps}
-      className={`w-[360px] overflow-hidden rounded-lg border bg-[var(--t8-bg-panel)] text-[var(--t8-text-main)] shadow-xl ${isAccepting ? 'border-emerald-300 ring-2 ring-emerald-300/45' : selected ? 'border-orange-300' : 'border-[var(--t8-border)]'}`}
-      style={{ boxShadow: selected ? '0 0 0 1px rgba(251,146,60,.45), 0 18px 40px rgba(15,23,42,.25)' : undefined }}
+      className={`t8-node w-[360px] overflow-hidden rounded-lg bg-[var(--t8-bg-node)] text-[var(--t8-text-main)] ${selected ? 'is-selected' : ''} ${isAccepting ? 'border-emerald-300 ring-2 ring-emerald-300/45' : ''}`}
     >
       <Handle type="target" position={Position.Left} style={{ background: COLOR }} />
       <Handle type="source" position={Position.Right} style={{ background: COLOR }} />
@@ -1865,7 +2084,7 @@ const ClipStudioNode = ({ id, data, selected }: NodeProps) => {
       onRunGenerationClip={runGenerationClip}
       onPatchSettings={patch}
     />
-    </>
+    </div>
   );
 };
 

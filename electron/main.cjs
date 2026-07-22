@@ -1498,7 +1498,7 @@ function createMainWindow() {
     show: false,
     backgroundColor: '#0b0b0d',
     ...(icon ? { icon } : {}),
-    title: `哈基米画布 v${APP_VERSION}`,
+    title: `JIMI AI v${APP_VERSION}`,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -1578,7 +1578,7 @@ function createLogWindow() {
 .h b{color:#ffd76b;}
 #log{padding:12px 18px;white-space:pre-wrap;line-height:1.5;font-size:12px;}
 </style></head><body>
-<div class="h">🐧 <b>哈基米画布</b><span style="float:right;color:#666;">v${APP_VERSION}</span></div>
+<div class="h">🐧 <b>JIMI AI</b><span style="float:right;color:#666;">v${APP_VERSION}</span></div>
 <div id="log">[启动] 正在初始化加密内核 + Express 后端...\n</div>
 </body></html>`;
   fs.writeFileSync(logHtmlPath, html, 'utf-8');

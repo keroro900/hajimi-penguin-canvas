@@ -1683,6 +1683,7 @@ export function validatePanoramaGeneration(params: {
 }
 
 export function buildPanoramaImageRequest(params: {
+  model?: unknown;
   mode: PanoramaGenerationMode;
   prompt?: unknown;
   sizeLevel?: unknown;
@@ -1693,9 +1694,10 @@ export function buildPanoramaImageRequest(params: {
   const prompt = typeof params.prompt === 'string' ? params.prompt.trim() : '';
   const referenceUrl = typeof params.referenceUrl === 'string' ? params.referenceUrl.trim() : '';
   const sizeLevel = safePanoramaSizeLevel(params.sizeLevel);
+  const model = String(params.model || '').trim();
   return {
-    model: 'gpt-image-2',
-    apiModel: 'gpt-image-2',
+    model,
+    apiModel: model,
     paramKind: 'gpt-size' as const,
     prompt: buildPanoramaPromptFinal(prompt, {
       viewerPosition: params.viewerPosition,

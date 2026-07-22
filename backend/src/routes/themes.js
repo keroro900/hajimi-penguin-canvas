@@ -6,12 +6,12 @@ const config = require('../config');
 const router = express.Router();
 const SCHEMA = 't8-theme-template';
 const VERSION = 2;
-const VISUAL_STYLES = new Set(['plain', 'tech', 'pixel', 'op', 'rh', 'naruto', 'eva', 'yyh', 'slamdunk', 'soccer-hero', 'dragon-ball', 'saint-seiya', 'tetris', 'farm-story']);
+const VISUAL_STYLES = new Set(['plain', 'tech', 'pixel', 'op', 'rh', 'naruto', 'eva', 'yyh', 'slamdunk', 'soccer-hero', 'farm-story', 'soft', 'wabi', 'vapor', 'utility', 'skeuo', 'retro', 'ink', 'tap-studio']);
 const INTENSITIES = new Set(['subtle', 'medium', 'strong']);
-const ICON_PACKS = new Set(['default', 'op', 'naruto', 'eva', 'yyh', 'slamdunk', 'soccer', 'dragon-ball', 'saint-seiya', 'tetromino-well', 'farm-tools']);
-const CANVAS_PATTERNS = new Set(['none', 'dots', 'map', 'circuit', 'confetti', 'hub', 'chakra', 'eva-grid', 'spirit-map', 'court', 'pitch', 'dragon-radar', 'sanctuary-zodiac', 'tetris-stack', 'pasture-map']);
-const NODE_FRAMES = new Set(['plain', 'glass', 'sticker', 'wanted', 'hub-card', 'shinobi-scroll', 'eva-panel', 'spirit-case', 'scoreboard-card', 'match-card', 'capsule-card', 'cloth-box-card', 'arcade-cabinet-card', 'farm-sign-card']);
-const MUSIC_PRESETS = new Set(['tech-pulse', 'pixel-pop', 'grand-line-adventure', 'rh-pulse', 'shinobi-flame', 'eva-sync', 'spirit-gun', 'buzzer-beater', 'golden-goal', 'ki-burst', 'shenron-aura', 'pegasus-cosmos', 'hades-eclipse', 'block-drop', 'farm-breeze']);
+const ICON_PACKS = new Set(['default', 'op', 'naruto', 'eva', 'yyh', 'slamdunk', 'soccer', 'farm-tools']);
+const CANVAS_PATTERNS = new Set(['none', 'dots', 'map', 'circuit', 'confetti', 'hub', 'chakra', 'eva-grid', 'spirit-map', 'court', 'pitch', 'pasture-map', 'soft-dots', 'wabi-paper', 'vapor-grid', 'utility-grid', 'skeuo-wood', 'retro-desktop', 'ink-paper', 'tap-void']);
+const NODE_FRAMES = new Set(['plain', 'glass', 'sticker', 'wanted', 'hub-card', 'shinobi-scroll', 'eva-panel', 'spirit-case', 'scoreboard-card', 'match-card', 'farm-sign-card', 'soft-card', 'wabi-card', 'vapor-card', 'utility-card', 'skeuo-panel', 'retro-window', 'ink-scroll', 'tap-glass']);
+const MUSIC_PRESETS = new Set(['tech-pulse', 'pixel-pop', 'grand-line-adventure', 'rh-pulse', 'shinobi-flame', 'eva-sync', 'spirit-gun', 'buzzer-beater', 'golden-goal', 'farm-breeze', 'soft-pulse', 'wabi-drift', 'vapor-drift', 'utility-pulse', 'skeuo-hum', 'retro-chime', 'ink-drift', 'tap-flow']);
 const MUSIC_SOURCES = new Set(['synth', 'url', 'upload']);
 
 function loadSettings() {
@@ -73,12 +73,6 @@ function normalizeVisuals(raw, legacyStyle) {
           ? 'slamdunk'
         : style === 'soccer-hero'
           ? 'soccer'
-        : style === 'dragon-ball'
-          ? 'dragon-ball'
-        : style === 'saint-seiya'
-          ? 'saint-seiya'
-        : style === 'tetris'
-          ? 'tetromino-well'
         : style === 'farm-story'
           ? 'farm-tools'
           : 'default',
@@ -88,54 +82,66 @@ function normalizeVisuals(raw, legacyStyle) {
         ? 'map'
         : style === 'rh'
           ? 'hub'
-        : style === 'naruto'
-          ? 'chakra'
-        : style === 'eva'
-          ? 'eva-grid'
-        : style === 'yyh'
-          ? 'spirit-map'
-        : style === 'slamdunk'
-          ? 'court'
-        : style === 'soccer-hero'
-          ? 'pitch'
-        : style === 'dragon-ball'
-          ? 'dragon-radar'
-        : style === 'saint-seiya'
-          ? 'sanctuary-zodiac'
-        : style === 'tetris'
-          ? 'tetris-stack'
-        : style === 'farm-story'
-          ? 'pasture-map'
-        : style === 'tech'
-          ? 'circuit'
-          : 'dots',
+          : style === 'naruto'
+            ? 'chakra'
+            : style === 'eva'
+              ? 'eva-grid'
+              : style === 'yyh'
+                ? 'spirit-map'
+                : style === 'slamdunk'
+                  ? 'court'
+                  : style === 'soccer-hero'
+                    ? 'pitch'
+                    : style === 'farm-story'
+                      ? 'pasture-map'
+                      : style === 'tap-studio'
+                        ? 'tap-void'
+                      : style === 'vapor'
+                              ? 'vapor-grid'
+                              : style === 'utility'
+                                ? 'utility-grid'
+                                : style === 'skeuo'
+                                  ? 'skeuo-wood'
+                                  : style === 'retro'
+                                    ? 'retro-desktop'
+                                    : style === 'ink'
+                                      ? 'ink-paper'
+                                      : style === 'tech'
+                                        ? 'circuit'
+                                        : 'dots',
     nodeFrame: NODE_FRAMES.has(source.nodeFrame)
       ? source.nodeFrame
       : style === 'op'
         ? 'wanted'
         : style === 'rh'
           ? 'hub-card'
-        : style === 'naruto'
-          ? 'shinobi-scroll'
-        : style === 'eva'
-          ? 'eva-panel'
-        : style === 'yyh'
-          ? 'spirit-case'
-        : style === 'slamdunk'
-          ? 'scoreboard-card'
-        : style === 'soccer-hero'
-          ? 'match-card'
-        : style === 'dragon-ball'
-          ? 'capsule-card'
-        : style === 'saint-seiya'
-          ? 'cloth-box-card'
-        : style === 'tetris'
-          ? 'arcade-cabinet-card'
-        : style === 'farm-story'
-          ? 'farm-sign-card'
-        : style === 'tech'
-          ? 'glass'
-          : 'sticker',
+          : style === 'naruto'
+            ? 'shinobi-scroll'
+            : style === 'eva'
+              ? 'eva-panel'
+              : style === 'yyh'
+                ? 'spirit-case'
+                : style === 'slamdunk'
+                  ? 'scoreboard-card'
+                  : style === 'soccer-hero'
+                    ? 'match-card'
+                    : style === 'farm-story'
+                      ? 'farm-sign-card'
+                      : style === 'tap-studio'
+                        ? 'tap-glass'
+                      : style === 'vapor'
+                              ? 'vapor-card'
+                              : style === 'utility'
+                                ? 'utility-card'
+                                : style === 'skeuo'
+                                  ? 'skeuo-panel'
+                                  : style === 'retro'
+                                    ? 'retro-window'
+                                    : style === 'ink'
+                                      ? 'ink-scroll'
+                                      : style === 'tech'
+                                        ? 'glass'
+                                        : 'sticker',
     headerMark: typeof source.headerMark === 'string' ? source.headerMark.slice(0, 40) : '',
   };
 }
@@ -212,38 +218,6 @@ function defaultMusicFor(legacyStyle, visuals) {
       copyrightNote: '足球小将风格默认音乐由前端内置模板提供；后端规范化兜底仍使用 golden-goal 合成循环，可替换为已授权音频 URL。',
     };
   }
-  if (style === 'dragon-ball') {
-    return {
-      title: 'Ki Burst Radar Loop',
-      preset: 'ki-burst',
-      source: 'synth',
-      volume: 0.16,
-      bpm: 156,
-      copyrightNote: '七龙珠主题默认音乐由前端内置模板提供；后端导入规范化缺少可用 URL 时仅使用 ki-burst 合成兜底，可替换为已授权音频 URL。',
-    };
-  }
-  if (style === 'saint-seiya') {
-    return {
-      title: 'Pegasus Cosmos Loop',
-      preset: 'pegasus-cosmos',
-      source: 'synth',
-      hiddenTitle: 'Hades Eclipse',
-      hiddenVolume: 0.18,
-      volume: 0.16,
-      bpm: 148,
-      copyrightNote: '原创圣域小宇宙合成循环；冥界篇使用隐藏合成 preset，可替换为已授权音频 URL。',
-    };
-  }
-  if (style === 'tetris') {
-    return {
-      title: 'Korobeiniki Block Drop',
-      preset: 'block-drop',
-      source: 'synth',
-      volume: 0.15,
-      bpm: 132,
-      copyrightNote: '俄罗斯方块主题默认音乐由前端内置模板提供；后端导入规范化缺少可用 URL 时使用 block-drop 合成兜底，可替换为已授权音频 URL。',
-    };
-  }
   if (style === 'farm-story') {
     return {
       title: 'Farm Breeze Loop',
@@ -252,6 +226,66 @@ function defaultMusicFor(legacyStyle, visuals) {
       volume: 0.12,
       bpm: 92,
       copyrightNote: '原创牧场微风氛围合成循环；可替换为已授权音频 URL。',
+    };
+  }
+  if (style === 'tap-studio') {
+    return {
+      title: 'Void Flow',
+      preset: 'tap-flow',
+      source: 'synth',
+      volume: 0.13,
+      bpm: 118,
+      copyrightNote: '原创黑底玻璃创作台氛围循环；可替换为已授权音频 URL。',
+    };
+  }
+  if (style === 'vapor') {
+    return {
+      title: 'Sunset Drift',
+      preset: 'vapor-drift',
+      source: 'synth',
+      volume: 0.14,
+      bpm: 84,
+      copyrightNote: '原创蒸汽波日落合成循环；可替换为已授权音频 URL。',
+    };
+  }
+  if (style === 'utility') {
+    return {
+      title: 'Grid Pulse',
+      preset: 'utility-pulse',
+      source: 'synth',
+      volume: 0.12,
+      bpm: 108,
+      copyrightNote: '原创工程化合成循环；可替换为已授权音频 URL。',
+    };
+  }
+  if (style === 'skeuo') {
+    return {
+      title: 'Studio Hum',
+      preset: 'skeuo-hum',
+      source: 'synth',
+      volume: 0.1,
+      bpm: 96,
+      copyrightNote: '原创录音棚低频氛围合成循环；可替换为已授权音频 URL。',
+    };
+  }
+  if (style === 'retro') {
+    return {
+      title: 'Boot Chime',
+      preset: 'retro-chime',
+      source: 'synth',
+      volume: 0.12,
+      bpm: 90,
+      copyrightNote: '原创 90 年代开机 POST 蜂鸣合成循环；可替换为已授权音频 URL。',
+    };
+  }
+  if (style === 'ink') {
+    return {
+      title: 'Mountain Mist',
+      preset: 'ink-drift',
+      source: 'synth',
+      volume: 0.11,
+      bpm: 72,
+      copyrightNote: '原创古琴泛音式合成循环，气韵悠远；可替换为已授权音频 URL。',
     };
   }
   if (legacyStyle === 'tech' || style === 'tech') {

@@ -26,11 +26,17 @@ const ResizeNode = (p: NodeProps) => {
   ];
   return (
     <ImageOpFrame
+      data-canvas-node-root={true}
+      className={`${p.selected ? 'is-selected' : ''}`}
       id={p.id}
       data={p.data}
       selected={p.selected}
+      dragging={p.dragging}
       title="尺寸调整"
       subtitle={`${width}×${height} · ${fit}`}
+      accessibleLabel="调整尺寸节点"
+      composerAriaLabel="调整尺寸节点属性"
+      emptyHint="连接上游图像后点击卡片"
       icon={<Maximize2 size={13} />}
       colorHex="#fb923c"
       bgRgba="rgba(251,146,60,.2)"

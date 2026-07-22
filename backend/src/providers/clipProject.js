@@ -17,6 +17,23 @@ function roundHundredths(value) {
   return Math.sign(value) * Math.round(Math.abs(value) * 100) / 100;
 }
 
+function audioTempoChain(value) {
+  const filters = [];
+  let remaining = clipSpeed(value);
+  while (remaining > 2) {
+    filters.push('atempo=2');
+    remaining /= 2;
+  }
+  while (remaining < 0.5) {
+    filters.push('atempo=0.5');
+    remaining /= 0.5;
+  }
+  if (Math.abs(remaining - 1) > 0.000001) {
+    filters.push(`atempo=${roundSeconds(remaining)}`);
+  }
+  return filters;
+}
+
 function cleanHexColor(value, fallback = '#000000') {
   const text = String(value || '').trim();
   return /^#[0-9a-f]{6}$/i.test(text) ? text.toLowerCase() : fallback;
@@ -57,6 +74,16 @@ function normalizeLutText(value) {
 
 function normalizeLutAmount(value) {
   return roundSeconds(clampNumber(value, 0, 1, 1));
+}
+
+function normalizeColorHue(value) {
+  if (value == null) return undefined;
+  return Math.round(clampNumber(value, -180, 180, 0));
+}
+
+function normalizeColorPercent(value) {
+  if (value == null) return undefined;
+  return Math.round(clampNumber(value, 0, 200, 100));
 }
 
 function normalizeFilter(value) {
@@ -225,6 +252,21 @@ function visualLutChain(clip, index, options = {}) {
   const filePath = options.writeLutFile(clip, index, lutText);
   if (!filePath) return '';
   return `lut3d=file='${escapeFilterPath(filePath)}':interp=tetrahedral`;
+}
+
+function visualBasicAdjustChain(clip) {
+  const hue = normalizeColorHue(clip?.hue) ?? 0;
+  const saturation = normalizeColorPercent(clip?.saturation) ?? 100;
+  const brightness = normalizeColorPercent(clip?.brightness) ?? 100;
+  const contrast = normalizeColorPercent(clip?.contrast) ?? 100;
+  const filters = [];
+  if (hue !== 0 || saturation !== 100) {
+    filters.push(`hue=h=${roundSeconds(hue)}:s=${roundSeconds(saturation / 100)}`);
+  }
+  if (brightness !== 100 || contrast !== 100) {
+    filters.push(`eq=contrast=${roundSeconds(contrast / 100)}:brightness=${roundSeconds((brightness - 100) / 100)}`);
+  }
+  return filters.join(',');
 }
 
 function visualFilterChain(clip) {
@@ -428,6 +470,10 @@ function normalizeClip(raw, trackKind, index) {
     fit: normalizeFit(raw?.fit),
     filter: normalizeFilter(raw?.filter),
     intensity: filterIntensity(raw?.intensity, 65),
+    hue: normalizeColorHue(raw?.hue),
+    saturation: normalizeColorPercent(raw?.saturation),
+    brightness: normalizeColorPercent(raw?.brightness),
+    contrast: normalizeColorPercent(raw?.contrast),
     lutPresetId: normalizeLutId(raw?.lutPresetId),
     lutName: normalizeLutName(raw?.lutName),
     lutText: normalizeLutText(raw?.lutText),
@@ -560,11 +606,12 @@ function createClipRenderPlan(project, options = {}) {
         : `scale=${project.width}:${project.height}:force_original_aspect_ratio=decrease,pad=${project.width}:${project.height}:(ow-iw)/2:(oh-ih)/2:color=${padColor}`;
     const visualFilter = visualFilterChain(clip);
     const visualLut = visualLutChain(clip, index, options);
+    const visualBasicAdjust = visualBasicAdjustChain(clip);
     const visualFade = visualFadeChain(clip);
     const speed = clipSpeed(clip.speed);
     const sourceDuration = roundSeconds(Number(clip.duration || 0) * speed);
     const setpts = speed === 1 ? 'setpts=PTS-STARTPTS' : `setpts=${roundSeconds(1 / speed)}*(PTS-STARTPTS)`;
-    const sourceFilters = [scale, visualFilter, visualLut, `setsar=1`, `fps=${project.fps}`, `trim=duration=${sourceDuration}`, setpts, visualFade];
+    const sourceFilters = [scale, visualFilter, visualLut, visualBasicAdjust, `setsar=1`, `fps=${project.fps}`, `trim=duration=${sourceDuration}`, setpts, visualFade];
     const keyframes = Array.isArray(clip.keyframes) ? clip.keyframes : [];
     const transform = clip.transform;
     const blendMode = normalizeBlendMode(clip.blendMode);
@@ -625,9 +672,11 @@ function createClipRenderPlan(project, options = {}) {
     const delayMs = Math.max(0, Math.round(Number(clip.start || 0) * 1000));
     const volume = Number.isFinite(Number(clip.volume)) ? Number(clip.volume) : 1;
     const trimStart = roundSeconds(clampNumber(clip.trimStart, 0, 24 * 60 * 60, 0));
-    const trimEnd = roundSeconds(trimStart + Number(clip.duration || 0));
-    const trimFilter = trimStart > 0 ? `atrim=start=${trimStart}:end=${trimEnd}` : `atrim=0:${clip.duration}`;
-    const filters = [trimFilter, 'asetpts=PTS-STARTPTS', `volume=${volume}`];
+    const speed = clipSpeed(clip.speed);
+    const sourceSpan = roundSeconds(Number(clip.duration || 0) * speed);
+    const trimEnd = roundSeconds(trimStart + sourceSpan);
+    const trimFilter = trimStart > 0 ? `atrim=start=${trimStart}:end=${trimEnd}` : `atrim=0:${sourceSpan}`;
+    const filters = [trimFilter, 'asetpts=PTS-STARTPTS', ...audioTempoChain(speed), `volume=${volume}`];
     if (Number(clip.fadeIn) > 0) {
       filters.push(`afade=t=in:st=0:d=${clip.fadeIn}`);
     }

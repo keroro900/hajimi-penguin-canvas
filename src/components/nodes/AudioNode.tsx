@@ -1,9 +1,10 @@
-import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { Handle, Position, useUpdateNodeInternals, type NodeProps } from '@xyflow/react';
 import { AlertCircle, Loader2, Music, RefreshCcw, Sparkles, Square, Upload, X } from 'lucide-react';
 import { submitAudio, queryAudio, uploadAudioForSuno, type AudioMode } from '../../services/generation';
-import { SUNO_VERSIONS, DEFAULT_SUNO_VERSION } from '../../providers/models';
+import { effectiveModelId, modelsForKind } from '../../providers/modelCatalog';
+import { useApiKeysStore } from '../../stores/apiKeys';
 import { useUpdateNodeData } from './useUpdateNodeData';
 import { useHasAutoOutput } from './useHasAutoOutput';
 import { useRunTrigger } from '../../hooks/useRunTrigger';
@@ -33,6 +34,7 @@ import SmartNodeShell from './shared/SmartNodeShell';
 import SmartNodeComposer from './shared/SmartNodeComposer';
 import { useNodeGeometrySync } from './shared/useNodeGeometrySync';
 import { useOutsideClose } from './shared/useOutsideClose';
+import { smartNodeComposerActions, useIsSmartNodeComposerOpen } from '../../stores/smartNodeComposer';
 import { useSmartNodePanelToggle } from './shared/useSmartNodePanelToggle';
 import { useThrottledNodeUpdate } from './shared/useThrottledNodeUpdate';
 import { LocalNodeAddonSlot } from 'virtual:t8-local-extensions';
@@ -55,19 +57,27 @@ const SUNO_POLL_TIMEOUT_SECONDS = 3600;
 const SUNO_MAX_POLL = Math.ceil((SUNO_POLL_TIMEOUT_SECONDS * 1000) / SUNO_POLL_INTERVAL_MS);
 const AUDIO_WAVEFORM_BARS = [34, 58, 42, 72, 50, 86, 64, 46, 78, 55, 38, 68, 48, 82, 57, 44, 73, 52, 62, 36, 66, 45, 76, 54];
 
-const AudioNode = ({ id, data, selected }: NodeProps) => {
+const AudioNode = ({ id, data, selected, dragging }: NodeProps) => {
   const update = useUpdateNodeData(id);
   const { scheduleProgressUpdate, flushProgressUpdate } = useThrottledNodeUpdate(update, 500);
   const hasAutoOutput = useHasAutoOutput(id);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [smartCardDragging, setSmartCardDragging] = useState(false);
-  const [smartComposerOpenLocal, setSmartComposerOpenLocal] = useState(Boolean((data as any)?.smartComposerOpen));
+  const smartComposerOpenLocal = useIsSmartNodeComposerOpen(id);
+  const setSmartComposerOpenLocal = useCallback(
+    (nextOpen: boolean) => {
+      if (nextOpen) smartNodeComposerActions.open(id);
+      else smartNodeComposerActions.close(id);
+    },
+    [id],
+  );
   const pollTimer = useRef<number | null>(null);
   const runCancelSeq = useRunBusStore((s) => s.cancelSeq);
   const runCancelTargets = useRunBusStore((s) => s.cancelTargets);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const smartNodeRef = useRef<HTMLDivElement | null>(null);
+  const smartPromptRef = useRef<HTMLDivElement | null>(null);
   const updateNodeInternals = useUpdateNodeInternals();
   const src = `audio:${id.slice(0, 6)}`;
 
@@ -77,9 +87,11 @@ const AudioNode = ({ id, data, selected }: NodeProps) => {
   const isPixel = themeStyle === 'pixel';
 
   const d = data as any;
+  const apiSettings = useApiKeysStore((s) => s.settings);
+  const audioModels = useMemo(() => modelsForKind(apiSettings, 'audio'), [apiSettings]);
   const providerParams = (d?.providerParams && typeof d.providerParams === 'object') ? d.providerParams : {};
   const mode: AudioMode = d?.mode || 'generate';
-  const version: string = d?.version || DEFAULT_SUNO_VERSION;
+  const audioModel = effectiveModelId(d?.model || d?.version, audioModels);
   const title: string = d?.title || '';
   const tags: string = d?.tags || '';
   const localPrompt: string = d?.prompt || '';
@@ -100,8 +112,9 @@ const AudioNode = ({ id, data, selected }: NodeProps) => {
   const useSmartCardAudioNode = audioNodeUiVariant === 'smart-card';
   const smartCardWidth = Math.max(300, Number(d?.smartCardWidth) || 320);
   const smartCardHeight = Math.max(190, Number(d?.smartCardHeight) || 224);
-  const smartComposerOpen = smartComposerOpenLocal && !smartCardDragging;
+  const smartComposerOpen = smartComposerOpenLocal && !smartCardDragging && !dragging;
   const smartComposerWidth = Math.max(smartCardWidth, 560);
+  const smartAudioCardState = isBusy ? 'running' : status === 'error' ? 'failed' : tracks.length > 0 ? 'result' : 'empty';
   const syncAudioNodeGeometry = useNodeGeometrySync(id, updateNodeInternals);
   const isSmartRegenerating = isBusy && tracks.length > 0;
   const smartActiveTrackIndex = Math.min(
@@ -319,13 +332,14 @@ const AudioNode = ({ id, data, selected }: NodeProps) => {
         throw new Error(`${mode === 'cover' ? '翻唱' : '续写'}模式需先上传参考音频 (或连接上游音频节点)`);
       }
 
-      logBus.info(`提交 Suno ${version} (${mode})...`, src);
+      if (!audioModel) throw new Error('请先拉取或手动填写音频模型');
+      logBus.info(`提交音频模型 ${audioModel} (${mode})...`, src);
       const r = await submitAudio({
         mode,
         prompt: finalPrompt,
         title: title || '',
         tags: tags || '',
-        version,
+        model: audioModel,
         seed: seed > 0 ? seed : undefined,
         cover_clip_id: mode === 'cover' ? clipIdForRef : undefined,
         continue_clip_id: mode === 'extend' ? clipIdForRef : undefined,
@@ -403,9 +417,12 @@ const AudioNode = ({ id, data, selected }: NodeProps) => {
     onOutside: () => setSmartComposerOpenLocal(false),
   });
 
+  // Composer open state is session-only; release it when the node unmounts.
+  useEffect(() => () => smartNodeComposerActions.close(id), [id]);
+
   const smartPanelToggle = useSmartNodePanelToggle({
     open: smartComposerOpenLocal,
-    dragging: smartCardDragging,
+    dragging,
     onToggle: setSmartComposerOpenLocal,
     onDragChange: setSmartCardDragging,
     onDragClose: () => setSmartComposerOpenLocal(false),
@@ -426,8 +443,12 @@ const AudioNode = ({ id, data, selected }: NodeProps) => {
     return (
       <SmartNodeShell
         rootRef={smartNodeRef}
-        className="t8-smart-audio-node relative overflow-visible"
+      data-canvas-node-root={true}
+      className={`t8-smart-audio-node relative overflow-visible ${selected ? 'is-selected' : ''}`}
         style={{ width: smartCardWidth }}
+        accessibleLabel="音频节点"
+        smartState={smartAudioCardState}
+        onKeyboardActivate={() => setSmartComposerOpenLocal(true)}
         rootProps={{
           ...dropProps,
           onPointerDown: smartPanelToggle.onPointerDown,
@@ -479,7 +500,7 @@ const AudioNode = ({ id, data, selected }: NodeProps) => {
                   <button
                     type="button"
                     className="nodrag nopan t8-btn t8-smart-classic-switch t8-smart-audio-switch"
-                    onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                    onPointerDown={(e) => { e.stopPropagation(); }}
                     onClick={(e) => { e.preventDefault(); e.stopPropagation(); switchAudioNodeVariant('classic'); }}
                     title="切换到经典版节点"
                     aria-label="切换到经典版节点"
@@ -502,7 +523,7 @@ const AudioNode = ({ id, data, selected }: NodeProps) => {
                     {smartActiveTrack?.title || title || (tracks.length > 0 ? `轨道 ${smartActiveTrackIndex + 1}` : 'Suno 音频')}
                   </div>
                   <div className="t8-smart-audio-subtitle">
-                    {version} · {smartModeLabel}
+                    {audioModel || '未选择模型'} · {smartModeLabel}
                     {tracks.length > 0 ? ` · ${tracks.length} 轨` : ''}
                   </div>
                 </div>
@@ -572,7 +593,15 @@ const AudioNode = ({ id, data, selected }: NodeProps) => {
         </div>
 
         {smartComposerOpen && (
-          <SmartNodeComposer portal anchorRef={smartNodeRef} style={{ width: smartComposerWidth }} onMouseDown={(e) => e.stopPropagation()}>
+          <SmartNodeComposer
+            portal
+            anchorRef={smartNodeRef}
+            style={{ width: smartComposerWidth }}
+            onMouseDown={(e) => e.stopPropagation()}
+            onRequestClose={() => setSmartComposerOpenLocal(false)}
+            ariaLabel="音频节点属性"
+            initialFocusRef={smartPromptRef}
+          >
             <MaterialPreviewSection
               texts={orderedTexts}
               audios={orderedReferenceAudios}
@@ -591,7 +620,7 @@ const AudioNode = ({ id, data, selected }: NodeProps) => {
             />
             <div className="t8-smart-ref-strip">
               <div className="t8-smart-node-meta t8-smart-node-meta--composer">
-                <span>{version}</span>
+                <span>{audioModel || '未选择模型'}</span>
                 <span>{smartModeLabel}</span>
                 <span>{smartStatusLabel}</span>
                 <span>{tracks.length || 0} 轨</span>
@@ -600,7 +629,7 @@ const AudioNode = ({ id, data, selected }: NodeProps) => {
               <button
                 type="button"
                 className="nodrag nopan t8-btn t8-smart-classic-switch"
-                onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                onPointerDown={(e) => { e.stopPropagation(); }}
                 onClick={(e) => { e.preventDefault(); e.stopPropagation(); switchAudioNodeVariant('classic'); }}
                 title="切换到经典版节点"
                 aria-label="切换到经典版节点"
@@ -616,8 +645,8 @@ const AudioNode = ({ id, data, selected }: NodeProps) => {
               update={update}
               context={{
                 providerSource: 'zhenzhen',
-                model: version,
-                apiModel: `suno-${version}`,
+                model: audioModel,
+                apiModel: audioModel,
                 providerKind: 'suno',
               }}
             />
@@ -630,9 +659,10 @@ const AudioNode = ({ id, data, selected }: NodeProps) => {
                 </select>
               </label>
               <label className="t8-smart-field">
-                <span>版本</span>
-                <select value={version} onChange={(e) => update({ version: e.target.value })} className="t8-select t8-smart-select">
-                  {SUNO_VERSIONS.map((v) => <option key={v.value} value={v.value}>{v.label}</option>)}
+                <span>模型</span>
+                <select value={audioModel} onChange={(e) => update({ model: e.target.value })} className="t8-select t8-smart-select">
+                  {audioModel && !audioModels.includes(audioModel) && <option value={audioModel}>{audioModel}</option>}
+                  {audioModels.map((model) => <option key={model} value={model}>{model}</option>)}
                 </select>
               </label>
             </div>
@@ -662,6 +692,7 @@ const AudioNode = ({ id, data, selected }: NodeProps) => {
 
             <div className="t8-smart-prompt-shell">
               <MentionPromptInput
+                editorRef={smartPromptRef}
                 title="音频歌词 / 提示词"
                 value={localPrompt}
                 mentions={promptMentions}
@@ -756,8 +787,8 @@ const AudioNode = ({ id, data, selected }: NodeProps) => {
   return (
     <div
       {...dropProps}
-      className={`relative rounded-xl border-2 transition-all w-[320px] ${
-        selected ? 'border-violet-400 shadow-2xl shadow-violet-500/20' : isAccepting ? 'border-emerald-400' : 'border-white/15 hover:border-white/30'
+      className={`t8-node relative rounded-xl border-2 transition-all w-[320px] ${selected ? 'is-selected' : ''} ${
+        isAccepting ? 'border-emerald-400' : ''
       }`}
       style={{
         background: 'rgba(20,20,22,.92)',
@@ -783,14 +814,13 @@ const AudioNode = ({ id, data, selected }: NodeProps) => {
         <div className="flex-1 min-w-0">
           <div className="text-sm font-semibold text-white">音频 Suno</div>
           <div className="text-[10px] text-white/40 truncate">
-            {version} · {MODES.find((m) => m.id === mode)?.label}
+            {audioModel || '未选择模型'} · {MODES.find((m) => m.id === mode)?.label}
           </div>
         </div>
         <button
           type="button"
           className="nodrag nopan t8-btn t8-smart-classic-switch"
           onPointerDown={(e) => {
-            e.preventDefault();
             e.stopPropagation();
           }}
           onClick={(e) => {
@@ -822,15 +852,18 @@ const AudioNode = ({ id, data, selected }: NodeProps) => {
             </select>
           </div>
           <div>
-            <label className="text-[10px] text-white/50 block mb-1">版本</label>
+            <label className="text-[10px] text-white/50 block mb-1">模型</label>
             <select
-              value={version}
-              onChange={(e) => update({ version: e.target.value })}
+              value={audioModel}
+              onChange={(e) => update({ model: e.target.value })}
               className="w-full rounded bg-white/5 border border-white/10 px-2 py-1 text-xs text-white outline-none focus:border-white/30"
             >
-              {SUNO_VERSIONS.map((v) => (
-                <option key={v.value} value={v.value} className="bg-zinc-900">
-                  {v.label}
+              {audioModel && !audioModels.includes(audioModel) && (
+                <option value={audioModel} className="bg-zinc-900">{audioModel}</option>
+              )}
+              {audioModels.map((model) => (
+                <option key={model} value={model} className="bg-zinc-900">
+                  {model}
                 </option>
               ))}
             </select>
@@ -844,8 +877,8 @@ const AudioNode = ({ id, data, selected }: NodeProps) => {
           update={update}
           context={{
             providerSource: 'zhenzhen',
-            model: version,
-            apiModel: `suno-${version}`,
+            model: audioModel,
+            apiModel: audioModel,
             providerKind: 'suno',
           }}
         />

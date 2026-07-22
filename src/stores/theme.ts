@@ -10,6 +10,12 @@ import {
 } from '../theme/defaultTemplates';
 import type { LegacyThemeStyle, ThemeMode, ThemeTemplate } from '../theme/types';
 import {
+  nextTogglePreference,
+  resolveMigratedPreference,
+  resolveSystemTheme,
+  type AppearancePreference,
+} from '../theme/appearance';
+import {
   DEFAULT_UI_FONT_PRESET,
   normalizeUiFontPresetId,
   sanitizeCustomUiFont,
@@ -21,6 +27,7 @@ export type ThemeStyle = LegacyThemeStyle;
 
 interface ThemeState {
   theme: CanvasTheme;
+  appearancePreference: AppearancePreference;
   style: ThemeStyle;
   templateId: string;
   customTemplates: ThemeTemplate[];
@@ -31,6 +38,7 @@ interface ThemeState {
   customUiFont: string;
   toggleTheme: () => void;
   setTheme: (theme: CanvasTheme) => void;
+  setAppearancePreference: (preference: AppearancePreference) => void;
   toggleStyle: () => void;
   setStyle: (style: ThemeStyle) => void;
   setTemplate: (templateId: string, mode?: CanvasTheme) => void;
@@ -47,6 +55,12 @@ function legacyTemplateId(style?: ThemeStyle) {
   return style === 'tech' ? TECH_TEMPLATE_ID : PIXEL_TEMPLATE_ID;
 }
 
+/** 读取操作系统当前深浅色偏好（无窗口环境时按浅色处理）。 */
+function systemPrefersDark(): boolean {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
+  return window.matchMedia('(prefers-color-scheme: dark)').matches;
+}
+
 /**
  * 主题状态管理。
  * - theme: dark | light 明暗模式
@@ -56,7 +70,8 @@ function legacyTemplateId(style?: ThemeStyle) {
 export const useThemeStore = create<ThemeState>()(
   persist(
     (set, get) => ({
-      theme: 'light',
+      theme: resolveSystemTheme(systemPrefersDark()),
+      appearancePreference: 'system',
       style: 'pixel',
       templateId: DEFAULT_THEME_TEMPLATE_ID,
       customTemplates: [],
@@ -65,8 +80,20 @@ export const useThemeStore = create<ThemeState>()(
       templatesError: null,
       uiFontPreset: DEFAULT_UI_FONT_PRESET,
       customUiFont: '',
-      toggleTheme: () => set((state) => ({ theme: state.theme === 'dark' ? 'light' : 'dark' })),
-      setTheme: (theme) => set({ theme }),
+      toggleTheme: () =>
+        set((state) => {
+          const next = nextTogglePreference(state.appearancePreference, state.theme);
+          return {
+            appearancePreference: next,
+            theme: next === 'system' ? resolveSystemTheme(systemPrefersDark()) : next,
+          };
+        }),
+      setTheme: (theme) => set({ theme, appearancePreference: theme }),
+      setAppearancePreference: (preference) =>
+        set({
+          appearancePreference: preference,
+          theme: preference === 'system' ? resolveSystemTheme(systemPrefersDark()) : preference,
+        }),
       toggleStyle: () =>
         set((state) => {
           const nextId = state.style === 'tech' ? PIXEL_TEMPLATE_ID : TECH_TEMPLATE_ID;
@@ -146,6 +173,7 @@ export const useThemeStore = create<ThemeState>()(
       name: 't8-canvas-theme',
       partialize: (state) => ({
         theme: state.theme,
+        appearancePreference: state.appearancePreference,
         style: state.style,
         templateId: state.templateId,
         uiFontPreset: state.uiFontPreset,
@@ -155,12 +183,19 @@ export const useThemeStore = create<ThemeState>()(
         const p = (persisted || {}) as Partial<ThemeState>;
         const templateId = p.templateId || legacyTemplateId(p.style);
         const tpl = BUILT_IN_THEME_TEMPLATES.find((item) => item.id === templateId);
+        // 老用户仅有 theme：迁移为与现状一致的显式偏好，升级后界面不突变。
+        const appearancePreference = resolveMigratedPreference({
+          appearancePreference: p.appearancePreference,
+          theme: p.theme,
+        });
+        const migratedTheme = p.theme || ((tpl?.legacyStyle || p.style) === 'pixel' ? 'light' : 'dark');
         return {
           ...current,
           ...p,
           templateId,
           style: tpl?.legacyStyle || p.style || current.style,
-          theme: p.theme || ((tpl?.legacyStyle || p.style) === 'pixel' ? 'light' : 'dark'),
+          appearancePreference,
+          theme: appearancePreference === 'system' ? resolveSystemTheme(systemPrefersDark()) : migratedTheme,
           uiFontPreset: normalizeUiFontPresetId(p.uiFontPreset),
           customUiFont: sanitizeCustomUiFont(p.customUiFont),
         };
@@ -168,3 +203,23 @@ export const useThemeStore = create<ThemeState>()(
     }
   )
 );
+
+/**
+ * 订阅操作系统深浅色变化：仅当 appearancePreference === 'system' 时实时更新
+ * 解析后的 theme；显式偏好不受影响。返回取消订阅函数。
+ * 在 App 根组件挂载时调用一次（effect cleanup 时退订）。
+ */
+export function startSystemThemeSync(): () => void {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return () => {};
+  const media = window.matchMedia('(prefers-color-scheme: dark)');
+  const onChange = (event: MediaQueryListEvent) => {
+    if (useThemeStore.getState().appearancePreference !== 'system') return;
+    useThemeStore.setState({ theme: resolveSystemTheme(event.matches) });
+  };
+  if (typeof media.addEventListener === 'function') {
+    media.addEventListener('change', onChange);
+    return () => media.removeEventListener('change', onChange);
+  }
+  media.addListener(onChange);
+  return () => media.removeListener(onChange);
+}

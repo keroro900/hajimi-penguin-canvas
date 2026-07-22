@@ -1,6 +1,7 @@
 import {
   memo,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -58,6 +59,7 @@ import {
   type ClipGenerationChoice,
   type ClipGenerationReferenceSupport,
 } from '../../utils/clipGenerationAdapters';
+import { modelsForKind } from '../../providers/modelCatalog';
 import {
   clampClipPlayheadTime,
   clipProjectDuration,
@@ -127,6 +129,7 @@ type ClipGenerationInsertDraft = Partial<ClipTimelineInsertTiming> & {
   params?: Record<string, unknown>;
   refs?: ClipGenerationRef[];
 };
+type ClipVisualFilterPatch = Pick<ClipTimelineVisualMaterial, 'filter' | 'intensity' | 'hue' | 'saturation' | 'brightness' | 'contrast' | 'lutPresetId' | 'lutName' | 'lutText' | 'lutAmount' | 'speed' | 'fadeIn' | 'fadeOut' | 'transition' | 'transitionDuration' | 'fit' | 'blendMode'>;
 
 const CLIP_FILTER_PRESETS: Array<{ id: ClipFilterPreset; label: string; group: '调色预设 · 常用场景' | '开源滤镜 · CSSgram' | '视频效果 · FFmpeg' }> = [
   { id: 'none', label: '无滤镜', group: '调色预设 · 常用场景' },
@@ -183,6 +186,35 @@ const CLIP_FILTER_PRESETS: Array<{ id: ClipFilterPreset; label: string; group: '
 const CLIP_FILTER_GROUPS = ['调色预设 · 常用场景', '开源滤镜 · CSSgram', '视频效果 · FFmpeg'] as const;
 const VISUAL_LANE_INSERT_ENTER_PX = 18;
 const VISUAL_LANE_INSERT_EXIT_PX = 34;
+
+const sanitizeSpeed = (value: unknown) => {
+  const speed = Number(value ?? 1);
+  return Math.max(0.25, Math.min(4, Number.isFinite(speed) ? speed : 1));
+};
+
+const previewVideoSourceTime = (visual: ClipTimelineVisualMaterial | undefined, localTimelineTime: number, mediaDuration?: number) => {
+  const requestedTime = Number(visual?.trimStart || 0) + Math.max(0, localTimelineTime) * sanitizeSpeed(visual?.speed);
+  const maximumTime = Number.isFinite(mediaDuration) ? Math.max(0, Number(mediaDuration) - 0.001) : requestedTime;
+  return Math.max(0, Math.min(requestedTime, maximumTime));
+};
+
+const applyPreviewVideoSourceSeek = (video: HTMLVideoElement, visual: ClipTimelineVisualMaterial | undefined, localTimelineTime: number) => {
+  const sourceTime = previewVideoSourceTime(visual, localTimelineTime, video.duration);
+  video.currentTime = sourceTime;
+};
+
+const resizeClipStudioLayout = (
+  startLayout: ClipStudioLayout,
+  type: 'left' | 'right' | 'timeline',
+  deltaX: number,
+  deltaY: number,
+) => {
+  return sanitizeClipStudioLayout({
+    leftWidth: type === 'left' ? startLayout.leftWidth + deltaX : startLayout.leftWidth,
+    rightWidth: type === 'right' ? startLayout.rightWidth - deltaX : startLayout.rightWidth,
+    topHeight: type === 'timeline' ? startLayout.topHeight + deltaY : startLayout.topHeight,
+  });
+};
 
 const visualItemsOverlap = (
   first: { start: number; duration: number },
@@ -270,7 +302,7 @@ interface ClipStudioEditorProps {
   onApplyQuickTemplate: (templateId: QuickClipTemplateId) => void;
   onUpdateVisualTransform: (visualId: string, transform: ClipVisualTransform) => void;
   onUpdateVisualKeyframes: (visualId: string, keyframes: ClipVisualKeyframe[]) => void;
-  onUpdateVisualFilter: (visualId: string, patch: Pick<ClipTimelineVisualMaterial, 'filter' | 'intensity' | 'lutPresetId' | 'lutName' | 'lutText' | 'lutAmount' | 'speed' | 'fadeIn' | 'fadeOut' | 'transition' | 'transitionDuration' | 'fit' | 'blendMode'>) => void;
+  onUpdateVisualFilter: (visualId: string, patch: ClipVisualFilterPatch) => void;
   onUndoEdit: () => void;
   onRedoEdit: () => void;
   onUpdateAudioTiming: (clipId: string, start: number, duration: number, trimStart?: number) => void;
@@ -343,7 +375,7 @@ function generationStatusLabel(status: ClipGenerationState['status']) {
   return '已取消';
 }
 
-function clipCssFilter(item?: Pick<ClipTimelineVisualMaterial, 'filter' | 'intensity'>) {
+function clipPresetCssFilter(item?: Pick<ClipTimelineVisualMaterial, 'filter' | 'intensity'>) {
   const amount = Math.max(0, Math.min(100, Number(item?.intensity ?? 65))) / 100;
   if (item?.filter === 'cinematic') return `contrast(${1 + amount * 0.2}) brightness(${1 + amount * 0.05}) saturate(${1 + amount * 0.3})`;
   if (item?.filter === 'warm') return `contrast(${1 + amount * 0.08}) brightness(${1 + amount * 0.02}) saturate(${1 + amount * 0.22}) sepia(${amount * 0.22})`;
@@ -396,15 +428,44 @@ function clipCssFilter(item?: Pick<ClipTimelineVisualMaterial, 'filter' | 'inten
   return 'none';
 }
 
-function TimelineVideoFrame({ src, localTime }: { src: string; localTime: number }) {
+function clipColorHue(item?: Pick<ClipTimelineVisualMaterial, 'hue'>) {
+  const value = Number(item?.hue ?? 0);
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(-180, Math.min(180, Math.round(value)));
+}
+
+function clipColorPercent(value: unknown, fallback: number) {
+  const numberValue = Number(value);
+  if (!Number.isFinite(numberValue)) return fallback;
+  return Math.max(0, Math.min(200, Math.round(numberValue)));
+}
+
+function clipBasicCssFilter(item?: Pick<ClipTimelineVisualMaterial, 'hue' | 'saturation' | 'brightness' | 'contrast'>) {
+  return [
+    `hue-rotate(${clipColorHue(item)}deg)`,
+    `saturate(${clipColorPercent(item?.saturation, 100) / 100})`,
+    `brightness(${clipColorPercent(item?.brightness, 100) / 100})`,
+    `contrast(${clipColorPercent(item?.contrast, 100) / 100})`,
+  ].join(' ');
+}
+
+function clipCssFilter(item?: Pick<ClipTimelineVisualMaterial, 'filter' | 'intensity' | 'hue' | 'saturation' | 'brightness' | 'contrast'>) {
+  const preset = clipPresetCssFilter(item);
+  return [
+    preset === 'none' ? '' : preset,
+    clipBasicCssFilter(item),
+  ].filter(Boolean).join(' ') || 'none';
+}
+
+function TimelineVideoFrame({ src, sourceTime }: { src: string; sourceTime: number }) {
   const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return undefined;
     const seek = () => {
-      const safeDuration = Number.isFinite(video.duration) ? video.duration : localTime;
-      const target = Math.max(0, Math.min(localTime, Math.max(0, safeDuration - 0.04)));
+      const safeDuration = Number.isFinite(video.duration) ? video.duration : sourceTime;
+      const target = Math.max(0, Math.min(sourceTime, Math.max(0, safeDuration - 0.04)));
       if (Math.abs((video.currentTime || 0) - target) > 0.04) {
         try {
           video.currentTime = target;
@@ -416,7 +477,7 @@ function TimelineVideoFrame({ src, localTime }: { src: string; localTime: number
     seek();
     video.addEventListener('loadedmetadata', seek);
     return () => video.removeEventListener('loadedmetadata', seek);
-  }, [localTime, src]);
+  }, [sourceTime, src]);
 
   return <video ref={videoRef} className="h-full w-full object-cover" src={src} muted preload="metadata" />;
 }
@@ -428,7 +489,7 @@ const border = 't8-clip-border border-[#363636]';
 const editorButton = 't8-clip-button nodrag inline-flex h-7 items-center justify-center gap-1.5 rounded-md px-2.5 text-[11px] font-bold transition disabled:cursor-not-allowed disabled:opacity-50';
 const iconButton = 't8-clip-icon-button nodrag inline-flex h-6 w-6 items-center justify-center rounded border border-[#3d3d3d] bg-[#202020] text-[11px] text-zinc-400 hover:bg-[#303030] hover:text-white disabled:cursor-not-allowed disabled:opacity-35';
 const fieldClass = 't8-clip-field nodrag h-7 w-full rounded border border-[#454545] bg-[#191919] px-2 text-[11px] text-zinc-100 outline-none focus:border-emerald-400';
-const paramPaneClass = 't8-clip-param-pane space-y-3 overflow-auto p-4 text-xs';
+const paramPaneClass = 't8-clip-param-pane t8-clip-scroll-region space-y-3 overflow-auto p-4 text-xs';
 const paramCardClass = 't8-clip-param-card rounded border p-3';
 const paramLabelClass = 't8-clip-param-label text-zinc-500';
 const paramRangeClass = 't8-clip-param-range nodrag h-1 w-full';
@@ -528,6 +589,8 @@ export default function ClipStudioEditor({
   const [commandFeedback, setCommandFeedback] = useState('');
   const [showShortcutHelp, setShowShortcutHelp] = useState(false);
   const [generationPanelClipId, setGenerationPanelClipId] = useState('');
+  const [generationPanelMeasuredHeight, setGenerationPanelMeasuredHeight] = useState(300);
+  const [generationPanelBounds, setGenerationPanelBounds] = useState({ width: 0, height: 0 });
   const [generationPromptDraft, setGenerationPromptDraft] = useState('');
   const [generationPromptComposing, setGenerationPromptComposing] = useState(false);
   const [generationRefUploadKind, setGenerationRefUploadKind] = useState<'image' | 'video' | 'audio'>('image');
@@ -576,6 +639,8 @@ export default function ClipStudioEditor({
     startHeight: number;
   } | null>(null);
   const apiSettings = useApiKeysStore((state) => state.settings);
+  const clipImageModels = useMemo(() => modelsForKind(apiSettings, 'image'), [apiSettings]);
+  const clipVideoModels = useMemo(() => modelsForKind(apiSettings, 'video'), [apiSettings]);
   const [timelineScrubActive, setTimelineScrubActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
@@ -584,24 +649,32 @@ export default function ClipStudioEditor({
   const selectedVisualGenerationRefInputRef = useRef<HTMLInputElement>(null);
   const generationPanelRef = useRef<HTMLDivElement>(null);
   const editorShellRef = useRef<HTMLDivElement>(null);
+  const editorMainRef = useRef<HTMLElement>(null);
+  const topRowPanelRef = useRef<HTMLElement>(null);
   const previewPanelRef = useRef<HTMLDivElement>(null);
   const previewVideoRef = useRef<HTMLVideoElement>(null);
   const timelineTrackRef = useRef<HTMLDivElement>(null);
   const timelineScrollRef = useRef<HTMLDivElement>(null);
+  const timelineTrackListRef = useRef<HTMLDivElement>(null);
   const timelineContentRef = useRef<HTMLDivElement>(null);
   const dragStateRef = useRef<typeof dragState>(null);
   const resizeStateRef = useRef<typeof resizeState>(null);
   const trackResizeStateRef = useRef<typeof trackResizeState>(null);
   const timelineScrubActiveRef = useRef(timelineScrubActive);
   const timelineScrollFrameRef = useRef<number | null>(null);
+  const dragMoveFrameRef = useRef<number | null>(null);
+  const pendingDragPointerRef = useRef<{ clientX: number; clientY: number } | null>(null);
+  const visualLaneInsertIntentRef = useRef<'top' | 'bottom' | null>(null);
   const playbackFrameRef = useRef<number | null>(null);
   const lastPlaybackTickRef = useRef<number | null>(null);
   const commandFeedbackTimerRef = useRef<number | null>(null);
   const playheadFollowRef = useRef<number | null>(null);
   const duration = clipProjectDuration(draft);
+  const exportableTimelineVisuals = timelineVisuals.filter((item) => !item.sourceInvalid);
+  const activeVisuals = timelineVisuals.filter((item) => !item.disabled && !item.sourceInvalid);
   const selectedTimelineVisual = timelineVisuals.find((item) => item.id === selectedId);
   const selectedVisual = selectedTimelineVisual;
-  const previewFallbackVisual = timelineVisuals.find((item) => !item.disabled) || timelineVisuals[0];
+  const previewFallbackVisual = activeVisuals[0];
   const selectedAudio = audios.find((item, index) => (item.id || item.url || `audio-${index}`) === selectedId);
   const selectedText = texts.find((item, index) => (item.id || item.text || `text-${index}`) === selectedId);
   const selectedKind = selectedAudio ? 'audio' : selectedText ? 'text' : selectedTimelineVisual ? 'visual' : 'none';
@@ -629,15 +702,14 @@ export default function ClipStudioEditor({
       mainId: selectedGeneration.mainId,
       apiModel: selectedGeneration.apiModel,
       params: selectedGeneration.params,
-      imageOverrides: apiSettings.zhenzhenImageModelOverrides,
-      videoOverrides: apiSettings.zhenzhenVideoModelOverrides,
+      catalogModels: selectedGeneration.nodeType === 'image' ? clipImageModels : clipVideoModels,
     })
     : undefined;
   const selectedGenerationParams = selectedGenerationChoice
     ? normalizeClipGenerationParams(selectedGenerationChoice, selectedGeneration?.params)
     : {};
   const selectedGenerationModelGroups = selectedGeneration
-    ? clipGenerationModelGroupOptions(selectedGeneration.nodeType)
+    ? clipGenerationModelGroupOptions(selectedGeneration.nodeType, selectedGeneration.nodeType === 'image' ? clipImageModels : clipVideoModels)
     : [];
   const selectedGenerationControls = selectedGenerationChoice
     ? visibleClipGenerationControls(selectedGenerationChoice.sidebarParameterGroups, selectedGenerationChoice.apiModel)
@@ -649,8 +721,7 @@ export default function ClipStudioEditor({
       mainId: generation.mainId,
       apiModel: generation.apiModel,
       params: generation.params,
-      imageOverrides: apiSettings.zhenzhenImageModelOverrides,
-      videoOverrides: apiSettings.zhenzhenVideoModelOverrides,
+      catalogModels: generation.nodeType === 'image' ? clipImageModels : clipVideoModels,
     });
     return clipGenerationReferenceSupport(choice);
   };
@@ -665,15 +736,14 @@ export default function ClipStudioEditor({
       mainId: selectedVisualGeneration.mainId,
       apiModel: selectedVisualGeneration.apiModel,
       params: selectedVisualGeneration.params,
-      imageOverrides: apiSettings.zhenzhenImageModelOverrides,
-      videoOverrides: apiSettings.zhenzhenVideoModelOverrides,
+      catalogModels: selectedVisualGeneration.nodeType === 'image' ? clipImageModels : clipVideoModels,
     })
     : undefined;
   const selectedVisualGenerationParams = selectedVisualGenerationChoice
     ? normalizeClipGenerationParams(selectedVisualGenerationChoice, selectedVisualGeneration?.params)
     : {};
   const selectedVisualGenerationModelGroups = selectedVisualGeneration
-    ? clipGenerationModelGroupOptions(selectedVisualGeneration.nodeType)
+    ? clipGenerationModelGroupOptions(selectedVisualGeneration.nodeType, selectedVisualGeneration.nodeType === 'image' ? clipImageModels : clipVideoModels)
     : [];
   const selectedVisualGenerationControls = selectedVisualGenerationChoice
     ? visibleClipGenerationControls(selectedVisualGenerationChoice.sidebarParameterGroups, selectedVisualGenerationChoice.apiModel)
@@ -806,8 +876,7 @@ export default function ClipStudioEditor({
     if (!visualId) return;
     const nextChoice = resolveClipGenerationChoice(nodeType, {
       mainId,
-      imageOverrides: apiSettings.zhenzhenImageModelOverrides,
-      videoOverrides: apiSettings.zhenzhenVideoModelOverrides,
+      catalogModels: nodeType === 'image' ? clipImageModels : clipVideoModels,
     });
     onUpdateGenerationClip(visualId, {
       model: nextChoice.apiModel,
@@ -915,7 +984,6 @@ export default function ClipStudioEditor({
     );
     });
   };
-  const activeVisuals = timelineVisuals.filter((item) => !item.disabled);
   const mediaItems = useMemo<ClipMediaShelfItem[]>(() => {
     const timelineItems = [
       ...timelineVisuals.map((item) => ({ id: item.id || item.url || '', kind: item.kind, label: item.label, url: item.url, origin: 'import' as const })),
@@ -942,6 +1010,16 @@ export default function ClipStudioEditor({
     gapPixels: 6,
     minClipWidth: 72,
   }), [imageDuration, pixelsPerSecond, timelineVisuals]);
+  const resolveDragSourceTiming = (clipId: string, currentTrimStart: number) => {
+    const visual = timelineLayout.items.find((item) => item.id === clipId);
+    if (visual) {
+      const timing = { speed: sanitizeSpeed(visual.speed) };
+      return visual.kind === 'video' ? { ...timing, trimStart: currentTrimStart } : timing;
+    }
+    const audio = audios.find((item, index) => (item.id || item.url || `audio-${index}`) === clipId);
+    if (audio) return { speed: sanitizeSpeed(audio.speed), trimStart: currentTrimStart };
+    return { speed: 1 };
+  };
   const generationTrackItems = useMemo(() => timelineLayout.items.filter((item) => item.generation), [timelineLayout.items]);
   const generationQueueSummary = useMemo(() => {
     const summary = {
@@ -1148,6 +1226,9 @@ export default function ClipStudioEditor({
     }
     return visible.length > 0 ? visible : [0];
   }, [soloVisualLane, trackVisibility, visualLaneCount]);
+  const visualLaneBaseHeight = useMemo(() => (
+    visibleVisualLanes.reduce((total, lane) => total + (trackCollapsed[`visual-${lane}`] ? 44 : visualLaneHeight), 0)
+  ), [trackCollapsed, visibleVisualLanes, visualLaneHeight]);
   const visualDropClientY = dragState?.active && dragState.mode === 'move' ? dragState.currentY : visualMaterialDragY;
   const resolveVisualLaneInsertIntent = (
     clientY: number | null,
@@ -1157,10 +1238,11 @@ export default function ClipStudioEditor({
     const rect = timelineTrackRef.current?.getBoundingClientRect();
     if (!rect) return null;
     const previous = options.previous ?? null;
+    const stableTrackBottom = rect.top + visualLaneBaseHeight;
     if (previous === 'top' && clientY <= rect.top + VISUAL_LANE_INSERT_EXIT_PX) return 'top' as const;
-    if (previous === 'bottom' && clientY >= rect.bottom - VISUAL_LANE_INSERT_EXIT_PX) return 'bottom' as const;
+    if (previous === 'bottom' && clientY >= stableTrackBottom - VISUAL_LANE_INSERT_EXIT_PX) return 'bottom' as const;
     if (clientY <= rect.top + VISUAL_LANE_INSERT_ENTER_PX) return 'top' as const;
-    if (clientY >= rect.bottom - VISUAL_LANE_INSERT_ENTER_PX) return 'bottom' as const;
+    if (clientY >= stableTrackBottom - VISUAL_LANE_INSERT_ENTER_PX) return 'bottom' as const;
     return null;
   };
   const visualLaneInsertion = resolveVisualLaneInsertIntent(visualDropClientY, { previous: visualLaneInsertIntent });
@@ -1191,11 +1273,11 @@ export default function ClipStudioEditor({
     fps,
     pixelsPerSecond,
   }), [duration, fps, pixelsPerSecond]);
-  const playbackState = useMemo(() => resolveClipTimelinePlayback(timelineVisuals, playheadTime, {
+  const playbackState = useMemo(() => resolveClipTimelinePlayback(activeVisuals, playheadTime, {
     fallbackDuration: imageDuration,
-  }), [imageDuration, playheadTime, timelineVisuals]);
-  const selectedVisibleVisual = selectedVisual && !selectedVisual.disabled ? selectedVisual : undefined;
-  const playbackVisibleState = playbackState?.item && !playbackState.item.disabled ? playbackState : undefined;
+  }), [activeVisuals, imageDuration, playheadTime]);
+  const selectedVisibleVisual = selectedVisual && !selectedVisual.disabled && !selectedVisual.sourceInvalid ? selectedVisual : undefined;
+  const playbackVisibleState = playbackState?.item && !playbackState.item.disabled && !playbackState.item.sourceInvalid ? playbackState : undefined;
   const previewIdleVisual = selectedVisibleVisual || previewFallbackVisual;
   const previewVisual = playbackVisibleState?.item || (playing ? undefined : previewIdleVisual);
   const hasVisiblePreviewMedia = Boolean(previewVisual?.url);
@@ -1269,14 +1351,14 @@ export default function ClipStudioEditor({
   const generationPanelAnchorLane = Math.max(0, Math.round(Number(selectedGenerationTimelineItem?.lane || selectedGenerationVisual?.lane || 0)));
   const generationPanelAnchorLaneIndex = visibleVisualLanes.indexOf(generationPanelAnchorLane);
   const generationPanelWidth = Math.min(360, Math.max(280, Math.min(timelineContentWidth - 24, 360)));
-  const generationPanelEstimatedHeight = 300;
   const generationPanelAnchorTop = visualLaneTopOffsetForIndex(generationPanelAnchorLaneIndex);
   const generationPanelAnchorHeight = visualLaneHeightFor(generationPanelAnchorLane);
   const generationPanelShellRect = editorShellRef.current?.getBoundingClientRect();
+  const generationPanelMainRect = editorMainRef.current?.getBoundingClientRect();
   const generationPanelTrackRect = timelineTrackRef.current?.getBoundingClientRect();
   const generationPanelContentRect = timelineContentRef.current?.getBoundingClientRect();
-  const generationPanelViewportWidth = editorShellRef.current?.clientWidth || (typeof window !== 'undefined' ? window.innerWidth : 1280);
-  const generationPanelViewportHeight = editorShellRef.current?.clientHeight || (typeof window !== 'undefined' ? window.innerHeight : 720);
+  const generationPanelViewportWidth = generationPanelBounds.width || editorShellRef.current?.clientWidth || (typeof window !== 'undefined' ? window.innerWidth : 1280);
+  const generationPanelViewportHeight = generationPanelBounds.height || editorShellRef.current?.clientHeight || (typeof window !== 'undefined' ? window.innerHeight : 720);
   const generationPanelTrackTop = generationPanelShellRect && generationPanelTrackRect
     ? generationPanelTrackRect.top - generationPanelShellRect.top
     : 12 + layoutState.topHeight + 8 + 40 + 40 - timelineScrollTop;
@@ -1285,13 +1367,21 @@ export default function ClipStudioEditor({
     : 12 + 180 - timelineScrollLeft;
   const generationPanelAnchorY = generationPanelTrackTop + generationPanelAnchorTop;
   const generationPanelAnchorBottom = generationPanelAnchorY + generationPanelAnchorHeight;
+  const generationPanelSafeTop = generationPanelShellRect && generationPanelMainRect
+    ? generationPanelMainRect.top - generationPanelShellRect.top + 12
+    : 60;
   const generationPanelSpaceBelow = generationPanelViewportHeight - generationPanelAnchorBottom - 12;
-  const generationPanelSpaceAbove = generationPanelAnchorY - 12;
-  const generationPanelShouldOpenUp = generationPanelSpaceBelow < generationPanelEstimatedHeight && generationPanelSpaceAbove > generationPanelSpaceBelow;
+  const generationPanelSpaceAbove = generationPanelAnchorY - generationPanelSafeTop;
+  const generationPanelShouldOpenUp = generationPanelSpaceBelow < generationPanelMeasuredHeight && generationPanelSpaceAbove > generationPanelSpaceBelow;
   const generationPanelDirection = generationPanelShouldOpenUp ? 'up' : 'down';
   const generationPanelGap = generationPanelDirection === 'up' ? -8 : 8;
+  const generationPanelAvailableHeight = Math.min(
+    360,
+    Math.max(80, (generationPanelDirection === 'up' ? generationPanelSpaceAbove : generationPanelSpaceBelow) - 8),
+  );
+  const generationPanelRenderHeight = Math.min(generationPanelMeasuredHeight, generationPanelAvailableHeight);
   const generationPanelRawTop = generationPanelDirection === 'up'
-    ? generationPanelAnchorY - generationPanelEstimatedHeight + generationPanelGap
+    ? generationPanelAnchorY - generationPanelRenderHeight + generationPanelGap
     : generationPanelAnchorBottom + generationPanelGap;
   const generationPanelAnchorStyle: CSSProperties | undefined = selectedGenerationTimelineItem && generationPanelAnchorLaneIndex >= 0
     ? {
@@ -1302,8 +1392,9 @@ export default function ClipStudioEditor({
           generationPanelContentLeft + selectedGenerationTimelineItem.left + (selectedGenerationTimelineItem.width / 2) - (generationPanelWidth / 2),
         ),
       ),
-      top: Math.max(12, Math.min(Math.max(12, generationPanelViewportHeight - generationPanelEstimatedHeight - 12), generationPanelRawTop)),
+      top: Math.max(generationPanelSafeTop, Math.min(Math.max(generationPanelSafeTop, generationPanelViewportHeight - generationPanelRenderHeight - 12), generationPanelRawTop)),
       width: generationPanelWidth,
+      maxHeight: generationPanelAvailableHeight,
     }
     : undefined;
   const timelineTracks = useMemo(() => deriveClipTimelineTracks({
@@ -1314,12 +1405,12 @@ export default function ClipStudioEditor({
     trackHeights,
   }), [audios.length, coverUrl, texts.length, timelineVisuals, trackHeights]);
   const exportInspection = useMemo(() => inspectClipProjectBeforeExport({
-    visuals: timelineVisuals,
+    visuals: exportableTimelineVisuals,
     audios,
     texts,
     duration,
     coverUrl,
-  }), [audios, coverUrl, duration, texts, timelineVisuals]);
+  }), [audios, coverUrl, duration, exportableTimelineVisuals, texts]);
   const selectedTransform = selectedVisual?.id ? visualTransforms[selectedVisual.id] : undefined;
   const activeTransform = normalizeClipVisualTransform(selectedTransform);
   const previewBaseTransform = normalizeClipVisualTransform(previewVisual?.id ? visualTransforms[previewVisual.id] : undefined);
@@ -1354,6 +1445,9 @@ export default function ClipStudioEditor({
     if (timelineScrollFrameRef.current != null && typeof window !== 'undefined') {
       window.cancelAnimationFrame(timelineScrollFrameRef.current);
     }
+    if (dragMoveFrameRef.current != null && typeof window !== 'undefined') {
+      window.cancelAnimationFrame(dragMoveFrameRef.current);
+    }
   }, []);
 
   useEffect(() => {
@@ -1363,6 +1457,37 @@ export default function ClipStudioEditor({
       setGenerationPanelClipId('');
     }
   }, [generationPanelClipId, timelineVisuals]);
+
+  useLayoutEffect(() => {
+    if (!open || !generationPanelClipId) return undefined;
+    const measureGenerationPanel = () => {
+      const panel = generationPanelRef.current;
+      const shell = editorShellRef.current;
+      if (panel) {
+        const measuredHeight = Math.min(360, Math.max(180, Math.ceil(panel.scrollHeight || panel.getBoundingClientRect().height || 300)));
+        setGenerationPanelMeasuredHeight((current) => current === measuredHeight ? current : measuredHeight);
+      }
+      if (shell) {
+        const nextBounds = { width: shell.clientWidth, height: shell.clientHeight };
+        setGenerationPanelBounds((current) => (
+          current.width === nextBounds.width && current.height === nextBounds.height ? current : nextBounds
+        ));
+      }
+    };
+    measureGenerationPanel();
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', measureGenerationPanel);
+      return () => window.removeEventListener('resize', measureGenerationPanel);
+    }
+    const observer = new ResizeObserver(measureGenerationPanel);
+    if (generationPanelRef.current) observer.observe(generationPanelRef.current);
+    if (editorShellRef.current) observer.observe(editorShellRef.current);
+    window.addEventListener('resize', measureGenerationPanel);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', measureGenerationPanel);
+    };
+  }, [generationPanelClipId, open]);
 
   useEffect(() => {
     if (open && mediaSource === 'assets') onRefreshResourceLibrary();
@@ -1412,20 +1537,22 @@ export default function ClipStudioEditor({
   useEffect(() => {
     const video = previewVideoRef.current;
     if (!video) return;
-    video.playbackRate = Math.max(0.25, Math.min(4, Number(previewVisual?.speed || 1)));
-  }, [previewVisual?.id, previewVisual?.speed]);
+    video.playbackRate = sanitizeSpeed(previewVisual?.speed);
+  }, [open, previewVisual?.id, previewVisual?.speed, previewVisual?.url]);
 
   useEffect(() => {
     const video = previewVideoRef.current;
     if (!video) return;
     const sync = () => {
       const start = playbackVisibleState?.start || 0;
-      const speed = Math.max(0.25, Math.min(4, Number(previewVisual?.speed || 1)));
-      setPlayheadTime(Math.min(start + (video.currentTime || 0) / speed, duration || 0));
+      const speed = sanitizeSpeed(previewVisual?.speed);
+      const trimStart = Math.max(0, Number(previewVisual?.trimStart || 0));
+      const localTimelineTime = Math.max(0, ((video.currentTime || 0) - trimStart) / speed);
+      setPlayheadTime(Math.min(start + localTimelineTime, duration || 0));
     };
     video.addEventListener('timeupdate', sync);
     return () => video.removeEventListener('timeupdate', sync);
-  }, [duration, playbackVisibleState?.start, previewVisual?.id, previewVisual?.speed]);
+  }, [duration, playbackVisibleState?.start, previewVisual?.id, previewVisual?.speed, previewVisual?.trimStart]);
 
   useEffect(() => {
     if (!playing) return undefined;
@@ -1458,34 +1585,58 @@ export default function ClipStudioEditor({
     const video = previewVideoRef.current;
     if (!video || previewVisual?.kind !== 'video') return;
     const localTime = playbackVisibleState?.localTime || 0;
-    const speed = Math.max(0.25, Math.min(4, Number(previewVisual.speed || 1)));
-    const sourceTime = localTime * speed;
-    if (Math.abs((video.currentTime || 0) - sourceTime) > 0.25) {
-      video.currentTime = Math.min(sourceTime, Number.isFinite(video.duration) ? video.duration : sourceTime);
-    }
+    applyPreviewVideoSourceSeek(video, previewVisual, localTime);
     if (playing && video.paused) {
       void video.play().catch(() => undefined);
     } else if (!playing && !video.paused) {
       video.pause();
     }
-  }, [playbackVisibleState?.localTime, playing, previewVisual?.id, previewVisual?.kind, previewVisual?.speed]);
+  }, [playbackVisibleState?.localTime, playing, previewVisual?.id, previewVisual?.kind, previewVisual?.speed, previewVisual?.trimStart]);
 
   useEffect(() => {
     if (!dragState) return undefined;
-    const onMove = (event: globalThis.PointerEvent | globalThis.MouseEvent) => {
-      event.preventDefault();
+    const flushPendingDragPointer = () => {
+      dragMoveFrameRef.current = null;
+      const pointer = pendingDragPointerRef.current;
+      pendingDragPointerRef.current = null;
+      if (!pointer) return;
       setDragState((current) => {
         if (!current) return current;
-        const active = current.active || Math.abs(event.clientX - current.startX) >= 4 || Math.abs(event.clientY - current.startY) >= 4;
+        const active = current.active || Math.abs(pointer.clientX - current.startX) >= 4 || Math.abs(pointer.clientY - current.startY) >= 4;
         if (active && current.mode === 'move') {
-          setVisualLaneInsertIntent((previous) => resolveVisualLaneInsertIntent(event.clientY, { previous }));
+          const nextIntent = resolveVisualLaneInsertIntent(pointer.clientY, { previous: visualLaneInsertIntentRef.current });
+          visualLaneInsertIntentRef.current = nextIntent;
+          setVisualLaneInsertIntent((previous) => previous === nextIntent ? previous : nextIntent);
         }
-        return { ...current, currentX: event.clientX, currentY: event.clientY, active };
+        const nextState = { ...current, currentX: pointer.clientX, currentY: pointer.clientY, active };
+        dragStateRef.current = nextState;
+        return nextState;
       });
+    };
+    const onMove = (event: globalThis.PointerEvent | globalThis.MouseEvent) => {
+      event.preventDefault();
+      pendingDragPointerRef.current = { clientX: event.clientX, clientY: event.clientY };
+      if (dragMoveFrameRef.current == null) {
+        dragMoveFrameRef.current = window.requestAnimationFrame(flushPendingDragPointer);
+      }
     };
     const onUp = (event: globalThis.PointerEvent | globalThis.MouseEvent) => {
       event.preventDefault();
-      const current = dragStateRef.current;
+      if (dragMoveFrameRef.current != null) {
+        window.cancelAnimationFrame(dragMoveFrameRef.current);
+        dragMoveFrameRef.current = null;
+      }
+      pendingDragPointerRef.current = null;
+      const latest = dragStateRef.current;
+      const current = latest ? {
+        ...latest,
+        currentX: event.clientX,
+        currentY: event.clientY,
+        active: latest.active || Math.abs(event.clientX - latest.startX) >= 4 || Math.abs(event.clientY - latest.startY) >= 4,
+      } : null;
+      if (current?.mode === 'move') {
+        visualLaneInsertIntentRef.current = resolveVisualLaneInsertIntent(event.clientY, { previous: visualLaneInsertIntentRef.current });
+      }
       const rect = timelineTrackRef.current?.getBoundingClientRect();
       if (current?.active && rect) {
         const deltaSeconds = (event.clientX - current.startX) / pixelsPerSecond;
@@ -1496,6 +1647,7 @@ export default function ClipStudioEditor({
           clipDuration: current.clipDuration,
           deltaSeconds,
           rawStart,
+          ...resolveDragSourceTiming(current.id, current.trimStart),
           snap: snapMode,
           snapTargets: buildClipSnapTargets(current.id),
           snapThresholdSeconds: Math.max(0.04, Math.min(0.18, 10 / pixelsPerSecond)),
@@ -1504,7 +1656,7 @@ export default function ClipStudioEditor({
         const textIds = new Set(texts.map((item, index) => item.id || item.text || `text-${index}`));
         const currentIsTimelineVisual = !audioIds.has(current.id) && !textIds.has(current.id);
         const targetLane = currentIsTimelineVisual && current.mode === 'move'
-          ? resolveVisualLaneFromClientY(event.clientY)
+          ? resolveVisualLaneFromClientY(event.clientY, visualLaneInsertIntentRef.current)
           : current.lane;
         const targetVisualTrackLocked = currentIsTimelineVisual && current.mode === 'move' && targetLane >= 0 && Boolean(trackLocks[`visual-${targetLane}`]);
         if (targetVisualTrackLocked) {
@@ -1513,6 +1665,7 @@ export default function ClipStudioEditor({
           return;
         }
         const trimStart = Math.max(0, Math.round((current.trimStart + (next.trimStartDelta || 0)) * 1000) / 1000);
+        const draggedVisual = timelineVisuals.find((item) => item.id === current.id);
         if (audioIds.has(current.id)) {
           onUpdateAudioTiming(current.id, next.start, next.duration, trimStart);
         } else if (textIds.has(current.id)) {
@@ -1521,11 +1674,14 @@ export default function ClipStudioEditor({
           onDuplicateVisualByDrag(current.id, next.start, targetLane);
           showCommandFeedback('拖动复制');
         } else if (current.mode === 'move') {
-          onUpdateVisualStart(current.id, next.start, resolveVisualLaneFromClientY(event.clientY));
+          onUpdateVisualStart(current.id, next.start, targetLane);
         } else {
-          onUpdateVisualTiming(current.id, next.start, next.duration, trimStart);
+          draggedVisual?.kind === 'video'
+            ? onUpdateVisualTiming(current.id, next.start, next.duration, trimStart)
+            : onUpdateVisualTiming(current.id, next.start, next.duration);
         }
       }
+      visualLaneInsertIntentRef.current = null;
       setVisualLaneInsertIntent(null);
       setDragState(null);
     };
@@ -1533,11 +1689,16 @@ export default function ClipStudioEditor({
     window.addEventListener('pointerup', onUp, true);
     window.addEventListener('pointercancel', onUp, true);
     return () => {
+      if (dragMoveFrameRef.current != null) {
+        window.cancelAnimationFrame(dragMoveFrameRef.current);
+        dragMoveFrameRef.current = null;
+      }
+      pendingDragPointerRef.current = null;
       window.removeEventListener('pointermove', onMove, true);
       window.removeEventListener('pointerup', onUp, true);
       window.removeEventListener('pointercancel', onUp, true);
     };
-  }, [Boolean(dragState), audios, maxOccupiedVisualLane, onDuplicateVisualByDrag, onUpdateAudioTiming, onUpdateTextTiming, onUpdateVisualStart, onUpdateVisualTiming, pixelsPerSecond, snapMode, texts, trackLocks, visibleVisualLanes, visualLaneHeight, visualLaneInsertIntent]);
+  }, [Boolean(dragState), audios, maxOccupiedVisualLane, onDuplicateVisualByDrag, onUpdateAudioTiming, onUpdateTextTiming, onUpdateVisualStart, onUpdateVisualTiming, pixelsPerSecond, snapMode, texts, trackLocks, visibleVisualLanes, visualLaneHeight]);
 
   useEffect(() => {
     if (!resizeState) return undefined;
@@ -1547,11 +1708,7 @@ export default function ClipStudioEditor({
       if (!current) return;
       const deltaX = event.clientX - current.startX;
       const deltaY = event.clientY - current.startY;
-      const next = sanitizeClipStudioLayout({
-        leftWidth: current.type === 'left' ? current.startLayout.leftWidth + deltaX : current.startLayout.leftWidth,
-        rightWidth: current.type === 'right' ? current.startLayout.rightWidth - deltaX : current.startLayout.rightWidth,
-        topHeight: current.type === 'timeline' ? current.startLayout.topHeight + deltaY : current.startLayout.topHeight,
-      });
+      const next = resizeClipStudioLayout(current.startLayout, current.type, deltaX, deltaY);
       setLayoutState(next);
     };
     const onUp = (event: globalThis.PointerEvent | globalThis.MouseEvent) => {
@@ -1560,11 +1717,7 @@ export default function ClipStudioEditor({
       if (current) {
         const deltaX = event.clientX - current.startX;
         const deltaY = event.clientY - current.startY;
-        const next = sanitizeClipStudioLayout({
-          leftWidth: current.type === 'left' ? current.startLayout.leftWidth + deltaX : current.startLayout.leftWidth,
-          rightWidth: current.type === 'right' ? current.startLayout.rightWidth - deltaX : current.startLayout.rightWidth,
-          topHeight: current.type === 'timeline' ? current.startLayout.topHeight + deltaY : current.startLayout.topHeight,
-        });
+        const next = resizeClipStudioLayout(current.startLayout, current.type, deltaX, deltaY);
         setLayoutState(next);
         onPatchSettings({ clipEditorLayout: next });
       }
@@ -1725,6 +1878,9 @@ export default function ClipStudioEditor({
     });
   };
   const onTimelineScroll = () => {
+    if (timelineTrackListRef.current && timelineScrollRef.current) {
+      timelineTrackListRef.current.scrollTop = timelineScrollRef.current.scrollTop;
+    }
     if (timelineScrollFrameRef.current != null) return;
     if (typeof window === 'undefined') {
       setTimelineScrollVersion((value) => value + 1);
@@ -1991,11 +2147,24 @@ export default function ClipStudioEditor({
   const seekPlayhead = (nextTime: number, options: { selectPlayback?: boolean } = {}) => {
     const safeTime = Math.max(0, Math.min(duration || 0, nextTime));
     setPlayheadTime(safeTime);
-    const nextState = resolveClipTimelinePlayback(timelineVisuals, safeTime, { fallbackDuration: imageDuration });
+    const nextState = resolveClipTimelinePlayback(activeVisuals, safeTime, { fallbackDuration: imageDuration });
     if (options.selectPlayback !== false && nextState?.item.id) setSelectedId(nextState.item.id);
     if (options.selectPlayback !== false && nextState?.item.id) setSelectedIds([nextState.item.id]);
     const video = previewVideoRef.current;
-    if (video) video.currentTime = nextState?.localTime || 0;
+    if (video) applyPreviewVideoSourceSeek(video, nextState?.item, nextState?.localTime || 0);
+  };
+
+  const handlePreviewVideoLoadedMetadata = () => {
+    const video = previewVideoRef.current;
+    if (!video || previewVisual?.kind !== 'video') return;
+    video.playbackRate = sanitizeSpeed(previewVisual?.speed);
+    applyPreviewVideoSourceSeek(video, previewVisual, previewLocalTime);
+  };
+
+  const handlePreviewVideoEnded = () => {
+    const activeClipEnd = (playbackVisibleState?.start || 0) + (playbackVisibleState?.duration || 0);
+    const nextTime = Math.min(duration || 0, Math.max(playheadTime, activeClipEnd));
+    setPlayheadTime(nextTime);
   };
 
   const openGenerationPanelForClip = (visualId: string, start?: number) => {
@@ -2011,10 +2180,10 @@ export default function ClipStudioEditor({
     const offset = clientX - rect.left;
     seekPlayhead(clampClipPlayheadTime(offset, pixelsPerSecond, duration));
   };
-  const resolveVisualLaneFromClientY = (clientY: number) => {
+  const resolveVisualLaneFromClientY = (clientY: number, insertIntentOverride = visualLaneInsertIntentRef.current) => {
     const rect = timelineTrackRef.current?.getBoundingClientRect();
     if (!rect) return 0;
-    const insertIntent = resolveVisualLaneInsertIntent(clientY, { previous: visualLaneInsertIntent });
+    const insertIntent = insertIntentOverride ?? resolveVisualLaneInsertIntent(clientY, { previous: visualLaneInsertIntentRef.current });
     if (insertIntent === 'top') return -1;
     if (insertIntent === 'bottom') return Math.min(CLIP_MAX_VISUAL_LANE, maxOccupiedVisualLane + 1);
     const offsetY = Math.max(0, clientY - rect.top);
@@ -2082,6 +2251,7 @@ export default function ClipStudioEditor({
         clipDuration: dragState.clipDuration,
         deltaSeconds,
         rawStart,
+        ...resolveDragSourceTiming(dragState.id, dragState.trimStart),
         snap: snapMode,
         snapTargets: clipSnapTargets,
         snapThresholdSeconds: Math.max(0.04, Math.min(0.18, 10 / pixelsPerSecond)),
@@ -2157,11 +2327,15 @@ export default function ClipStudioEditor({
     onUpdateVisualKeyframes(selectedVisual.id, selectedVisualKeyframes.filter((item) => Math.abs(item.time - time) > 0.04));
     showCommandFeedback('删除关键帧');
   };
-  const updateVisualFilter = (patch: Pick<ClipTimelineVisualMaterial, 'filter' | 'intensity' | 'lutPresetId' | 'lutName' | 'lutText' | 'lutAmount' | 'speed' | 'fadeIn' | 'fadeOut' | 'transition' | 'transitionDuration' | 'fit' | 'blendMode'>) => {
+  const updateVisualFilter = (patch: ClipVisualFilterPatch) => {
     if (!selectedVisual?.id) return;
     onUpdateVisualFilter(selectedVisual.id, {
       filter: patch.filter ?? selectedVisual.filter ?? 'none',
       intensity: patch.intensity ?? selectedVisual.intensity ?? 65,
+      hue: patch.hue ?? selectedVisual.hue ?? 0,
+      saturation: patch.saturation ?? selectedVisual.saturation ?? 100,
+      brightness: patch.brightness ?? selectedVisual.brightness ?? 100,
+      contrast: patch.contrast ?? selectedVisual.contrast ?? 100,
       lutPresetId: patch.lutPresetId ?? selectedVisual.lutPresetId ?? '',
       lutName: patch.lutName ?? selectedVisual.lutName ?? '',
       lutText: patch.lutText ?? selectedVisual.lutText ?? '',
@@ -2240,7 +2414,7 @@ export default function ClipStudioEditor({
         ? '音频'
         : '字幕';
     return (
-      <div data-clip-selection-summary className={`${paramCardClass} t8-clip-selection-summary sticky top-0 z-20 space-y-2`}>
+      <div data-clip-selection-summary className={`${paramCardClass} t8-clip-selection-summary space-y-2`}>
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <div className="truncate text-sm font-black">{name}</div>
@@ -2300,6 +2474,80 @@ export default function ClipStudioEditor({
           ) : (
             <div className="flex h-full items-center justify-center text-[var(--t8-clip-dim)]">暂无预览</div>
           )}
+        </div>
+        <div data-clip-color-basic-controls className="t8-clip-color-basic-controls space-y-2 rounded border border-[var(--t8-border)] bg-[var(--t8-bg-soft)] p-2">
+          <div className="flex items-center justify-between gap-2 text-xs font-black">
+            <span>基础调色</span>
+            <button
+              type="button"
+              className="t8-clip-param-link rounded px-1.5 py-0.5 text-[10px] font-bold transition"
+              onClick={() => updateVisualFilter({ hue: 0, saturation: 100, brightness: 100, contrast: 100 })}
+            >
+              重置色彩
+            </button>
+          </div>
+          <label className="block space-y-1">
+            <span className={`flex items-center justify-between ${paramLabelClass}`}>
+              <span>色相</span>
+              <span className="font-mono">{clipColorHue(selectedVisual)}°</span>
+            </span>
+            <input
+              className={paramRangeClass}
+              type="range"
+              min={-180}
+              max={180}
+              step={1}
+              value={clipColorHue(selectedVisual)}
+              onChange={(event) => updateVisualFilter({ hue: Number(event.target.value) })}
+            />
+          </label>
+          <div className="grid grid-cols-2 gap-2">
+            <label className="block space-y-1">
+              <span className={`flex items-center justify-between ${paramLabelClass}`}>
+                <span>饱和度</span>
+                <span className="font-mono">{clipColorPercent(selectedVisual.saturation, 100)}%</span>
+              </span>
+              <input
+                className={paramRangeClass}
+                type="range"
+                min={0}
+                max={200}
+                step={1}
+                value={clipColorPercent(selectedVisual.saturation, 100)}
+                onChange={(event) => updateVisualFilter({ saturation: Number(event.target.value) })}
+              />
+            </label>
+            <label className="block space-y-1">
+              <span className={`flex items-center justify-between ${paramLabelClass}`}>
+                <span>明度</span>
+                <span className="font-mono">{clipColorPercent(selectedVisual.brightness, 100)}%</span>
+              </span>
+              <input
+                className={paramRangeClass}
+                type="range"
+                min={0}
+                max={200}
+                step={1}
+                value={clipColorPercent(selectedVisual.brightness, 100)}
+                onChange={(event) => updateVisualFilter({ brightness: Number(event.target.value) })}
+              />
+            </label>
+            <label className="block space-y-1">
+              <span className={`flex items-center justify-between ${paramLabelClass}`}>
+                <span>对比度</span>
+                <span className="font-mono">{clipColorPercent(selectedVisual.contrast, 100)}%</span>
+              </span>
+              <input
+                className={paramRangeClass}
+                type="range"
+                min={0}
+                max={200}
+                step={1}
+                value={clipColorPercent(selectedVisual.contrast, 100)}
+                onChange={(event) => updateVisualFilter({ contrast: Number(event.target.value) })}
+              />
+            </label>
+          </div>
         </div>
         <label className="block space-y-1">
           <span className={paramLabelClass}>视觉滤镜</span>
@@ -2527,11 +2775,14 @@ export default function ClipStudioEditor({
   ) => {
     event.preventDefault();
     event.stopPropagation();
+    const renderedTopHeight = topRowPanelRef.current?.getBoundingClientRect().height;
     setResizeState({
       type,
       startX: event.clientX,
       startY: event.clientY,
-      startLayout: layoutState,
+      startLayout: type === 'timeline'
+        ? { ...layoutState, topHeight: renderedTopHeight || layoutState.topHeight }
+        : layoutState,
     });
   };
   const startTimelineHeaderResize = (event: ReactPointerEvent<HTMLDivElement> | ReactMouseEvent<HTMLDivElement>) => {
@@ -2652,10 +2903,11 @@ export default function ClipStudioEditor({
       />
 
       <main
+        ref={editorMainRef}
         className="grid min-h-0 flex-1 p-3"
         style={{
           gridTemplateColumns: `minmax(260px,min(${layoutState.leftWidth}px,30vw)) 8px minmax(300px,1fr) 8px minmax(260px,min(${layoutState.rightWidth}px,30vw))`,
-          gridTemplateRows: `${layoutState.topHeight}px 8px minmax(240px,1fr)`,
+          gridTemplateRows: `minmax(144px, min(${layoutState.topHeight}px, calc(100dvh - 288px))) 8px minmax(208px,1fr)`,
         }}
       >
         <section className={`t8-clip-panel min-h-0 overflow-hidden rounded-md border ${border} ${panelBg}`} style={{ gridColumn: 1, gridRow: 1 }}>
@@ -2680,7 +2932,7 @@ export default function ClipStudioEditor({
                 </button>
               ))}
             </nav>
-            <div className="flex min-w-0 flex-col">
+            <div className="flex min-h-0 min-w-0 flex-col overflow-hidden">
               <div className="t8-clip-panel-header flex h-8 shrink-0 items-center justify-between border-b border-[#303030] px-2.5">
                 <div className="text-sm font-black">{tab === 'media' ? '素材' : tab === 'sound' ? '音频' : tab === 'text' ? '文本' : tab === 'color' ? '调色' : tab === 'motion' ? '动效' : '工程设置'}</div>
                 {tab === 'media' ? (
@@ -2692,7 +2944,7 @@ export default function ClipStudioEditor({
               </div>
 
               {tab === 'media' ? (
-                <div data-clip-media-pane className="flex min-h-0 flex-1 flex-col gap-2 p-2">
+                <div data-clip-media-pane className="flex min-h-0 flex-1 flex-col overflow-hidden gap-2 p-2">
                   <div
                     data-clip-import-dropzone
                     className={`t8-clip-dropzone rounded-md border border-dashed px-3 py-5 text-center text-[11px] leading-tight text-zinc-500 ${isDragOverImport ? 'is-dragover border-emerald-300 bg-emerald-400/10 text-emerald-100' : 'border-[#3d3d3d] bg-[#2b2b2b]'}`}
@@ -2754,7 +3006,7 @@ export default function ClipStudioEditor({
                       刷新我的资产
                     </button>
                   ) : null}
-                  <div data-clip-media-library-scroll className="t8-clip-media-library-scroll min-h-0 flex-1 overflow-y-auto overflow-x-hidden pr-1">
+                  <div data-clip-media-library-scroll className="t8-clip-media-library-scroll t8-clip-scroll-region min-h-0 max-h-full flex-1 overflow-y-auto overflow-x-hidden pr-1">
                     <div data-clip-media-grid className="grid auto-rows-[96px] grid-cols-2 gap-1.5">
                       {mediaItems.length === 0 ? (
                         <div className="t8-clip-media-empty col-span-2 rounded border p-4 text-center text-xs">连接上游素材后会出现在这里</div>
@@ -2786,12 +3038,16 @@ export default function ClipStudioEditor({
                           }
                         }}
                       >
-                        {item.kind === 'image' ? (
+                        {item.kind === 'image' && item.url ? (
                           <img className="h-[78px] w-full object-cover" src={item.url} alt="" draggable={false} />
-                        ) : item.kind === 'video' ? (
+                        ) : item.kind === 'video' && item.url ? (
                           <video className="h-[78px] w-full object-cover" src={item.url} muted preload="metadata" />
-                        ) : (
+                        ) : item.kind === 'audio' ? (
                           <span className="flex h-[78px] w-full items-center justify-center text-sky-300"><Music size={22} /></span>
+                        ) : (
+                          <span data-clip-media-draft-placeholder className="flex h-[78px] w-full items-center justify-center text-fuchsia-200">
+                            {item.kind === 'image' ? <ImageIcon size={22} /> : <Film size={22} />}
+                          </span>
                         )}
                         <span className="flex h-7 items-center justify-between gap-2 px-2 text-[10px] text-zinc-500">
                           <span className="min-w-0 truncate">{sourceName(item)}</span>
@@ -2816,7 +3072,7 @@ export default function ClipStudioEditor({
                   </div>
                 </div>
               ) : tab === 'sound' ? (
-                <div className="min-h-0 flex-1 space-y-2 overflow-auto p-2">
+                <div className="t8-clip-scroll-region min-h-0 flex-1 space-y-2 overflow-auto p-2">
                   <div className="grid grid-cols-2 gap-1.5 text-xs">
                     {([
                       ['canvas-audio', '画布音频'],
@@ -2846,7 +3102,7 @@ export default function ClipStudioEditor({
                   })}
                 </div>
               ) : tab === 'text' ? (
-                <div className="min-h-0 flex-1 space-y-2 overflow-auto p-2">
+                <div className="t8-clip-scroll-region min-h-0 flex-1 space-y-2 overflow-auto p-2">
                   <div className="grid grid-cols-2 gap-1.5">
                     <button type="button" className={`${editorButton} t8-clip-compact-chip`} onClick={() => onCreateTextClip('默认文本')}>
                       默认文本
@@ -2865,19 +3121,19 @@ export default function ClipStudioEditor({
                   })}
                 </div>
               ) : tab === 'color' ? (
-                <div data-clip-left-color-editor className="t8-clip-left-editor min-h-0 flex-1 overflow-auto p-2 text-xs">
+                <div data-clip-left-color-editor className="t8-clip-left-editor t8-clip-scroll-region min-h-0 flex-1 overflow-auto p-2 text-xs">
                   {selectedVisual ? renderSelectedVisualColorPanel('left') : (
                     <div className="t8-clip-param-empty rounded border border-dashed p-4 text-center">选择图片或视频片段后编辑调色和 LUT</div>
                   )}
                 </div>
               ) : tab === 'motion' ? (
-                <div data-clip-left-motion-editor className="t8-clip-left-editor min-h-0 flex-1 overflow-auto p-2 text-xs">
+                <div data-clip-left-motion-editor className="t8-clip-left-editor t8-clip-scroll-region min-h-0 flex-1 overflow-auto p-2 text-xs">
                   {selectedVisual ? renderSelectedVisualMotionPanel('left') : (
                     <div className="t8-clip-param-empty rounded border border-dashed p-4 text-center">选择图片或视频片段后编辑变换、变速和关键帧</div>
                   )}
                 </div>
               ) : (
-                <div className="t8-clip-settings-pane space-y-2 overflow-auto min-h-0 flex-1 p-2 text-xs">
+                <div className="t8-clip-settings-pane t8-clip-scroll-region space-y-2 overflow-auto min-h-0 flex-1 p-2 text-xs">
                   <div className="t8-clip-settings-card space-y-2 rounded border p-2">
                     <div className="flex items-center justify-between gap-2">
                       <div className="text-xs font-black">快速成片模板</div>
@@ -2978,7 +3234,7 @@ export default function ClipStudioEditor({
           title="拖动调整素材区宽度"
         />
 
-        <section className={`t8-clip-panel min-h-0 overflow-hidden rounded-md border ${border} ${panelBg}`} style={{ gridColumn: 3, gridRow: 1 }}>
+        <section ref={topRowPanelRef} className={`t8-clip-panel min-h-0 overflow-hidden rounded-md border ${border} ${panelBg}`} style={{ gridColumn: 3, gridRow: 1 }}>
           <div className="flex h-full flex-col">
             <div className="t8-clip-player-header t8-clip-panel-header flex h-8 shrink-0 items-center justify-between gap-1.5 overflow-hidden border-b border-[#303030] px-2.5 text-[11px] font-bold">
               <span className="truncate">播放器-主场景</span>
@@ -3020,7 +3276,8 @@ export default function ClipStudioEditor({
                       src={previewVisual.url}
                       playsInline
                       onClick={togglePreviewPlayback}
-                      onEnded={() => setPlaying(false)}
+                      onLoadedMetadata={handlePreviewVideoLoadedMetadata}
+                      onEnded={handlePreviewVideoEnded}
                     />
                   ) : null}
                   {previewVisual ? (
@@ -3610,7 +3867,7 @@ export default function ClipStudioEditor({
             data-clip-generation-panel-anchor="track"
             data-clip-generation-panel-direction={generationPanelDirection}
             data-clip-generation-panel-mode="quick"
-            className="t8-clip-modal t8-clip-generation-popover absolute z-50 rounded-md border p-2 shadow-2xl"
+            className="t8-clip-modal t8-clip-generation-popover t8-clip-scroll-region absolute z-50 rounded-md border p-2 shadow-2xl"
             style={generationPanelAnchorStyle}
             onPointerDown={(event) => event.stopPropagation()}
             onMouseDown={(event) => event.stopPropagation()}
@@ -3991,7 +4248,16 @@ export default function ClipStudioEditor({
               </div>
             ) : null}
             <div className="grid min-h-0 flex-1 grid-cols-[180px_1fr] overflow-hidden">
-              <div className="t8-clip-track-list border-r border-[#303030] bg-[#202020] text-xs text-zinc-500">
+              <div
+                ref={timelineTrackListRef}
+                className="t8-clip-track-list min-h-0 overflow-hidden border-r border-[#303030] bg-[#202020] text-xs text-zinc-500"
+                onWheel={(event) => {
+                  const timeline = timelineScrollRef.current;
+                  if (!timeline || Math.abs(event.deltaY) < Math.abs(event.deltaX)) return;
+                  event.preventDefault();
+                  timeline.scrollTop += event.deltaY;
+                }}
+              >
                 <div className="t8-clip-track-list-header flex h-10 items-end border-b border-[#303030] px-4 pb-2 text-[10px] uppercase tracking-wide text-zinc-600">轨道</div>
                 {timelineTracks.length === 0 ? (
                   <div className="flex h-[88px] items-center px-4 text-zinc-600">暂无素材轨道</div>
@@ -4097,7 +4363,7 @@ export default function ClipStudioEditor({
               </div>
               <div
                 ref={timelineScrollRef}
-                className="t8-clip-timeline-scroll min-w-0 overflow-auto scroll-smooth"
+                className="t8-clip-timeline-scroll t8-clip-scroll-region min-h-0 min-w-0 overflow-auto scroll-smooth"
                 onWheel={(event) => {
                   if (!event.shiftKey && Math.abs(event.deltaY) >= Math.abs(event.deltaX)) return;
                   const el = timelineScrollRef.current;
@@ -4279,6 +4545,7 @@ export default function ClipStudioEditor({
                                     data-clip-copy-ghost={live && dragState?.copyMode ? 'true' : undefined}
                                     data-clip-generation-status={item.generation?.status}
                                     data-clip-generation-ref-drop-target={generationRefDropTargetId === item.id ? 'true' : undefined}
+                                    title={item.sourceInvalid ? '媒体边界错误：裁剪起点超出视频时长' : (item.label || fileNameFromUrl(item.url || ''))}
                                     className={`group t8-clip-visual t8-clip-material-chip absolute top-2 overflow-hidden rounded border text-left text-xs transition-[box-shadow,border-color] ${item.generation ? 'is-generation' : ''} ${generationFilteredOut ? 'is-generation-filtered-out' : ''} ${generationRefDropTargetId === item.id ? 'is-generation-ref-drop-target' : ''} ${selectedClipIds.has(item.id || '') || selectedTimelineVisual?.id === item.id ? 'is-selected border-emerald-400 bg-emerald-400/15' : 'border-[#4a4a4a] bg-[#313131]'} ${item.disabled ? 'opacity-45' : ''} ${live ? 'is-dragging z-30 shadow-[0_0_0_1px_rgba(110,231,183,.55),0_12px_28px_rgba(0,0,0,.28)]' : ''} ${live && dragState?.copyMode ? 'is-copying' : ''}`}
                                     style={{ left: liveLeft, width: liveWidth, height: clipHeight }}
                                     onDragOver={(event) => handleGenerationRefDragOver(event, item.id || '', item.generation)}
@@ -4317,6 +4584,9 @@ export default function ClipStudioEditor({
                                       seekPlayhead(item.start, { selectPlayback: false });
                                       setSelectedId(item.id || '');
                                       selectClip(item.id || '', event);
+                                      if (item.generation && item.generation.status !== 'success') {
+                                        openGenerationPanelForClip(item.id || '', item.start);
+                                      }
                                     }}
                                   >
                                     {(clipVisualKeyframes[item.id || ''] || []).map((keyframe) => (
@@ -4330,6 +4600,9 @@ export default function ClipStudioEditor({
                                     <span data-clip-visual-status-badges className="t8-clip-visual-status-badges pointer-events-none absolute left-1 top-1 z-30 flex max-w-[calc(100%-2rem)] flex-wrap gap-1">
                                       {item.disabled ? (
                                         <span data-clip-visual-badge="hidden" className="t8-clip-visual-badge">隐藏</span>
+                                      ) : null}
+                                      {item.sourceInvalid ? (
+                                        <span data-clip-visual-badge="source-invalid" className="t8-clip-visual-badge">媒体边界错误</span>
                                       ) : null}
                                       {Math.abs(Number(item.speed || 1) - 1) > 0.01 ? (
                                         <span data-clip-visual-badge="speed" className="t8-clip-visual-badge">{Number(item.speed || 1).toFixed(2)}x</span>
@@ -4468,7 +4741,7 @@ export default function ClipStudioEditor({
                                               <img className="h-full w-full object-cover" src={frame.sourceUrl} alt="" draggable={false} loading="lazy" style={{ filter: clipCssFilter(item) }} />
                                             ) : (
                                               <span className="block h-full w-full" style={{ filter: clipCssFilter(item) }}>
-                                                <MemoTimelineVideoFrame src={frame.sourceUrl} localTime={Math.max(0, frame.time - (live?.start ?? item.start))} />
+                                                <MemoTimelineVideoFrame src={frame.sourceUrl} sourceTime={previewVideoSourceTime(item, Math.max(0, frame.time - (live?.start ?? item.start)))} />
                                               </span>
                                             )}
                                           </span>
@@ -4563,7 +4836,7 @@ export default function ClipStudioEditor({
                               <img className="h-5 w-7 rounded object-cover" src={selectedVisual.url} alt="" />
                             ) : selectedVisual?.kind === 'video' && selectedVisual.url ? (
                               <span data-clip-frame-cover-pending className="relative h-5 w-7 overflow-hidden rounded bg-black">
-                                <MemoTimelineVideoFrame src={selectedVisual.url} localTime={Math.max(0, coverTime - (selectedLayoutItem?.start || 0))} />
+                                <MemoTimelineVideoFrame src={selectedVisual.url} sourceTime={previewVideoSourceTime(selectedVisual, Math.max(0, coverTime - (selectedLayoutItem?.start || 0)))} />
                               </span>
                             ) : (
                               <ImageIcon size={12} />
@@ -4785,7 +5058,7 @@ export default function ClipStudioEditor({
                 {currentCoverPreview ? (
                   coverTab === 'frame' && selectedVisual?.kind === 'video' ? (
                     <span data-clip-frame-cover-pending className="flex h-full w-full items-center justify-center bg-black">
-                      <MemoTimelineVideoFrame src={currentCoverPreview} localTime={Math.max(0, coverDraftTime - (selectedLayoutItem?.start || 0))} />
+                      <MemoTimelineVideoFrame src={currentCoverPreview} sourceTime={previewVideoSourceTime(selectedVisual, Math.max(0, coverDraftTime - (selectedLayoutItem?.start || 0)))} />
                     </span>
                   ) : (
                     <img className="max-h-full max-w-full object-contain" src={currentCoverPreview} alt="" />

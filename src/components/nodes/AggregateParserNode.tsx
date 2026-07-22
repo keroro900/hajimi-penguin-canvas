@@ -483,11 +483,9 @@ const AggregateParserNode = (p: NodeProps) => {
 
   return (
     <div
-      className="t8-node relative transition-all"
+      className={`t8-node relative transition-all ${p.selected ? 'is-selected' : ''}`}
       style={{
         width: 620,
-        borderColor: p.selected ? COLOR : undefined,
-        boxShadow: p.selected ? `0 0 0 2px ${COLOR}, var(--t8-shadow-strong, 0 18px 36px rgba(0,0,0,.22))` : undefined,
       }}
     >
       <Handle type="target" position={Position.Left} style={{ background: COLOR, border: 0 }} />

@@ -26,6 +26,8 @@ import {
 import { useCanvasStore } from '../stores/canvas';
 import { CODEX_MODEL_OPTIONS } from '../config/codexModelOptions';
 import { IMAGE_MODELS, VIDEO_MODELS, type SidebarParameterControl, type SidebarParameterGroup } from '../providers/models';
+import { modelsForKind } from '../providers/modelCatalog';
+import { useApiKeysStore } from '../stores/apiKeys';
 // CODEX_MODEL_OPTIONS includes GPT-5.5 plus default/custom Codex CLI modes.
 import {
   addResourceItem,
@@ -1468,6 +1470,13 @@ function recordReplayPayload(record: ConversationRecord | null) {
   };
 }
 
+function skillFileTreeIncludesPath(files: CodexSkillFileEntry[], filePath: string): boolean {
+  return files.some((file) => (
+    file.path === filePath
+    || (file.type === 'dir' && skillFileTreeIncludesPath(file.children || [], filePath))
+  ));
+}
+
 function recordMemoryForPrompt(record: ConversationRecord | null) {
   if (!record) return '本轮会话记忆：暂无可复用记录。';
   const askAnswers = (record.askAnswers || [])
@@ -1723,6 +1732,7 @@ function trimMessagesFromUserMessage(messages: SidebarMessage[], userMessageId: 
 }
 
 export default function CodexAgentSidebar({ open, onClose }: CodexAgentSidebarProps) {
+  const apiSettings = useApiKeysStore((state) => state.settings);
   const activeCanvasId = useCanvasStore((state) => state.activeId);
   const canvases = useCanvasStore((state) => state.canvases);
   const loadCanvases = useCanvasStore((state) => state.loadCanvases);
@@ -1802,6 +1812,8 @@ export default function CodexAgentSidebar({ open, onClose }: CodexAgentSidebarPr
   const answeredAskMemoryRef = useRef<Set<string>>(new Set());
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const skillImportInputRef = useRef<HTMLInputElement | null>(null);
+  const selectedSkillFilePathRef = useRef('SKILL.md');
+  const skillFileRequestIdRef = useRef(0);
   const lastSessionSignatureRef = useRef('');
   const running = session?.status === 'running' || session?.status === 'stopping';
   const activeCanvas = useMemo(
@@ -1812,14 +1824,22 @@ export default function CodexAgentSidebar({ open, onClose }: CodexAgentSidebarPr
     () => PERMISSION_PRESETS.find((item) => item.id === permissionPreset) || PERMISSION_PRESETS[1],
     [permissionPreset],
   );
-  const imageModelOptions = IMAGE_MODELS;
-  const videoModelOptions = VIDEO_MODELS;
+  const catalogImageModels = useMemo(() => modelsForKind(apiSettings, 'image'), [apiSettings]);
+  const catalogVideoModels = useMemo(() => modelsForKind(apiSettings, 'video'), [apiSettings]);
+  const imageModelOptions = useMemo(() => catalogImageModels.map((model) => ({
+    ...IMAGE_MODELS[0], id: model, apiModel: model, label: model, tabLabel: model,
+    apiModelOptions: [{ value: model, label: model }],
+  })), [catalogImageModels]);
+  const videoModelOptions = useMemo(() => catalogVideoModels.map((model) => ({
+    ...VIDEO_MODELS[0], id: model, label: model,
+    apiModelOptions: [{ value: model, label: model }],
+  })), [catalogVideoModels]);
   const imageModelDef = useMemo(
-    () => imageModelOptions.find((item) => item.id === generationPreferences.image.model) || imageModelOptions[0],
+    () => imageModelOptions.find((item) => item.id === generationPreferences.image.apiModel) || imageModelOptions[0] || IMAGE_MODELS[0],
     [generationPreferences.image.model, imageModelOptions],
   );
   const videoModelDef = useMemo(
-    () => videoModelOptions.find((item) => item.id === generationPreferences.video.model) || videoModelOptions[0],
+    () => videoModelOptions.find((item) => item.id === generationPreferences.video.apiModel) || videoModelOptions[0] || VIDEO_MODELS[0],
     [generationPreferences.video.model, videoModelOptions],
   );
   const imageApiModelOptions = imageModelDef.apiModelOptions;
@@ -1860,6 +1880,17 @@ export default function CodexAgentSidebar({ open, onClose }: CodexAgentSidebarPr
     () => Object.values(itemTimelineById).sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 5),
     [itemTimelineById],
   );
+  useEffect(() => {
+    setGenerationPreferences((current) => {
+      const nextImage = catalogImageModels.includes(current.image.apiModel) ? current.image.apiModel : (catalogImageModels[0] || current.image.apiModel);
+      const nextVideo = catalogVideoModels.includes(current.video.apiModel) ? current.video.apiModel : (catalogVideoModels[0] || current.video.apiModel);
+      if (nextImage === current.image.apiModel && nextVideo === current.video.apiModel) return current;
+      return {
+        image: { ...current.image, model: nextImage, apiModel: nextImage },
+        video: { ...current.video, model: nextVideo, apiModel: nextVideo },
+      };
+    });
+  }, [catalogImageModels, catalogVideoModels]);
   const internalCanvasSkillNames = useMemo(
     () => codexSkills.filter(isInternalCanvasSkill).map((skill) => skill.name),
     [codexSkills],
@@ -2134,16 +2165,20 @@ export default function CodexAgentSidebar({ open, onClose }: CodexAgentSidebarPr
 
   const loadSkillFileTree = useCallback(async (skill: CodexSkill | null) => {
     if (!skill?.name) return;
+    const requestId = ++skillFileRequestIdRef.current;
     setSkillFileLoading(true);
     try {
       const result = await getCodexProjectSkillFiles({
         workspaceDir: session?.workspaceDir,
         name: skill.name,
       });
+      if (requestId !== skillFileRequestIdRef.current) return;
       setSkillFileTree(result.files);
-      const nextPath = result.files.some((item) => item.path === selectedSkillFilePath)
-        ? selectedSkillFilePath
+      const currentPath = selectedSkillFilePathRef.current;
+      const nextPath = skillFileTreeIncludesPath(result.files, currentPath)
+        ? currentPath
         : firstSkillFilePath(result.files);
+      selectedSkillFilePathRef.current = nextPath;
       setSelectedSkillFilePath(nextPath);
       if (!nextPath) {
         setSelectedSkillFileContent('');
@@ -2156,19 +2191,22 @@ export default function CodexAgentSidebar({ open, onClose }: CodexAgentSidebarPr
         name: skill.name,
         path: nextPath,
       });
+      if (requestId !== skillFileRequestIdRef.current) return;
       setSelectedSkillFileContent(file.content);
       setSkillFileDirty(false);
       setSkillSaveStatus('idle');
     } catch (nextError: any) {
+      if (requestId !== skillFileRequestIdRef.current) return;
       appendDiagnosticLog(nextError?.message || '读取 Skill 文件失败', 'error');
     } finally {
-      setSkillFileLoading(false);
+      if (requestId === skillFileRequestIdRef.current) setSkillFileLoading(false);
     }
-  }, [appendDiagnosticLog, selectedSkillFilePath, session?.workspaceDir]);
+  }, [appendDiagnosticLog, session?.workspaceDir]);
 
   const syncImportedSkillFile = useCallback(async (skill: CodexSkill | null, workspaceDir?: string) => {
     if (!skill?.name) return '';
     setSelectedSkillId(skill.id);
+    selectedSkillFilePathRef.current = 'SKILL.md';
     setSelectedSkillFilePath('SKILL.md');
     const file = await readCodexProjectSkillFile({
       workspaceDir: workspaceDir || session?.workspaceDir,
@@ -2198,6 +2236,8 @@ export default function CodexAgentSidebar({ open, onClose }: CodexAgentSidebarPr
 
   const openSkillFile = useCallback(async (filePath: string) => {
     if (!selectedSkill?.name) return;
+    const requestId = ++skillFileRequestIdRef.current;
+    selectedSkillFilePathRef.current = filePath;
     setSelectedSkillFilePath(filePath);
     setSkillFileLoading(true);
     try {
@@ -2206,13 +2246,15 @@ export default function CodexAgentSidebar({ open, onClose }: CodexAgentSidebarPr
         name: selectedSkill.name,
         path: filePath,
       });
+      if (requestId !== skillFileRequestIdRef.current) return;
       setSelectedSkillFileContent(file.content);
       setSkillFileDirty(false);
       setSkillSaveStatus('idle');
     } catch (nextError: any) {
+      if (requestId !== skillFileRequestIdRef.current) return;
       appendDiagnosticLog(nextError?.message || '读取 Skill 文件失败', 'error');
     } finally {
-      setSkillFileLoading(false);
+      if (requestId === skillFileRequestIdRef.current) setSkillFileLoading(false);
     }
   }, [appendDiagnosticLog, selectedSkill?.name, session?.workspaceDir]);
 
@@ -4182,9 +4224,8 @@ export default function CodexAgentSidebar({ open, onClose }: CodexAgentSidebarPr
       />
       <header className="codex-agent-sidebar__header">
         <div className="codex-agent-sidebar__identity">
-          <span className="codex-agent-sidebar__avatar" aria-hidden="true">
-            <span className="codex-agent-sidebar__mascot-hair" />
-            <span className="codex-agent-sidebar__mascot-face" />
+          <span className="codex-agent-sidebar__agent-mark" aria-hidden="true">
+            <Sparkles size={15} />
           </span>
           <div className="min-w-0">
             <div className="codex-agent-sidebar__name">Codex 画布 Agent</div>
@@ -4272,21 +4313,15 @@ export default function CodexAgentSidebar({ open, onClose }: CodexAgentSidebarPr
           <div className="codex-agent-sidebar__empty-popover">原生历史不可用，当前显示侧栏本地记录。</div>
         )}
         {messages.length === 0 ? (
-          <>
-            <section className="codex-agent-sidebar__hero">
-              <span className="codex-agent-sidebar__hero-avatar" aria-hidden="true">
-                <span className="codex-agent-sidebar__mascot-hair" />
-                <span className="codex-agent-sidebar__mascot-face" />
-              </span>
-              <div>
-                <div className="codex-agent-sidebar__hello">Hi keroro!</div>
-                <h2>今天一起创作点什么？</h2>
-              </div>
-            </section>
+          <section className="codex-agent-sidebar__empty-state">
+            <div className="codex-agent-sidebar__empty-welcome">
+              <Sparkles size={15} aria-hidden="true" />
+              <span>告诉 Codex 你想在画布上完成什么</span>
+            </div>
 
-            <section className="codex-agent-sidebar__skill-directions" aria-label="项目技能方向">
+            <section className="codex-agent-sidebar__empty-skill" aria-label="项目技能方向">
               <div className="codex-agent-sidebar__section-head">
-                <span className="codex-agent-sidebar__section-label">项目 Skills</span>
+                <span className="codex-agent-sidebar__section-label">当前 Skill</span>
                 <button
                   type="button"
                   onClick={() => {
@@ -4294,7 +4329,7 @@ export default function CodexAgentSidebar({ open, onClose }: CodexAgentSidebarPr
                     closeFloatingPanels('skillLibrary');
                   }}
                 >
-                  Skill 库
+                  选择 Skill
                 </button>
               </div>
               {skillsLoading && <div className="codex-agent-sidebar__empty-popover">正在读取 Codex skills...</div>}
@@ -4327,7 +4362,7 @@ export default function CodexAgentSidebar({ open, onClose }: CodexAgentSidebarPr
                 ))}
               </div>
             </section>
-          </>
+          </section>
         ) : (
           <section className="codex-agent-sidebar__messages">
             {messages.map((item) => {

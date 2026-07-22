@@ -64,13 +64,10 @@ import {
   normalizePortraitAdvancedWeights,
   portraitAdvancedStats,
   portraitSelectionLooksUnderage,
-  randomizePortraitHiddenAdvanced,
   summarizePortraitAdvancedSelection,
 } from '../../data/portraitMasterAdvancedOptions';
 import { useRunTrigger } from '../../hooks/useRunTrigger';
 import { useThemeStore } from '../../stores/theme';
-import { trackAchievementEvent } from '../../stores/achievements';
-import { useHiddenFeatureStore, isYyhPortraitEnabled } from '../../stores/hiddenFeatures';
 import { resolveThemeTemplate } from '../../theme/defaultTemplates';
 import { materialSetItemFromText, materialSetItemsToData } from '../../utils/materialSet';
 import { defaultSizeOf, placeBatchNodes, placeSingleNode, type Rect } from '../../utils/nodePlacement';
@@ -714,14 +711,11 @@ const PortraitMasterNode = ({ id, data, selected }: NodeProps) => {
   const rf = useReactFlow();
   const { activeId, canvases, loadCanvases } = useCanvasStore();
   const { templateId, customTemplates } = useThemeStore();
-  const yyhPortraitIds = useHiddenFeatureStore((s) => s.yyhPortraitIds);
   const d = (data as any) || {};
   const activeTemplate = useMemo(
     () => resolveThemeTemplate(templateId, customTemplates),
     [templateId, customTemplates],
   );
-  const isYyhVisual = activeTemplate.visuals?.style === 'yyh';
-  const yyhHiddenMode = Boolean(isYyhVisual && isYyhPortraitEnabled(yyhPortraitIds, id));
 
   const jsonInputRef = useRef<HTMLInputElement | null>(null);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
@@ -739,7 +733,6 @@ const PortraitMasterNode = ({ id, data, selected }: NodeProps) => {
   const [batchCount, setBatchCount] = useState(3);
   const [batchMode, setBatchMode] = useState<PortraitBatchMode>('text-nodes');
   const [targetCanvasId, setTargetCanvasId] = useState('');
-  const [hiddenRandomEnabled, setHiddenRandomEnabled] = useState(false);
   const [resourceDialogOpen, setResourceDialogOpen] = useState(false);
   const [resourceCategories, setResourceCategories] = useState<api.ResourceCategory[]>([]);
   const [resourceCategoryId, setResourceCategoryId] = useState('set_uncategorized');
@@ -768,10 +761,9 @@ const PortraitMasterNode = ({ id, data, selected }: NodeProps) => {
   const advancedWeights = useMemo(() => normalizePortraitAdvancedWeights(d.portraitAdvancedWeights), [d.portraitAdvancedWeights]);
   const customText = typeof d.portraitCustomText === 'string' ? d.portraitCustomText : '';
   const language = safeLanguage(d.portraitLanguage);
-  const hiddenBlockedByBase = yyhHiddenMode && portraitSelectionLooksUnderage(selection);
   const prompt = useMemo(
-    () => promptFromState(selection, weights, customText, language, advancedSelection, advancedWeights, yyhHiddenMode),
-    [selection, weights, customText, language, advancedSelection, advancedWeights, yyhHiddenMode],
+    () => promptFromState(selection, weights, customText, language, advancedSelection, advancedWeights),
+    [selection, weights, customText, language, advancedSelection, advancedWeights],
   );
   const stats = portraitSelectionStats(selection);
   const advancedStats = portraitAdvancedStats(advancedSelection);
@@ -779,7 +771,7 @@ const PortraitMasterNode = ({ id, data, selected }: NodeProps) => {
   const advancedSummary = summarizePortraitAdvancedSelection(advancedSelection, 'zh');
   const activeCategory = PORTRAIT_CATEGORIES.find((item) => item.id === activeCategoryId) || PORTRAIT_CATEGORIES[0];
   const activeAdvancedCategory = PORTRAIT_ADVANCED_CATEGORIES.find((item) => item.id === activeAdvancedCategoryId) || PORTRAIT_ADVANCED_CATEGORIES[0];
-  const editorCategory = showAdvancedPanel && yyhHiddenMode ? activeAdvancedCategory : activeCategory;
+  const editorCategory = showAdvancedPanel ? activeAdvancedCategory : activeCategory;
   const selectedTargetCanvasId = targetCanvasId || activeId || canvases[0]?.id || '';
   const selectedTargetCanvas = canvases.find((canvas) => canvas.id === selectedTargetCanvasId) || null;
 
@@ -791,7 +783,7 @@ const PortraitMasterNode = ({ id, data, selected }: NodeProps) => {
       const nextAdvancedWeights = normalizePortraitAdvancedWeights(patch.portraitAdvancedWeights ?? advancedWeights);
       const nextCustomText = typeof patch.portraitCustomText === 'string' ? patch.portraitCustomText : customText;
       const nextLanguage = safeLanguage(patch.portraitLanguage ?? language);
-      const includeAdvanced = Boolean(patch.portraitAdvancedEnabled ?? yyhHiddenMode);
+      const includeAdvanced = Boolean(patch.portraitAdvancedEnabled);
       const advancedBlocked = includeAdvanced && portraitSelectionLooksUnderage(nextSelection);
       const nextPrompt = promptFromState(
         nextSelection,
@@ -826,18 +818,16 @@ const PortraitMasterNode = ({ id, data, selected }: NodeProps) => {
         portraitStats: portraitSelectionStats(nextSelection),
         portraitAdvancedSummary: summarizePortraitAdvancedSelection(nextAdvancedSelection, 'zh'),
         portraitAdvancedStats: portraitAdvancedStats(nextAdvancedSelection),
-        yyhPortraitHidden: includeAdvanced,
         portraitSchemaVersion: SCHEMA_VERSION,
       });
     },
-    [advancedSelection, advancedWeights, customText, language, selection, update, weights, yyhHiddenMode],
+    [advancedSelection, advancedWeights, customText, language, selection, update, weights],
   );
 
   useEffect(() => {
-    const advancedEnabled = yyhHiddenMode;
+    const advancedEnabled = false;
     const advancedBlocked = advancedEnabled && portraitSelectionLooksUnderage(selection);
-    const hiddenFlag = advancedEnabled;
-    if (d.prompt === prompt && Boolean(d.yyhPortraitHidden) === hiddenFlag) return;
+    if (d.prompt === prompt) return;
     update({
       prompt,
       text: prompt,
@@ -860,7 +850,6 @@ const PortraitMasterNode = ({ id, data, selected }: NodeProps) => {
       portraitStats: portraitSelectionStats(selection),
       portraitAdvancedSummary: advancedSummary,
       portraitAdvancedStats: advancedStats,
-      yyhPortraitHidden: hiddenFlag,
       portraitSchemaVersion: SCHEMA_VERSION,
     });
   }, [
@@ -870,13 +859,11 @@ const PortraitMasterNode = ({ id, data, selected }: NodeProps) => {
     advancedWeights,
     customText,
     d.prompt,
-    d.yyhPortraitHidden,
     language,
     prompt,
     selection,
     update,
     weights,
-    yyhHiddenMode,
   ]);
 
   const currentBackup = useCallback(
@@ -890,9 +877,9 @@ const PortraitMasterNode = ({ id, data, selected }: NodeProps) => {
       advancedWeights,
       customText,
       language,
-      includeAdvanced: yyhHiddenMode,
+      includeAdvanced: false,
     }),
-    [advancedLocks, advancedSelection, advancedWeights, customText, language, locks, selection, weights, yyhHiddenMode],
+    [advancedLocks, advancedSelection, advancedWeights, customText, language, locks, selection, weights],
   );
 
   const applyBackup = useCallback(
@@ -937,38 +924,28 @@ const PortraitMasterNode = ({ id, data, selected }: NodeProps) => {
     const next = { ...advancedSelection };
     if (optionId) next[groupId] = optionId;
     else delete next[groupId];
-    commit({ portraitAdvancedSelection: next, portraitAdvancedEnabled: yyhHiddenMode });
+    commit({ portraitAdvancedSelection: next });
   };
 
   const toggleAdvancedLock = (groupId: string) => {
     const next: PortraitLocks = { ...advancedLocks, [groupId]: !advancedLocks[groupId] };
-    commit({ portraitAdvancedLocks: next, portraitAdvancedEnabled: yyhHiddenMode });
+    commit({ portraitAdvancedLocks: next });
   };
 
   const changeAdvancedWeight = (groupId: string, value: string) => {
     const next: PortraitWeights = { ...advancedWeights, [groupId]: clampWeight(value) };
-    commit({ portraitAdvancedWeights: next, portraitAdvancedEnabled: yyhHiddenMode });
+    commit({ portraitAdvancedWeights: next });
   };
 
   const clearAdvancedCategory = (categoryId: string) => {
     commit({
       portraitAdvancedSelection: clearAdvancedCategorySelection(advancedSelection, categoryId),
-      portraitAdvancedEnabled: yyhHiddenMode,
     });
   };
 
   const handleHiddenRandom = (categoryId?: string) => {
-    if (!yyhHiddenMode || hiddenBlockedByBase) {
-      logBus.warn('隐藏高级词条仅支持成年角色设定，当前基础人物不会输出隐藏词条。', '肖像大师');
-      return;
-    }
-    const next = randomizePortraitHiddenAdvanced({
-      current: advancedSelection,
-      locks: advancedLocks,
-      categoryId,
-      seed: seedFromString(randomSeed || `${Date.now()}`),
-    });
-    commit({ portraitAdvancedSelection: next, portraitAdvancedEnabled: true });
+    logBus.warn('隐藏高级词条仅支持成年角色设定，当前基础人物不会输出隐藏词条。', '肖像大师');
+    return;
   };
 
   const handleRandom = () => {
@@ -981,14 +958,6 @@ const PortraitMasterNode = ({ id, data, selected }: NodeProps) => {
       seedText: randomSeed,
     });
     const patch: Record<string, any> = { portraitSelection: next };
-    if (yyhHiddenMode && hiddenRandomEnabled && !portraitSelectionLooksUnderage(next)) {
-      patch.portraitAdvancedSelection = randomizePortraitHiddenAdvanced({
-        current: advancedSelection,
-        locks: advancedLocks,
-        seed: seedFromString(randomSeed || `${Date.now()}`),
-      });
-      patch.portraitAdvancedEnabled = true;
-    }
     commit(patch);
   };
 
@@ -1329,13 +1298,7 @@ const PortraitMasterNode = ({ id, data, selected }: NodeProps) => {
           seedText,
           offset: i + attempt * count + 1,
         });
-        const nextAdvancedSelection = yyhHiddenMode && hiddenRandomEnabled && !portraitSelectionLooksUnderage(nextSelection)
-          ? randomizePortraitHiddenAdvanced({
-              current: advancedSelection,
-              locks: advancedLocks,
-              seed: seedFromString(`${seedText}:advanced`),
-            })
-          : advancedSelection;
+        const nextAdvancedSelection = advancedSelection;
         text = promptFromState(
           nextSelection,
           weights,
@@ -1343,7 +1306,6 @@ const PortraitMasterNode = ({ id, data, selected }: NodeProps) => {
           language,
           nextAdvancedSelection,
           advancedWeights,
-          yyhHiddenMode,
         ).trim();
         if (!text || !seen.has(text)) break;
       }
@@ -1373,8 +1335,8 @@ const PortraitMasterNode = ({ id, data, selected }: NodeProps) => {
         weights,
         advancedSelection,
         advancedWeights,
-        advancedEnabled: yyhHiddenMode,
-        advancedBlocked: hiddenBlockedByBase,
+        advancedEnabled: false,
+        advancedBlocked: false,
         customText,
         language,
         prompt: finalPrompt,
@@ -1382,9 +1344,6 @@ const PortraitMasterNode = ({ id, data, selected }: NodeProps) => {
       },
       status: 'success',
     });
-    if (yyhHiddenMode) {
-      trackAchievementEvent({ type: 'hidden_mode.used', theme: 'yyh', kind: 'yyh-portrait', mode: 'used', nodeType: 'portrait-master' });
-    }
 
     const nodes = rf.getNodes();
     const edges = rf.getEdges();
@@ -1401,9 +1360,8 @@ const PortraitMasterNode = ({ id, data, selected }: NodeProps) => {
         nds.map((node) => {
           if (!downstreamOutputIds.has(node.id)) return node;
           const nd = (node.data as any) || {};
-          const nextHidden = yyhHiddenMode;
-          if (nd.directOutputText === finalPrompt && Boolean(nd.yyhPortraitHidden) === nextHidden) return node;
-          return { ...node, data: { ...nd, directOutputText: finalPrompt, yyhPortraitHidden: nextHidden, yyhPortraitSourceNodeId: id } };
+          if (nd.directOutputText === finalPrompt) return node;
+          return { ...node, data: { ...nd, directOutputText: finalPrompt } };
         }),
       );
       return;
@@ -1420,7 +1378,7 @@ const PortraitMasterNode = ({ id, data, selected }: NodeProps) => {
       id: newId,
       type: 'output',
       position: pos,
-      data: { directOutputText: finalPrompt, yyhPortraitHidden: yyhHiddenMode, yyhPortraitSourceNodeId: id },
+      data: { directOutputText: finalPrompt },
       selected: false,
     } as Node;
     const newEdge: Edge = {
@@ -1428,8 +1386,6 @@ const PortraitMasterNode = ({ id, data, selected }: NodeProps) => {
       source: id,
       target: newId,
       type: 'deletable',
-      className: yyhHiddenMode ? 'yyh-portrait-hidden-edge' : undefined,
-      data: yyhHiddenMode ? { yyhPortraitHiddenEdge: true } : undefined,
     } as Edge;
     rf.addNodes(newNode);
     rf.setEdges((eds) => [...eds, newEdge]);
@@ -1440,7 +1396,7 @@ const PortraitMasterNode = ({ id, data, selected }: NodeProps) => {
   const filteredOptionIds = useMemo(() => {
     const keyword = search.trim().toLowerCase();
     if (!keyword) return null;
-    const groups = showAdvancedPanel && yyhHiddenMode ? activeAdvancedCategory.groups : activeCategory.groups;
+    const groups = showAdvancedPanel ? activeAdvancedCategory.groups : activeCategory.groups;
     return new Set(
       groups.flatMap((group) =>
         group.options
@@ -1450,13 +1406,12 @@ const PortraitMasterNode = ({ id, data, selected }: NodeProps) => {
           .map((option) => option.id),
       ),
     );
-  }, [activeAdvancedCategory, activeCategory, search, showAdvancedPanel, yyhHiddenMode]);
+  }, [activeAdvancedCategory, activeCategory, search, showAdvancedPanel]);
 
   return (
     <div
-      className={`t8-node relative w-[560px] overflow-visible transition-all ${selected ? 'ring-2 ring-pink-300' : ''}`}
+      className={`t8-node relative w-[560px] overflow-visible transition-all ${selected ? 'is-selected' : ''}`}
       data-node-kind="portrait-master"
-      data-yyh-portrait-hidden={yyhHiddenMode ? 'true' : undefined}
     >
       <Handle type="target" position={Position.Left} style={{ background: PORT_COLOR.text, border: 0 }} />
       <Handle type="source" position={Position.Right} style={{ background: PORT_COLOR.text, border: 0 }} />
@@ -1471,7 +1426,7 @@ const PortraitMasterNode = ({ id, data, selected }: NodeProps) => {
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm font-black">肖像大师</div>
           <div className="truncate text-[10px]" style={{ color: 'var(--t8-text-muted)' }}>
-            {stats.selected}/{stats.totalGroups} 项 · prompt 捏人系统{yyhHiddenMode ? ` · 隐藏 ${advancedStats.selected}/${advancedStats.totalGroups}` : ''}
+            {stats.selected}/{stats.totalGroups} 项 · prompt 捏人系统
           </div>
         </div>
         <button
@@ -1538,15 +1493,14 @@ const PortraitMasterNode = ({ id, data, selected }: NodeProps) => {
       {isEditorOpen && typeof document !== 'undefined' && createPortal(
         <div
           className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/45 p-5"
-          data-canvas-floating-ui="portrait-master-editor"
-          onPointerDown={(event) => event.stopPropagation()}
-          onMouseDown={(event) => event.stopPropagation()}
-          onWheel={(event) => event.stopPropagation()}
-        >
-          <div
-            className="t8-panel nodrag nopan flex max-h-[92vh] w-[1320px] max-w-[98vw] flex-col overflow-hidden"
-            data-yyh-portrait-editor-hidden={yyhHiddenMode ? 'true' : undefined}
+            data-canvas-floating-ui="portrait-master-editor"
             onPointerDown={(event) => event.stopPropagation()}
+            onMouseDown={(event) => event.stopPropagation()}
+            onWheel={(event) => event.stopPropagation()}
+          >
+            <div
+              className="t8-panel nodrag nopan flex max-h-[92vh] w-[1320px] max-w-[98vw] flex-col overflow-hidden"
+              onPointerDown={(event) => event.stopPropagation()}
             onMouseDown={(event) => event.stopPropagation()}
           >
             <input ref={jsonInputRef} type="file" accept="application/json" className="hidden" onChange={handleImportJson} />
@@ -1583,30 +1537,6 @@ const PortraitMasterNode = ({ id, data, selected }: NodeProps) => {
                       </button>
                     );
                   })}
-                  {yyhHiddenMode && (
-                    <>
-                      <div className="px-1 pt-2 text-[10px] font-bold" style={{ color: 'var(--t8-danger)' }}>
-                        幽游隐藏高级
-                      </div>
-                      {PORTRAIT_ADVANCED_CATEGORIES.map((category) => {
-                        const active = showAdvancedPanel && category.id === activeAdvancedCategory.id;
-                        return (
-                          <button
-                            key={category.id}
-                            type="button"
-                            className={`t8-btn w-full justify-between px-2 py-2 text-left text-[11px] ${active ? 't8-btn-primary' : ''}`}
-                            onClick={() => {
-                              setShowAdvancedPanel(true);
-                              setActiveAdvancedCategoryId(category.id);
-                            }}
-                          >
-                            <span className="truncate">{category.label}</span>
-                            <span className="shrink-0 text-[10px]">{categoryAdvancedOptionCount(category.id)}</span>
-                          </button>
-                        );
-                      })}
-                    </>
-                  )}
                 </div>
               </aside>
 
@@ -1616,11 +1546,6 @@ const PortraitMasterNode = ({ id, data, selected }: NodeProps) => {
                     <div>
                       <div className="text-sm font-black">{editorCategory.label}</div>
                       <div className="text-[11px]" style={{ color: 'var(--t8-text-muted)' }}>{editorCategory.description}</div>
-                      {showAdvancedPanel && hiddenBlockedByBase && (
-                        <div className="mt-1 rounded px-2 py-1 text-[10px]" style={{ background: 'color-mix(in srgb, var(--t8-danger) 14%, transparent)', color: 'var(--t8-danger)' }}>
-                          当前基础人物疑似未成年或学生设定，隐藏高级词条不会输出。
-                        </div>
-                      )}
                     </div>
                     <button
                       type="button"
@@ -1644,7 +1569,7 @@ const PortraitMasterNode = ({ id, data, selected }: NodeProps) => {
                 <div className="min-h-0 flex-1 overflow-y-auto pr-1">
                   <div className="grid grid-cols-2 gap-2">
                     {editorCategory.groups.map((group) => {
-                      const advancedGroup = showAdvancedPanel && yyhHiddenMode;
+                      const advancedGroup = showAdvancedPanel;
                       const optionMap = advancedGroup ? PORTRAIT_ADVANCED_OPTION_BY_ID : PORTRAIT_OPTION_BY_ID;
                       const selectedOptionId = (advancedGroup ? advancedSelection : selection)[group.id] || '';
                       const selectedOption = selectedOptionId ? optionMap.get(selectedOptionId) : null;
@@ -1743,36 +1668,6 @@ const PortraitMasterNode = ({ id, data, selected }: NodeProps) => {
                     {prompt || <span style={{ color: 'var(--t8-text-dim)' }}>暂未选择任何词条。</span>}
                   </div>
                 </div>
-                {yyhHiddenMode && (
-                  <div className="t8-card space-y-2 p-2" data-yyh-portrait-hidden-panel="true">
-                    <div className="flex items-center justify-between gap-2 text-[12px] font-black">
-                      <span>隐藏高级</span>
-                      <span className="text-[10px]" style={{ color: hiddenBlockedByBase ? 'var(--t8-danger)' : 'var(--t8-accent)' }}>
-                        {hiddenBlockedByBase ? '已安全屏蔽' : `${advancedStats.selected}/${advancedStats.totalGroups}`}
-                      </span>
-                    </div>
-                    <div className="text-[10px] leading-relaxed" style={{ color: 'var(--t8-text-muted)' }}>
-                      {hiddenBlockedByBase ? '基础人物含少女、少年、学生等设定，隐藏成人词条不会参与 prompt。' : advancedSummary}
-                    </div>
-                    <label className="flex items-center justify-between gap-2 rounded px-2 py-1 text-[10px]" style={{ background: 'var(--t8-bg-panel-muted)' }}>
-                      <span>随机时加入隐藏词条</span>
-                      <input
-                        type="checkbox"
-                        checked={hiddenRandomEnabled}
-                        onChange={(event) => setHiddenRandomEnabled(event.target.checked)}
-                        disabled={hiddenBlockedByBase}
-                      />
-                    </label>
-                    <div className="grid grid-cols-2 gap-1.5">
-                      <button type="button" className="t8-btn min-h-8 px-2 text-[10px]" onClick={() => handleHiddenRandom(activeAdvancedCategory.id)} disabled={hiddenBlockedByBase}>
-                        <Sparkles size={12} /> 随当前隐藏类
-                      </button>
-                      <button type="button" className="t8-btn min-h-8 px-2 text-[10px]" onClick={() => handleHiddenRandom()} disabled={hiddenBlockedByBase}>
-                        <Shuffle size={12} /> 随全部隐藏
-                      </button>
-                    </div>
-                  </div>
-                )}
                 <div className="t8-card space-y-2 p-2">
                   <div className="flex items-center justify-between gap-2 text-[12px] font-black">
                     <span className="inline-flex items-center gap-1"><Star size={13} /> 角色库</span>

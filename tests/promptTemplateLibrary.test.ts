@@ -144,9 +144,6 @@ test('prompt template button is wired into shared prompt inputs and core media n
   const audio = read('../src/components/nodes/AudioNode.tsx');
   const llm = read('../src/components/nodes/LLMNode.tsx');
   const panorama = read('../src/components/nodes/Panorama3DNode.tsx');
-  const runningHub = read('../src/components/nodes/RunningHubNode.tsx');
-  const rhTools = read('../src/components/nodes/RHToolsNode.tsx');
-  const comfyStore = read('../src/components/nodes/ComfyUIStoreNode.tsx');
 
   assert.match(textarea, /PromptTemplateLibraryModal/);
   assert.match(textarea, /promptTemplateKind\?:\s*PromptTemplateKind \| false/);
@@ -161,9 +158,6 @@ test('prompt template button is wired into shared prompt inputs and core media n
   assert.match(audio, /promptTemplateKind="video"/);
   assert.match(llm, /promptTemplateKind="image"/);
   assert.match(panorama, /promptTemplateKind="image"/);
-  assert.match(runningHub, /promptTemplateKind="image"/);
-  assert.match(rhTools, /promptTemplateKind="image"/);
-  assert.match(comfyStore, /promptTemplateKind="image"/);
 });
 
 test('generated materials can be saved to prompt templates from context menu', () => {

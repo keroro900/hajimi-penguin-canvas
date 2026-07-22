@@ -1,4 +1,5 @@
 import { getTemplateMode } from './defaultTemplates';
+import { FOUNDATION_CANVAS_BY_MODE, normalizeSolidCanvasColor } from './solidColor';
 import type { ThemeMode, ThemeTemplate, ThemeTokens } from './types';
 
 const TOKEN_CSS_MAP: Record<keyof ThemeTokens, string> = {
@@ -71,6 +72,7 @@ export function applyThemeTemplate(template: ThemeTemplate, mode: ThemeMode) {
   const root = document.documentElement;
   const activeMode = getTemplateMode(template, mode);
   const tokens = activeMode.tokens;
+  const canvasBg = normalizeSolidCanvasColor(tokens.canvasBg, FOUNDATION_CANVAS_BY_MODE[mode]);
   const visuals = template.visuals || {
     style: template.legacyStyle === 'tech' ? 'tech' : 'pixel',
     intensity: 'medium',
@@ -85,13 +87,23 @@ export function applyThemeTemplate(template: ThemeTemplate, mode: ThemeMode) {
   root.setAttribute('data-theme-visual', visuals.style);
   root.setAttribute('data-theme-intensity', visuals.intensity || 'medium');
   root.setAttribute('data-theme-icon-pack', visuals.iconPack || 'default');
-  root.setAttribute('data-theme-canvas-pattern', visuals.canvasPattern || 'dots');
+  root.setAttribute('data-theme-canvas-pattern', 'none');
   root.setAttribute('data-theme-node-frame', visuals.nodeFrame || 'plain');
   root.style.colorScheme = mode;
 
   (Object.keys(TOKEN_CSS_MAP) as Array<keyof ThemeTokens>).forEach((key) => {
+    if (key === 'canvasBg') return;
     root.style.setProperty(TOKEN_CSS_MAP[key], tokens[key]);
   });
+  root.style.setProperty('--t8-bg-canvas', canvasBg);
+  root.style.setProperty(
+    '--t8-shadow-node',
+    tokens.shadowPanel || '0 8px 24px rgba(0, 0, 0, 0.18)',
+  );
+  root.style.setProperty('--t8-node-bg', 'var(--t8-bg-node)');
+  root.style.setProperty('--t8-node-header-bg', 'var(--t8-bg-node-header)');
+  root.style.setProperty('--t8-node-shadow', 'var(--t8-shadow-node)');
+  root.style.setProperty('--t8-text', 'var(--t8-text-main)');
 
   if (template.legacyStyle === 'pixel') {
     applyPixelCompatibility(root, tokens, mode);

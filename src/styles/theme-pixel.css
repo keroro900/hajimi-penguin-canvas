@@ -323,29 +323,6 @@ html[data-theme-style="pixel"] .px-node-header--rh { background: var(--px-candy-
 html[data-theme-style="pixel"] .px-node-header--text { background: var(--px-candy-peach); }
 html[data-theme-style="pixel"] .px-node-header--utility { background: var(--px-muted); }
 
-/* ===========================================
- * 节点全局兼容层(不改各节点代码,CSS 接管)
- * 思路:节点根 div 强制覆盖背景与边框,并让内部表单变奥利白底
- * =========================================== */
-html[data-theme-style="pixel"] .react-flow__node:not(.react-flow__node-groupBox) > div:first-child {
-  background: var(--px-surface) !important;
-  background-color: var(--px-surface) !important;
-  background-image: none !important;
-  border: var(--px-border-w) solid var(--px-ink) !important;
-  border-radius: var(--px-radius-card) !important;
-  box-shadow: var(--px-shadow-hard) !important;
-  backdrop-filter: none !important;
-  color: var(--px-ink) !important;
-  font-family: var(--px-font-display) !important;
-}
-
-/* 选中节点 */
-html[data-theme-style="pixel"] .react-flow__node.selected:not(.react-flow__node-groupBox) > div:first-child {
-  outline: 3px dashed var(--px-pink-deep) !important;
-  outline-offset: 3px !important;
-  box-shadow: var(--px-shadow-hard-lg) !important;
-}
-
 /* LLM 节点右侧会话面板(像素风适配) */
 html[data-theme-style="pixel"] .react-flow__node-llm .llm-chat-panel {
   background: var(--px-surface) !important;
@@ -555,8 +532,6 @@ html[data-theme-style="pixel"] .react-flow__node .hover\:bg-white\/5:hover {
 
 /* xyflow Handle 接口圆点变方块 */
 html[data-theme-style="pixel"] .react-flow__handle {
-  width: 10px !important;
-  height: 10px !important;
   border-radius: 2px !important;
   border: 2px solid var(--px-ink) !important;
   background: var(--px-candy-yellow) !important;
@@ -615,15 +590,6 @@ html[data-theme-style="pixel"] .react-flow__edge:hover .react-flow__edge-path {
   stroke: var(--px-pink-deep) !important;
 }
 
-/* 画布背景:点变方块 */
-html[data-theme-style="pixel"] .react-flow__background {
-  background-color: var(--px-bg) !important;
-}
-html[data-theme-style="pixel"] .react-flow__background-pattern circle {
-  fill: var(--px-ink-dim) !important;
-  opacity: 0.35;
-}
-
 /* 选区框 */
 html[data-theme-style="pixel"] .react-flow__nodesselection-rect,
 html[data-theme-style="pixel"] .react-flow__selection {
@@ -633,10 +599,10 @@ html[data-theme-style="pixel"] .react-flow__selection {
 
 /* 控制器 */
 html[data-theme-style="pixel"] .react-flow__controls {
-  background: var(--px-surface) !important;
-  border: var(--px-border-w) solid var(--px-ink) !important;
-  border-radius: 12px !important;
-  box-shadow: var(--px-shadow-hard) !important;
+  background: var(--t8-bg-panel-elevated) !important;
+  border: 1px solid var(--t8-border) !important;
+  border-radius: var(--t8-radius-panel) !important;
+  box-shadow: var(--t8-shadow-panel) !important;
   overflow: hidden;
 }
 html[data-theme-style="pixel"] .react-flow__controls-button {
@@ -647,15 +613,6 @@ html[data-theme-style="pixel"] .react-flow__controls-button {
 html[data-theme-style="pixel"] .react-flow__controls-button:hover {
   background: var(--px-candy-mint) !important;
 }
-
-/* MiniMap */
-html[data-theme-style="pixel"] .react-flow__minimap {
-  background: var(--px-surface) !important;
-  border: var(--px-border-w) solid var(--px-ink) !important;
-  border-radius: 12px !important;
-  box-shadow: var(--px-shadow-hard) !important;
-}
-
 /* 模态遮罩 */
 html[data-theme-style="pixel"] .px-modal-mask {
   background-color: var(--px-overlay) !important;

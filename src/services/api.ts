@@ -5,7 +5,6 @@
 import type { AdvancedProviderConfig, ApiSettings, CanvasData, CanvasListItem, CloudUploadSummary, CloudUploadTargetConfig } from '../types/canvas';
 import type { ThemeTemplate } from '../theme/types';
 import type { MediaKind } from '../utils/mediaCollection';
-import type { RhToolboxManifest } from '../utils/rhToolbox';
 
 const BASE = '/api';
 
@@ -143,6 +142,20 @@ export async function verifyAgentCanvasPlan(payload: {
   return res.data;
 }
 
+export async function undoAgentCanvasOperationBatch(operationBatchId: string, payload: {
+  canvasId?: string;
+  force?: boolean;
+} = {}): Promise<any> {
+  const res = await request<{ success: boolean; data: any }>(
+    `${BASE}/agent/canvas/operations/${encodeURIComponent(operationBatchId)}/undo`,
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    },
+  );
+  return res.data;
+}
+
 export async function createCanvas(name?: string): Promise<CanvasListItem> {
   const res = await request<{ success: boolean; data: CanvasListItem }>(`${BASE}/canvas`, {
     method: 'POST',
@@ -258,6 +271,10 @@ export interface AdvancedProviderTestResult {
   message?: string;
   error?: string;
   provider?: AdvancedProviderConfig;
+  cached?: boolean;
+  fetchedAt?: string;
+  modelListUrl?: string;
+  warning?: string;
 }
 
 export interface AdvancedProviderModelsResult {
@@ -269,6 +286,8 @@ export interface AdvancedProviderModelsResult {
   modelCount?: number;
   imageModels?: string[];
   videoModels?: string[];
+  audioModels?: string[];
+  unknownModels?: string[];
   chatModels?: string[];
   all?: string[];
   message?: string;
@@ -345,6 +364,7 @@ export async function fetchAdvancedProviderModels(payload: {
 export async function fetchZhenzhenModels(payload: {
   baseUrl?: string;
   apiKey?: string;
+  apiKeyField?: string;
   timeoutMs?: number;
 }): Promise<AdvancedProviderModelsResult> {
   const res = await request<{
@@ -461,72 +481,6 @@ export async function saveAssetToDisk(
   }
 }
 
-export interface DuckDecodeFileItem {
-  sourceUrl: string;
-  decoded: boolean;
-  url?: string;
-  filename?: string;
-  size?: number;
-  kind?: MediaKind;
-  mime?: string;
-  originalExt?: string;
-  ext?: string;
-  isDuck?: boolean;
-  passwordProtected?: boolean;
-  reason?: string;
-}
-
-export async function decodeDuckFiles(
-  urls: string[],
-): Promise<{ items: DuckDecodeFileItem[]; decodedCount: number }> {
-  const res = await request<{
-    success: boolean;
-    data: { items: DuckDecodeFileItem[]; decodedCount: number };
-  }>(`${BASE}/files/duck-decode`, {
-    method: 'POST',
-    body: JSON.stringify({ urls }),
-  });
-  return res.data || { items: [], decodedCount: 0 };
-}
-
-// ========== RH 工具节点 (v1.2.10+) ==========
-//   与顶层控件区分：仅供 RHToolsNode 使用，与 RH 应用创意包数据完全分开。
-//   后端走 T8 自己的 18766 服务。
-
-export interface RHToolCategory {
-  id: string;
-  name: string;
-  order: number;
-  createdAt: number;
-}
-
-export interface RHTool {
-  id: string;
-  webappId: string;
-  title: string;
-  description: string;
-  categoryId: string;
-  coverUrl: string;
-  order: number;
-  addedAt: number;
-}
-
-export interface RHToolsBackup {
-  schema?: 't8-rh-tools' | string;
-  version?: number;
-  exportedAt?: string;
-  categories: RHToolCategory[];
-  tools: RHTool[];
-}
-
-export interface AddRHToolPayload {
-  webappId: string;
-  title: string;
-  description?: string;
-  categoryId?: string;
-  coverUrl?: string;
-}
-
 export type OkData<T> = { success: true; data: T };
 export type ErrData = { success: false; error: string; data?: any };
 export type Result<T> = OkData<T> | ErrData;
@@ -544,92 +498,6 @@ async function safeRequest<T>(url: string, init?: RequestInit): Promise<Result<T
   } catch (e: any) {
     return { success: false, error: e?.message || '网络错误' };
   }
-}
-
-export interface RhToolboxManifestPersistenceResult {
-  manifest: RhToolboxManifest;
-  path?: string;
-  categoryCount: number;
-  toolCount: number;
-}
-
-export function getRhToolboxPersistentManifest() {
-  return safeRequest<RhToolboxManifestPersistenceResult>(`${BASE}/settings/rh-toolbox/manifest`);
-}
-
-export function saveRhToolboxPersistentManifest(manifest: RhToolboxManifest, source = 'maker') {
-  return safeRequest<RhToolboxManifestPersistenceResult>(`${BASE}/settings/rh-toolbox/manifest`, {
-    method: 'PUT',
-    body: JSON.stringify({ manifest, source }),
-  });
-}
-
-// ----- 分类 -----
-export function getRHToolCategories() {
-  return safeRequest<RHToolCategory[]>(`${BASE}/settings/rh-tool-categories`);
-}
-export function addRHToolCategory(name: string) {
-  return safeRequest<RHToolCategory>(`${BASE}/settings/rh-tool-categories`, {
-    method: 'POST',
-    body: JSON.stringify({ name }),
-  });
-}
-export function renameRHToolCategory(id: string, name: string) {
-  return safeRequest<RHToolCategory>(`${BASE}/settings/rh-tool-categories/${encodeURIComponent(id)}`, {
-    method: 'PUT',
-    body: JSON.stringify({ name }),
-  });
-}
-export function deleteRHToolCategory(id: string) {
-  return safeRequest<void>(`${BASE}/settings/rh-tool-categories/${encodeURIComponent(id)}`, {
-    method: 'DELETE',
-  });
-}
-export function reorderRHToolCategories(ids: string[]) {
-  return safeRequest<RHToolCategory[]>(`${BASE}/settings/rh-tool-categories/reorder`, {
-    method: 'POST',
-    body: JSON.stringify({ ids }),
-  });
-}
-
-// ----- 应用 -----
-export function getRHTools() {
-  return safeRequest<RHTool[]>(`${BASE}/settings/rh-tool-apps`);
-}
-export function addRHTool(payload: AddRHToolPayload) {
-  return safeRequest<RHTool>(`${BASE}/settings/rh-tool-apps`, {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  });
-}
-export function updateRHTool(id: string, payload: Partial<AddRHToolPayload>) {
-  return safeRequest<RHTool>(`${BASE}/settings/rh-tool-apps/${encodeURIComponent(id)}`, {
-    method: 'PUT',
-    body: JSON.stringify(payload),
-  });
-}
-export function deleteRHTool(id: string) {
-  return safeRequest<void>(`${BASE}/settings/rh-tool-apps/${encodeURIComponent(id)}`, {
-    method: 'DELETE',
-  });
-}
-export function reorderRHTools(ids: string[]) {
-  return safeRequest<RHTool[]>(`${BASE}/settings/rh-tool-apps/reorder`, {
-    method: 'POST',
-    body: JSON.stringify({ ids }),
-  });
-}
-export function getRHToolsBackup() {
-  return safeRequest<RHToolsBackup>(`${BASE}/settings/rh-tools/export`);
-}
-export function importRHToolsBackup(payload: RHToolsBackup, mode: 'replace' | 'merge' = 'replace') {
-  return safeRequest<{ categories: RHToolCategory[]; tools: RHTool[]; categoryCount: number; toolCount: number }>(
-    `${BASE}/settings/rh-tools/import`,
-    {
-      method: 'POST',
-      body: JSON.stringify({ ...payload, mode }),
-    }
-  );
 }
 
 // ========== 资源库 (v1.3.4) ==========
@@ -842,6 +710,14 @@ export interface FigmaImportResult {
   result?: any;
 }
 
+export interface PhotoshopImportResult {
+  commandId: string;
+  queued: boolean;
+  queueSize: number;
+  sent: number;
+  skipped: number;
+}
+
 export function sendToEagle(payload: {
   materials: EagleImportMaterial[];
   tags?: string[];
@@ -860,6 +736,18 @@ export function sendToFigma(payload: {
   figmaApiBase?: string;
 }) {
   return safeRequest<FigmaImportResult>(`${BASE}/figma/import`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function sendToPhotoshop(payload: {
+  materials: EagleImportMaterial[];
+  tags?: string[];
+  sourceCanvasId?: string;
+  sourceLabel?: string;
+}) {
+  return safeRequest<PhotoshopImportResult>(`${BASE}/photoshop-bridge/send-to-photoshop`, {
     method: 'POST',
     body: JSON.stringify(payload),
   });
@@ -897,226 +785,5 @@ export function exportThemeTemplate(id: string) {
 export function deleteThemeTemplate(id: string) {
   return safeRequest<void>(`${BASE}/themes/templates/${encodeURIComponent(id)}`, {
     method: 'DELETE',
-  });
-}
-
-// ========== 主题成就 / 时长 ==========
-
-export type AchievementEventType =
-  | 'theme.active_tick'
-  | 'theme.switched'
-  | 'hidden_mode.enabled'
-  | 'hidden_mode.used'
-  | 'node.created'
-  | 'node.run_success'
-  | 'resource.saved'
-  | 'workflow.saved'
-  | 'panorama.generated'
-  | 'parsehub.resolved'
-  | 'dragon_ball.collected'
-  | 'dragon_ball.set_completed'
-  | 'saint_seiya.cloth_collected'
-  | 'saint_seiya.gold_completed'
-  | 'saint_seiya.battle_won'
-  | 'saint_seiya.cosmo_burst'
-  | 'tetris.game_started'
-  | 'tetris.line_clear'
-  | 'tetris.tetris_clear'
-  | 'tetris.level_reached'
-  | 'tetris.chapter_completed'
-  | 'tetris.clean_chapter_completed'
-  | 'tetris.game_over'
-  | 'farm.plot_tilled'
-  | 'farm.crop_planted'
-  | 'farm.crop_watered'
-  | 'farm.crop_harvested'
-  | 'farm.order_completed'
-  | 'farm.building_placed'
-  | 'farm.decor_placed'
-  | 'farm.rare_crop'
-  | 'farm.beauty_reward';
-
-export interface AchievementEventPayload {
-  type: AchievementEventType;
-  theme?: string;
-  amountSeconds?: number;
-  nodeType?: string;
-  kind?: string;
-  mode?: string;
-  category?: string;
-}
-
-export interface AchievementSummary {
-  today: string;
-  todaySeconds: number;
-  totalActiveSeconds: number;
-  achievementCount: number;
-  unlockedCount: number;
-  filmCount: number;
-  unlockedFilmCount: number;
-  recentUnlocks: AchievementDefinitionData[];
-  recentFilms: AchievementUnlockedFilm[];
-  dailyTasks?: AchievementDailyTask[];
-  weeklyPassport?: AchievementWeeklyPassport;
-  creativeReview?: AchievementCreativeReview;
-  themeShowcases?: Record<string, AchievementThemeShowcase>;
-}
-
-export interface AchievementDailyTask {
-  id: string;
-  theme: string;
-  themeLabel: string;
-  accent: string;
-  achievementId: string;
-  title: string;
-  description: string;
-  progress: number;
-  target: number;
-  ratio: number;
-  targetKind: string;
-  todaySeconds: number;
-}
-
-export interface AchievementWeeklyPassportTheme {
-  theme: string;
-  themeLabel: string;
-  shortLabel: string;
-  accent: string;
-  weeklySeconds: number;
-  actionCount: number;
-  completed: boolean;
-}
-
-export interface AchievementWeeklyPassport {
-  weekStart: string;
-  weekEnd: string;
-  targetThemeCount: number;
-  completedThemeCount: number;
-  ratio: number;
-  themes: AchievementWeeklyPassportTheme[];
-}
-
-export interface AchievementCreativeReview {
-  topTheme?: { theme: string; themeLabel: string; activeSeconds: number } | null;
-  todayTopTheme?: { theme: string; themeLabel: string; todaySeconds: number } | null;
-  weeklyActiveSeconds: number;
-  weeklyThemeCount: number;
-  mostUsedNodeType?: { key: string; value: number } | null;
-  recentCreativeEventCount: number;
-  nodesCreated: number;
-  runsSucceeded: number;
-  resourcesSaved: number;
-  workflowsSaved: number;
-  hiddenModeActivations: number;
-}
-
-export interface AchievementThemeShowcase {
-  theme: string;
-  themeLabel: string;
-  resourcesSaved: number;
-  workflowsSaved: number;
-  panoramasGenerated: number;
-  parseHubResolved: number;
-  topCategory: string;
-  topCategoryCount: number;
-  lastActivityAt: string;
-  hasShowcase: boolean;
-}
-
-export interface AchievementDefinitionData {
-  id: string;
-  theme: string;
-  themeLabel: string;
-  title: string;
-  description: string;
-  rarity: string;
-  condition: Record<string, any>;
-  medal?: boolean;
-  hidden?: boolean;
-}
-
-export interface AchievementUnlocked {
-  id: string;
-  theme: string;
-  title: string;
-  rarity: string;
-  unlockedAt: string;
-  eventType?: string;
-}
-
-export interface AchievementUnlockedFilm {
-  id: string;
-  theme: string;
-  title: string;
-  unlockedAt: string;
-  sourceAchievementId: string;
-  hasMedia: boolean;
-  status: 'awaiting-media' | string;
-  lockedText?: string;
-  unavailableText?: string;
-  playedSeconds?: number;
-  mediaUrl?: string;
-  mime?: string;
-  fileName?: string;
-}
-
-export interface AchievementProfile {
-  schema: 't8-achievements';
-  version: number;
-  profileId: string;
-  createdAt: string;
-  updatedAt: string;
-  themeStats: Record<string, any>;
-  events: Array<Record<string, any>>;
-  unlockedAchievements: Record<string, AchievementUnlocked>;
-  claimedMedals: Record<string, any>;
-  unlockedFilms: Record<string, AchievementUnlockedFilm>;
-  preferences: {
-    enabled: boolean;
-    showToast: boolean;
-    showTopBadge: boolean;
-  };
-}
-
-export interface AchievementProfileData {
-  profile: AchievementProfile;
-  manifest: Record<string, any>;
-  definitions: AchievementDefinitionData[];
-  summary: AchievementSummary;
-  event?: Record<string, any>;
-  ignored?: boolean;
-  ignoredReason?: string;
-}
-
-export function getAchievementProfile() {
-  return safeRequest<AchievementProfileData>(`${BASE}/achievements/profile`);
-}
-
-export function recordAchievementEvent(payload: AchievementEventPayload) {
-  return safeRequest<AchievementProfileData>(`${BASE}/achievements/event`, {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  });
-}
-
-export function updateAchievementPreferences(payload: Partial<AchievementProfile['preferences']>) {
-  return safeRequest<AchievementProfileData>(`${BASE}/achievements/preferences`, {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  });
-}
-
-export function resetAchievements() {
-  return safeRequest<AchievementProfileData>(`${BASE}/achievements/reset`, { method: 'POST' });
-}
-
-export function exportAchievements() {
-  return safeRequest<AchievementProfile>(`${BASE}/achievements/export`);
-}
-
-export function importAchievements(data: AchievementProfile | Record<string, any>) {
-  return safeRequest<AchievementProfileData>(`${BASE}/achievements/import`, {
-    method: 'POST',
-    body: JSON.stringify({ data }),
   });
 }

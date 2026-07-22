@@ -63,15 +63,9 @@ const StoryboardGridNode = (p: NodeProps) => {
 
   return (
     <div
-      className={`relative rounded-xl border-2 transition-all ${
-        p.selected ? 'shadow-2xl' : 'border-white/15 hover:border-white/30'
-      }`}
+      className={`t8-node relative rounded-xl transition-all ${p.selected ? 'is-selected' : ''}`}
       style={{
-        background: 'rgba(20,20,22,.92)',
-        backdropFilter: 'blur(8px)',
         width: 380,
-        borderColor: p.selected ? COLOR : undefined,
-        boxShadow: p.selected ? `0 0 0 1px ${COLOR}, 0 16px 32px rgba(129,140,248,.2)` : undefined,
       }}
     >
       <Handle type="target" position={Position.Left} style={{ background: COLOR, border: 0 }} />

@@ -298,11 +298,17 @@ const GridCropNode = (p: NodeProps) => {
   const orderLabel = GRID_ORDER_OPTIONS.find((item) => item.value === orderMode)?.label || '行优先';
   return (
     <ImageOpFrame
+      data-canvas-node-root={true}
+      className={`${p.selected ? 'is-selected' : ''}`}
       id={p.id}
       data={p.data}
       selected={p.selected}
+      dragging={p.dragging}
       title="宫格剪裁"
       subtitle={`${rows}×${cols}${gap > 0 ? ` · 去缝 ${gap}px` : ''} · ${orderLabel}`}
+      accessibleLabel="网格切图节点"
+      composerAriaLabel="网格切图节点属性"
+      emptyHint="连接上游图像后点击卡片"
       icon={<Grid3x3 size={13} />}
       colorHex="#fb923c"
       bgRgba="rgba(251,146,60,.2)"

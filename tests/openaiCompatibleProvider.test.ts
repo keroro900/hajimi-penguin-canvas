@@ -131,6 +131,49 @@ test('OpenAI compatible image generation normalizes url and b64_json results', a
   assert.equal(calls[0].body.image_size, '4K');
 });
 
+test('OpenAI compatible image generation can mirror the default gpt-size request body', async () => {
+  const calls: any[] = [];
+  const provider = {
+    id: 'custom-zhenzhen-compatible',
+    protocol: 'openai-compatible',
+    baseUrl: 'https://api.example.com/v1',
+    apiKey: 'sk-secret',
+    imageModels: ['gpt-image-2-all'],
+  };
+
+  const result = await openaiCompatible.generateImage(provider, {
+    prompt: 'a tiny penguin',
+    model: 'gpt-image-2-all',
+    paramKind: 'gpt-size',
+    size: '1536x1024',
+    aspect_ratio: '3:2',
+    image_size: '2K',
+    n: 2,
+    quality: 'high',
+    images: ['data:image/png;base64,AAA'],
+  }, {
+    fetchImpl: async (url: string, init: any) => {
+      calls.push({ url, init, body: JSON.parse(init.body) });
+      return jsonResponse({ data: [{ url: 'https://cdn.example.com/generated.png' }] });
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(calls[0].url, 'https://api.example.com/v1/images/generations');
+  assert.deepEqual(calls[0].body, {
+    model: 'gpt-image-2-all',
+    prompt: 'a tiny penguin',
+    n: 2,
+    quality: 'high',
+    size: '1536x1024',
+    resolution: '2k',
+    image_size: '2K',
+    images: ['data:image/png;base64,AAA'],
+    image: 'data:image/png;base64,AAA',
+    image_urls: ['data:image/png;base64,AAA'],
+  });
+});
+
 test('OpenAI compatible image generation uses chat completions for reference images only', async () => {
   const calls: any[] = [];
   const provider = {
@@ -256,6 +299,50 @@ test('OpenAI compatible video generation posts to video endpoint and normalizes 
   assert.equal(calls[0].body.aspect_ratio, '16:9');
   assert.equal(calls[0].body.duration, 6);
   assert.deepEqual(calls[0].body.images, ['data:image/png;base64,AAA']);
+});
+
+test('OpenAI compatible video generation can mirror the default Veo JSON request', async () => {
+  const calls: any[] = [];
+  const provider = {
+    id: 'custom-zhenzhen-video',
+    protocol: 'openai-compatible',
+    baseUrl: 'https://api.example.com/v1',
+    apiKey: 'sk-secret',
+    videoModels: ['veo3.1'],
+  };
+
+  const result = await openaiCompatible.generateVideo(provider, {
+    prompt: 'a quick pass',
+    model: 'veo3.1',
+    providerKind: 'veo',
+    aspect_ratio: '9:16',
+    seed: 123,
+    enhance_prompt: true,
+    enable_upsample: true,
+    images: ['data:image/png;base64,AAA'],
+  }, {
+    fetchImpl: async (url: string, init: any) => {
+      calls.push({ url, init, body: JSON.parse(init.body) });
+      return jsonResponse({
+        data: {
+          video_url: 'https://cdn.example.com/video.mp4',
+          task_id: 'vid-1',
+        },
+      });
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(calls[0].url, 'https://api.example.com/v2/videos/generations');
+  assert.deepEqual(calls[0].body, {
+    prompt: 'a quick pass',
+    model: 'veo3.1',
+    enhance_prompt: true,
+    aspect_ratio: '9:16',
+    seed: 123,
+    enable_upsample: true,
+    images: ['data:image/png;base64,AAA'],
+  });
 });
 
 test('OpenAI compatible video generation polls task responses until nested result url is ready', async () => {
@@ -448,6 +535,8 @@ test('OpenAI compatible model fetch groups upstream models for node usage', asyn
           { id: 'gpt-4o-mini' },
           { id: 'gpt-image-1' },
           { id: 'sora-2' },
+          { id: 'suno-v5' },
+          { id: 'vendor-new-model' },
           { id: 'gpt-4o-mini' },
         ],
       });
@@ -455,11 +544,13 @@ test('OpenAI compatible model fetch groups upstream models for node usage', asyn
   });
 
   assert.equal(result.ok, true);
-  assert.equal(result.total, 3);
+  assert.equal(result.total, 5);
   assert.deepEqual(result.chatModels, ['gpt-4o-mini']);
   assert.deepEqual(result.imageModels, ['gpt-image-1']);
   assert.deepEqual(result.videoModels, ['sora-2']);
-  assert.deepEqual(result.all, ['gpt-4o-mini', 'gpt-image-1', 'sora-2']);
+  assert.deepEqual(result.audioModels, ['suno-v5']);
+  assert.deepEqual(result.unknownModels, ['vendor-new-model']);
+  assert.deepEqual(result.all, ['gpt-4o-mini', 'gpt-image-1', 'sora-2', 'suno-v5', 'vendor-new-model']);
   assert.equal(calls[0].url, 'https://api.openai.com/v1/models');
   assert.equal(calls[0].init.headers.Authorization, 'Bearer sk-secret');
 });
@@ -481,6 +572,7 @@ test('OpenAI compatible model fetch accepts root base urls and image endpoint me
           { id: 'gpt-4o-mini', supported_endpoint_types: ['openai'] },
           { id: 'creative-pro', supported_endpoint_types: ['image-generation'] },
           { id: 'clip-maker', supported_endpoint_types: ['video-generation'] },
+          { id: 'voice-maker', supported_endpoint_types: ['audio-generation'] },
         ],
       });
     },
@@ -491,6 +583,27 @@ test('OpenAI compatible model fetch accepts root base urls and image endpoint me
   assert.deepEqual(result.chatModels, ['gpt-4o-mini']);
   assert.deepEqual(result.imageModels, ['creative-pro']);
   assert.deepEqual(result.videoModels, ['clip-maker']);
+  assert.deepEqual(result.audioModels, ['voice-maker']);
+});
+
+test('OpenAI compatible image generation requires a fetched or explicitly selected model', async () => {
+  let called = false;
+  const result = await openaiCompatible.generateImage({
+    id: 'empty-catalog',
+    protocol: 'openai-compatible',
+    baseUrl: 'https://api.example.com/v1',
+    apiKey: 'sk-secret',
+    imageModels: [],
+  }, { prompt: 'test' }, {
+    fetchImpl: async () => {
+      called = true;
+      return jsonResponse({ data: [] });
+    },
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.code, 'invalid_model');
+  assert.equal(called, false);
 });
 
 test('OpenAI compatible model fetch does not treat html as a parsed model list', async () => {

@@ -4,7 +4,6 @@ import {
   BaseEdge,
   EdgeLabelRenderer,
   getBezierPath,
-  getSmoothStepPath,
   useStore,
   useReactFlow,
   type EdgeProps,
@@ -12,6 +11,7 @@ import {
 import { useThemeStore } from '../../stores/theme';
 import { resolveThemeTemplate } from '../../theme/defaultTemplates';
 import { getNodeInputs, getNodeOutputs, type PortType } from '../../config/portTypes';
+import { attachEdgeEndpointToCard } from '../../utils/edgeEndpointGeometry';
 
 const SLAMDUNK_BASKETBALL_URL = new URL('../../assets/slamdunk-basketball-v2.png', import.meta.url).href;
 const SOCCER_BALL_URL = new URL('../../assets/soccer-ball-v2.png', import.meta.url).href;
@@ -95,12 +95,6 @@ export default function DeletableEdge(props: EdgeProps) {
   const portType = ((data as any)?.portType || inferPortTypeFromNodes(sourceNode, targetNode)) as PortType;
   const farmEdgeKind = farmEdgeKindFromPortType(portType);
   const farmEdgeKindClass = `t8-edge-kind-${farmEdgeKind}`;
-  const isRhDuckEdge = Boolean((data as any)?.rhDuckEdge || (targetNode?.data as any)?.rhDuckDecoded);
-  const isYyhPortraitHiddenEdge = Boolean(
-    (data as any)?.yyhPortraitHiddenEdge ||
-      (sourceNode?.data as any)?.yyhPortraitHidden ||
-      (targetNode?.data as any)?.yyhPortraitHidden,
-  );
   const [hover, setHover] = useState(false);
   const edgeDirectlyFocused = Boolean(selected || hover);
   const nodeRelatedEdgeFocused = Boolean(sourceSelected || targetSelected);
@@ -110,24 +104,19 @@ export default function DeletableEdge(props: EdgeProps) {
     edgeDirectlyFocused || (nodeRelatedEdgeFocused && selectedNodeMotionWithinBudget);
   const themeActiveClass = isThemeMotionActive ? 't8-edge-theme-active' : '';
   const edgeClassName = [
-    isRhDuckEdge ? 'rh-duck-edge' : '',
-    isYyhPortraitHiddenEdge ? 'yyh-portrait-hidden-edge' : '',
     farmEdgeKindClass,
     themeActiveClass,
   ].filter(Boolean).join(' ') || undefined;
 
   const edgePathOptions = {
-    sourceX,
+    sourceX: attachEdgeEndpointToCard(sourceX, sourcePosition, sourceNode?.type),
     sourceY,
     sourcePosition,
-    targetX,
+    targetX: attachEdgeEndpointToCard(targetX, targetPosition, targetNode?.type),
     targetY,
     targetPosition,
   };
-  const [edgePath, labelX, labelY] =
-    visualStyle === 'tetris'
-      ? getSmoothStepPath({ ...edgePathOptions, borderRadius: 0, offset: 34 })
-      : getBezierPath(edgePathOptions);
+  const [edgePath, labelX, labelY] = getBezierPath(edgePathOptions);
 
   // 用延迟关闭避免鼠标从 path 切到按钮的瞬间闪烁
   const hideTimer = useRef<number | null>(null);
@@ -145,8 +134,8 @@ export default function DeletableEdge(props: EdgeProps) {
 
   const visible = hover || !!selected;
   const canRenderDecorativeMotion = isThemeMotionActive;
-  const shouldRenderPassBall = visualStyle === 'slamdunk' && canRenderDecorativeMotion;
-  const shouldRenderSoccerBall = visualStyle === 'soccer-hero' && canRenderDecorativeMotion;
+  const shouldRenderPassBall = (visualStyle as string) === 'slamdunk' && canRenderDecorativeMotion;
+  const shouldRenderSoccerBall = (visualStyle as string) === 'soccer-hero' && canRenderDecorativeMotion;
   const passBallDelay = (shouldRenderPassBall || shouldRenderSoccerBall) ? edgeDelay(id) : '0s';
 
   const handleCut = (e: React.MouseEvent) => {
@@ -166,6 +155,22 @@ export default function DeletableEdge(props: EdgeProps) {
     setEdges((eds) => eds.filter((ed) => ed.id !== id));
   };
 
+  // 「＋ 插入节点」: 通知 Canvas 在连线中点打开候选菜单 (Canvas 负责创建+串接)
+  const handleInsertRequest = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('penguin:edge-insert-node-request', {
+        detail: {
+          edgeId: id,
+          x: e.clientX,
+          y: e.clientY,
+          portType,
+        },
+      }));
+    }
+  };
+
   return (
     <>
       <BaseEdge
@@ -178,8 +183,7 @@ export default function DeletableEdge(props: EdgeProps) {
         markerEnd={markerEnd}
         interactionWidth={24}
       />
-      {!isYyhPortraitHiddenEdge && (
-        <path
+      <path
           className={`t8-edge-yyh-red-segment ${farmEdgeKindClass} ${themeActiveClass}`.trim()}
           data-t8-edge-kind={farmEdgeKind}
           data-t8-port-type={portType}
@@ -190,7 +194,6 @@ export default function DeletableEdge(props: EdgeProps) {
           pointerEvents="none"
           aria-hidden="true"
         />
-      )}
       {shouldRenderPassBall && (
         <g className={`t8-edge-pass-ball ${themeActiveClass}`.trim()} aria-hidden="true">
           <g className="t8-edge-pass-ball__sprite">
@@ -273,17 +276,30 @@ export default function DeletableEdge(props: EdgeProps) {
           onMouseEnter={show}
           onMouseLeave={scheduleHide}
         >
-          <button
-            type="button"
-            className={`t8-edge-cut-button ${farmEdgeKindClass}`}
-            data-t8-edge-kind={farmEdgeKind}
-            onClick={handleCut}
-            onMouseDown={(e) => e.stopPropagation()}
-            title="点击断开连线"
-            aria-label="断开连线"
-          >
-            <span className="t8-edge-cut-glyph" aria-hidden="true" />
-          </button>
+          <div className="t8-edge-action-cluster">
+            <button
+              type="button"
+              className={`t8-edge-cut-button ${farmEdgeKindClass}`}
+              data-t8-edge-kind={farmEdgeKind}
+              onClick={handleCut}
+              onMouseDown={(e) => e.stopPropagation()}
+              title="点击断开连线"
+              aria-label="断开连线"
+            >
+              <span className="t8-edge-cut-glyph" aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              className={`t8-edge-insert-button ${farmEdgeKindClass}`}
+              data-t8-edge-kind={farmEdgeKind}
+              onClick={handleInsertRequest}
+              onMouseDown={(e) => e.stopPropagation()}
+              title="在连线上插入节点"
+              aria-label="在连线上插入节点"
+            >
+              <span className="t8-edge-insert-glyph" aria-hidden="true" />
+            </button>
+          </div>
         </div>
       </EdgeLabelRenderer>
     </>

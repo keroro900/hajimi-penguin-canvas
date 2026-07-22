@@ -2,14 +2,18 @@ import {
   DEFAULT_LLM_MODEL,
   IMAGE_MODELS,
   LLM_MODELS,
+  type LlmModelSettingsLike,
+  resolveConfiguredLlmModel,
   type ImageModelDef,
 } from '../providers/models.ts';
+import { modelsForKind } from '../providers/modelCatalog.ts';
+import type { ApiSettings } from '../types/canvas.ts';
 import { externalImageSizeFor } from '../utils/advancedProviders.ts';
 
 export const GENCLAW_DEFAULT_LLM_MODEL = DEFAULT_LLM_MODEL;
 export const GENCLAW_LLM_MODELS = LLM_MODELS;
 export const GENCLAW_IMAGE_MODELS = IMAGE_MODELS.filter((model) => model.paramKind !== 'mj');
-export const GENCLAW_DEFAULT_IMAGE_MODEL = GENCLAW_IMAGE_MODELS[0]?.id || 'gpt-image-2';
+export const GENCLAW_DEFAULT_IMAGE_MODEL = '';
 export const GENCLAW_DEFAULT_IMAGE_API_MODEL =
   GENCLAW_IMAGE_MODELS.find((model) => model.id === GENCLAW_DEFAULT_IMAGE_MODEL)?.apiModel || GENCLAW_DEFAULT_IMAGE_MODEL;
 
@@ -105,12 +109,14 @@ export function resolveGenClawImageParams(data: any = {}, imageModelDef?: ImageM
   };
 }
 
-export function resolveGenClawModelConfig(data: any = {}) {
+export function resolveGenClawModelConfig(data: any = {}, llmSettings?: LlmModelSettingsLike | null) {
   const imageCandidate = data?.genclawImageModel || data?.genclawModel;
-  const llmModel = resolveModelId(data?.genclawLlmModel, GENCLAW_LLM_MODELS, GENCLAW_DEFAULT_LLM_MODEL);
-  const imageModel = resolveModelId(imageCandidate, GENCLAW_IMAGE_MODELS, GENCLAW_DEFAULT_IMAGE_MODEL);
+  const settings = llmSettings as ApiSettings | undefined;
+  const imageModels = settings ? modelsForKind(settings, 'image') : [];
+  const llmModel = resolveConfiguredLlmModel(data?.genclawLlmModel, llmSettings);
+  const imageModel = String(imageCandidate || '').trim() || imageModels[0] || '';
   const imageModelDef = resolveImageModelDef(imageModel);
-  const imageApiModel = resolveImageApiModel(imageModelDef, data?.genclawImageApiModel || data?.genclawApiModel);
+  const imageApiModel = String(data?.genclawImageApiModel || data?.genclawApiModel || imageModel).trim();
   const imageParams = resolveGenClawImageParams(data, imageModelDef);
   const systemPrompt = String(data?.genclawSystemPrompt || '').trim() || GENCLAW_SYSTEM_PROMPT;
   const sketchSystemPrompt = String(data?.genclawSketchSystemPrompt || '').trim() || GENCLAW_SKETCH_SYSTEM_PROMPT;

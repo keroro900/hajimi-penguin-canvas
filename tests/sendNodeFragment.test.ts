@@ -62,3 +62,70 @@ test('instantiateSendNodeFragment remaps edge endpoints and preserves relative l
     },
   ]);
 });
+
+test('send node fragments copy configuration without generated node results', () => {
+  const fragment = buildSendNodeFragment(
+    [
+      {
+        id: 'img',
+        type: 'image',
+        position: { x: 0, y: 0 },
+        data: {
+          prompt: 'make a clean product photo',
+          imageUrl: 'https://cdn.example.com/old.png',
+          imageUrls: ['https://cdn.example.com/old.png'],
+          status: 'success',
+        },
+      },
+      {
+        id: 'out',
+        type: 'output',
+        position: { x: 400, y: 0 },
+        data: {
+          directImageUrl: 'https://cdn.example.com/final.png',
+          imageUrl: 'https://cdn.example.com/final.png',
+          status: 'success',
+        },
+      },
+    ] as Node[],
+    [{ id: 'io', source: 'img', target: 'out' }] as Edge[],
+    'canvas-a',
+  );
+
+  assert.equal(fragment.nodes[0].data?.prompt, 'make a clean product photo');
+  assert.equal('imageUrl' in (fragment.nodes[0].data || {}), false);
+  assert.equal('imageUrls' in (fragment.nodes[0].data || {}), false);
+  assert.equal(fragment.nodes[0].data?.status, 'idle');
+  assert.equal((fragment.nodes[1].data as any)?.directImageUrl, 'https://cdn.example.com/final.png');
+  assert.equal((fragment.nodes[1].data as any)?.imageUrl, 'https://cdn.example.com/final.png');
+});
+
+test('instantiating older fragments also strips generated node results', () => {
+  const cloned = instantiateSendNodeFragment(
+    {
+      nodes: [
+        {
+          id: 'video',
+          type: 'video',
+          position: { x: 0, y: 0 },
+          data: {
+            prompt: 'slow push in',
+            videoUrl: 'https://cdn.example.com/old.mp4',
+            videoUrls: ['https://cdn.example.com/old.mp4'],
+            taskId: 'task-old',
+            status: 'success',
+          },
+        } as Node,
+      ],
+      edges: [],
+    },
+    [],
+    { x: 10, y: 20 },
+  );
+
+  assert.equal(cloned.nodes[0].data?.prompt, 'slow push in');
+  assert.equal('videoUrl' in (cloned.nodes[0].data || {}), false);
+  assert.equal('videoUrls' in (cloned.nodes[0].data || {}), false);
+  assert.equal('taskId' in (cloned.nodes[0].data || {}), false);
+  assert.equal(cloned.nodes[0].data?.status, 'idle');
+});

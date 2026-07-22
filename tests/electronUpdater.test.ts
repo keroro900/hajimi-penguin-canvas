@@ -54,7 +54,7 @@ test('electron main process owns updater checks, downloads, and install IPC', ()
 test('preload and frontend expose a narrow updater surface', () => {
   const preload = read('../electron/preload.cjs');
   const types = read('../src/vite-env.d.ts');
-  const app = read('../src/App.tsx');
+  const rail = read('../src/components/shell/AppRail.tsx');
   const button = read('../src/components/AppUpdaterButton.tsx');
 
   assert.match(preload, /updater:\s*\{/);
@@ -62,7 +62,9 @@ test('preload and frontend expose a narrow updater surface', () => {
   assert.match(preload, /ipcRenderer\.on\('t8pc:updater-status'/);
   assert.match(types, /interface T8UpdaterStatus/);
   assert.match(types, /onStatus:\s*\(callback:/);
-  assert.match(app, /<AppUpdaterButton isPixel=\{isPixel\} isDark=\{isDark\} \/>/);
+  // 无顶栏布局：更新按钮以 rail 图标按钮形态挂在应用轨道，下拉面板向右弹出
+  assert.match(rail, /<AppUpdaterButton isPixel=\{isPixel\} isDark=\{isDark\} rail \/>/);
+  assert.match(button, /left-full bottom-0 ml-2/);
   assert.match(button, /status\.status === 'available'/);
   assert.match(button, /status\.status === 'downloaded'/);
   assert.match(button, /desktopShellDetected/);

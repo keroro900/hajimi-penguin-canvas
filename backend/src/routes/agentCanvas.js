@@ -10,12 +10,14 @@ const {
   createPlanDiff,
   canvasPlanToActions,
   verifyCanvasPlan,
+  shouldAutoRepairNodeResult,
 } = require('../utils/canvasPlan');
 
 const router = express.Router();
 const runEventClients = new Map();
 const runAnswers = new Map();
 const runNodeResults = new Map();
+const runOperationBatchIds = new Map();
 const runLogEventLimit = 1000;
 const AGENT_CANVAS_EVENTS = [
   'canvas:preview_node',
@@ -40,6 +42,16 @@ function getRunLogFile(runId) {
   return path.join(config.DATA_DIR, 'agent_canvas_runs', `${safeRunLogId(runId)}.json`);
 }
 
+function safeOperationBatchId(value) {
+  const raw = String(value || '').trim();
+  if (/^[a-zA-Z0-9_-]{3,120}$/.test(raw)) return raw;
+  return `batch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function getOperationBatchFile(operationBatchId) {
+  return path.join(config.DATA_DIR, 'agent_canvas_batches', `${safeOperationBatchId(operationBatchId)}.json`);
+}
+
 function readJsonFile(file) {
   const raw = fs.readFileSync(file, 'utf-8').replace(/^\uFEFF/, '').replace(/\0/g, '');
   return JSON.parse(raw);
@@ -61,6 +73,58 @@ function atomicWriteJson(file, data) {
   const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
   fs.writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf-8');
   replaceFileWithRetry(tmp, file);
+}
+
+function persistOperationBatch(payload) {
+  const operationBatchId = safeOperationBatchId(payload?.operationBatchId);
+  const batch = {
+    schema: 'hakimi-canvas-operation-batch',
+    version: 1,
+    operationBatchId,
+    canvasId: String(payload?.canvasId || '').trim(),
+    agentId: String(payload?.agentId || 'agent').trim(),
+    runId: String(payload?.runId || '').trim(),
+    planId: String(payload?.planId || '').trim(),
+    createdAt: Date.now(),
+    beforeCanvas: payload?.beforeCanvas,
+    afterCanvas: payload?.afterCanvas,
+    beforeSnapshot: payload?.beforeSnapshot,
+    afterSnapshot: payload?.afterSnapshot,
+    plan: payload?.plan && typeof payload.plan === 'object' ? payload.plan : null,
+    retryNodeIds: Array.isArray(payload?.retryNodeIds) ? payload.retryNodeIds : [],
+    finalVerification: payload?.finalVerification || null,
+    undoneAt: null,
+  };
+  atomicWriteJson(getOperationBatchFile(operationBatchId), batch);
+  if (batch.runId) runOperationBatchIds.set(batch.runId, operationBatchId);
+  return batch;
+}
+
+function readOperationBatch(operationBatchId) {
+  const file = getOperationBatchFile(operationBatchId);
+  if (!fs.existsSync(file)) {
+    const error = new Error(`Operation batch not found: ${operationBatchId}`);
+    error.statusCode = 404;
+    throw error;
+  }
+  return readJsonFile(file);
+}
+
+function findOperationBatchByRunId(runId) {
+  const operationBatchId = runOperationBatchIds.get(String(runId || '').trim());
+  if (!operationBatchId) return null;
+  try {
+    return readOperationBatch(operationBatchId);
+  } catch {
+    runOperationBatchIds.delete(String(runId || '').trim());
+    return null;
+  }
+}
+
+function saveOperationBatch(batch) {
+  atomicWriteJson(getOperationBatchFile(batch.operationBatchId), batch);
+  if (batch.runId) runOperationBatchIds.set(batch.runId, batch.operationBatchId);
+  return batch;
 }
 
 function loadCanvas(canvasId) {
@@ -273,8 +337,9 @@ function ensureContentfulImageNodeData(next) {
   if (typeof next.label !== 'string' || !next.label.trim()) {
     next.label = prompt ? prompt.slice(0, 28) : '画布生图节点';
   }
-  if (typeof next.model !== 'string' || !next.model.trim()) next.model = 'gpt-image-2';
-  if (typeof next.apiModel !== 'string' || !next.apiModel.trim()) next.apiModel = 'gpt-image-2-all';
+  const exactModel = String(next.apiModel || next.model || '').trim();
+  next.model = exactModel;
+  next.apiModel = exactModel;
   if (typeof next.aspectRatio !== 'string' || !next.aspectRatio.trim()) next.aspectRatio = next.aspect_ratio || '1:1';
   if (typeof next.sizeLevel !== 'string' || !next.sizeLevel.trim()) next.sizeLevel = next.image_size || '1K';
   if (!Array.isArray(next.referenceImages)) {
@@ -569,7 +634,97 @@ router.post('/runs/:runId/node-result', (req, res) => {
     ...compact,
     createdAt: result.completedAt,
   });
-  return res.json({ success: true, data: { runId, result: compact } });
+  const batch = findOperationBatchByRunId(runId);
+  let verification = null;
+  let repair = { repair: false, reason: 'no-operation-batch' };
+  if (batch?.canvasId) {
+    try {
+      let currentCanvas = loadCanvas(batch.canvasId);
+      if (result.node) {
+        currentCanvas = patchNode(currentCanvas, result.nodeId, {
+          data: result.node.data,
+          position: result.node.position,
+        });
+        saveCanvasDirect(batch.canvasId, currentCanvas, 'agent-node-result-sync');
+      }
+      const verificationCanvas = currentCanvas;
+      verification = batch.plan
+        ? verifyCanvasPlan(verificationCanvas, batch.plan, batch.beforeSnapshot)
+        : null;
+      const retryNodeIds = Array.isArray(batch.retryNodeIds) ? batch.retryNodeIds : [];
+      repair = shouldAutoRepairNodeResult(result, {
+        alreadyRetried: retryNodeIds.includes(result.nodeId),
+        nodeType: result.node?.type,
+      });
+      if (repair.repair) {
+        const sourceNode = result.node || (Array.isArray(currentCanvas.nodes) ? currentCanvas.nodes : []).find((node) => node.id === result.nodeId);
+        const normalized = normalizeCanvasPlan({
+          updates: [{ nodeId: result.nodeId, data: sourceNode?.data || {} }],
+        }, {
+          beforeSnapshot: createCanvasSnapshot(batch.canvasId, currentCanvas),
+        });
+        const repairedCanvas = patchNode(currentCanvas, result.nodeId, {
+          data: {
+            ...(normalized.plan.updates[0]?.data || sourceNode?.data || {}),
+            status: 'idle',
+            runStatus: 'idle',
+            error: '',
+            progress: '自动修正后重试',
+            agentRetryCount: 1,
+            lastAgentRepairReason: repair.reason,
+          },
+        });
+        saveCanvasDirect(batch.canvasId, repairedCanvas, 'agent-targeted-repair');
+        batch.retryNodeIds = [...new Set([...retryNodeIds, result.nodeId])];
+        batch.afterCanvas = repairedCanvas;
+        batch.afterSnapshot = createCanvasSnapshot(batch.canvasId, repairedCanvas);
+        batch.finalVerification = verification;
+        saveOperationBatch(batch);
+        emitRun(runId, 'agent:repair_started', {
+          canvasId: batch.canvasId,
+          agentId: batch.agentId,
+          planId: batch.planId,
+          operationBatchId: batch.operationBatchId,
+          nodeId: result.nodeId,
+          reason: repair.reason,
+          retryCount: 1,
+          createdAt: Date.now(),
+        });
+        emitRun(runId, 'canvas:run_node', {
+          canvasId: batch.canvasId,
+          agentId: batch.agentId,
+          planId: batch.planId,
+          operationBatchId: batch.operationBatchId,
+          payload: { nodeId: result.nodeId, retry: true, retryCount: 1, reason: repair.reason },
+          createdAt: Date.now(),
+        });
+      } else {
+        batch.afterCanvas = currentCanvas;
+        batch.afterSnapshot = createCanvasSnapshot(batch.canvasId, currentCanvas);
+        batch.finalVerification = verification;
+        saveOperationBatch(batch);
+      }
+      if (verification) {
+        emitRun(runId, 'agent:verification', {
+          canvasId: batch.canvasId,
+          agentId: batch.agentId,
+          planId: batch.planId,
+          operationBatchId: batch.operationBatchId,
+          verification,
+          final: !repair.repair,
+          createdAt: Date.now(),
+        });
+      }
+    } catch (error) {
+      emitRun(runId, 'agent:verification_error', {
+        canvasId: batch.canvasId,
+        operationBatchId: batch.operationBatchId,
+        error: error?.message || String(error),
+        createdAt: Date.now(),
+      });
+    }
+  }
+  return res.json({ success: true, data: { runId, result: compact, operationBatchId: batch?.operationBatchId || '', verification, repair } });
 });
 
 router.get('/snapshot/:canvasId', (req, res) => {
@@ -658,8 +813,22 @@ router.post('/plans/apply', async (req, res) => {
     });
     const afterCanvas = loadCanvas(canvasId);
     const verification = verifyCanvasPlan(afterCanvas, normalized.plan, beforeSnapshot);
+    const operationBatch = mode === 'commit'
+      ? persistOperationBatch({
+        operationBatchId: req.body?.operationBatchId || `batch-${planId}-${Date.now()}`,
+        canvasId,
+        agentId,
+        runId,
+        planId,
+        beforeCanvas: canvas,
+        afterCanvas,
+        beforeSnapshot,
+        afterSnapshot: execution.afterSnapshot,
+        plan: normalized.plan,
+      })
+      : null;
     emitRun(runId, 'agent:verification', { canvasId, agentId, planId, verification, createdAt: Date.now() });
-    return res.json({ success: true, data: { ...execution, actions, validation: normalized, diff, verification } });
+    return res.json({ success: true, data: { ...execution, actions, validation: normalized, diff, verification, operationBatchId: operationBatch?.operationBatchId || '' } });
   } catch (error) {
     emitRun(runId, 'agent:run_error', { canvasId, agentId, drivingMode, approvalPolicy, planId, error: error?.message || String(error), createdAt: Date.now() });
     return res.status(error?.statusCode || 500).json({ success: false, error: error?.message || String(error), data: { runId, planId } });
@@ -677,7 +846,8 @@ router.post('/actions', async (req, res) => {
   const approvalPolicy = normalizeApprovalPolicy(req.body?.approvalPolicy, drivingMode);
 
   try {
-    const beforeSnapshot = createCanvasSnapshot(canvasId, loadCanvas(canvasId));
+    const beforeCanvas = loadCanvas(canvasId);
+    const beforeSnapshot = createCanvasSnapshot(canvasId, beforeCanvas);
     const execution = await executeAgentActions({
       canvasId,
       agentId,
@@ -688,10 +858,64 @@ router.post('/actions', async (req, res) => {
       approvalPolicy,
       beforeSnapshot,
     });
-    return res.json({ success: true, data: execution });
+    const afterCanvas = loadCanvas(canvasId);
+    const operationBatch = mode === 'commit'
+      ? persistOperationBatch({
+        operationBatchId: req.body?.operationBatchId || `batch-${runId}-${Date.now()}`,
+        canvasId,
+        agentId,
+        runId,
+        beforeCanvas,
+        afterCanvas,
+        beforeSnapshot,
+        afterSnapshot: execution.afterSnapshot,
+      })
+      : null;
+    return res.json({ success: true, data: { ...execution, operationBatchId: operationBatch?.operationBatchId || '' } });
   } catch (error) {
     emitRun(runId, 'agent:run_error', { canvasId, agentId, drivingMode, approvalPolicy, error: error?.message || String(error), createdAt: Date.now() });
     return res.status(error?.statusCode || 500).json({ success: false, error: error?.message || String(error), data: { runId } });
+  }
+});
+
+router.post('/operations/:operationBatchId/undo', (req, res) => {
+  const operationBatchId = safeOperationBatchId(req.params.operationBatchId);
+  try {
+    const batch = readOperationBatch(operationBatchId);
+    if (batch.undoneAt) return res.status(409).json({ success: false, error: 'Operation batch has already been undone', data: { operationBatchId } });
+    const requestedCanvasId = String(req.body?.canvasId || '').trim();
+    if (requestedCanvasId && requestedCanvasId !== batch.canvasId) {
+      return res.status(400).json({ success: false, error: 'canvasId does not match operation batch' });
+    }
+    const currentCanvas = loadCanvas(batch.canvasId);
+    if (req.body?.force !== true && JSON.stringify(currentCanvas) !== JSON.stringify(batch.afterCanvas)) {
+      return res.status(409).json({
+        success: false,
+        error: 'Canvas changed after this operation batch; pass force=true only after explicit user confirmation',
+        data: { operationBatchId, canvasId: batch.canvasId },
+      });
+    }
+    saveCanvasDirect(batch.canvasId, batch.beforeCanvas, 'agent-operation-undo');
+    batch.undoneAt = Date.now();
+    atomicWriteJson(getOperationBatchFile(operationBatchId), batch);
+    emitRun(batch.runId || operationBatchId, 'agent:operation_undone', {
+      operationBatchId,
+      canvasId: batch.canvasId,
+      agentId: batch.agentId,
+      planId: batch.planId,
+      createdAt: batch.undoneAt,
+    });
+    return res.json({
+      success: true,
+      data: {
+        operationBatchId,
+        canvasId: batch.canvasId,
+        undoneAt: batch.undoneAt,
+        snapshot: createCanvasSnapshot(batch.canvasId, batch.beforeCanvas),
+      },
+    });
+  } catch (error) {
+    return res.status(error?.statusCode || 500).json({ success: false, error: error?.message || String(error), data: { operationBatchId } });
   }
 });
 

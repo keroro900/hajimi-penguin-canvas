@@ -62,7 +62,7 @@ const SketchRenderNode = ({ id, data, selected }: NodeProps) => {
 
   return (
     <div
-      className={`t8-node relative w-[520px] transition-all ${selected ? 'ring-2 ring-orange-300' : ''}`}
+      className={`t8-node relative w-[520px] transition-all ${selected ? 'is-selected' : ''}`}
       data-sketch-renderer-root
     >
       <Handle type="target" position={Position.Left} className="!border-0" style={{ background: PORT_COLOR.text }} />
@@ -143,4 +143,3 @@ const SketchRenderNode = ({ id, data, selected }: NodeProps) => {
 };
 
 export default memo(SketchRenderNode);
-

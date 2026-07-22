@@ -28,17 +28,16 @@ test('shared prompt editor components expose modal and textarea affordances', ()
 
   assert.match(modal, /data-canvas-floating-ui="prompt-expand-editor"/);
   assert.match(modal, /flex min-h-0 flex-1 flex-col p-4/);
-  assert.match(modal, /Enter 完成/);
-  assert.match(modal, /Shift\+Enter 换行/);
+  assert.match(modal, /Enter 换行/);
   assert.match(modal, /Esc 取消/);
-  assert.match(modal, /event\.key === 'Enter'/);
-  assert.match(modal, /!event\.shiftKey/);
-  assert.match(modal, /nativeEvent\.isComposing/);
+  assert.doesNotMatch(modal, /event\.key === 'Enter'/);
   assert.match(modal, /readOnly \? '当前字段为只读，可查看或复制。'/);
   assert.match(modal, /editorKind\?:\s*PromptExpandEditorKind/);
   assert.match(modal, /格式化 JSON/);
   assert.match(modal, /校验 JSON/);
   assert.match(modal, /整理列表/);
+  assert.match(modal, /const finishByBackdrop = \(\) => \{[\s\S]*if \(readOnly\) \{[\s\S]*onCancel\(\);[\s\S]*return;[\s\S]*onApply\(\);[\s\S]*\}/);
+  assert.match(modal, /if \(event\.target === event\.currentTarget\) finishByBackdrop\(\)/);
 
   assert.match(textarea, /PromptExpandModal/);
   assert.match(textarea, /data-prompt-expand-trigger/);
@@ -80,10 +79,26 @@ test('mention prompt input keeps media mentions in expanded editor', () => {
   assert.match(mention, /span\.replaceChildren\(content\)/);
   assert.match(mention, /expandable=\{false\}/);
   assert.match(mention, /setDraftMentions\(nextMentions\)/);
+  assert.match(mention, /if \(e\.key === 'Tab' && activeMaterial\)/);
+  assert.doesNotMatch(mention, /e\.key === 'Enter' \|\| e\.key === 'Tab'/);
+});
+
+test('mention prompt input does not clear saved prompt from a pristine empty editor dom', () => {
+  const mention = read('../src/components/nodes/MentionPromptInput.tsx');
+
+  assert.match(mention, /userEditedSinceFocusRef/);
+  assert.match(mention, /hydrateEditorFromValue/);
+  assert.match(mention, /protectPristineEmptyFlush/);
+  assert.match(mention, /text\.length === 0[\s\S]*value \|\| ''[\s\S]*!userEditedSinceFocusRef\.current/);
+  assert.match(mention, /if \(protectPristineEmptyFlush\(text\)\) \{[\s\S]*hydrateEditorFromValue\(caret\)/);
+  assert.match(mention, /onFocus=\{\(\) => \{[\s\S]*userEditedSinceFocusRef\.current = false;[\s\S]*hydrateEditorFromValue/);
+  assert.match(mention, /userEditedSinceFocusRef\.current = true;[\s\S]*onChange\(nextValue,\s*nextMentions\)/);
+  assert.match(mention, /onBlur=\{\(\) => \{[\s\S]*flushEditorToData\(\);[\s\S]*userEditedSinceFocusRef\.current = false/);
 });
 
 test('smart node outside close ignores prompt portal floating editors', () => {
   const outsideClose = read('../src/components/nodes/shared/useOutsideClose.ts');
+  const composer = read('../src/components/nodes/shared/SmartNodeComposer.tsx');
   const image = read('../src/components/nodes/ImageNode.tsx');
   const video = read('../src/components/nodes/VideoNode.tsx');
   const seedance = read('../src/components/nodes/SeedanceNode.tsx');
@@ -91,6 +106,7 @@ test('smart node outside close ignores prompt portal floating editors', () => {
 
   assert.match(outsideClose, /DEFAULT_IGNORE_SELECTOR\s*=\s*'\[data-canvas-floating-ui\]/);
   assert.match(outsideClose, /target instanceof HTMLElement && target\.closest\(ignoreSelector\)/);
+  assert.match(composer, /target instanceof Element && target\.closest\('\[data-canvas-floating-ui\]'\)/);
   assert.match(image, /useOutsideClose\(\{/);
   assert.match(video, /useOutsideClose\(\{/);
   assert.match(seedance, /useOutsideClose\(\{/);
@@ -222,28 +238,8 @@ test('core generation nodes use expanded prompt editing', () => {
   assert.match(panorama, /title="3D 全景提示词"/);
 });
 
-test('dynamic RH and ComfyUI text parameters use expanded prompt editing', () => {
-  const runningHub = read('../src/components/nodes/RunningHubNode.tsx');
-  const rhTools = read('../src/components/nodes/RHToolsNode.tsx');
-  const comfyStore = read('../src/components/nodes/ComfyUIStoreNode.tsx');
-
-  assert.match(runningHub, /import PromptTextarea from '\.\.\/PromptTextarea'/);
-  assert.match(runningHub, /title=\{`RunningHub 参数 · \$\{it\.fieldName \|\| '文本'\} #\$\{it\.nodeId \|\| ''\}`\}/);
-  assert.match(runningHub, /<PromptTextarea[\s\S]*readOnly/);
-
-  assert.match(rhTools, /import PromptTextarea from '\.\.\/PromptTextarea'/);
-  assert.match(rhTools, /title=\{`RH 工具箱参数 · \$\{it\.fieldName \|\| '文本'\} #\$\{it\.nodeId \|\| ''\}`\}/);
-  assert.match(rhTools, /<PromptTextarea[\s\S]*readOnly/);
-
-  assert.match(comfyStore, /import PromptTextarea from '\.\.\/PromptTextarea'/);
-  assert.match(comfyStore, /title=\{`ComfyUI 参数 · \$\{param\.label\}`\}/);
-  assert.match(comfyStore, /onValueChange=\{\(value\) => setParam\(param\.key,\s*value\)\}/);
-});
-
 test('configuration JSON and list editors reuse expanded prompt editing', () => {
   const apiSettings = read('../src/components/ApiSettings.tsx');
-  const comfyMaker = read('../src/components/nodes/ComfyUIAppMakerNode.tsx');
-  const rhEditor = read('../src/components/nodes/RHToolEditorModal.tsx');
 
   assert.match(apiSettings, /import PromptTextarea from '\.\/PromptTextarea'/);
   assert.match(apiSettings, /title="ComfyUI Workflow JSON"/);
@@ -252,9 +248,4 @@ test('configuration JSON and list editors reuse expanded prompt editing', () => 
   assert.match(apiSettings, /editorKind="lines"/);
   assert.match(apiSettings, /title=\{`\$\{provider\.label \|\| protocolLabel\} 图像模型`\}/);
 
-  assert.match(comfyMaker, /import PromptTextarea from '\.\.\/PromptTextarea'/);
-  assert.match(comfyMaker, /title="ComfyUI Workflow JSON"/);
-  assert.match(comfyMaker, /title="ComfyUI 自动映射排除规则"/);
-
-  assert.match(rhEditor, /title="RH 超市应用简介"/);
 });

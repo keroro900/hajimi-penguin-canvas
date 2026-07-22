@@ -36,13 +36,6 @@ export interface NodePorts {
   outputs: PortType[];
 }
 
-const DEV_NODE_PORTS: Record<string, NodePorts> = import.meta.env?.DEV ? {
-  // RH 工具箱制作器: 维护者开发态节点，只输出生成好的 manifest JSON 文本。
-  'rh-toolbox-maker': { inputs: [], outputs: ['text'] },
-  // FAL 应用制作工具: 维护者开发态节点，只输出生成好的 Fal 超市 manifest JSON 文本。
-  'fal-toolbox-maker': { inputs: [], outputs: ['text'] },
-} : {};
-
 /**
  * 节点端口注册表
  * 与 features.json 节点清单严格对齐
@@ -66,50 +59,10 @@ export const NODE_PORTS: Record<string, NodePorts> = {
   audio: { inputs: ['text', 'audio'], outputs: ['audio'] },
   llm: { inputs: ['text', 'image', 'video'], outputs: ['text'] },
 
-  // ========== RH ==========
-  runninghub: { inputs: ['text', 'image', 'video', 'audio', 'config'], outputs: ['image', 'video'] },
-  // RH 钱包应用：端口语义与 runninghub 一致，仅是提交时使用独立 APIKEY
-  'runninghub-wallet': { inputs: ['text', 'image', 'video', 'audio', 'config'], outputs: ['image', 'video'] },
-  // RhConfigNode 阶段 B 通用化：可接受任意上游节点产出的
-  // text / image / video / audio（提交时由 RunningHubNode 负责调 /upload-asset 转 fileName）
-  'rh-config': { inputs: ['text', 'image', 'video', 'audio'], outputs: ['config'] },
-  // RH 工具节点 (启动器): 节点内部独立运行 RH 应用。
-  // v1.2.10.1: 与 RunningHubNode 一致，左侧可接 text/image/video/audio 上游，
-  // 右侧输出 image/video/audio（按扩展名分流到 imageUrl/videoUrl/audioUrl）。
-  'rh-tools': { inputs: ['text', 'image', 'video', 'audio'], outputs: ['image', 'video', 'audio'] },
-  // RH 工具箱: 维护者精选工具，可处理/输出四类素材，后续供其他节点按 capability 快捷调用。
-  'rh-toolbox': { inputs: ['text', 'image', 'video', 'audio'], outputs: ['text', 'image', 'video', 'audio'] },
-  // VibeX 工作台: 独立视频工作台，可接收四类素材语境，并通过 postMessage 回传四类素材与提示词。
-  vibex: { inputs: ['text', 'image', 'video', 'audio'], outputs: ['text', 'image', 'video', 'audio'] },
-  ...DEV_NODE_PORTS,
-
-  // ========== FAL ==========
-  // Fal 超市: 复制 Fal.ai 模型能力到独立超市入口；不替换现有图像/视频 FAL 节点。
-  'fal-toolbox': { inputs: ['text', 'image', 'video', 'audio'], outputs: ['text', 'image', 'video', 'audio', 'model3d'] },
   // 3D 模型预览: 接收 Fal 超市等 3D 模型 URL，输出当前视角快照图。
   'model-3d-preview': { inputs: ['model3d'], outputs: ['image'] },
   // 3D 素材上传: 专门上传本地 glb/gltf/obj/stl/fbx/usdz/zip 模型。
   'model-3d-upload': { inputs: [], outputs: ['model3d'] },
-
-  // ========== GROK OAuth ==========
-  // 独立 Grok OAuth Agent：不走高级来源/分类 Key；由私有 OAuth 模块统一处理聊天、图像、视频、TTS、STT。
-  'grok-oauth-agent': { inputs: ['text', 'image', 'video', 'audio'], outputs: ['text', 'image', 'video', 'audio'] },
-
-  // ========== Codex CLI ==========
-  // 创作者 Codex Agent：通过本机 Codex CLI + Skill 调用生成文本、提示词、图像等产物。
-  'codex-cli-agent': { inputs: ['text', 'image', 'video', 'audio'], outputs: ['text', 'image', 'video', 'audio', 'model3d'] },
-
-  // ========== Inspiration ==========
-  // 艺术风格大师：可接收上游文本作为检索/创作语境，运行时输出风格提示词或风格参考图。
-  'artist-style-master': { inputs: ['text'], outputs: ['text', 'image'] },
-  // 动漫标签大师：可接收文本/图像语境，运行时输出标签提示词或标签参考图。
-  'anime-tag-master': { inputs: ['text', 'image'], outputs: ['text', 'image'] },
-
-  // ========== ComfyUI ==========
-  // ComfyUI超市：本地 workflow 应用运行器，可按 manifest 消费/输出四类素材。
-  'comfyui-store': { inputs: ['text', 'image', 'video', 'audio'], outputs: ['text', 'image', 'video', 'audio'] },
-  // ComfyUI应用制作工具：把 API Workflow JSON 转成应用 manifest，输出 JSON 文本。
-  'comfyui-app-maker': { inputs: [], outputs: ['text'] },
 
   // ========== Special ==========
   'multi-angle-3d': { inputs: ['text', 'image'], outputs: ['image'] },
@@ -130,6 +83,8 @@ export const NODE_PORTS: Record<string, NodePorts> = {
   loop: { inputs: ['text', 'image', 'video', 'audio'], outputs: ['text', 'image', 'video', 'audio'] },
   // 从合集获取 (v1.2.8): 从上游集合中选中单一素材 → 输出按 kind 变化
   'pick-from-set': { inputs: ['text', 'image', 'video', 'audio'], outputs: ['text', 'image', 'video', 'audio'] },
+  // 随机路由: 输入只做透传聚合，运行时随机开放部分输出分支。
+  'random-route': { inputs: ['any'], outputs: ['any'] },
   // 文本分割: 长文本/上游文本 → 多段 textSegments, 下游按多文本集合消费
   'text-split': { inputs: ['text'], outputs: ['text'] },
   resize: { inputs: ['image'], outputs: ['image'] },
@@ -140,6 +95,7 @@ export const NODE_PORTS: Record<string, NodePorts> = {
   'grid-crop': { inputs: ['image'], outputs: ['image'] },
   'grid-editor': { inputs: ['image'], outputs: ['image'] },
   'clip-studio': { inputs: ['text', 'image', 'video', 'audio'], outputs: ['video'] },
+  'layer-agent': { inputs: ['image'], outputs: ['image', 'metadata'] },
 
   // ========== Auxiliary ==========
   edit: { inputs: ['text', 'image'], outputs: ['image'] },
@@ -162,6 +118,7 @@ export const NODE_PORTS: Record<string, NodePorts> = {
   'aggregate-parser': { inputs: ['text'], outputs: ['text', 'image', 'video', 'audio'] },
   // 批量素材处理: 只在节点内处理/归档/反馈，不对外输出素材，避免批量完成后自动铺满画布。
   'batch-processor': { inputs: ['image', 'video', 'audio', 'model3d'], outputs: [] },
+  'apparel-pack-output': { inputs: ['image', 'text', 'any'], outputs: ['image', 'any'] },
   // Topaz 本地高清化: 仅调用用户本机已安装的 Topaz 软件，不内置第三方商业程序。
   'topaz-image-upscale': { inputs: ['image'], outputs: ['image'] },
   'topaz-video-upscale': { inputs: ['video'], outputs: ['video'] },
@@ -183,13 +140,8 @@ export const NODE_PORTS: Record<string, NodePorts> = {
   output: { inputs: ['text', 'image', 'video', 'audio', 'model3d', 'any'], outputs: ['any'] },
 
   // ========== 组容器 (NEW) ==========
-  // groupBox 自身不接收外部输入 (无 target handle),
-  // 但右侧 source handle 可以把「组内所有节点的聚合输出 (any)」一次性传给组外节点。
-  groupBox: { inputs: [], outputs: ['any'] },
-  // Codex 专用生图工作台：只接文本/图像参考，只输出图像和最终文本。
-  'codex-image-conjure': { inputs: ['text', 'image'], outputs: ['image', 'text'] },
-  // GenClaw 白盒生图：文本/图像进，草图渲染图与审稿文本出。
-  'genclaw': { inputs: ['text', 'image'], outputs: ['image', 'text'] },
+  // groupBox 通过单一 any 输入/输出边界虚拟广播并聚合组内素材。
+  groupBox: { inputs: ['any'], outputs: ['any'] },
   // 代码草图渲染器：只接代码文本，输出渲染图和清洗后的代码文本。
   'sketch-renderer': { inputs: ['text'], outputs: ['image', 'text'] },
 };

@@ -21,7 +21,7 @@ import type { Material } from './useUpstreamMaterials';
  *
  * 调用方:
  *   - ImageNode (主战场, 含本地上传 + 多张参考图)
- *   - 后续 VideoNode / SeedanceNode / AudioNode / LLMNode / RunningHubNode 复用
+ *   - 后续 VideoNode / SeedanceNode / AudioNode / LLMNode 复用
  *
  * 与 xyflow 的协同:
  *   - 顶层 onMouseDown stopPropagation 防止触发节点拖动

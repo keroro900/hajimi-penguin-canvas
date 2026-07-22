@@ -121,8 +121,7 @@ const DirectorStudioNode = ({ id, data, selected }: NodeProps) => {
 
   return (
     <div
-      className="relative flex h-[360px] w-[420px] flex-col overflow-hidden rounded-xl border bg-[#070b12] text-slate-100 shadow-xl"
-      style={{ borderColor: selected ? '#38bdf8' : 'rgba(148,163,184,0.35)' }}
+      className={`t8-node relative flex h-[360px] w-[420px] flex-col overflow-hidden rounded-xl text-slate-100 ${selected ? 'is-selected' : ''}`}
     >
       <Handle type="target" position={Position.Left} className="!border-0" style={{ ...handleStyle, background: PORT_COLOR.any || PORT_COLOR.text, left: -6 }} />
       <Handle type="source" id="text" position={Position.Right} className="!border-0" style={{ ...handleStyle, background: PORT_COLOR.text, right: -6, top: '42%' }} />

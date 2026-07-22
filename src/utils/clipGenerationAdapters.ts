@@ -5,9 +5,6 @@ import {
   VIDEO_MODELS,
   isFalModel,
   isFalVideoModel,
-  parseModelList,
-  resolveSeedanceVideoOverride,
-  withUpstreamModelOption,
   type ImageModelDef,
   type SidebarParameterControl,
   type SidebarParameterGroup,
@@ -31,8 +28,7 @@ export interface ClipGenerationChoiceInput {
   mainId?: unknown;
   apiModel?: unknown;
   params?: Record<string, unknown>;
-  imageOverrides?: Record<string, string>;
-  videoOverrides?: Record<string, string>;
+  catalogModels?: string[];
 }
 
 export interface ClipImageGenerationChoice {
@@ -63,10 +59,8 @@ export interface ClipGenerationReferenceSupport {
   accept: string;
 }
 
-export function clipGenerationModelGroupOptions(nodeType: GenerationNodeType): Array<{ value: string; label: string }> {
-  return nodeType === 'image'
-    ? IMAGE_MODELS.map((model) => ({ value: model.id, label: model.tabLabel || model.label }))
-    : VIDEO_MODELS.map((model) => ({ value: model.id, label: model.label }));
+export function clipGenerationModelGroupOptions(_nodeType: GenerationNodeType, catalogModels: string[] = []): Array<{ value: string; label: string }> {
+  return catalogModels.map((model) => ({ value: model, label: model }));
 }
 
 export function clipGenerationReferenceSupport(choice: ClipGenerationChoice): ClipGenerationReferenceSupport {
@@ -184,18 +178,14 @@ export function resolveClipImageGenerationChoice(input: ClipGenerationChoiceInpu
   const modelDef = IMAGE_MODELS.find((item) => item.id === savedMainId)
     || IMAGE_MODELS.find((item) => item.id === savedApiModel || item.apiModelOptions.some((option) => option.value === savedApiModel))
     || IMAGE_MODELS[0];
-  const configuredOverride = textValue(input.imageOverrides?.[modelDef.id]);
-  const configuredModels = parseModelList(configuredOverride);
-  const apiModelOptions = withUpstreamModelOption(modelDef.apiModelOptions, configuredOverride);
-  const apiModel = savedApiModel
-    && apiModelOptions.some((option) => option.value === savedApiModel)
-    && (!configuredModels.length || configuredModels.includes(savedApiModel))
-    ? savedApiModel
-    : (configuredModels[0] || modelDef.apiModel);
+  const catalogModels = Array.isArray(input.catalogModels) ? input.catalogModels : [];
+  const apiModel = savedApiModel || catalogModels[0] || '';
+  const apiModelOptions = Array.from(new Set([apiModel, ...catalogModels].filter(Boolean)))
+    .map((model) => ({ value: model, label: model }));
   return {
     nodeType: 'image',
     modelDef,
-    mainId: modelDef.id,
+    mainId: apiModel,
     apiModel,
     apiModelOptions,
     sidebarParameterGroups: modelDef.sidebarParameterGroups || [],
@@ -208,20 +198,14 @@ export function resolveClipVideoGenerationChoice(input: ClipGenerationChoiceInpu
   const modelDef = VIDEO_MODELS.find((item) => item.id === savedMainId)
     || VIDEO_MODELS.find((item) => item.id === savedApiModel || item.apiModelOptions.some((option) => option.value === savedApiModel))
     || VIDEO_MODELS[0];
-  const configuredOverride = modelDef.kind === 'seedance'
-    ? resolveSeedanceVideoOverride(input.videoOverrides, savedApiModel || modelDef.id)
-    : textValue(input.videoOverrides?.[modelDef.id]);
-  const configuredModels = parseModelList(configuredOverride);
-  const apiModelOptions = withUpstreamModelOption(modelDef.apiModelOptions, configuredOverride);
-  const apiModel = savedApiModel
-    && apiModelOptions.some((option) => option.value === savedApiModel)
-    && (!configuredModels.length || configuredModels.includes(savedApiModel))
-    ? savedApiModel
-    : (configuredModels[0] || modelDef.apiModelOptions[0]?.value || modelDef.id);
+  const catalogModels = Array.isArray(input.catalogModels) ? input.catalogModels : [];
+  const apiModel = savedApiModel || catalogModels[0] || '';
+  const apiModelOptions = Array.from(new Set([apiModel, ...catalogModels].filter(Boolean)))
+    .map((model) => ({ value: model, label: model }));
   return {
     nodeType: 'video',
     modelDef,
-    mainId: modelDef.id,
+    mainId: apiModel,
     apiModel,
     apiModelOptions,
     sidebarParameterGroups: modelDef.sidebarParameterGroups || [],
@@ -325,7 +309,7 @@ export function buildClipImageGenerationRequest(
   return {
     route: 'core',
     request: {
-      model: choice.modelDef.id,
+      model: choice.apiModel,
       apiModel: choice.apiModel,
       paramKind: choice.modelDef.paramKind,
       prompt,

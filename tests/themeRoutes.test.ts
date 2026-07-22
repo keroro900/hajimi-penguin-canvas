@@ -32,7 +32,7 @@ async function listen(app: any) {
   });
 }
 
-test('themes route preserves Farm Story and Tetris protocols when importing templates', async (t) => {
+test('themes route preserves Farm Story protocol when importing templates', async (t) => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 't8-theme-routes-'));
   t.after(() => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -95,20 +95,50 @@ test('themes route preserves Farm Story and Tetris protocols when importing temp
   assert.equal(farmExport.data.visuals.canvasPattern, 'pasture-map');
   assert.equal(farmExport.data.visuals.nodeFrame, 'farm-sign-card');
   assert.equal(farmExport.data.music.preset, 'farm-breeze');
+});
 
-  const tetrisImport = await fetch(`${base}/templates/import`, {
+test('themes route preserves Tap Studio protocol when importing templates', async (t) => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 't8-theme-routes-'));
+  t.after(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  const config = require('../backend/src/config.js');
+  const oldConfig = {
+    SETTINGS_FILE: config.SETTINGS_FILE,
+    DEFAULT_THEME_TEMPLATE_DIR: config.DEFAULT_THEME_TEMPLATE_DIR,
+  };
+  t.after(() => {
+    Object.assign(config, oldConfig);
+  });
+  config.SETTINGS_FILE = path.join(tmpDir, 'settings.json');
+  config.DEFAULT_THEME_TEMPLATE_DIR = path.join(tmpDir, 'themes');
+
+  const express = require('express');
+  const themesRouter = require('../backend/src/routes/themes.js');
+  const app = express();
+  app.use(express.json({ limit: '1mb' }));
+  app.use('/api/themes', themesRouter);
+  const server = await listen(app);
+  t.after(() => {
+    server.close();
+  });
+  const base = `http://127.0.0.1:${server.address().port}/api/themes`;
+
+  const tapImport = await fetch(`${base}/templates/import`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       template: {
         schema: 't8-theme-template',
         version: 2,
-        id: 'tetris-route-test',
-        name: '俄罗斯方块路由测试',
-        legacyStyle: 'pixel',
+        id: 'tap-studio-route-test',
+        name: 'Tap Studio 路由测试',
+        legacyStyle: 'tech',
         visuals: {
-          style: 'tetris',
-          intensity: 'strong',
+          style: 'tap-studio',
+          intensity: 'medium',
+          headerMark: 'FLOW',
         },
         music: {},
         modes: MINIMAL_THEME_MODES,
@@ -116,10 +146,17 @@ test('themes route preserves Farm Story and Tetris protocols when importing temp
     }),
   }).then((res) => res.json());
 
-  assert.equal(tetrisImport.success, true);
-  assert.equal(tetrisImport.data.visuals.style, 'tetris');
-  assert.equal(tetrisImport.data.visuals.iconPack, 'tetromino-well');
-  assert.equal(tetrisImport.data.visuals.canvasPattern, 'tetris-stack');
-  assert.equal(tetrisImport.data.visuals.nodeFrame, 'arcade-cabinet-card');
-  assert.equal(tetrisImport.data.music.preset, 'block-drop');
+  assert.equal(tapImport.success, true);
+  assert.equal(tapImport.data.visuals.style, 'tap-studio');
+  assert.equal(tapImport.data.visuals.iconPack, 'default');
+  assert.equal(tapImport.data.visuals.canvasPattern, 'tap-void');
+  assert.equal(tapImport.data.visuals.nodeFrame, 'tap-glass');
+  assert.equal(tapImport.data.music.preset, 'tap-flow');
+
+  const tapExport = await fetch(`${base}/templates/tap-studio-route-test/export`).then((res) => res.json());
+  assert.equal(tapExport.success, true);
+  assert.equal(tapExport.data.visuals.style, 'tap-studio');
+  assert.equal(tapExport.data.visuals.canvasPattern, 'tap-void');
+  assert.equal(tapExport.data.visuals.nodeFrame, 'tap-glass');
+  assert.equal(tapExport.data.music.preset, 'tap-flow');
 });

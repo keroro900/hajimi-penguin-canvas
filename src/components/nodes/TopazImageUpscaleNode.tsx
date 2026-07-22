@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useState } from 'react';
-import { Handle, Position, useEdges, useNodes } from '@xyflow/react';
+import { Handle, Position } from '@xyflow/react';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -15,6 +15,7 @@ import { fileNameFromUrl, getMediaItemsFromData, type MediaItem } from '../../ut
 import { useRunTrigger } from '../../hooks/useRunTrigger';
 import { useUpdateNodeData } from './useUpdateNodeData';
 import { useHasAutoOutput } from './useHasAutoOutput';
+import { useUpstreamNodeData } from './useUpstreamNodeData';
 import SmartImage from '../SmartImage';
 
 const GIGAPIXEL_MODELS = [
@@ -88,12 +89,10 @@ function statusLabel(status: TopazStatus | null, loading: boolean) {
   return status.gigapixel.installed ? '已检测' : '未检测到';
 }
 
-function collectUpstreamImages(id: string, edges: any[], nodes: any[]): MediaItem[] {
-  const upstreamIds = edges.filter((edge) => edge.target === id).map((edge) => edge.source);
+function collectUpstreamImages(upstreamNodes: Array<{ id: string; data: any }>): MediaItem[] {
   const seen = new Set<string>();
   const out: MediaItem[] = [];
-  for (const sourceId of upstreamIds) {
-    const node = nodes.find((item) => item.id === sourceId);
+  for (const node of upstreamNodes) {
     for (const item of getMediaItemsFromData(node?.data || {}, 'image')) {
       if (!item.url || seen.has(item.url)) continue;
       seen.add(item.url);
@@ -105,8 +104,7 @@ function collectUpstreamImages(id: string, edges: any[], nodes: any[]): MediaIte
 
 function TopazImageUpscaleNode({ id, data, selected }: { id: string; data: any; selected?: boolean }) {
   const update = useUpdateNodeData(id);
-  const edges = useEdges();
-  const nodes = useNodes();
+  const upstreamNodeData = useUpstreamNodeData(id);
   const hasAutoOutput = useHasAutoOutput(id);
   const [status, setStatus] = useState<TopazStatus | null>(null);
   const [statusLoading, setStatusLoading] = useState(false);
@@ -131,8 +129,8 @@ function TopazImageUpscaleNode({ id, data, selected }: { id: string; data: any; 
       : [];
 
   const upstreamImages = useMemo(
-    () => collectUpstreamImages(id, edges, nodes),
-    [id, edges, nodes, data],
+    () => collectUpstreamImages(upstreamNodeData),
+    [upstreamNodeData],
   );
   const inputImage = upstreamImages[0]?.url || '';
 
@@ -209,11 +207,9 @@ function TopazImageUpscaleNode({ id, data, selected }: { id: string; data: any; 
 
   return (
     <div
-      className={`t8-node overflow-hidden ${selected ? 'ring-2' : ''}`}
+      className={`t8-node overflow-hidden ${selected ? 'is-selected' : ''}`}
       style={{
         width: 390,
-        borderColor: selected ? 'var(--t8-accent)' : 'var(--t8-border-strong)',
-        boxShadow: selected ? '0 0 0 2px color-mix(in srgb, var(--t8-accent) 32%, transparent)' : undefined,
       }}
     >
       <Handle type="target" position={Position.Left} style={{ background: '#f59e0b', border: '1px solid var(--t8-bg-node)' }} />

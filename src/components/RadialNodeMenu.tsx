@@ -19,6 +19,8 @@ interface RadialNodeMenuProps {
   slots: RadialMenuSlot[];
   nodesByType: Map<string, RadialMenuNodeOption>;
   activeIndex: number | null;
+  onSelect: (index: number) => void;
+  onCancel: () => void;
 }
 
 export default function RadialNodeMenu({
@@ -28,6 +30,8 @@ export default function RadialNodeMenu({
   slots,
   nodesByType,
   activeIndex,
+  onSelect,
+  onCancel,
 }: RadialNodeMenuProps) {
   if (typeof document === 'undefined') return null;
 
@@ -86,7 +90,8 @@ export default function RadialNodeMenu({
           const color = RADIAL_NODE_COLOR_HEX[meta?.color || 'slate'] || RADIAL_NODE_COLOR_HEX.slate;
           const active = activeIndex === index && slot.enabled;
           return (
-            <div
+            <button
+              type="button"
               key={slot.id}
               className={`t8-radial-node-menu__slot ${active ? 'is-active' : ''} ${slot.enabled ? '' : 'is-disabled'}`}
               style={{
@@ -94,16 +99,30 @@ export default function RadialNodeMenu({
                 top: pos.y,
                 '--radial-slot-color': color,
               } as CSSProperties}
+              disabled={!slot.enabled}
+              onPointerDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+              }}
+              onClick={() => onSelect(index)}
             >
               <Icon size={20} strokeWidth={2.3} />
               <span>{meta?.label || slot.nodeType}</span>
-            </div>
+            </button>
           );
         })}
-        <div className={`t8-radial-node-menu__center ${activeMeta ? 'has-active' : ''}`}>
+        <button
+          type="button"
+          className={`t8-radial-node-menu__center ${activeMeta ? 'has-active' : ''}`}
+          onPointerDown={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+          }}
+          onClick={onCancel}
+        >
           <strong>{activeMeta ? activeMeta.label : '取消'}</strong>
-          <span>{activeMeta ? '松开创建' : '回中松开'}</span>
-        </div>
+          <span>{activeMeta ? '松开创建 / 点击取消' : '点击取消'}</span>
+        </button>
       </div>
     </div>
   );

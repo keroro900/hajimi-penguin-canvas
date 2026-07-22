@@ -11,11 +11,17 @@ import { opRemoveBg } from '../../services/imageOps';
 const RemoveBgNode = (p: NodeProps) => {
   return (
     <ImageOpFrame
+      data-canvas-node-root={true}
+      className={`${p.selected ? 'is-selected' : ''}`}
       id={p.id}
       data={p.data}
       selected={p.selected}
+      dragging={p.dragging}
       title="抠图"
       subtitle="移除背景"
+      accessibleLabel="抠图节点"
+      composerAriaLabel="抠图节点属性"
+      emptyHint="连接上游图像后点击卡片"
       icon={<Scissors size={13} />}
       colorHex="#fb923c"
       bgRgba="rgba(251,146,60,.2)"

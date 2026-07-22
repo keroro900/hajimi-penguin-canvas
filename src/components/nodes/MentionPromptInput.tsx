@@ -286,6 +286,7 @@ const MentionPromptInput = ({
   const lastPlainInputRef = useRef<PlainInputSnapshot | null>(null);
   const compositionLeakRef = useRef<ImeAsciiLeakCandidate | null>(null);
   const pendingCaretRef = useRef<number | null>(null);
+  const userEditedSinceFocusRef = useRef(false);
   const expandShortcuts = useShortcutStore((s) => s.shortcuts['editor.expand-prompt']);
   const [isFocused, setIsFocused] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -382,42 +383,9 @@ const MentionPromptInput = ({
     return html.replace(/\n/g, '<br>');
   }, [value, inlineMentions]);
 
-  const syncPopupRect = () => {
-    const el = localRef.current;
-    if (!el || typeof window === 'undefined') return;
-    const rect = el.getBoundingClientRect();
-    const selection = window.getSelection();
-    let anchorRect: DOMRect | null = null;
-    if (selection && selection.rangeCount > 0) {
-      const range = selection.getRangeAt(0);
-      if (el.contains(range.startContainer)) {
-        const caretRange = range.cloneRange();
-        caretRange.collapse(true);
-        const caretRect = caretRange.getBoundingClientRect();
-        if (caretRect.width || caretRect.height) anchorRect = caretRect;
-      }
-    }
-    const targetRect = anchorRect || rect;
-    const width = Math.min(Math.max(rect.width, 220), 360);
-    const left = Math.min(Math.max(8, targetRect.left), Math.max(8, window.innerWidth - width - 8));
-    const below = targetRect.bottom + 8;
-    const top = below > window.innerHeight - 220 ? Math.max(8, targetRect.top - 228) : below;
-    setPopupRect({ left, top, width });
-  };
-
-  useLayoutEffect(() => {
-    if (!queryState.open) return;
-    syncPopupRect();
-  }, [queryState.open, queryState.query, value]);
-
-  useLayoutEffect(() => {
-    const el = localRef.current;
-    if (!el) return;
-    if (composingRef.current) return;
-    const keepCaret = document.activeElement === el ? getCaretPlainOffset(el) : null;
-    if (el.innerHTML !== editorHtml) el.innerHTML = editorHtml;
+  const paintMentionChips = (root: HTMLElement) => {
     for (const item of inlineMentions) {
-      const span = Array.from(el.querySelectorAll<HTMLElement>('[data-mention-id]'))
+      const span = Array.from(root.querySelectorAll<HTMLElement>('[data-mention-id]'))
         .find((candidate) => candidate.dataset.mentionId === item.mention.id);
       if (!span) continue;
       span.title = item.token;
@@ -461,6 +429,56 @@ const MentionPromptInput = ({
       }
       span.replaceChildren(content);
     }
+  };
+
+  const hydrateEditorFromValue = (caret: number | null = null) => {
+    const el = localRef.current;
+    if (!el) return;
+    if (el.innerHTML !== editorHtml) el.innerHTML = editorHtml;
+    paintMentionChips(el);
+    if (document.activeElement === el && caret !== null) {
+      setCaretPlainOffset(el, Math.max(0, Math.min((value || '').length, caret)));
+    }
+  };
+
+  const protectPristineEmptyFlush = (text: string) =>
+    text.length === 0 && (value || '').length > 0 && !userEditedSinceFocusRef.current;
+
+  const syncPopupRect = () => {
+    const el = localRef.current;
+    if (!el || typeof window === 'undefined') return;
+    const rect = el.getBoundingClientRect();
+    const selection = window.getSelection();
+    let anchorRect: DOMRect | null = null;
+    if (selection && selection.rangeCount > 0) {
+      const range = selection.getRangeAt(0);
+      if (el.contains(range.startContainer)) {
+        const caretRange = range.cloneRange();
+        caretRange.collapse(true);
+        const caretRect = caretRange.getBoundingClientRect();
+        if (caretRect.width || caretRect.height) anchorRect = caretRect;
+      }
+    }
+    const targetRect = anchorRect || rect;
+    const width = Math.min(Math.max(rect.width, 220), 360);
+    const left = Math.min(Math.max(8, targetRect.left), Math.max(8, window.innerWidth - width - 8));
+    const below = targetRect.bottom + 8;
+    const top = below > window.innerHeight - 220 ? Math.max(8, targetRect.top - 228) : below;
+    setPopupRect({ left, top, width });
+  };
+
+  useLayoutEffect(() => {
+    if (!queryState.open) return;
+    syncPopupRect();
+  }, [queryState.open, queryState.query, value]);
+
+  useLayoutEffect(() => {
+    const el = localRef.current;
+    if (!el) return;
+    if (composingRef.current) return;
+    const keepCaret = document.activeElement === el ? getCaretPlainOffset(el) : null;
+    if (el.innerHTML !== editorHtml) el.innerHTML = editorHtml;
+    paintMentionChips(el);
     if (document.activeElement === el) {
       const caret = pendingCaretRef.current ?? keepCaret;
       pendingCaretRef.current = null;
@@ -510,6 +528,7 @@ const MentionPromptInput = ({
     } else {
       lastPlainInputRef.current = null;
     }
+    userEditedSinceFocusRef.current = true;
     onChange(nextValue, nextMentions);
     if (composingRef.current) return;
     openFromCaret(nextValue, caret, nextMentions);
@@ -520,6 +539,10 @@ const MentionPromptInput = ({
     if (!el) return null;
     const caret = getCaretPlainOffset(el);
     const { text, mentions: nextMentions } = readRichEditor(el, mentions);
+    if (protectPristineEmptyFlush(text)) {
+      hydrateEditorFromValue(caret);
+      return { text: value || '', mentions, caret: Math.min(caret, (value || '').length) };
+    }
     onChange(text, nextMentions);
     return { text, mentions: nextMentions, caret };
   };
@@ -535,6 +558,7 @@ const MentionPromptInput = ({
       queryState.start,
       queryState.end,
     );
+    userEditedSinceFocusRef.current = true;
     onChange(result.text, result.mentions);
     pendingCaretRef.current = result.caret;
     setQueryState((s) => ({ ...s, open: false }));
@@ -736,6 +760,11 @@ const MentionPromptInput = ({
             }, 16);
           }}
           onFocus={() => {
+            userEditedSinceFocusRef.current = false;
+            const el = localRef.current;
+            if (el && (value || '').length > 0 && readRichEditor(el, mentions).text.length === 0) {
+              hydrateEditorFromValue(getCaretPlainOffset(el));
+            }
             setIsFocused(true);
           }}
           onClick={() => {
@@ -796,7 +825,7 @@ const MentionPromptInput = ({
               setQueryState((s) => ({ ...s, activeIndex: Math.max(0, s.activeIndex - 1) }));
               return;
             }
-            if ((e.key === 'Enter' || e.key === 'Tab') && activeMaterial) {
+            if (e.key === 'Tab' && activeMaterial) {
               e.preventDefault();
               selectMaterial(activeMaterial);
             }
@@ -804,6 +833,7 @@ const MentionPromptInput = ({
           onBlur={() => {
             composingRef.current = false;
             flushEditorToData();
+            userEditedSinceFocusRef.current = false;
             setIsFocused(false);
             window.setTimeout(() => setQueryState((s) => ({ ...s, open: false })), 120);
           }}

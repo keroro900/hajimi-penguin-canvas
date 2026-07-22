@@ -60,6 +60,7 @@ import {
 } from '../utils/radialMenu';
 import type { NodeAlignAction } from '../utils/nodeAlign';
 import type { NodeType } from '../types/canvas';
+import CanvasModalPortal from './CanvasModalPortal';
 
 interface CanvasToolbarProps {
   canUndo: boolean;
@@ -155,6 +156,7 @@ export default function CanvasToolbar({
   const [toolbarCollapsed, setToolbarCollapsed] = useState(false);
   const tplRef = useRef<HTMLDivElement>(null);
   const alignRef = useRef<HTMLDivElement>(null);
+  const shortcutCloseRef = useRef<HTMLButtonElement>(null);
   const radialNodeOptions = useMemo(() => visibleRadialMenuNodeOptions(NODE_REGISTRY), []);
   const radialSlots = useMemo(
     () => normalizeRadialMenuSlots(NODE_REGISTRY, radialSlotsRaw),
@@ -204,13 +206,11 @@ export default function CanvasToolbar({
   useEffect(() => {
     if (!recordingActionId) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      event.preventDefault();
-      event.stopPropagation();
       if (event.key === 'Escape' && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) {
-        setRecordingActionId(null);
-        setShortcutMessage('');
         return;
       }
+      event.preventDefault();
+      event.stopPropagation();
       const combo = keyboardEventToShortcutCombo(event);
       const validation = validateShortcutCombo(combo);
       if (!validation.ok || !combo) {
@@ -303,6 +303,12 @@ export default function CanvasToolbar({
     setRecordingActionId(null);
     setShortcutMessage('');
     setDraggingRadialSlot(null);
+  };
+  const interceptShortcutEscape = () => {
+    if (!recordingActionId) return false;
+    setRecordingActionId(null);
+    setShortcutMessage('');
+    return true;
   };
   const runAlignAction = (action: NodeAlignAction) => {
     onAlignSelection(action);
@@ -735,22 +741,20 @@ export default function CanvasToolbar({
 
       {/* 快捷键设置弹窗 */}
       {helpOpen && (
-        <div
-          className={`fixed inset-0 z-50 flex items-center justify-center ${
-            isPixel ? 'px-modal-mask' : 'bg-black/40'
-          }`}
-          onClick={closeShortcutPanel}
+        <CanvasModalPortal
+          label="快捷键设置"
+          onClose={closeShortcutPanel}
+          onEscapeBeforeClose={interceptShortcutEscape}
+          initialFocusRef={shortcutCloseRef}
+          backdropClassName={isPixel ? 'px-modal-mask' : ''}
+          dialogClassName={
+            isPixel
+              ? 'w-[min(760px,calc(100vw-32px))] px-card'
+              : `w-[min(760px,calc(100vw-32px))] rounded-lg shadow-2xl border ${
+                  isDark ? 'border-white/10 text-white' : 'border-black/10 text-zinc-900'
+                }`
+          }
         >
-          <div
-            className={
-              isPixel
-                ? 'w-[min(760px,calc(100vw-32px))] px-card'
-                : `w-[min(760px,calc(100vw-32px))] rounded-lg shadow-2xl border ${
-                    isDark ? 'bg-zinc-900 border-white/10 text-white' : 'bg-white border-black/10 text-zinc-900'
-                  }`
-            }
-            onClick={(e) => e.stopPropagation()}
-          >
             <div
               className={`flex items-center justify-between px-4 py-3 border-b ${
                 isPixel
@@ -765,7 +769,9 @@ export default function CanvasToolbar({
                 快捷键设置
               </div>
               <button
+                ref={shortcutCloseRef}
                 onClick={closeShortcutPanel}
+                aria-label="关闭快捷键设置"
                 className={
                   isPixel
                     ? 'px-btn px-btn--icon px-btn--ghost'
@@ -1047,8 +1053,7 @@ export default function CanvasToolbar({
                 </div>
               </section>
             </div>
-          </div>
-        </div>
+        </CanvasModalPortal>
       )}
     </div>
   );

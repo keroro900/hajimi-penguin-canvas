@@ -1,0 +1,831 @@
+/*
+ * Retro OS (复古 OS) visual skin
+ * 90 年代桌面操作系统审美：青绿色桌面背景 + 灰色窗口/任务栏 + 深蓝标题栏
+ * + 经典 3D 凸起边框（上亮下暗 bevel 双线）。按钮按下时边框翻转成凹陷，
+ * 端口是方角小方块，连线深蓝选中变红虚线，几乎无动效（80ms linear 直给），
+ * 让用户有「正在使用老电脑」的代入感。SHIFT 切断用红色像素剪刀。
+ */
+
+html[data-theme-visual="retro"] {
+  /* === 材质母题 === */
+  /* 桌面 teal 固定纯色（深/浅模式由 token canvasBg 提供） */
+  --retro-desktop: var(--t8-bg-canvas);
+  /* 窗口体灰（经典 buttonface） */
+  --retro-face: var(--t8-bg-panel);
+  --retro-face-elev: var(--t8-bg-panel-elevated);
+  --retro-face-muted: var(--t8-bg-panel-muted);
+  /* 标题栏深蓝渐变（节点 header） */
+  --retro-titlebar: var(--t8-bg-node-header);
+  /* 系统色 */
+  --retro-ink: var(--t8-text-main);
+  --retro-ink-muted: var(--t8-text-muted);
+  --retro-ink-dim: var(--t8-text-dim);
+  --retro-border: var(--t8-border);
+  --retro-border-dark: #000000;
+  --retro-accent: var(--t8-accent);
+  --retro-accent-hover: var(--t8-accent-hover);
+  --retro-accent-text: var(--t8-accent-text);
+  --retro-secondary: var(--t8-secondary);
+  --retro-danger: var(--t8-danger);
+  /* 3D 凸起 bevel：外 1px 黑 + inset 上左白高光 + inset 下右暗灰
+     经典 Win95 凸起按键手感：上左亮、下右暗 */
+  --retro-raised:
+    0 0 0 1px #000000,
+    inset 1px 1px 0 #ffffff,
+    inset -1px -1px 0 #808080;
+  --retro-raised-sm:
+    0 0 0 1px #000000,
+    inset 1px 1px 0 #dfdfdf,
+    inset -1px -1px 0 #808080;
+  --retro-raised-lg:
+    2px 2px 0 #000000,
+    inset 1px 1px 0 #ffffff,
+    inset -1px -1px 0 #808080,
+    0 0 0 1px #000000;
+  /* 凹陷：边框翻转（上左暗、下右亮），模拟按下/输入槽 */
+  --retro-inset:
+    0 0 0 1px #000000,
+    inset 1px 1px 0 #808080,
+    inset -1px -1px 0 #ffffff;
+  --retro-inset-sm:
+    inset 1px 1px 0 #808080,
+    inset -1px -1px 0 #ffffff;
+  /* Win95 窗口 outer bevel：上左双线白+亮灰、下右双线暗灰+黑 */
+  --retro-window-border:
+    inset 1px 1px 0 #ffffff,
+    inset -1px -1px 0 #000000,
+    inset 2px 2px 0 #dfdfdf,
+    inset -2px -2px 0 #808080;
+  --retro-radius: 0px;
+  --retro-transition: 80ms linear;
+
+  /* SHIFT 切断：红色像素剪刀——黑边 + 红色细线。 */
+  --t8-cut-cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23ff0000' stroke-width='1.6' stroke-linecap='square' opacity='0.9'><path d='M4 12h16'/><path d='M4 12h16' stroke='%23000000' stroke-width='0.5'/></svg>") 12 12, crosshair;
+  --t8-cut-color: var(--retro-danger);
+  --t8-cut-track: var(--retro-accent);
+  --t8-cut-button-bg: var(--retro-face);
+  --t8-cut-button-fg: var(--retro-danger);
+  --t8-cut-button-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect fill='black' x='3' y='11' width='18' height='2'/></svg>");
+}
+
+html[data-theme-visual="retro"] body,
+html[data-theme-visual="retro"] #root {
+  background: var(--t8-bg-app);
+  color: var(--retro-ink);
+  font-family: var(--t8-font-family);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* 应用外壳：teal 桌面固定纯色。 */
+html[data-theme-visual="retro"] .t8-app-shell {
+  background: var(--retro-desktop) !important;
+}
+
+/* 节点正文文字强化：浅色模式 buttonface 灰底上黑字要够黑、深色模式同。
+   节点内所有非表单文字、svg 图标、label 都走焦墨黑，保证可读。 */
+html[data-theme-visual="retro"] .react-flow__node:not(.react-flow__node-groupBox) > div:first-child,
+html[data-theme-visual="retro"] .t8-node {
+  color: var(--retro-ink) !important;
+}
+html[data-theme-visual="retro"] .react-flow__node:not(.react-flow__node-groupBox) > div:first-child :is(span, div, p, label, td, th),
+html[data-theme-visual="retro"] .t8-node :is(span, div, p, label, td, th) {
+  color: var(--retro-ink) !important;
+}
+/* svg / 图标 stroke/fill 不被 text-white 等工具类冲淡：强制 currentColor 跟随父级焦墨 */
+html[data-theme-visual="retro"] .react-flow__node:not(.react-flow__node-groupBox) > div:first-child svg,
+html[data-theme-visual="retro"] .t8-node svg {
+  color: var(--retro-ink) !important;
+}
+
+/* === 顶栏：灰色任务栏 + 下边凹陷线 === */
+html[data-theme-visual="retro"] .t8-topbar {
+  min-height: 40px;
+  background: var(--retro-face) !important;
+  border-bottom: 2px solid #000000 !important;
+  box-shadow: inset 0 -1px 0 #808080, inset 0 1px 0 #ffffff !important;
+}
+
+/* 顶栏标题：MS Sans Serif 粗体，黑字，强化 90 年代字形识别度。 */
+html[data-theme-visual="retro"] .t8-topbar h1 {
+  font-family: var(--t8-display-font) !important;
+  font-weight: 700 !important;
+  color: var(--retro-ink) !important;
+  text-shadow: none;
+  letter-spacing: 0;
+}
+
+/* 顶栏状态芯片：凹陷灰槽 + MS Sans Serif 粗体黑字。 */
+html[data-theme-visual="retro"] .t8-topbar-status-chip {
+  background: var(--retro-face) !important;
+  border: 1px solid #000000 !important;
+  border-radius: 0 !important;
+  color: var(--retro-ink) !important;
+  font-family: var(--t8-display-font) !important;
+  font-weight: 700 !important;
+  padding: 2px 6px !important;
+  box-shadow: var(--retro-inset-sm) !important;
+  transition: color var(--retro-transition) !important;
+}
+
+html[data-theme-visual="retro"] .t8-topbar-status-chip[class*="text-emerald"],
+html[data-theme-visual="retro"] .t8-topbar-status-chip[class*="emerald-"] {
+  color: #006000 !important;
+  font-weight: 700 !important;
+}
+html[data-theme-visual="retro"] .t8-topbar-status-chip[class*="text-red"],
+html[data-theme-visual="retro"] .t8-topbar-status-chip[class*="red-"] {
+  color: #a00000 !important;
+  font-weight: 700 !important;
+}
+html[data-theme-visual="retro"] .t8-topbar-status-chip[class*="text-yellow"],
+html[data-theme-visual="retro"] .t8-topbar-status-chip[class*="yellow-"] {
+  color: #806000 !important;
+  font-weight: 700 !important;
+}
+
+/* 顶栏工具按钮：3D 凸起灰按键 + MS Sans Serif 粗体黑字。 */
+html[data-theme-visual="retro"] .t8-topbar button:not(.px-btn):not(.t8-topbar-status-chip) {
+  background: var(--retro-face) !important;
+  border: 1px solid #000000 !important;
+  border-radius: 0 !important;
+  color: var(--retro-ink) !important;
+  font-family: var(--t8-display-font) !important;
+  font-weight: 700 !important;
+  box-shadow: var(--retro-raised-sm) !important;
+  transition: box-shadow var(--retro-transition), background var(--retro-transition), transform var(--retro-transition), color var(--retro-transition) !important;
+}
+
+html[data-theme-visual="retro"] .t8-topbar button:not(.px-btn):not(.t8-topbar-status-chip):hover {
+  background: var(--retro-face-elev) !important;
+  color: var(--retro-accent) !important;
+}
+
+html[data-theme-visual="retro"] .t8-topbar button:not(.px-btn):not(.t8-topbar-status-chip):active {
+  box-shadow: var(--retro-inset) !important;
+  transform: translate(1px, 1px);
+}
+
+/* 顶栏激活态按钮：深蓝填充 + 白字。 */
+html[data-theme-visual="retro"] .t8-topbar button[aria-pressed="true"],
+html[data-theme-visual="retro"] .t8-topbar button[class*="emerald-"]:not(:hover) {
+  background: var(--retro-accent) !important;
+  color: var(--retro-accent-text) !important;
+  border-color: #000000 !important;
+  box-shadow: var(--retro-raised-sm) !important;
+}
+
+/* === 侧栏：灰色窗口面板 + 右凹陷边 === */
+html[data-theme-visual="retro"] .t8-sidebar,
+html[data-theme-visual="retro"] .t8-sidebar-scroll {
+  background: var(--retro-face) !important;
+  border-right: 2px solid #000000 !important;
+  box-shadow: inset -1px 0 0 #808080, inset 1px 0 0 #ffffff !important;
+}
+
+/* 侧栏分隔线统一走暗灰。 */
+html[data-theme-visual="retro"] .t8-sidebar .border-b,
+html[data-theme-visual="retro"] .t8-sidebar .border-t {
+  border-color: #808080 !important;
+}
+
+/* 侧栏分组标题：MS Sans Serif 粗体黑字，hover 深蓝。 */
+html[data-theme-visual="retro"] .t8-sidebar button[class*="uppercase tracking-wider"] {
+  color: var(--retro-ink) !important;
+  font-family: var(--t8-display-font) !important;
+  font-weight: 700 !important;
+  letter-spacing: 0;
+  text-shadow: none;
+  transition: color var(--retro-transition) !important;
+}
+
+html[data-theme-visual="retro"] .t8-sidebar button[class*="uppercase tracking-wider"]:hover {
+  color: var(--retro-accent) !important;
+}
+
+/* 侧栏小工具按钮：3D 凸起小按键 + 黑字（强化可读）。 */
+html[data-theme-visual="retro"] .t8-sidebar button:not(.t8-sidebar-node):not(.px-btn):not([class*="uppercase tracking-wider"]) {
+  background: var(--retro-face) !important;
+  border: 1px solid #000000 !important;
+  border-radius: 0 !important;
+  color: var(--retro-ink) !important;
+  box-shadow: var(--retro-raised-sm) !important;
+  transition: box-shadow var(--retro-transition), color var(--retro-transition), transform var(--retro-transition) !important;
+}
+
+html[data-theme-visual="retro"] .t8-sidebar button:not(.t8-sidebar-node):not(.px-btn):not([class*="uppercase tracking-wider"]):hover {
+  color: var(--retro-accent) !important;
+  background: var(--retro-face-elev) !important;
+}
+
+html[data-theme-visual="retro"] .t8-sidebar button:not(.t8-sidebar-node):not(.px-btn):not([class*="uppercase tracking-wider"]):active {
+  box-shadow: var(--retro-inset) !important;
+  transform: translate(1px, 1px);
+}
+
+/* 侧栏搜索框：凹陷灰底。 */
+html[data-theme-visual="retro"] .t8-sidebar-search-box {
+  background: var(--retro-face) !important;
+  border: 1px solid #000000 !important;
+  border-radius: 0 !important;
+  box-shadow: var(--retro-inset-sm) !important;
+  transition: box-shadow var(--retro-transition) !important;
+}
+
+html[data-theme-visual="retro"] .t8-sidebar-search-box:focus-within {
+  box-shadow: var(--retro-inset-sm), 0 0 0 1px var(--retro-accent) !important;
+}
+
+html[data-theme-visual="retro"] .t8-sidebar-search-box input {
+  background: transparent !important;
+  color: var(--retro-ink) !important;
+}
+
+html[data-theme-visual="retro"] .t8-sidebar-search-box input::placeholder {
+  color: var(--retro-ink-dim) !important;
+  opacity: 0.7;
+}
+
+/* 侧栏画布列表行：hover 深蓝淡底。 */
+html[data-theme-visual="retro"] .t8-sidebar-canvas-row {
+  border-radius: 0 !important;
+  transition: background var(--retro-transition) !important;
+}
+
+html[data-theme-visual="retro"] .t8-sidebar-canvas-row:hover {
+  background: color-mix(in srgb, var(--retro-accent) 14%, transparent) !important;
+}
+
+html[data-theme-visual="retro"] .t8-sidebar-canvas-title {
+  color: var(--retro-ink) !important;
+  font-family: var(--t8-display-font) !important;
+  font-weight: 700 !important;
+}
+
+/* 侧栏更新提示点：深蓝方块（非圆）。 */
+html[data-theme-visual="retro"] .t8-sidebar-canvas-update-dot {
+  background: var(--retro-accent) !important;
+  border: 1px solid #000000 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+html[data-theme-visual="retro"] .t8-sidebar-canvas-update-dot::after {
+  border-color: color-mix(in srgb, var(--retro-accent) 40%, transparent) !important;
+  border-radius: 0 !important;
+}
+
+/* 侧栏底栏版本信息：弱色。 */
+html[data-theme-visual="retro"] .t8-sidebar > div:last-child {
+  color: var(--retro-ink-dim) !important;
+}
+
+/* 侧栏滚动条：经典方角 3D 灰。 */
+html[data-theme-visual="retro"] .t8-sidebar ::-webkit-scrollbar,
+html[data-theme-visual="retro"] .t8-sidebar-scroll ::-webkit-scrollbar {
+  width: 16px;
+  height: 16px;
+}
+
+html[data-theme-visual="retro"] .t8-sidebar ::-webkit-scrollbar-thumb,
+html[data-theme-visual="retro"] .t8-sidebar-scroll ::-webkit-scrollbar-thumb {
+  background: var(--retro-face) !important;
+  border: 1px solid #000000 !important;
+  border-radius: 0 !important;
+  box-shadow: var(--retro-raised-sm) !important;
+}
+
+html[data-theme-visual="retro"] .t8-sidebar ::-webkit-scrollbar-thumb:hover,
+html[data-theme-visual="retro"] .t8-sidebar-scroll ::-webkit-scrollbar-thumb:hover {
+  background: var(--retro-face-elev) !important;
+}
+
+html[data-theme-visual="retro"] .t8-sidebar ::-webkit-scrollbar-track,
+html[data-theme-visual="retro"] .t8-sidebar-scroll ::-webkit-scrollbar-track {
+  background: var(--retro-face-muted) !important;
+  box-shadow: var(--retro-inset-sm) !important;
+}
+
+/* === 通用卡片/面板：灰色窗口 + 3D bevel 边框 === */
+html[data-theme-visual="retro"] .t8-card,
+html[data-theme-visual="retro"] .t8-sidebar-node {
+  background: var(--retro-face) !important;
+  border: 1px solid #000000 !important;
+  border-radius: 0 !important;
+  box-shadow: var(--retro-raised) !important;
+  transition: box-shadow var(--retro-transition), background var(--retro-transition) !important;
+}
+
+html[data-theme-visual="retro"] .t8-card:hover,
+html[data-theme-visual="retro"] .t8-sidebar-node:hover {
+  background: var(--retro-face-elev) !important;
+}
+
+/* 节点标题栏：深蓝渐变 + 白字 + 下边凹陷线 + MS Sans Serif 粗体 + 强化阴影。
+   token nodeHeaderBg 已是 linear-gradient(180deg, #1084d0, #000080)。 */
+html[data-theme-visual="retro"] .react-flow__node:not(.react-flow__node-groupBox) .t8-node-header,
+html[data-theme-visual="retro"] .t8-node-header {
+  background: var(--retro-titlebar) !important;
+  border-bottom: 2px solid #000000 !important;
+  border-radius: 0 !important;
+  font-family: var(--t8-display-font) !important;
+  font-weight: 700 !important;
+  letter-spacing: 0;
+  color: #ffffff !important;
+  text-shadow: 1px 1px 0 #000000, 1px 1px 1px rgba(0,0,0,0.4) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.3) !important;
+}
+
+/* 节点标题栏内 svg 图标也强制白字（currentColor 跟随父级） */
+html[data-theme-visual="retro"] .react-flow__node:not(.react-flow__node-groupBox) .t8-node-header svg,
+html[data-theme-visual="retro"] .t8-node-header svg {
+  color: #ffffff !important;
+}
+
+/* 选中态标题栏：红渐变 + 白字。 */
+html[data-theme-visual="retro"] .react-flow__node.selected:not(.react-flow__node-groupBox) .t8-node-header {
+  background: var(--t8-bg-node-header) !important;
+}
+
+/* === GroupBox (打组容器)：保留组色身份，外壳补 3D bevel；选中加红边。 */
+html[data-theme-visual="retro"] .react-flow__node-groupBox > div:first-child,
+html[data-theme-visual="retro"] .t8-group-box {
+  border-radius: 0 !important;
+  box-shadow: var(--retro-window-border) !important;
+  color: #ffffff !important;
+}
+
+html[data-theme-visual="retro"] .react-flow__node-groupBox.selected > div:first-child,
+html[data-theme-visual="retro"] .t8-group-box[data-selected="true"] {
+  box-shadow:
+    0 0 0 2px var(--retro-danger),
+    inset 1px 1px 0 #ffffff,
+    inset -1px -1px 0 #808080 !important;
+}
+
+/* 组标题栏：保持组色识别度，仅方角对齐 + 白字阴影 + MS Sans Serif 粗体。 */
+html[data-theme-visual="retro"] .t8-group-box__header {
+  border-top-left-radius: 0 !important;
+  border-top-right-radius: 0 !important;
+  font-family: var(--t8-display-font) !important;
+  font-weight: 700 !important;
+  letter-spacing: 0;
+  border-bottom: 2px solid #000000 !important;
+  color: #ffffff !important;
+  text-shadow: 1px 1px 0 #000000, 1px 1px 1px rgba(0,0,0,0.4) !important;
+}
+
+html[data-theme-visual="retro"] .t8-group-box__title,
+html[data-theme-visual="retro"] .t8-group-box__count {
+  color: #ffffff !important;
+  text-shadow: 1px 1px 0 #000000, 1px 1px 1px rgba(0,0,0,0.4) !important;
+}
+
+/* 组内操作按钮（重命名/删除）：3D 凸起小按键 + 焦墨黑字；执行按钮保留组色。 */
+html[data-theme-visual="retro"] .t8-group-box__button:not(.t8-group-box__button--run) {
+  background: var(--retro-face) !important;
+  border: 1px solid #000000 !important;
+  border-radius: 0 !important;
+  color: var(--retro-ink) !important;
+  font-family: var(--t8-display-font) !important;
+  font-weight: 700 !important;
+  box-shadow: var(--retro-raised-sm) !important;
+  transition: box-shadow var(--retro-transition), color var(--retro-transition), transform var(--retro-transition) !important;
+}
+
+html[data-theme-visual="retro"] .t8-group-box__button:not(.t8-group-box__button--run):hover {
+  color: var(--retro-accent) !important;
+}
+
+html[data-theme-visual="retro"] .t8-group-box__button:not(.t8-group-box__button--run):active {
+  box-shadow: var(--retro-inset) !important;
+  transform: translate(1px, 1px);
+}
+
+/* 组颜色选择器浮层：灰色窗口面板。 */
+html[data-theme-visual="retro"] .t8-group-box ~ div[class*="grid"] {
+  background: var(--retro-face-elev) !important;
+  border: 1px solid #000000 !important;
+  border-radius: 0 !important;
+  box-shadow: var(--retro-raised-lg) !important;
+}
+
+/* === 按钮：3D 凸起灰按键（核心 Win95 手感）+ 强化黑字 === */
+html[data-theme-visual="retro"] .react-flow__node:not(.react-flow__node-groupBox) button:not(.react-flow__controls-button):not([class*="text-red"]):not([class*="bg-red"]):not([title*="删除"]):not([aria-label*="删除"]),
+html[data-theme-visual="retro"] .t8-btn,
+html[data-theme-visual="retro"] .t8-mini-icon-button {
+  background: var(--retro-face) !important;
+  border: 1px solid #000000 !important;
+  border-radius: 0 !important;
+  box-shadow: var(--retro-raised-sm) !important;
+  color: var(--retro-ink) !important;
+  font-family: var(--t8-display-font) !important;
+  font-weight: 700 !important;
+  transition: box-shadow var(--retro-transition), background var(--retro-transition), transform var(--retro-transition), color var(--retro-transition) !important;
+}
+
+html[data-theme-visual="retro"] .react-flow__node:not(.react-flow__node-groupBox) button:not(.react-flow__controls-button):not([class*="text-red"]):not([class*="bg-red"]):not([title*="删除"]):not([aria-label*="删除"]):hover,
+html[data-theme-visual="retro"] .t8-btn:hover,
+html[data-theme-visual="retro"] .t8-mini-icon-button:hover {
+  background: var(--retro-face-elev) !important;
+  color: var(--retro-accent) !important;
+}
+
+/* 按下：边框翻转（凹陷）+ 1px 位移，像真按钮被压下。 */
+html[data-theme-visual="retro"] .react-flow__node:not(.react-flow__node-groupBox) button:not(.react-flow__controls-button):not([class*="text-red"]):not([class*="bg-red"]):not([title*="删除"]):not([aria-label*="删除"]):active,
+html[data-theme-visual="retro"] .t8-btn:active,
+html[data-theme-visual="retro"] .t8-mini-icon-button:active {
+  box-shadow: var(--retro-inset) !important;
+  transform: translate(1px, 1px);
+}
+
+/* 主按钮：深蓝填充 + 白字 + 凸起。 */
+html[data-theme-visual="retro"] .t8-btn--primary,
+html[data-theme-visual="retro"] button[class*="bg-"][class*="--accent"],
+html[data-theme-visual="retro"] .px-btn--mint {
+  background: var(--retro-accent) !important;
+  color: var(--retro-accent-text) !important;
+  border: 1px solid #000000 !important;
+  box-shadow: var(--retro-raised-sm) !important;
+}
+
+html[data-theme-visual="retro"] .t8-btn--primary:hover {
+  background: var(--retro-accent-hover) !important;
+}
+
+html[data-theme-visual="retro"] .t8-btn--primary:active {
+  box-shadow: var(--retro-inset) !important;
+  transform: translate(1px, 1px);
+}
+
+/* === 输入框/选择框：凹陷 inset 白底 + 焦墨黑字 + focus 深蓝边 === */
+html[data-theme-visual="retro"] .react-flow__node:not(.react-flow__node-groupBox) input,
+html[data-theme-visual="retro"] .react-flow__node:not(.react-flow__node-groupBox) select,
+html[data-theme-visual="retro"] .react-flow__node:not(.react-flow__node-groupBox) textarea,
+html[data-theme-visual="retro"] .t8-input,
+html[data-theme-visual="retro"] .t8-select,
+html[data-theme-visual="retro"] textarea {
+  background: #ffffff !important;
+  border: 1px solid #000000 !important;
+  border-radius: 0 !important;
+  box-shadow: var(--retro-inset-sm) !important;
+  color: var(--retro-ink) !important;
+  font-family: var(--t8-display-font) !important;
+  font-weight: 700 !important;
+  transition: box-shadow var(--retro-transition), border-color var(--retro-transition) !important;
+}
+
+html[data-theme-visual="retro"] .react-flow__node:not(.react-flow__node-groupBox) input:focus,
+html[data-theme-visual="retro"] .react-flow__node:not(.react-flow__node-groupBox) select:focus,
+html[data-theme-visual="retro"] .react-flow__node:not(.react-flow__node-groupBox) textarea:focus,
+html[data-theme-visual="retro"] .t8-input:focus,
+html[data-theme-visual="retro"] .t8-select:focus,
+html[data-theme-visual="retro"] textarea:focus {
+  outline: none !important;
+  border-color: var(--retro-accent) !important;
+  box-shadow: var(--retro-inset-sm), 0 0 0 1px var(--retro-accent) !important;
+}
+
+/* select option：下拉项白底黑字。 */
+html[data-theme-visual="retro"] select option {
+  background: #ffffff !important;
+  color: var(--retro-ink) !important;
+}
+
+html[data-theme-visual="retro"] select option:checked {
+  background: var(--retro-accent) !important;
+  color: var(--retro-accent-text) !important;
+}
+
+/* === 端口（Handle）：方角 10×10 小方块 + 黑边 + 深蓝填充（非圆，强化可见度） === */
+html[data-theme-visual="retro"] .react-flow__handle {
+  border-radius: 0 !important;
+  border: 1.5px solid #000000 !important;
+  background: var(--retro-accent) !important;
+  box-shadow: var(--retro-raised-sm) !important;
+  transition: background-color var(--retro-transition) !important;
+}
+
+html[data-theme-visual="retro"] .react-flow__handle:hover {
+  background: var(--retro-accent-hover) !important;
+}
+
+html[data-theme-visual="retro"] .react-flow__handle.react-flow__handle-connecting {
+  background: var(--retro-danger) !important;
+  border-color: #000000 !important;
+}
+
+html[data-theme-visual="retro"] .react-flow__handle.react-flow__handle-valid {
+  background: #008000 !important;
+  border-color: #000000 !important;
+}
+
+/* === 连线：深蓝细线，选中红 + 虚线高亮（加粗提升可见度） === */
+html[data-theme-visual="retro"] .react-flow__edge-path {
+  stroke: var(--t8-edge) !important;
+  stroke-width: 2 !important;
+  stroke-linecap: square !important;
+  transition: stroke 80ms linear, stroke-width 80ms linear;
+}
+
+html[data-theme-visual="retro"] .react-flow__edge.selected .react-flow__edge-path,
+html[data-theme-visual="retro"] .react-flow__edge:hover .react-flow__edge-path {
+  stroke: var(--t8-edge-selected) !important;
+  stroke-width: 2.6 !important;
+  stroke-dasharray: 6 3 !important;
+}
+
+/* 主题激活边：深蓝虚线流动（遵守 36 边上限 + viewport-moving 暂停）。 */
+html[data-theme-visual="retro"] .react-flow__edge.t8-edge-theme-active .react-flow__edge-path {
+  stroke: var(--retro-accent) !important;
+  stroke-width: 2 !important;
+  stroke-dasharray: 5 3;
+  animation: t8-retro-edge-flow 1.2s linear infinite;
+}
+
+@keyframes t8-retro-edge-flow {
+  to { stroke-dashoffset: -16; }
+}
+
+/* 框选：深蓝淡底 + 深蓝边。 */
+html[data-theme-visual="retro"] .react-flow__selection {
+  background: var(--t8-selection-bg) !important;
+  border: 1px solid var(--t8-selection-border) !important;
+  border-radius: 0 !important;
+}
+
+/* === MiniMap / 音乐按钮：灰色面板 + 凸起（controls 面板透明） === */
+html[data-theme-visual="retro"] .t8-theme-music-toggle {
+  background: var(--retro-face) !important;
+  border: 1px solid #000000 !important;
+  border-radius: 0 !important;
+  box-shadow: var(--retro-raised) !important;
+}
+
+/* controls 面板容器透明，只给内部按钮走凸起。 */
+html[data-theme-visual="retro"] .react-flow__controls {
+  background: var(--t8-bg-panel-elevated) !important;
+  border: 1px solid var(--t8-border) !important;
+  border-radius: var(--t8-radius-panel) !important;
+  box-shadow: var(--t8-shadow-panel) !important;
+}
+
+html[data-theme-visual="retro"] .react-flow__controls-button {
+  background: var(--retro-face) !important;
+  border: 1px solid #000000 !important;
+  border-radius: 0 !important;
+  box-shadow: var(--retro-raised-sm) !important;
+  color: var(--retro-ink) !important;
+  font-family: var(--t8-display-font) !important;
+  font-weight: 700 !important;
+  margin: 1px 0 !important;
+  transition: box-shadow var(--retro-transition), color var(--retro-transition) !important;
+}
+
+html[data-theme-visual="retro"] .react-flow__controls-button:hover {
+  color: var(--retro-accent) !important;
+  background: var(--retro-face-elev) !important;
+}
+
+html[data-theme-visual="retro"] .react-flow__controls-button:active {
+  box-shadow: var(--retro-inset) !important;
+}
+/* === 右键菜单 / 弹窗 / 抽屉：灰色窗口 + 凸起 + 标题栏 === */
+html[data-theme-visual="retro"] .t8-modal,
+html[data-theme-visual="retro"] .t8-drawer {
+  background: var(--retro-face-elev) !important;
+  border: 1px solid #000000 !important;
+  border-radius: 0 !important;
+  box-shadow: var(--retro-raised-lg) !important;
+}
+
+/* 弹窗/抽屉标题：MS Sans Serif 粗体 + 标题栏深蓝。 */
+html[data-theme-visual="retro"] .t8-modal h1,
+html[data-theme-visual="retro"] .t8-modal h2,
+html[data-theme-visual="retro"] .t8-modal h3,
+html[data-theme-visual="retro"] .t8-drawer h1,
+html[data-theme-visual="retro"] .t8-drawer h2,
+html[data-theme-visual="retro"] .t8-drawer h3 {
+  font-family: var(--t8-display-font) !important;
+  font-weight: 700 !important;
+  color: #ffffff !important;
+  text-shadow: 1px 1px 0 #000000;
+  background: var(--retro-titlebar) !important;
+  padding: 4px 8px !important;
+  border-bottom: 2px solid #000000 !important;
+}
+
+html[data-theme-visual="retro"] .t8-modal .border-b,
+html[data-theme-visual="retro"] .t8-drawer .border-b,
+html[data-theme-visual="retro"] .t8-context-menu .border-b {
+  border-color: #808080 !important;
+}
+
+/* === Chip / Badge：凹陷灰槽 + 焦墨黑字 === */
+html[data-theme-visual="retro"] .t8-chip {
+  background: var(--retro-face) !important;
+  border: 1px solid #000000 !important;
+  border-radius: 0 !important;
+  color: var(--retro-ink) !important;
+  font-family: var(--t8-display-font) !important;
+  font-weight: 700 !important;
+  box-shadow: var(--retro-inset-sm) !important;
+}
+
+html[data-theme-visual="retro"] .t8-chip--active,
+html[data-theme-visual="retro"] .t8-chip[class*="active"] {
+  background: var(--retro-accent) !important;
+  border-color: #000000 !important;
+  color: var(--retro-accent-text) !important;
+  box-shadow: var(--retro-raised-sm) !important;
+}
+
+/* 智能节点状态 chip：状态色。 */
+html[data-theme-visual="retro"] .t8-smart-mini-status {
+  border-radius: 0 !important;
+}
+
+html[data-theme-visual="retro"] .t8-smart-node-status--success {
+  color: #006000 !important;
+  border-color: #006000 !important;
+  font-weight: 700 !important;
+}
+
+html[data-theme-visual="retro"] .t8-smart-node-status--error,
+html[data-theme-visual="retro"] .t8-smart-node-status--danger {
+  color: #a00000 !important;
+  border-color: #a00000 !important;
+  font-weight: 700 !important;
+}
+
+html[data-theme-visual="retro"] .t8-smart-node-status--warning,
+html[data-theme-visual="retro"] .t8-smart-node-status--pending {
+  color: #806000 !important;
+  border-color: #806000 !important;
+  font-weight: 700 !important;
+}
+
+/* === Tooltip / 通用浮层提示：灰色窗口 + 焦墨黑字 === */
+html[data-theme-visual="retro"] [role="tooltip"],
+html[data-theme-visual="retro"] .t8-tooltip {
+  background: var(--retro-face-elev) !important;
+  border: 1px solid #000000 !important;
+  border-radius: 0 !important;
+  color: var(--retro-ink) !important;
+  font-family: var(--t8-display-font) !important;
+  font-weight: 700 !important;
+  box-shadow: var(--retro-raised) !important;
+}
+
+/* === SHIFT 划线轨迹：红色细线 + 方角 === */
+html[data-theme-visual="retro"] .t8-cut-track {
+  stroke: var(--t8-cut-track) !important;
+  stroke-width: 1.6 !important;
+  stroke-dasharray: none !important;
+  opacity: 0.9;
+  stroke-linecap: square;
+}
+
+html[data-theme-visual="retro"] .t8-cut-button {
+  background: var(--retro-face) !important;
+  color: var(--retro-danger) !important;
+  border: 1px solid #000000 !important;
+  border-radius: 0 !important;
+  box-shadow: var(--retro-raised-sm) !important;
+}
+
+/* === 浮层操作栏：灰色窗口 === */
+html[data-theme-visual="retro"] .t8-node-action-bar {
+  background: var(--retro-face-elev) !important;
+  border: 1px solid #000000 !important;
+  border-radius: 0 !important;
+  box-shadow: var(--retro-raised) !important;
+}
+
+/* === legacy 内部控件兜底：浅色模式下把节点里残留的暗色/白色工具类映射回 retro 调色 === */
+/* 1. 所有 text-white* 元素（含 div/span/p 等）→ 深色模式白字保留 / 浅色模式黑字 */
+html[data-theme-visual="retro"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) [class*="text-white"]:not(input):not(textarea):not(select) {
+  color: var(--retro-ink) !important;
+}
+
+/* 2. 表单控件本身的 text-white → 主文字色 */
+html[data-theme-visual="retro"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) input[class*="text-white"],
+html[data-theme-visual="retro"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) textarea[class*="text-white"],
+html[data-theme-visual="retro"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) select[class*="text-white"] {
+  color: var(--retro-ink) !important;
+}
+
+/* 3. placeholder 文字色 */
+html[data-theme-visual="retro"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) input::placeholder,
+html[data-theme-visual="retro"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) textarea::placeholder {
+  color: var(--retro-ink-dim) !important;
+  opacity: 0.7 !important;
+}
+
+/* 4. bg-white/ 透明底 → 窗口底色 */
+html[data-theme-visual="retro"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) [class*="bg-white/"]:not(input):not(textarea):not(select):not(img):not(video):not(canvas) {
+  background: var(--retro-face-elev) !important;
+}
+
+/* 5. 表单控件的 bg-white/ → 白底（inset 槽） */
+html[data-theme-visual="retro"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) input[class*="bg-white/"],
+html[data-theme-visual="retro"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) textarea[class*="bg-white/"],
+html[data-theme-visual="retro"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) select[class*="bg-white/"] {
+  background: #ffffff !important;
+}
+
+/* 6. bg-zinc-900/950（暗色模式硬底）→ 窗口底 */
+html[data-theme-visual="retro"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) [class*="bg-zinc-900"]:not(input):not(textarea):not(select):not(img):not(video):not(canvas),
+html[data-theme-visual="retro"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) [class*="bg-zinc-950"]:not(input):not(textarea):not(select):not(img):not(video):not(canvas) {
+  background: var(--retro-face) !important;
+}
+
+/* 7. select/option 的 bg-zinc-900 → 白底 */
+html[data-theme-visual="retro"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) select[class*="bg-zinc-900"],
+html[data-theme-visual="retro"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) select[class*="bg-zinc-950"],
+html[data-theme-visual="retro"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) option[class*="bg-zinc-900"],
+html[data-theme-visual="retro"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) option[class*="bg-zinc-950"] {
+  background: #ffffff !important;
+  color: var(--retro-ink) !important;
+}
+
+/* 8. bg-black/ 透明底 → 移除 */
+html[data-theme-visual="retro"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) [class*="bg-black/"]:not(input):not(textarea):not(select):not(img):not(video):not(canvas) {
+  background: transparent !important;
+}
+
+/* 9. border-white/ → 黑边 */
+html[data-theme-visual="retro"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) [class*="border-white/"] {
+  border-color: #000000 !important;
+}
+
+/* 10. focus:border-white/ → focus 深蓝边 */
+html[data-theme-visual="retro"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) [class*="focus:border-white"]:focus {
+  border-color: var(--retro-accent) !important;
+}
+
+/* 11. 残留的浅色文字工具类 → 主文字色 */
+html[data-theme-visual="retro"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) [class*="text-amber-100"],
+html[data-theme-visual="retro"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) [class*="text-cyan-300"],
+html[data-theme-visual="retro"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) [class*="text-sky-300"] {
+  color: var(--retro-ink-muted) !important;
+}
+
+/* 12. hover:text-white → hover 深蓝 */
+html[data-theme-visual="retro"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) [class*="hover:text-white"]:hover {
+  color: var(--retro-accent) !important;
+}
+
+/* 13. 节点内 select 下拉框统一走白底 + 黑字 */
+html[data-theme-visual="retro"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) select {
+  background: #ffffff !important;
+  color: var(--retro-ink) !important;
+  border-color: #000000 !important;
+}
+
+html[data-theme-visual="retro"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) select option {
+  background: #ffffff !important;
+  color: var(--retro-ink) !important;
+}
+
+/* 14. 节点内 input/textarea 统一兜底 */
+html[data-theme-visual="retro"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+html[data-theme-visual="retro"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) textarea {
+  background: #ffffff !important;
+  color: var(--retro-ink) !important;
+  border-color: #000000 !important;
+  box-shadow: var(--retro-inset-sm) !important;
+}
+
+html[data-theme-visual="retro"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) input::placeholder,
+html[data-theme-visual="retro"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) textarea::placeholder {
+  color: var(--retro-ink-dim) !important;
+  opacity: 0.7 !important;
+}
+
+/* 顶栏/侧栏残留硬底工具类兜底：收敛为窗口灰。 */
+html[data-theme-visual="retro"][data-theme-mode="dark"] .t8-topbar button[class*="bg-sky-"],
+html[data-theme-visual="retro"][data-theme-mode="dark"] .t8-topbar button[class*="bg-emerald-"],
+html[data-theme-visual="retro"][data-theme-mode="dark"] .t8-topbar button[class*="bg-white/"] {
+  background: var(--retro-face) !important;
+  border-color: #000000 !important;
+}
+
+/* === 视口拖动 / 节点拖拽时：暂停边流动，避免性能拖累 === */
+html[data-theme-visual="retro"] .t8-canvas-shell.t8-viewport-moving .react-flow__edge.t8-edge-theme-active .react-flow__edge-path,
+html[data-theme-visual="retro"] .t8-canvas-shell.t8-node-dragging .react-flow__edge.t8-edge-theme-active .react-flow__edge-path {
+  animation: none !important;
+}
+
+/* 减少动态效果偏好：关掉所有动画。 */
+@media (prefers-reduced-motion: reduce) {
+  html[data-theme-visual="retro"] .react-flow__edge.t8-edge-theme-active .react-flow__edge-path,
+  html[data-theme-visual="retro"] .t8-canvas-shell.t8-viewport-moving .react-flow__edge.t8-edge-theme-active .react-flow__edge-path,
+  html[data-theme-visual="retro"] .t8-canvas-shell.t8-node-dragging .react-flow__edge.t8-edge-theme-active .react-flow__edge-path {
+    animation: none !important;
+  }
+  html[data-theme-visual="retro"] * {
+    transition-duration: 0s !important;
+    animation: none !important;
+  }
+}

@@ -88,6 +88,7 @@ interface T8ParseAuthResult {
 }
 
 interface Window {
+  __t8CanvasInnerRenderCount?: number;
   t8pc?: {
     getInfo: () => Promise<{
       packaged: boolean;

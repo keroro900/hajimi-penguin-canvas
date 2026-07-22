@@ -21,12 +21,6 @@ type LucideIcon = ComponentType<{ size?: number; strokeWidth?: number; className
 const CATEGORY_LABELS: Record<NodeCategory, string> = {
   input: '素材',
   core: '核心',
-  rh: 'RH',
-  fal: 'FAL',
-  grok: 'GROK',
-  codex: 'CODEX CLI',
-  inspiration: '灵感',
-  comfyui: 'ComfyUI',
   special: '特殊',
   utility: '工具',
   auxiliary: '辅助',

@@ -2,24 +2,33 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-const sidebarSource = fs.readFileSync('src/components/Sidebar.tsx', 'utf-8');
+const panelSource = fs.readFileSync('src/components/shell/ShellPanel.tsx', 'utf-8');
 
-test('sidebar keeps its scrollable node list shrinkable inside the flex column', () => {
-  assert.match(sidebarSource, /t8-sidebar w-64 h-full min-h-0 flex flex-col/);
-  assert.match(sidebarSource, /flex-1 min-h-0 overflow-y-auto p-2 space-y-1 scrollbar-hide/);
+test('shell panel keeps its scrollable node list shrinkable inside the flex column', () => {
+  assert.match(panelSource, /t8-shell-panel h-full min-h-0 flex flex-col/);
+  assert.match(panelSource, /t8-shell-panel__palette flex-1 min-h-0 overflow-y-auto p-2 space-y-1 scrollbar-hide/);
+  assert.match(panelSource, /t8-shell-panel__canvas-list flex-1 min-h-0 overflow-y-auto p-2/);
 });
 
-test('canvas panel collapse action stays in the right-side button group', () => {
-  const titleIndex = sidebarSource.indexOf('<FolderOpen size={12} />');
-  const collapseIndex = sidebarSource.indexOf("title={canvasPanelOpen ? '收起画布列表' : '展开画布列表'}");
-  const createIndex = sidebarSource.indexOf('title="新建画布"', collapseIndex);
+test('canvas panel header keeps title → collapse → create button order', () => {
+  const headerStart = panelSource.indexOf('t8-shell-panel__header');
+  const titleIndex = panelSource.indexOf('t8-shell-panel__title');
+  const collapseIndex = panelSource.indexOf('aria-label="收起面板"');
+  const createIndex = panelSource.indexOf('title="新建画布"');
 
-  assert.ok(titleIndex > 0);
-  assert.ok(collapseIndex > titleIndex, 'collapse button should render after the canvas title');
+  assert.ok(headerStart > 0);
+  assert.ok(titleIndex > headerStart, 'panel title should render inside the header');
+  assert.ok(collapseIndex > titleIndex, 'collapse button should render after the panel title');
   assert.ok(createIndex > collapseIndex, 'new canvas button should stay after the collapse button');
-  assert.doesNotMatch(
-    sidebarSource.slice(titleIndex - 260, titleIndex),
-    /setCanvasPanelOpen/,
-    'canvas title text should not be the collapse hit target',
-  );
+  assert.match(panelSource, /handleCreateCanvas/);
+  assert.match(panelSource, /createCanvas\(name\)/);
+});
+
+test('nodes panel keeps the searchable palette', () => {
+  assert.match(panelSource, /t8-sidebar-search-box/);
+  assert.match(panelSource, /placeholder="搜索节点\.\.\."/);
+  assert.match(panelSource, /filterNodes/);
+  assert.match(panelSource, /Object\.entries\(NODE_GROUPS\)/);
+  assert.match(panelSource, /t8-sidebar-node/);
+  assert.match(panelSource, /onAddNode\(n\.type\)/);
 });

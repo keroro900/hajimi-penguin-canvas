@@ -1,0 +1,645 @@
+/*
+ * Utility-first (实用主义) visual skin
+ * 设计系统示例板风格：中性灰底 + 1 个靛蓝品牌色 + 浅阴影 + 方角圆角。
+ * 纯静态克制：140ms ease-out，仅 border/bg/shadow 微调，无辉光、无 keyframes、无位移。
+ * SHIFT 切断：工程化细直线，靛蓝。
+ */
+
+html[data-theme-visual="utility"] {
+  --utility-accent: var(--t8-accent);
+  --utility-accent-hover: var(--t8-accent-hover);
+  --utility-accent-soft: color-mix(in srgb, var(--t8-accent) 12%, transparent);
+  --utility-accent-line: color-mix(in srgb, var(--t8-accent) 32%, transparent);
+  --utility-secondary: var(--t8-secondary);
+  --utility-card-bg: var(--t8-bg-panel);
+  --utility-card-bg-elev: var(--t8-bg-panel-elevated);
+  --utility-muted-bg: var(--t8-bg-panel-muted);
+  --utility-border: color-mix(in srgb, var(--t8-text-main) 8%, transparent);
+  --utility-border-strong: var(--t8-border-strong);
+  --utility-ink: var(--t8-text-main);
+  --utility-ink-muted: var(--t8-text-muted);
+  --utility-ink-dim: var(--t8-text-dim);
+  --utility-radius: 8px;
+  --utility-radius-sm: 6px;
+  --utility-radius-pill: 9999px;
+  --utility-shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.08);
+  --utility-shadow: 0 2px 8px rgba(15, 23, 42, 0.10);
+  --utility-shadow-lg: 0 4px 12px rgba(15, 23, 42, 0.14);
+  --utility-transition: 140ms ease-out;
+  /* SHIFT 划线断连：工程化细直线，靛蓝。 */
+  --t8-cut-cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%233b82f6' stroke-width='1.6' stroke-linecap='round' opacity='0.85'><path d='M4 12h16'/></svg>") 12 12, crosshair;
+  --t8-cut-color: var(--utility-accent);
+  --t8-cut-track: color-mix(in srgb, var(--utility-accent) 60%, transparent);
+  --t8-cut-button-bg: var(--utility-card-bg);
+  --t8-cut-button-fg: var(--utility-accent);
+  --t8-cut-button-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect fill='black' x='3' y='11' width='18' height='2' rx='1'/></svg>");
+}
+
+/* 浅色模式增强：靛蓝在白底上易显淡，加强边线让设计系统识别度不丢。 */
+html[data-theme-visual="utility"][data-theme-mode="light"] {
+  --utility-border: color-mix(in srgb, var(--t8-text-main) 16%, transparent);
+  --utility-border-strong: var(--t8-border-strong);
+  --utility-accent-line: color-mix(in srgb, var(--t8-accent) 48%, transparent);
+}
+
+html[data-theme-visual="utility"] body,
+html[data-theme-visual="utility"] #root {
+  background: var(--t8-bg-app);
+  color: var(--utility-ink);
+  font-family: var(--t8-font-family);
+}
+
+/* 应用外壳：纯色 + 极轻靛蓝角部渐变，不喧宾夺主。 */
+html[data-theme-visual="utility"] .t8-app-shell {
+  background:
+    linear-gradient(180deg, var(--t8-bg-app), var(--t8-bg-canvas)) !important;
+}
+
+/* === 顶栏：纯色 + 1px 下边线 + 极浅阴影 === */
+html[data-theme-visual="utility"] .t8-topbar {
+  min-height: 48px;
+  background: var(--utility-card-bg) !important;
+  border-bottom: 1px solid var(--utility-border) !important;
+  box-shadow: var(--utility-shadow-sm) !important;
+}
+
+/* 顶栏标题：无衬线粗体 + 等宽 displayFont，无 text-shadow。 */
+html[data-theme-visual="utility"] .t8-topbar h1 {
+  font-weight: 700 !important;
+  font-family: var(--t8-display-font) !important;
+  color: var(--utility-ink) !important;
+}
+
+/* 顶栏状态芯片：方角 6px + 1px 边，状态色走边框/文字色而非硬底。 */
+html[data-theme-visual="utility"] .t8-topbar-status-chip {
+  background: var(--utility-muted-bg) !important;
+  border: 1px solid var(--utility-border) !important;
+  border-radius: var(--utility-radius-sm) !important;
+  color: var(--utility-ink-muted) !important;
+  padding: 2px 8px !important;
+  transition: border-color var(--utility-transition), color var(--utility-transition) !important;
+}
+
+html[data-theme-visual="utility"] .t8-topbar-status-chip:hover {
+  border-color: var(--utility-accent-line) !important;
+  color: var(--utility-accent) !important;
+}
+
+/* 状态色：成功走绿、错误走红、检测走金，都用边框/文字色而非硬底。 */
+html[data-theme-visual="utility"] .t8-topbar-status-chip[class*="text-emerald"],
+html[data-theme-visual="utility"] .t8-topbar-status-chip[class*="emerald-"] {
+  color: var(--t8-success) !important;
+  border-color: color-mix(in srgb, var(--t8-success) 32%, transparent) !important;
+}
+
+html[data-theme-visual="utility"] .t8-topbar-status-chip[class*="text-red"],
+html[data-theme-visual="utility"] .t8-topbar-status-chip[class*="red-"] {
+  color: var(--t8-danger) !important;
+  border-color: color-mix(in srgb, var(--t8-danger) 32%, transparent) !important;
+}
+
+html[data-theme-visual="utility"] .t8-topbar-status-chip[class*="text-yellow"],
+html[data-theme-visual="utility"] .t8-topbar-status-chip[class*="yellow-"] {
+  color: var(--t8-warning) !important;
+  border-color: color-mix(in srgb, var(--t8-warning) 32%, transparent) !important;
+}
+
+/* 顶栏工具按钮：覆盖 sky/emerald/zinc 硬底 → 中性卡 + 1px 边。 */
+html[data-theme-visual="utility"] .t8-topbar button:not(.px-btn):not(.t8-topbar-status-chip) {
+  background: var(--utility-card-bg) !important;
+  border: 1px solid var(--utility-border) !important;
+  border-radius: var(--utility-radius-sm) !important;
+  color: var(--utility-ink) !important;
+  box-shadow: none !important;
+  transition: border-color var(--utility-transition), color var(--utility-transition), background var(--utility-transition), transform 100ms ease-out !important;
+}
+
+html[data-theme-visual="utility"] .t8-topbar button:not(.px-btn):not(.t8-topbar-status-chip):hover {
+  border-color: var(--utility-accent) !important;
+  color: var(--utility-accent) !important;
+  background: var(--utility-accent-soft) !important;
+}
+
+html[data-theme-visual="utility"] .t8-topbar button:not(.px-btn):not(.t8-topbar-status-chip):active {
+  transform: scale(0.99);
+}
+
+/* 顶栏激活态按钮（Codex 开启/资源库激活）：靛蓝填充。 */
+html[data-theme-visual="utility"] .t8-topbar button[aria-pressed="true"],
+html[data-theme-visual="utility"] .t8-topbar button[class*="emerald-"]:not(:hover) {
+  background: var(--utility-accent) !important;
+  color: var(--t8-accent-text) !important;
+  border-color: var(--utility-accent) !important;
+}
+
+/* === 侧栏：纯色 + 1px 右边线 === */
+html[data-theme-visual="utility"] .t8-sidebar,
+html[data-theme-visual="utility"] .t8-sidebar-scroll {
+  background: var(--utility-card-bg) !important;
+  border-right: 1px solid var(--utility-border) !important;
+}
+
+/* 侧栏分隔线统一走 utility-border。 */
+html[data-theme-visual="utility"] .t8-sidebar .border-b,
+html[data-theme-visual="utility"] .t8-sidebar .border-t {
+  border-color: var(--utility-border) !important;
+}
+
+/* 侧栏分组标题：ink-muted + 等宽 displayFont，hover 变 accent。 */
+html[data-theme-visual="utility"] .t8-sidebar button[class*="uppercase tracking-wider"] {
+  color: var(--utility-ink-muted) !important;
+  letter-spacing: 0.1em;
+  font-family: var(--t8-display-font) !important;
+  transition: color var(--utility-transition) !important;
+}
+
+html[data-theme-visual="utility"] .t8-sidebar button[class*="uppercase tracking-wider"]:hover {
+  color: var(--utility-accent) !important;
+}
+
+/* 侧栏小工具按钮：中性卡 + 1px 边。 */
+html[data-theme-visual="utility"] .t8-sidebar button:not(.t8-sidebar-node):not(.px-btn):not([class*="uppercase tracking-wider"]) {
+  background: var(--utility-card-bg) !important;
+  border: 1px solid var(--utility-border) !important;
+  border-radius: var(--utility-radius-sm) !important;
+  color: var(--utility-ink-muted) !important;
+  transition: border-color var(--utility-transition), color var(--utility-transition), background var(--utility-transition) !important;
+}
+
+html[data-theme-visual="utility"] .t8-sidebar button:not(.t8-sidebar-node):not(.px-btn):not([class*="uppercase tracking-wider"]):hover {
+  border-color: var(--utility-accent-line) !important;
+  color: var(--utility-accent) !important;
+  background: var(--utility-accent-soft) !important;
+}
+
+/* 侧栏搜索框：muted 底 + 1px 边，focus 变 accent 边。 */
+html[data-theme-visual="utility"] .t8-sidebar-search-box {
+  background: var(--utility-muted-bg) !important;
+  border: 1px solid var(--utility-border) !important;
+  border-radius: var(--utility-radius-sm) !important;
+  box-shadow: none !important;
+  transition: border-color var(--utility-transition) !important;
+}
+
+html[data-theme-visual="utility"] .t8-sidebar-search-box:focus-within {
+  border-color: var(--utility-accent) !important;
+}
+
+html[data-theme-visual="utility"] .t8-sidebar-search-box input {
+  background: transparent !important;
+  color: var(--utility-ink) !important;
+}
+
+html[data-theme-visual="utility"] .t8-sidebar-search-box input::placeholder {
+  color: var(--utility-ink-dim) !important;
+  opacity: 0.7;
+}
+
+/* 侧栏画布列表行：hover accent 8% 底。 */
+html[data-theme-visual="utility"] .t8-sidebar-canvas-row {
+  border-radius: var(--utility-radius-sm) !important;
+  transition: background var(--utility-transition) !important;
+}
+
+html[data-theme-visual="utility"] .t8-sidebar-canvas-row:hover {
+  background: var(--utility-accent-soft) !important;
+}
+
+html[data-theme-visual="utility"] .t8-sidebar-canvas-title {
+  color: var(--utility-ink) !important;
+  font-family: var(--t8-display-font) !important;
+}
+
+/* 侧栏更新提示点：改 accent，与主题呼应。 */
+html[data-theme-visual="utility"] .t8-sidebar-canvas-update-dot {
+  background: var(--utility-accent) !important;
+  border-color: color-mix(in srgb, var(--utility-accent) 60%, var(--utility-card-bg)) !important;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--utility-accent) 18%, transparent) !important;
+}
+
+html[data-theme-visual="utility"] .t8-sidebar-canvas-update-dot::after {
+  border-color: color-mix(in srgb, var(--utility-accent) 35%, transparent) !important;
+}
+
+/* 侧栏底栏版本信息：弱色。 */
+html[data-theme-visual="utility"] .t8-sidebar > div:last-child {
+  color: var(--utility-ink-dim) !important;
+}
+
+/* 侧栏滚动条：细中性，hover accent。 */
+html[data-theme-visual="utility"] .t8-sidebar ::-webkit-scrollbar,
+html[data-theme-visual="utility"] .t8-sidebar-scroll ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+html[data-theme-visual="utility"] .t8-sidebar ::-webkit-scrollbar-thumb,
+html[data-theme-visual="utility"] .t8-sidebar-scroll ::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--utility-ink-muted) 28%, transparent) !important;
+  border-radius: var(--utility-radius-sm) !important;
+}
+
+html[data-theme-visual="utility"] .t8-sidebar ::-webkit-scrollbar-thumb:hover,
+html[data-theme-visual="utility"] .t8-sidebar-scroll ::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--utility-accent) 40%, transparent) !important;
+}
+
+html[data-theme-visual="utility"] .t8-sidebar ::-webkit-scrollbar-track,
+html[data-theme-visual="utility"] .t8-sidebar-scroll ::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+
+/* === 通用卡片/面板：纯色 + 1px 边 + 浅阴影 === */
+html[data-theme-visual="utility"] .t8-card,
+html[data-theme-visual="utility"] .t8-sidebar-node {
+  background: var(--utility-card-bg) !important;
+  border: 1px solid var(--utility-border) !important;
+  border-radius: var(--utility-radius) !important;
+  box-shadow: var(--utility-shadow-sm) !important;
+  transition: border-color var(--utility-transition), box-shadow var(--utility-transition) !important;
+}
+
+html[data-theme-visual="utility"] .t8-panel {
+  background: var(--t8-bg-panel-elevated) !important;
+  border: 1px solid var(--t8-border) !important;
+  border-radius: var(--t8-radius-panel) !important;
+  box-shadow: var(--t8-shadow-panel) !important;
+}
+
+html[data-theme-visual="utility"] .t8-card:hover,
+html[data-theme-visual="utility"] .t8-sidebar-node:hover {
+  border-color: var(--utility-accent-line) !important;
+  box-shadow: var(--utility-shadow) !important;
+}
+
+/* 节点标题：靛蓝淡底 + 1px 下边线 + 等宽 displayFont，强化设计系统字形识别度。 */
+html[data-theme-visual="utility"] .react-flow__node:not(.react-flow__node-groupBox) .t8-node-header,
+html[data-theme-visual="utility"] .t8-node-header {
+  background: var(--t8-node-header-bg) !important;
+  border-bottom: 1px solid var(--utility-border) !important;
+  border-radius: var(--utility-radius) var(--utility-radius) 0 0 !important;
+  font-family: var(--t8-display-font) !important;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+/* GroupBox (打组容器)：保留每组 color 身份（组件内联 border/background 不覆盖），
+   仅补 radius + 浅阴影；选中态加 1px accent 外环，与组色边共存。 */
+html[data-theme-visual="utility"] .react-flow__node-groupBox > div:first-child,
+html[data-theme-visual="utility"] .t8-group-box {
+  border-radius: var(--utility-radius) !important;
+  box-shadow: var(--utility-shadow-sm) !important;
+}
+
+html[data-theme-visual="utility"] .react-flow__node-groupBox.selected > div:first-child,
+html[data-theme-visual="utility"] .t8-group-box[data-selected="true"] {
+  box-shadow: 0 0 0 1px var(--utility-accent), var(--utility-shadow) !important;
+}
+
+/* 组标题栏：保持组色识别度，仅圆角对齐。 */
+html[data-theme-visual="utility"] .t8-group-box__header {
+  border-top-left-radius: var(--utility-radius) !important;
+  border-top-right-radius: var(--utility-radius) !important;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+/* 组标题文字 / 节点计数：用主文字色，保证可读性。 */
+html[data-theme-visual="utility"] .t8-group-box__title,
+html[data-theme-visual="utility"] .t8-group-box__count {
+  color: var(--utility-ink) !important;
+}
+
+/* 组颜色指示点 / Handle：保留组件内联组色，不叠加额外效果。 */
+
+/* 组内操作按钮（重命名/删除）：走 utility 中性卡；执行按钮保留组色。 */
+html[data-theme-visual="utility"] .t8-group-box__button:not(.t8-group-box__button--run) {
+  background: var(--utility-muted-bg) !important;
+  border: 1px solid var(--utility-border) !important;
+  border-radius: var(--utility-radius-sm) !important;
+  color: var(--utility-ink-muted) !important;
+  transition: border-color var(--utility-transition), color var(--utility-transition), background var(--utility-transition) !important;
+}
+
+html[data-theme-visual="utility"] .t8-group-box__button:not(.t8-group-box__button--run):hover {
+  border-color: var(--utility-accent-line) !important;
+  color: var(--utility-accent) !important;
+  background: var(--utility-accent-soft) !important;
+}
+
+/* 组颜色选择器浮层：与右键菜单/弹窗一致的中性卡。 */
+html[data-theme-visual="utility"] .t8-group-box ~ div[class*="grid"] {
+  background: var(--utility-card-bg-elev) !important;
+  border: 1px solid var(--utility-border) !important;
+  border-radius: var(--utility-radius) !important;
+  box-shadow: var(--utility-shadow-lg) !important;
+}
+
+/* === 按钮：方角 6px + 1px 边 + muted 底 === */
+html[data-theme-visual="utility"] .react-flow__node:not(.react-flow__node-groupBox) button:not(.react-flow__controls-button):not([class*="text-red"]):not([class*="bg-red"]):not([title*="删除"]):not([aria-label*="删除"]),
+html[data-theme-visual="utility"] .t8-btn,
+html[data-theme-visual="utility"] .t8-mini-icon-button {
+  background: var(--utility-muted-bg) !important;
+  border: 1px solid var(--utility-border) !important;
+  border-radius: var(--utility-radius-sm) !important;
+  box-shadow: none !important;
+  color: var(--utility-ink) !important;
+  transition: border-color var(--utility-transition), color var(--utility-transition), background var(--utility-transition), transform 100ms ease-out !important;
+}
+
+html[data-theme-visual="utility"] .react-flow__node:not(.react-flow__node-groupBox) button:not(.react-flow__controls-button):not([class*="text-red"]):not([class*="bg-red"]):not([title*="删除"]):not([aria-label*="删除"]):hover,
+html[data-theme-visual="utility"] .t8-btn:hover,
+html[data-theme-visual="utility"] .t8-mini-icon-button:hover {
+  border-color: var(--utility-accent) !important;
+  color: var(--utility-accent) !important;
+  background: var(--utility-accent-soft) !important;
+}
+
+html[data-theme-visual="utility"] .react-flow__node:not(.react-flow__node-groupBox) button:not(.react-flow__controls-button):not([class*="text-red"]):not([class*="bg-red"]):not([title*="删除"]):not([aria-label*="删除"]):active,
+html[data-theme-visual="utility"] .t8-btn:active,
+html[data-theme-visual="utility"] .t8-mini-icon-button:active {
+  transform: scale(0.99);
+}
+
+/* 主按钮：靛蓝填充 + accentText 文字。 */
+html[data-theme-visual="utility"] .t8-btn--primary,
+html[data-theme-visual="utility"] button[class*="bg-"][class*="--accent"],
+html[data-theme-visual="utility"] .px-btn--mint {
+  background: var(--utility-accent) !important;
+  color: var(--t8-accent-text) !important;
+  border: 1px solid var(--utility-accent) !important;
+  box-shadow: none !important;
+}
+
+html[data-theme-visual="utility"] .t8-btn--primary:hover {
+  background: var(--utility-accent-hover) !important;
+  border-color: var(--utility-accent-hover) !important;
+}
+
+/* === 输入框/选择框：muted 底 + 1px 边，focus accent 边（无辉光） === */
+html[data-theme-visual="utility"] .react-flow__node:not(.react-flow__node-groupBox) input,
+html[data-theme-visual="utility"] .react-flow__node:not(.react-flow__node-groupBox) select,
+html[data-theme-visual="utility"] .react-flow__node:not(.react-flow__node-groupBox) textarea,
+html[data-theme-visual="utility"] .t8-input,
+html[data-theme-visual="utility"] .t8-select,
+html[data-theme-visual="utility"] textarea {
+  background: var(--utility-muted-bg) !important;
+  border: 1px solid var(--utility-border) !important;
+  border-radius: var(--utility-radius-sm) !important;
+  box-shadow: none !important;
+  color: var(--utility-ink) !important;
+  transition: border-color var(--utility-transition) !important;
+}
+
+html[data-theme-visual="utility"] .react-flow__node:not(.react-flow__node-groupBox) input:focus,
+html[data-theme-visual="utility"] .react-flow__node:not(.react-flow__node-groupBox) select:focus,
+html[data-theme-visual="utility"] .react-flow__node:not(.react-flow__node-groupBox) textarea:focus,
+html[data-theme-visual="utility"] .t8-input:focus,
+html[data-theme-visual="utility"] .t8-select:focus,
+html[data-theme-visual="utility"] textarea:focus {
+  outline: none !important;
+  border-color: var(--utility-accent) !important;
+}
+
+/* select option：下拉项可读性兜底。 */
+html[data-theme-visual="utility"] select option {
+  background: var(--utility-card-bg-elev) !important;
+  color: var(--utility-ink) !important;
+}
+
+html[data-theme-visual="utility"] select option:checked {
+  background: var(--utility-accent-soft) !important;
+  color: var(--utility-ink) !important;
+}
+
+/* === 端口（Handle）：10px 圆（比 vapor 12px 更克制）+ 1px accent 边 === */
+html[data-theme-visual="utility"] .react-flow__handle {
+  border-radius: 50% !important;
+  border: 1px solid var(--utility-accent) !important;
+  background: var(--t8-accent) !important;
+  box-shadow: none !important;
+  transition: border-color var(--utility-transition) !important;
+}
+
+html[data-theme-visual="utility"] .react-flow__handle:hover {
+}
+
+html[data-theme-visual="utility"] .react-flow__handle.react-flow__handle-connecting {
+  background: var(--t8-warning) !important;
+  border-color: var(--t8-warning) !important;
+}
+
+html[data-theme-visual="utility"] .react-flow__handle.react-flow__handle-valid {
+  background: var(--t8-success) !important;
+  border-color: var(--t8-success) !important;
+}
+
+/* === 连线：1.5px 中性灰，选中 2px accent === */
+html[data-theme-visual="utility"] .react-flow__edge-path {
+  stroke: var(--t8-edge) !important;
+  stroke-width: 1.5 !important;
+  stroke-linecap: round !important;
+  transition: stroke 140ms ease, stroke-width 140ms ease;
+}
+
+html[data-theme-visual="utility"] .react-flow__edge.selected .react-flow__edge-path,
+html[data-theme-visual="utility"] .react-flow__edge:hover .react-flow__edge-path {
+  stroke: var(--t8-edge-selected) !important;
+  stroke-width: 2 !important;
+}
+
+/* 主题激活边（选中/悬停相关）：走 accent 实线，不加流动虚线动效（纯静态）。 */
+html[data-theme-visual="utility"] .react-flow__edge.t8-edge-theme-active .react-flow__edge-path {
+  stroke: var(--utility-accent) !important;
+  stroke-width: 2 !important;
+  stroke-dasharray: none !important;
+  animation: none !important;
+}
+
+/* 框选：accent-soft 底 + accent 边。 */
+html[data-theme-visual="utility"] .react-flow__selection {
+  background: var(--t8-selection-bg) !important;
+  border: 1px solid var(--t8-selection-border) !important;
+  border-radius: var(--utility-radius-sm) !important;
+}
+
+/* === MiniMap / 音乐按钮：纯色 + 1px 边 + 浅阴影（controls 面板透明） === */
+html[data-theme-visual="utility"] .t8-theme-music-toggle {
+  background: var(--utility-card-bg) !important;
+  border: 1px solid var(--utility-border) !important;
+  border-radius: var(--utility-radius) !important;
+  box-shadow: var(--utility-shadow-sm) !important;
+}
+
+/* controls 面板容器透明，只给内部按钮走中性卡。 */
+html[data-theme-visual="utility"] .react-flow__controls {
+  background: var(--t8-bg-panel-elevated) !important;
+  border: 1px solid var(--t8-border) !important;
+  border-radius: var(--t8-radius-panel) !important;
+  box-shadow: var(--t8-shadow-panel) !important;
+}
+
+html[data-theme-visual="utility"] .react-flow__controls-button {
+  background: var(--utility-card-bg) !important;
+  border: 1px solid var(--utility-border) !important;
+  border-radius: var(--utility-radius-sm) !important;
+  box-shadow: var(--utility-shadow-sm) !important;
+  color: var(--utility-ink) !important;
+  margin: 2px 0 !important;
+}
+
+html[data-theme-visual="utility"] .react-flow__controls-button:hover {
+  background: var(--utility-accent-soft) !important;
+  border-color: var(--utility-accent-line) !important;
+  color: var(--utility-accent) !important;
+}
+/* === 右键菜单 / 弹窗 / 抽屉：纯色 + 1px 边 + shadow-lg === */
+html[data-theme-visual="utility"] .t8-modal,
+html[data-theme-visual="utility"] .t8-drawer {
+  background: var(--utility-card-bg-elev) !important;
+  border: 1px solid var(--utility-border) !important;
+  border-radius: var(--utility-radius) !important;
+  box-shadow: var(--utility-shadow-lg) !important;
+}
+
+html[data-theme-visual="utility"] .t8-context-menu {
+  background: var(--t8-bg-panel-elevated) !important;
+  border: 1px solid var(--t8-border) !important;
+  border-radius: var(--t8-radius-panel) !important;
+  box-shadow: var(--t8-shadow-panel) !important;
+}
+
+/* 弹窗/抽屉标题：等宽 displayFont 粗体 + 下边线。 */
+html[data-theme-visual="utility"] .t8-modal h1,
+html[data-theme-visual="utility"] .t8-modal h2,
+html[data-theme-visual="utility"] .t8-modal h3,
+html[data-theme-visual="utility"] .t8-drawer h1,
+html[data-theme-visual="utility"] .t8-drawer h2,
+html[data-theme-visual="utility"] .t8-drawer h3 {
+  font-family: var(--t8-display-font) !important;
+  font-weight: 700 !important;
+  color: var(--utility-ink) !important;
+}
+
+html[data-theme-visual="utility"] .t8-modal .border-b,
+html[data-theme-visual="utility"] .t8-drawer .border-b,
+html[data-theme-visual="utility"] .t8-context-menu .border-b {
+  border-color: var(--utility-border) !important;
+}
+
+/* === Chip / Badge：方角 6px + 1px 边 === */
+html[data-theme-visual="utility"] .t8-chip {
+  background: var(--utility-muted-bg) !important;
+  border: 1px solid var(--utility-border) !important;
+  border-radius: var(--utility-radius-sm) !important;
+  color: var(--utility-ink) !important;
+  box-shadow: none !important;
+}
+
+html[data-theme-visual="utility"] .t8-chip--active,
+html[data-theme-visual="utility"] .t8-chip[class*="active"] {
+  background: var(--utility-accent-soft) !important;
+  border-color: var(--utility-accent) !important;
+  color: var(--utility-accent) !important;
+}
+
+/* 智能节点状态 chip：状态色保留，走边框/文字色。 */
+html[data-theme-visual="utility"] .t8-smart-mini-status {
+  border-radius: var(--utility-radius-sm) !important;
+}
+
+html[data-theme-visual="utility"] .t8-smart-node-status--success {
+  border-color: color-mix(in srgb, var(--t8-success) 32%, transparent) !important;
+  color: var(--t8-success) !important;
+}
+
+html[data-theme-visual="utility"] .t8-smart-node-status--error,
+html[data-theme-visual="utility"] .t8-smart-node-status--danger {
+  border-color: color-mix(in srgb, var(--t8-danger) 32%, transparent) !important;
+  color: var(--t8-danger) !important;
+}
+
+html[data-theme-visual="utility"] .t8-smart-node-status--warning,
+html[data-theme-visual="utility"] .t8-smart-node-status--pending {
+  border-color: color-mix(in srgb, var(--t8-warning) 32%, transparent) !important;
+  color: var(--t8-warning) !important;
+}
+
+/* === Tooltip / 通用浮层提示：中性卡 === */
+html[data-theme-visual="utility"] [role="tooltip"],
+html[data-theme-visual="utility"] .t8-tooltip {
+  background: var(--utility-card-bg-elev) !important;
+  border: 1px solid var(--utility-border) !important;
+  border-radius: var(--utility-radius-sm) !important;
+  color: var(--utility-ink) !important;
+  box-shadow: var(--utility-shadow) !important;
+}
+
+/* === SHIFT 划线轨迹：工程化细直线 === */
+html[data-theme-visual="utility"] .t8-cut-track {
+  stroke: var(--t8-cut-track) !important;
+  stroke-width: 1.8 !important;
+  stroke-dasharray: none !important;
+  opacity: 0.7;
+}
+
+html[data-theme-visual="utility"] .t8-cut-button {
+  background: var(--t8-cut-button-bg) !important;
+  color: var(--t8-cut-button-fg) !important;
+  border: 1px solid var(--utility-border) !important;
+  border-radius: var(--utility-radius-sm) !important;
+  box-shadow: var(--utility-shadow-sm) !important;
+}
+
+/* === 浮层操作栏：中性卡 === */
+html[data-theme-visual="utility"] .t8-node-action-bar {
+  background: var(--utility-card-bg-elev) !important;
+  border: 1px solid var(--utility-border) !important;
+  border-radius: var(--utility-radius) !important;
+  box-shadow: var(--utility-shadow) !important;
+}
+
+/* === legacy 内部控件兜底：浅色模式下把节点里残留的暗色工具类映射回 utility 调色 === */
+html[data-theme-visual="utility"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) [class*="text-white"]:not(input):not(textarea):not(select) {
+  color: var(--utility-ink) !important;
+}
+
+/* 浅色模式 svg 图标：跟随父级焦墨色，不被 text-white/NN 冲淡 */
+html[data-theme-visual="utility"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) svg,
+html[data-theme-visual="utility"][data-theme-mode="light"] .t8-node svg {
+  color: var(--utility-ink) !important;
+}
+
+html[data-theme-visual="utility"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) [class*="bg-white/"]:not(input):not(textarea):not(select):not(img):not(video):not(canvas) {
+  background: var(--utility-card-bg-elev) !important;
+}
+
+html[data-theme-visual="utility"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) [class*="bg-zinc-900"]:not(input):not(textarea):not(select):not(img):not(video):not(canvas),
+html[data-theme-visual="utility"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) [class*="bg-zinc-950"]:not(input):not(textarea):not(select):not(img):not(video):not(canvas) {
+  background: var(--utility-muted-bg) !important;
+}
+
+html[data-theme-visual="utility"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) [class*="border-white/"] {
+  border-color: var(--utility-border) !important;
+}
+
+/* 顶栏/侧栏残留硬底工具类兜底：深色模式收敛为中性卡。 */
+html[data-theme-visual="utility"][data-theme-mode="dark"] .t8-topbar button[class*="bg-sky-"],
+html[data-theme-visual="utility"][data-theme-mode="dark"] .t8-topbar button[class*="bg-emerald-"],
+html[data-theme-visual="utility"][data-theme-mode="dark"] .t8-topbar button[class*="bg-white/"] {
+  background: var(--utility-card-bg) !important;
+  border-color: var(--utility-border) !important;
+}
+
+/* 减少动态效果偏好：关掉所有过渡。 */
+@media (prefers-reduced-motion: reduce) {
+  html[data-theme-visual="utility"] .react-flow__node:not(.react-flow__node-groupBox) > div:first-child,
+  html[data-theme-visual="utility"] .t8-card,
+  html[data-theme-visual="utility"] .t8-btn,
+  html[data-theme-visual="utility"] .react-flow__edge-path,
+  html[data-theme-visual="utility"] .t8-topbar button,
+  html[data-theme-visual="utility"] .t8-sidebar button {
+    transition: none !important;
+    transform: none !important;
+  }
+}

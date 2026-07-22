@@ -10,106 +10,6 @@ const PLAN_ACTION_TYPES = new Set([
   'ask_user',
 ]);
 
-const IMAGE_MODEL_REGISTRY = {
-  'gpt-image-2': {
-    apiModels: ['gpt-image-2-all', 'gpt-image-2', 'gpt-image-2-2K', 'gpt-image-2-4K', 'gpt-image-2-fal'],
-    aspectRatios: ['Auto', '1:1', '16:9', '4:3', '4:5', '3:2', '2:3', '3:4', '5:4', '9:16', '21:9', '1:4', '4:1', '1:8', '8:1'],
-    sizes: ['1K', '2K', '4K'],
-    qualities: ['auto', 'low', 'medium', 'high', 'standard'],
-    defaultApiModel: 'gpt-image-2-all',
-    defaultAspectRatio: '1:1',
-    defaultSize: '2K',
-    maxReferenceImages: 9,
-  },
-  'nano-banana-2': {
-    apiModels: ['gemini-3.1-flash-image', 'nano-banana-2-fal'],
-    aspectRatios: ['Auto', '1:1', '16:9', '4:3', '4:5', '3:2', '2:3', '3:4', '5:4', '9:16', '21:9', '1:4', '4:1', '1:8', '8:1'],
-    sizes: ['1K', '2K', '4K'],
-    qualities: ['auto', 'low', 'medium', 'high', 'standard'],
-    defaultApiModel: 'gemini-3.1-flash-image',
-    defaultAspectRatio: '1:1',
-    defaultSize: '2K',
-    maxReferenceImages: 5,
-  },
-  'nano-banana-pro': {
-    apiModels: ['nano-banana-pro', 'gemini-3-pro-image-preview', 'nano-banana-pro-2k', 'nano-banana-pro-4k', 'nano-banana-pro-fal'],
-    aspectRatios: ['Auto', '1:1', '16:9', '4:3', '4:5', '3:2', '2:3', '3:4', '5:4', '9:16', '21:9'],
-    sizes: ['1K', '2K', '4K'],
-    qualities: ['auto', 'low', 'medium', 'high', 'standard'],
-    defaultApiModel: 'nano-banana-pro',
-    defaultAspectRatio: '1:1',
-    defaultSize: '2K',
-    maxReferenceImages: 5,
-  },
-  'grok-image': {
-    apiModels: ['grok-4.2-image'],
-    aspectRatios: ['1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3'],
-    sizes: [''],
-    qualities: ['auto', 'low', 'medium', 'high', 'standard'],
-    defaultApiModel: 'grok-4.2-image',
-    defaultAspectRatio: '1:1',
-    defaultSize: '',
-    maxReferenceImages: 4,
-  },
-  midjourney: {
-    apiModels: ['midjourney'],
-    aspectRatios: ['1:1', '4:3', '3:2', '16:9', '3:4', '2:3', '9:16'],
-    sizes: [''],
-    qualities: ['auto', 'low', 'medium', 'high', 'standard'],
-    defaultApiModel: 'midjourney',
-    defaultAspectRatio: '1:1',
-    defaultSize: '',
-    maxReferenceImages: 4,
-  },
-};
-
-const VIDEO_MODEL_REGISTRY = {
-  'grok-video-3': {
-    apiModels: ['grok-video-3', 'grok-1.5-video-6s', 'grok-1.5-video-10s', 'grok-1.5-video-15s', 'grok-imagine-video-1.5', 'grok-video-fal'],
-    aspectRatios: ['2:3', '3:2', '16:9', '9:16', '1:1', 'auto'],
-    durations: [6, 10, 15, 30],
-    resolutions: ['480P', '720P', '480p', '720p'],
-    defaultApiModel: 'grok-video-3',
-    defaultAspectRatio: '16:9',
-    defaultDuration: 15,
-    defaultResolution: '720P',
-    maxReferenceImages: 7,
-  },
-  'veo3.1': {
-    apiModels: ['veo-omni-flash', 'veo-omni-flash-video-edit', 'veo-omni-10s', 'veo3', 'veo3-fast', 'veo3-pro', 'veo3-fast-frames', 'veo3-pro-frames', 'veo3.1', 'veo3.1-fast', 'veo3.1-pro', 'veo3.1-components', 'veo3.1-4k', 'veo3.1-pro-4k', 'veo3.1-components-4k', 'veo3.1-lite', 'veo3.1-fal'],
-    aspectRatios: ['16:9', '9:16'],
-    durations: [8, 10],
-    resolutions: ['720p', '1080p', '4k', ''],
-    defaultApiModel: 'veo-omni-flash',
-    defaultAspectRatio: '16:9',
-    defaultDuration: 10,
-    defaultResolution: '',
-    maxReferenceImages: 3,
-  },
-  'sora-2': {
-    apiModels: ['sora-2', 'sora-2-zhenzhen'],
-    aspectRatios: ['16:9', '9:16', 'auto'],
-    durations: [4, 8, 12, 15, 16, 20],
-    resolutions: ['720p', 'auto', ''],
-    defaultApiModel: 'sora-2',
-    defaultAspectRatio: '16:9',
-    defaultDuration: 15,
-    defaultResolution: '',
-    maxReferenceImages: 1,
-  },
-  'seedance-2.0': {
-    apiModels: ['doubao-seedance-2-0-fast-260128', 'doubao-seedance-2-0-260128', 'doubao-seedance-2.0-mini'],
-    aspectRatios: ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9', '9:21', 'adaptive'],
-    durations: [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
-    resolutions: ['480p', '720p', 'native1080p', 'native4K', '1080p', '2k', '4k'],
-    defaultApiModel: 'doubao-seedance-2-0-fast-260128',
-    defaultAspectRatio: '16:9',
-    defaultDuration: 5,
-    defaultResolution: '480p',
-    maxReferenceImages: 3,
-  },
-};
-
 function compactText(value, max = 140) {
   const text = String(value || '').replace(/\s+/g, ' ').trim();
   if (text.length <= max) return text;
@@ -203,81 +103,33 @@ function cleanPosition(value, fallback = { x: 0, y: 0 }) {
   return { x: Number(value.x), y: Number(value.y) };
 }
 
-function matchRegistry(registry, model, apiModel) {
-  const modelKey = String(model || '').trim();
-  const apiKey = String(apiModel || '').trim();
-  if (registry[modelKey]) return { model: modelKey, def: registry[modelKey] };
-  for (const [id, def] of Object.entries(registry)) {
-    if (def.apiModels.includes(apiKey) || def.apiModels.includes(modelKey)) return { model: id, def };
-  }
-  return null;
-}
-
-function normalizeEnum(value, allowed, fallback) {
-  const raw = String(value ?? '').trim();
-  if (allowed.includes(raw)) return raw;
-  const lower = raw.toLowerCase();
-  const matched = allowed.find((item) => String(item).toLowerCase() === lower);
-  return matched ?? fallback;
-}
-
-function normalizeNumberEnum(value, allowed, fallback) {
-  const num = Number(value);
-  if (Number.isFinite(num) && allowed.includes(num)) return num;
-  const stringMatched = allowed.find((item) => String(item) === String(value));
-  return stringMatched ?? fallback;
-}
-
 function lockImageNodeData(data, warnings, pathLabel) {
   const next = isPlainObject(data) ? { ...data } : {};
-  const match = matchRegistry(IMAGE_MODEL_REGISTRY, next.model, next.apiModel) || {
-    model: 'gpt-image-2',
-    def: IMAGE_MODEL_REGISTRY['gpt-image-2'],
-  };
-  if (next.model !== match.model) warnings.push(`${pathLabel}.model 已按画布模型注册表修正为 ${match.model}`);
-  next.model = match.model;
-  const apiModel = normalizeEnum(next.apiModel, match.def.apiModels, match.def.defaultApiModel);
-  if (next.apiModel !== apiModel) warnings.push(`${pathLabel}.apiModel 已按 ${match.model} 修正为 ${apiModel}`);
-  next.apiModel = apiModel;
-  const aspectRatio = normalizeEnum(next.aspectRatio || next.aspect_ratio, match.def.aspectRatios, match.def.defaultAspectRatio);
-  if (next.aspectRatio !== aspectRatio) warnings.push(`${pathLabel}.aspectRatio 已修正为 ${aspectRatio}`);
-  next.aspectRatio = aspectRatio;
-  const sizeValue = next.size || next.sizeLevel || next.image_size || match.def.defaultSize;
-  const size = normalizeEnum(sizeValue, match.def.sizes, match.def.defaultSize);
-  if (match.def.defaultSize || size) {
-    if (next.size !== size) warnings.push(`${pathLabel}.size 已修正为 ${size || 'auto'}`);
-    next.size = size;
-    next.sizeLevel = size || next.sizeLevel;
-  }
-  next.quality = normalizeEnum(next.quality, match.def.qualities, 'auto');
+  const exactModel = String(next.apiModel || next.model || '').trim();
+  next.model = exactModel;
+  next.apiModel = exactModel;
+  next.aspectRatio = String(next.aspectRatio || next.aspect_ratio || '1:1');
+  next.sizeLevel = String(next.sizeLevel || next.image_size || next.size || '');
   const refs = Array.isArray(next.referenceImages) ? next.referenceImages : Array.isArray(next.images) ? next.images : [];
-  next.referenceImages = refs.filter((item) => typeof item === 'string' && item.trim()).slice(0, match.def.maxReferenceImages);
+  next.referenceImages = refs.filter((item) => typeof item === 'string' && item.trim());
   if (typeof next.status !== 'string' || !next.status.trim()) next.status = 'idle';
   return next;
 }
 
 function lockVideoNodeData(data, nodeType, warnings, pathLabel) {
   const next = isPlainObject(data) ? { ...data } : {};
-  const defaultModel = nodeType === 'seedance' ? 'seedance-2.0' : 'grok-video-3';
-  const match = matchRegistry(VIDEO_MODEL_REGISTRY, next.model, next.apiModel) || {
-    model: defaultModel,
-    def: VIDEO_MODEL_REGISTRY[defaultModel],
-  };
-  const apiModel = normalizeEnum(next.apiModel, match.def.apiModels, match.def.defaultApiModel);
-  if (next.mainId !== match.model) warnings.push(`${pathLabel}.mainId 已按画布视频模型注册表修正为 ${match.model}`);
-  next.mainId = match.model;
-  if (next.model !== apiModel) warnings.push(`${pathLabel}.model 已按画布视频节点真实模型字段修正为 ${apiModel}`);
+  void nodeType;
+  void warnings;
+  void pathLabel;
+  const apiModel = String(next.apiModel || next.model || '').trim();
+  next.mainId = '';
   next.model = apiModel;
-  if (next.apiModel !== apiModel) warnings.push(`${pathLabel}.apiModel 已按 ${match.model} 修正为 ${apiModel}`);
   next.apiModel = apiModel;
-  const aspectRatio = normalizeEnum(next.aspectRatio || next.ratio || next.aspect_ratio, match.def.aspectRatios, match.def.defaultAspectRatio);
-  if (next.aspectRatio !== aspectRatio) warnings.push(`${pathLabel}.aspectRatio 已修正为 ${aspectRatio}`);
+  const aspectRatio = String(next.aspectRatio || next.ratio || next.aspect_ratio || '16:9');
   next.aspectRatio = aspectRatio;
   next.ratio = aspectRatio;
-  next.duration = normalizeNumberEnum(next.duration, match.def.durations, match.def.defaultDuration);
-  next.resolution = normalizeEnum(next.resolution, match.def.resolutions, match.def.defaultResolution);
   const refs = Array.isArray(next.referenceImages) ? next.referenceImages : Array.isArray(next.images) ? next.images : [];
-  next.referenceImages = refs.filter((item) => typeof item === 'string' && item.trim()).slice(0, match.def.maxReferenceImages);
+  next.referenceImages = refs.filter((item) => typeof item === 'string' && item.trim());
   if (!Array.isArray(next.referenceVideos)) next.referenceVideos = Array.isArray(next.videos) ? next.videos : [];
   if (typeof next.status !== 'string' || !next.status.trim()) next.status = 'idle';
   return next;
@@ -312,15 +164,19 @@ function layoutCanvasPlan(plan, beforeSnapshot, options = {}) {
   if (!shouldLayout) return { ...body, nodes };
 
   const bounds = beforeSnapshot?.bounds || {};
-  const startX = Math.max(Number(bounds.maxX || 0) + 280, 120);
+  const layoutIntent = isPlainObject(body.layoutIntent) ? body.layoutIntent : {};
+  const direction = layoutIntent.direction === 'top-to-bottom' ? 'top-to-bottom' : 'left-to-right';
+  const columnGap = Math.min(800, Math.max(240, Number(layoutIntent.columnGap || 360)));
+  const rowGap = Math.min(600, Math.max(180, Number(layoutIntent.rowGap || 240)));
+  const startX = Math.max(Number(bounds.maxX || 0) + columnGap, 120);
   const startY = Math.max(Number(bounds.minY || 0), 80);
   const laneOrder = ['source', 'analysis', 'variant', 'review', 'note'];
   const laneX = {
     source: startX,
-    analysis: startX + 320,
-    variant: startX + 680,
-    review: startX + 1040,
-    note: startX + 1360,
+    analysis: startX + columnGap,
+    variant: startX + columnGap * 2,
+    review: startX + columnGap * 3,
+    note: startX + columnGap * 4,
   };
   const laneCounts = {};
   const laidOut = nodes.map((node) => {
@@ -328,12 +184,12 @@ function layoutCanvasPlan(plan, beforeSnapshot, options = {}) {
     const lane = inferLane(node);
     const count = laneCounts[lane] || 0;
     laneCounts[lane] = count + 1;
+    const laneIndex = Math.max(0, laneOrder.indexOf(lane));
     return {
       ...node,
-      position: {
-        x: laneX[lane] ?? laneX.note,
-        y: startY + count * 230,
-      },
+      position: direction === 'top-to-bottom'
+        ? { x: startX + count * columnGap, y: startY + laneIndex * rowGap }
+        : { x: laneX[lane] ?? laneX.note, y: startY + count * rowGap },
     };
   });
   const populatedLanes = laneOrder.filter((lane) => laneCounts[lane] > 0);
@@ -343,7 +199,12 @@ function layoutCanvasPlan(plan, beforeSnapshot, options = {}) {
     y: Math.max(0, startY - 80),
     zoom: 0.82,
   };
-  return { ...body, nodes: laidOut, focusViewport };
+  return {
+    ...body,
+    nodes: laidOut,
+    focusViewport,
+    layoutResolved: { direction, columnGap, rowGap, startX, startY },
+  };
 }
 
 function normalizeCanvasPlan(plan, options = {}) {
@@ -382,11 +243,16 @@ function normalizeCanvasPlan(plan, options = {}) {
   const updates = Array.isArray(laidOut.updates) ? laidOut.updates.map((update, index) => {
     const nodeId = String(update?.nodeId || update?.id || '').trim();
     if (!nodeId) errors.push(`updates[${index}].nodeId is required`);
+    const nodeType = existingTypes.get(nodeId) || String(update?.type || '').trim();
+    const rawData = isPlainObject(update?.data) ? update.data : {};
+    const lockedData = nodeType
+      ? lockNodeDataToRegistry({ type: nodeType, data: rawData }, warnings, `updates[${index}].data`).data
+      : rawData;
     return {
       ...update,
       nodeId,
       position: update?.position ? cleanPosition(update.position) : undefined,
-      data: isPlainObject(update?.data) ? update.data : {},
+      data: lockedData,
     };
   }) : [];
 
@@ -678,12 +544,33 @@ function verifyCanvasPlan(canvas, plan, beforeSnapshot) {
   ].filter(Boolean);
   [...new Set(runNodeIds)].forEach((id) => {
     const node = nodeById.get(id);
+    const resultUrls = nodeResultUrls(node);
+    const status = String(node?.data?.status || node?.data?.runStatus || '').trim().toLowerCase();
+    const pending = ['idle', 'queued', 'running', 'pending', 'processing', 'generating'].includes(status);
+    const failed = ['error', 'failed', 'cancelled', 'canceled'].includes(status);
+    const claimsComplete = ['success', 'completed', 'complete', 'done'].includes(status);
     checks.push({
       id: `run:${id}`,
       label: `节点可运行 ${id}`,
       ok: Boolean(node),
       severity: 'warning',
       detail: node ? `type=${node.type}, results=${nodeResultUrls(node).length}` : '未找到节点',
+    });
+    checks.push({
+      id: `result:${id}`,
+      label: `节点真实结果 ${id}`,
+      ok: Boolean(node) && (resultUrls.length > 0 || pending),
+      pending: Boolean(node) && pending && resultUrls.length === 0,
+      severity: failed || claimsComplete ? 'error' : 'warning',
+      detail: !node
+        ? '未找到节点'
+        : resultUrls.length
+          ? `已回读 ${resultUrls.length} 个结果 URL`
+          : failed
+            ? String(node.data?.error || '节点运行失败')
+            : claimsComplete
+              ? '节点声称完成，但没有 imageUrl/videoUrl/outputUrl'
+              : `status=${status || 'unknown'}，等待节点结果回写`,
     });
   });
 
@@ -710,10 +597,27 @@ function verifyCanvasPlan(canvas, plan, beforeSnapshot) {
   };
 }
 
+function shouldAutoRepairNodeResult(result, options = {}) {
+  if (options.alreadyRetried === true) return { repair: false, reason: 'retry-limit' };
+  const node = result?.node && typeof result.node === 'object' ? result.node : {};
+  const nodeType = String(node.type || options.nodeType || '').trim();
+  if (!['image', 'video', 'seedance'].includes(nodeType)) return { repair: false, reason: 'unsupported-node-type' };
+  const errorText = String(result?.error || node?.data?.error || '').trim();
+  if (/cancel|canceled|cancelled|用户取消|主动停止|unauthorized|forbidden|余额|额度|付费|cost/i.test(errorText)) {
+    return { repair: false, reason: 'user-or-permission-stop' };
+  }
+  const urls = nodeResultUrls(node);
+  if (result?.ok === true && urls.length === 0) {
+    return { repair: true, reason: 'completed-without-result-url' };
+  }
+  if (result?.ok !== true && /(unsupported|invalid|parameter|aspect|ratio|size|duration|resolution|model|timeout|timed out|network|fetch|429|5\d\d|无结果|参数|比例|尺寸|时长|分辨率|模型|超时|网络)/i.test(errorText)) {
+    return { repair: true, reason: 'recoverable-generation-error' };
+  }
+  return { repair: false, reason: result?.ok === true ? 'result-ready' : 'non-recoverable-error' };
+}
+
 module.exports = {
   PLAN_ACTION_TYPES,
-  IMAGE_MODEL_REGISTRY,
-  VIDEO_MODEL_REGISTRY,
   createCanvasSnapshot,
   normalizePlanId,
   normalizeCanvasPlan,
@@ -722,4 +626,5 @@ module.exports = {
   scoreNodeQuality,
   canvasPlanToActions,
   verifyCanvasPlan,
+  shouldAutoRepairNodeResult,
 };

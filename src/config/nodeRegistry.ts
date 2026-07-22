@@ -1,10 +1,5 @@
 import type { NodeMeta } from '../types/canvas';
 
-const DEV_NODE_REGISTRY: NodeMeta[] = import.meta.env?.DEV ? [
-  { type: 'rh-toolbox-maker', label: 'RH工具箱制作器', category: 'rh', description: '维护者专用：在画布内制作 RH工具箱 manifest 模板，开发环境可见，用户包不打入', icon: 'FileJson', color: 'emerald' },
-  { type: 'fal-toolbox-maker', label: 'FAL应用制作工具', category: 'fal', description: '维护者专用：从 fal.ai API 文档生成 Fal超市 manifest 草稿，开发环境可见，用户包不打入', icon: 'FileJson', color: 'violet' },
-] : [];
-
 /**
  * 节点元数据注册表
  * 严格对齐 features.json 中的 24 个保留节点
@@ -27,38 +22,7 @@ export const NODE_REGISTRY: NodeMeta[] = [
   { type: 'seedance', label: 'SD2.0', category: 'core', description: 'Seedance 2.0 视频分镜', icon: 'Film', color: 'fuchsia' },
   { type: 'director-storyboard', label: '导演分镜台', category: 'core', description: '秒级长片分镜台：多镜头提示词、参考素材和 Seedance2.0 无限并发生成', icon: 'Clapperboard', color: 'fuchsia' },
   { type: 'audio', label: '音频', category: 'core', description: 'Suno V5.5 全模式(生成/翻唱/续写)', icon: 'Music', color: 'violet' },
-  { type: 'llm', label: 'LLM', category: 'core', description: 'GPT-5 / Claude 4.5 / Gemini 2.5(独立 Key)', icon: 'Brain', color: 'emerald' },
-
-  // ========== RH RunningHub 节点 ==========
-  { type: 'runninghub', label: 'RunningHub', category: 'rh', description: 'RH 工作流主节点', icon: 'Workflow', color: 'cyan' },
-  // RH 钱包应用：复用 RunningHubNode 实现。v1.2.9.16 起与普通 RunningHub 节点统一使用 settings.rhApiKey
-  { type: 'runninghub-wallet', label: 'RH钱包应用', category: 'rh', description: 'RH 钱包应用工作流（与 RunningHub 节点共用 RunningHub APIKEY）', icon: 'Wallet', color: 'violet' },
-  // RH 配置节点从 v1.1.x 起隐藏（参数注入已可由 RunningHub 节点内表单代替，hidden:true 仅从 Sidebar 隐藏，保留老画布节点越。需重启删除 hidden 即可）
-  { type: 'rh-config', label: 'RH 配置', category: 'rh', description: 'RH 工作流参数注入', icon: 'Settings2', color: 'cyan', hidden: true },
-  // RH 工具节点 (v1.2.10+, 显示名从 v1.2.10.4 起改为「RH 超市」): 启动器式包装多个 RunningHub AI 应用，在节点内直接运行
-  { type: 'rh-tools', label: 'RH超市', category: 'rh', description: '启动器式包装多个 RunningHub AI 应用，在节点内分类浏览 / 拼音搜索 / 一键运行', icon: 'Sparkles', color: 'cyan' },
-  { type: 'rh-toolbox', label: 'RH工具箱', category: 'rh', description: '维护者精选 RunningHub 工具箱，只读分类运行，可作为图像/视频/文本/音频辅助能力被其他节点复用', icon: 'Wrench', color: 'cyan' },
-  { type: 'vibex', label: 'VibeX工作台', category: 'rh', description: '嵌入 VibeX 视频工作台，支持线上 / 本地页面并把视频、图片、音频和提示词发送回当前画布', icon: 'Clapperboard', color: 'cyan' },
-  ...DEV_NODE_REGISTRY,
-
-  // ========== FAL 工具箱节点 ==========
-  { type: 'fal-toolbox', label: 'Fal超市', category: 'fal', description: '按分类复刻 Fal.ai 模型能力，接上游文本/图像/视频/音频后一键运行，不影响原有图像/视频 FAL 节点', icon: 'Store', color: 'violet' },
-
-  // ========== GROK OAuth Agent ==========
-  { type: 'grok-oauth-agent', label: 'Grok OAuth Agent', category: 'grok', description: '独立 Grok / xAI OAuth Agent 工作台：流式聊天、图像、视频、TTS、STT，多模态输入并输出四类素材', icon: 'Bot', color: 'emerald' },
-
-  // ========== Codex CLI Agent ==========
-  { type: 'codex-cli-agent', label: 'Codex CLI Agent', category: 'codex', description: '面向创作者的 Codex CLI 工作台：流式对话、图像生成提示词、Skill 调用、产物库和版本树', icon: 'TerminalSquare', color: 'sky' },
-  { type: 'codex-image-conjure', label: 'Codex 生图工作台', category: 'codex', description: '基于 Codex CLI imagegen 的专用生图工作台：提示词模板、片段、参考图和公共图库', icon: 'ImagePlus', color: 'sky' },
-  { type: 'genclaw', label: 'GenClaw 白盒生图', category: 'codex', description: '参考 GenClaw 范式：构思、代码草图、渲染、成片审稿一体化白盒生图流程', icon: 'WandSparkles', color: 'sky' },
-
-  // ========== Inspiration 灵感之源 ==========
-  { type: 'artist-style-master', label: '艺术风格大师', category: 'inspiration', description: '移植 qiaomu 艺术家风格库：按画家、中文名、流派和标签检索，输出风格提示词或参考图', icon: 'Palette', color: 'amber' },
-  { type: 'anime-tag-master', label: '动漫标签大师', category: 'inspiration', description: '移植 comfyui-anima-t8 Danbooru / Gelbooru 懒加载图库：搜索动漫标签、参考图、保存自定义标签并输出标签或图像', icon: 'Tags', color: 'lime' },
-
-  // ========== ComfyUI 本地工作流节点 ==========
-  { type: 'comfyui-store', label: 'ComfyUI超市', category: 'comfyui', description: 'ComfyUI 应用库：导入制作好的工作流应用，接上游素材后一键运行', icon: 'Boxes', color: 'cyan' },
-  { type: 'comfyui-app-maker', label: 'ComfyUI应用制作工具', category: 'comfyui', description: '上传 ComfyUI API Workflow JSON，自动识别参数并保存为可复用应用', icon: 'FileJson', color: 'emerald' },
+  { type: 'llm', label: 'LLM', category: 'core', description: '读取设置中的真实 LLM 模型名(独立 Key)', icon: 'Brain', color: 'emerald' },
 
   // ========== Special 特殊节点(5) ==========
   // 以下五个节点暂时隐藏不展示 (hidden: true) —— 需要重新启用时删除 hidden 即可。
@@ -80,6 +44,7 @@ export const NODE_REGISTRY: NodeMeta[] = [
   { type: 'loop', label: '循环器', category: 'utility', description: '接多个同类型素材，串联逐个驱动或并联克隆子图同时跱发下游生成节点', icon: 'Repeat', color: 'orange' },
   // 从合集获取 (v1.2.8): 多素材 → 按序号取单个传给下游
   { type: 'pick-from-set', label: '从合集获取', category: 'utility', description: '从上游多素材中按序号取出单一素材，kind 可在节点内切换', icon: 'Filter', color: 'orange' },
+  { type: 'random-route', label: '随机路由', category: 'utility', description: '随机选择一个或多个输出分支，仅执行命中的下游节点链路', icon: 'Shuffle', color: 'orange' },
   { type: 'text-split', label: '文本分割', category: 'utility', description: '将长提示词/分镜按段落、行、智能分镜、正则、自定义分隔符或字数切成多段文本，支持收藏与循环器链路', icon: 'SplitSquareVertical', color: 'orange' },
   { type: 'resize', label: '尺寸调整', category: 'utility', description: '图像尺寸调整', icon: 'Maximize2', color: 'orange' },
   { type: 'lut-color', label: 'LUT调色', category: 'utility', description: '套用内置或导入的 .cube LUT，对上游图像做电影感调色', icon: 'Palette', color: 'orange' },
@@ -89,6 +54,7 @@ export const NODE_REGISTRY: NodeMeta[] = [
   { type: 'grid-crop', label: '宫格剪裁', category: 'utility', description: '网格切图', icon: 'Grid3x3', color: 'orange' },
   { type: 'grid-editor', label: '宫格编辑', category: 'utility', description: '多图分镜宫格拼接与顺序拆分', icon: 'LayoutGrid', color: 'orange' },
   { type: 'clip-studio', label: '剪辑台', category: 'utility', description: '收集上游图片 / 视频 / 音频素材，按顺序导出 MP4 成片', icon: 'Scissors', color: 'orange' },
+  { type: 'layer-agent', label: 'AI图片分层', category: 'utility', description: '混合模式图片分层工作区：拆出背景、主品、文字和光效图层，可逐层编辑与导出', icon: 'Layers', color: 'orange' },
   { type: 'sketch-renderer', label: '代码草图渲染器', category: 'utility', description: '把 SVG/HTML 代码草图渲染为图片素材，可复用给白盒生图流程', icon: 'FileCode2', color: 'orange' },
 
   // ========== Auxiliary 辅助节点(6) ==========
@@ -109,6 +75,7 @@ export const NODE_REGISTRY: NodeMeta[] = [
   { type: 'aggregate-parser', label: '聚合解析', category: 'toolbox', description: '基于 ParseHub 的轻量自媒体聚合解析：输入短链/分享码/分享文案，合规确认后默认保存到输出目录；远端地址解析作为高级模式保留', icon: 'Link2', color: 'pink' },
   { type: 'batch-processor', label: '批量素材处理', category: 'toolbox', description: '批量导入文件或文件夹，在节点内完成命名、去黑边、抠图、扩图、高清放大和进度反馈，不自动铺满画布输出节点', icon: 'Files', color: 'pink' },
   { type: 'apparel-pack', label: '服装封包生成', category: 'toolbox', description: '一键展开服装套图、服装参考和灵感规划工作流，保留模特/服装锚点一致性', icon: 'PackageOpen', color: 'pink' },
+  { type: 'apparel-pack-output', label: '服装封包输出', category: 'toolbox', description: '服装封包流程的专属输出包，聚合模特图、平铺图、挂拍图、细节图和质检摘要', icon: 'PackageCheck', color: 'pink', hidden: true },
   { type: 'topaz-image-upscale', label: 'Topaz图像高清化', category: 'toolbox', description: '调用本机 Topaz Gigapixel AI / Gigapixel 8，对上游图像做本地高清放大；需要用户已安装并登录软件', icon: 'Image', color: 'pink' },
   { type: 'topaz-video-upscale', label: 'Topaz视频高清化', category: 'toolbox', description: '调用本机 Topaz Video AI 自带 ffmpeg，对上游视频做放大与补帧；需要用户已安装并登录软件', icon: 'Video', color: 'pink' },
 
@@ -121,12 +88,6 @@ export const NODE_REGISTRY: NodeMeta[] = [
 export const NODE_GROUPS: Record<string, { label: string; nodes: NodeMeta[] }> = {
   input: { label: '素材资源', nodes: NODE_REGISTRY.filter((n) => n.category === 'input' && !n.hidden) },
   core: { label: '核心节点', nodes: NODE_REGISTRY.filter((n) => n.category === 'core' && !n.hidden) },
-  rh: { label: 'RH', nodes: NODE_REGISTRY.filter((n) => n.category === 'rh' && !n.hidden) },
-  fal: { label: 'FAL工具箱', nodes: NODE_REGISTRY.filter((n) => n.category === 'fal' && !n.hidden) },
-  grok: { label: 'GROK OAuth', nodes: NODE_REGISTRY.filter((n) => n.category === 'grok' && !n.hidden) },
-  codex: { label: 'CODEX CLI', nodes: NODE_REGISTRY.filter((n) => n.category === 'codex' && !n.hidden) },
-  inspiration: { label: '灵感之源', nodes: NODE_REGISTRY.filter((n) => n.category === 'inspiration' && !n.hidden) },
-  comfyui: { label: 'ComfyUI', nodes: NODE_REGISTRY.filter((n) => n.category === 'comfyui' && !n.hidden) },
   special: { label: '特殊节点', nodes: NODE_REGISTRY.filter((n) => n.category === 'special' && !n.hidden) },
   utility: { label: '工具节点', nodes: NODE_REGISTRY.filter((n) => n.category === 'utility' && !n.hidden) },
   auxiliary: { label: '辅助节点', nodes: NODE_REGISTRY.filter((n) => n.category === 'auxiliary' && !n.hidden) },

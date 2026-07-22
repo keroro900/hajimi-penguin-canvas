@@ -50,3 +50,26 @@ test('placement shelf can be hidden and restored from the shared left control ra
   assert.match(css, /\.t8-placement-shelf\[data-placement-shelf-hidden="false"\]/);
   assert.match(css, /html\[data-theme-visual\] \.t8-canvas-shell \.t8-control-rail-placement-shelf/);
 });
+
+test('visual themes do not draw a panel behind the shared left control rail', () => {
+  const soft = read('../src/styles/theme-soft.css');
+  const wabi = read('../src/styles/theme-wabi.css');
+
+  assert.doesNotMatch(soft, /html\[data-theme-visual="soft"\]\s+\.t8-control-rail\s*,/);
+  assert.doesNotMatch(wabi, /html\[data-theme-visual="wabi"\]\s+\.t8-control-rail\s*,/);
+});
+
+test('shared CSS owns expanded and collapsed placement shelf paint as an opaque elevated panel', () => {
+  const canvas = read('../src/components/Canvas.tsx');
+  const css = read('../src/styles/index.css');
+
+  assert.match(canvas, /className="t8-placement-shelf t8-placement-shelf--collapsed/);
+  assert.match(canvas, /className="t8-placement-shelf p-2"/);
+
+  const shelfRule = css.match(/\.t8-placement-shelf\s*\{(?<body>[\s\S]*?)\}/)?.groups?.body ?? '';
+  assert.match(shelfRule, /background:\s*var\(--t8-bg-panel-elevated\)\s*!important/);
+  assert.match(shelfRule, /border:\s*1px solid var\(--t8-border\)\s*!important/);
+  assert.match(shelfRule, /box-shadow:\s*var\(--t8-shadow-panel\)\s*!important/);
+  assert.match(shelfRule, /z-index:\s*var\(--t8-z-canvas-chrome\)/);
+  assert.doesNotMatch(shelfRule, /rgba?\s*\(|hsla?\s*\(|transparent|color-mix\s*\(|opacity\s*:|(?:-webkit-)?backdrop-filter\s*:/i);
+});

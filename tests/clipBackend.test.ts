@@ -121,6 +121,34 @@ test('createClipRenderPlan trims audio from the source offset when trimStart is 
   assert.match(plan.filterComplex, /\[1:a\]atrim=start=1\.5:end=5\.5,asetpts=PTS-STARTPTS,volume=1,adelay=2000\|2000\[a1\]/);
 });
 
+test('createClipRenderPlan trims speed-aware audio source spans and builds atempo chains', () => {
+  const filterForSpeed = (speed, trimStart = 1.5) => {
+    const project = normalizeClipProject({
+      version: 1,
+      tracks: [
+        {
+          id: 'visual',
+          kind: 'visual',
+          clips: [{ id: 'img', kind: 'image', sourceUrl: '/files/input/a.png', start: 0, duration: 8 }],
+        },
+        {
+          id: 'audio',
+          kind: 'audio',
+          clips: [{ id: 'aud', kind: 'audio', sourceUrl: '/files/input/c.mp3', start: 0, duration: 4, trimStart, speed }],
+        },
+      ],
+    });
+    return createClipRenderPlan(project).filterComplex;
+  };
+
+  assert.match(filterForSpeed(2), /atrim=start=1\.5:end=9\.5,asetpts=PTS-STARTPTS,atempo=2,volume=1/);
+  assert.match(filterForSpeed(2, 0), /atrim=0:8,asetpts=PTS-STARTPTS,atempo=2,volume=1/);
+  assert.match(filterForSpeed(4), /atrim=start=1\.5:end=17\.5,asetpts=PTS-STARTPTS,atempo=2,atempo=2,volume=1/);
+  assert.match(filterForSpeed(0.25), /atrim=start=1\.5:end=2\.5,asetpts=PTS-STARTPTS,atempo=0\.5,atempo=0\.5,volume=1/);
+  assert.match(filterForSpeed(1), /atrim=start=1\.5:end=5\.5,asetpts=PTS-STARTPTS,volume=1/);
+  assert.doesNotMatch(filterForSpeed(1), /atempo=/);
+});
+
 test('createClipRenderPlan applies visual filter presets before concat', () => {
   const project = normalizeClipProject({
     version: 1,
@@ -192,6 +220,49 @@ test('createClipRenderPlan applies clip LUTs through ffmpeg lut3d', () => {
   assert.match(written[0].text, /0\.500000 0\.500000 0\.500000/);
   assert.match(plan.filterComplex, /lut3d=file='C\\:\/tmp\/clip-0\.cube':interp=tetrahedral/);
   assert.match(plan.filterComplex, /lut3d=.*setsar=1/);
+});
+
+test('createClipRenderPlan applies basic color adjustments after clip LUTs', () => {
+  const lutText = createCubeLutText('Warm', 2, (r, g, b) => [r, g * 0.9, b * 0.8]);
+  const project = normalizeClipProject({
+    version: 1,
+    width: 1280,
+    height: 720,
+    fps: 24,
+    background: '#111827',
+    tracks: [
+      {
+        id: 'visual',
+        kind: 'visual',
+        clips: [
+          {
+            id: 'vid',
+            kind: 'video',
+            sourceUrl: '/files/input/b.mp4',
+            start: 0,
+            duration: 2,
+            lutPresetId: 'warm',
+            lutName: 'Warm',
+            lutText,
+            hue: 45,
+            saturation: 150,
+            brightness: 120,
+            contrast: 80,
+          },
+        ],
+      },
+    ],
+  });
+
+  const plan = createClipRenderPlan(project, {
+    writeLutFile: () => 'C:/tmp/clip-basic.cube',
+  });
+
+  assert.equal(plan.visualClips[0].hue, 45);
+  assert.equal(plan.visualClips[0].saturation, 150);
+  assert.equal(plan.visualClips[0].brightness, 120);
+  assert.equal(plan.visualClips[0].contrast, 80);
+  assert.match(plan.filterComplex, /lut3d=file='C\\:\/tmp\/clip-basic\.cube':interp=tetrahedral,hue=h=45:s=1\.5,eq=contrast=0\.8:brightness=0\.2/);
 });
 
 test('normalizeClipProject preserves and clamps visual transform fields', () => {

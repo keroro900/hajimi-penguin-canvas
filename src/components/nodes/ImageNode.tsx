@@ -1,6 +1,6 @@
-import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
-import { Handle, Position, useReactFlow, useUpdateNodeInternals, type Node, type NodeProps } from '@xyflow/react';
+import { Handle, Position, useReactFlow, useUpdateNodeInternals, type Edge, type Node, type NodeProps } from '@xyflow/react';
 import {
   AlertCircle,
   Download,
@@ -8,6 +8,7 @@ import {
   Eye,
   Image as ImageIcon,
   Info,
+  Layers,
   Loader2,
   MoreHorizontal,
   Plus,
@@ -30,7 +31,6 @@ import SmartImage from '../SmartImage';
 import PromptTextarea from '../PromptTextarea';
 import { resolveMediaMentions, type MediaMention } from './mediaMentions';
 import {
-  IMAGE_MODELS,
   FAL_REGISTRY,
   GPT_FAL_SIZES,
   NBPRO_FAL_RATIOS,
@@ -44,9 +44,11 @@ import {
   DEFAULT_MJ_RATIO,
   DEFAULT_MJ_SPEED,
   gptImage2ZhenzhenVariantSize,
+  imageModelDefFor,
   parseModelList,
   withUpstreamModelOption,
 } from '../../providers/models';
+import { effectiveModelId, modelSelectOptions, modelsForKind } from '../../providers/modelCatalog';
 import {
   generateImage,
   submitImageAsync,
@@ -65,6 +67,8 @@ import { useUpdateNodeData } from './useUpdateNodeData';
 import { useHasAutoOutput } from './useHasAutoOutput';
 import { useRunTrigger } from '../../hooks/useRunTrigger';
 import { useRunBusStore } from '../../stores/runBus';
+import { useOutsideClose } from './shared/useOutsideClose';
+import { smartNodeComposerActions, useIsSmartNodeComposerOpen } from '../../stores/smartNodeComposer';
 import { useThemeStore } from '../../stores/theme';
 import { logBus } from '../../stores/logs';
 import { useDragMaterialStore, type MaterialPayload } from '../../stores/dragMaterial';
@@ -82,6 +86,7 @@ import {
   advancedProvidersForNode,
   distributeModelscopeLoraWeights,
   externalImageSizeFor,
+  gptImageSizeFor,
   MAX_MODELSCOPE_NODE_LORAS,
   MODELSCOPE_LORA_TOTAL_WEIGHT,
   modelscopeLoraWeightTotal,
@@ -104,21 +109,21 @@ import ResizableCorners from './ResizableCorners';
 import SmartNodeComposer from './shared/SmartNodeComposer';
 import SmartNodeShell from './shared/SmartNodeShell';
 import { useNodeGeometrySync } from './shared/useNodeGeometrySync';
-import { useOutsideClose } from './shared/useOutsideClose';
 import { useSmartNodePanelToggle } from './shared/useSmartNodePanelToggle';
 import { useThrottledNodeUpdate } from './shared/useThrottledNodeUpdate';
 import SmartMediaPreviewModal from './shared/SmartMediaPreviewModal';
 import ImageEditModal, { type ImageEditProduceMeta } from './ImageEditModal';
 import { buildSmartImageResultInfo } from '../../utils/smartImageResult';
 import { resolveImageNodeFinalPrompt } from '../../utils/imageNodePromptPriority';
+import { sanitizeClipboardNodeData } from '../../utils/canvasClipboard';
 import {
   createPendingMediaSlots,
   markMediaSlotCancelled,
   markMediaSlotFailed,
   markMediaSlotRunning,
   markMediaSlotSuccess,
+  resolveMediaResultSlots,
   type MediaTaskSlot,
-  type MediaTaskSlotStatus,
 } from '../../utils/mediaTaskSlots';
 
 /**
@@ -136,22 +141,6 @@ const clampImageOutputCount = (value: unknown, fallback = 1) => {
 };
 const minPollCountForTimeout = (intervalMs: number) =>
   Math.ceil((IMAGE_POLL_TIMEOUT_SECONDS * 1000) / Math.max(1, intervalMs));
-const IMAGE_RESULT_SLOT_STATUSES = new Set<MediaTaskSlotStatus>(['pending', 'running', 'success', 'failed', 'cancelled']);
-const normalizeImageResultSlot = (slot: any, index: number): MediaTaskSlot => {
-  const url = String(slot?.url || '').trim();
-  const rawStatus = String(slot?.status || '').trim() as MediaTaskSlotStatus;
-  const status = IMAGE_RESULT_SLOT_STATUSES.has(rawStatus)
-    ? rawStatus
-    : (url ? 'success' : 'pending');
-  return {
-    status,
-    url: status === 'success' ? url : undefined,
-    urls: Array.isArray(slot?.urls) ? slot.urls.map((item: unknown) => String(item || '').trim()).filter(Boolean) : undefined,
-    taskId: String(slot?.taskId || '').trim() || undefined,
-    error: status === 'failed' || status === 'cancelled' ? String(slot?.error || (status === 'cancelled' ? '已停止' : '生成失败')) : undefined,
-    index: Number.isFinite(Number(slot?.index)) ? Number(slot.index) : index,
-  };
-};
 const COMFY_NUMERIC_FIELD_SOURCES = new Set([
   'width',
   'height',
@@ -230,7 +219,7 @@ const ImageNode = ({ id, data, selected, dragging }: NodeProps) => {
   const { scheduleProgressUpdate, flushProgressUpdate } = useThrottledNodeUpdate(update, 500);
   const hasAutoOutput = useHasAutoOutput(id);
   const updateNodeInternals = useUpdateNodeInternals();
-  const { getEdges, getNodes, addNodes } = useReactFlow();
+  const { getEdges, getNodes, addNodes, setEdges } = useReactFlow();
   const { style, theme } = useThemeStore();
   const isPixel = style === 'pixel';
   const isDark = theme === 'dark';
@@ -241,7 +230,14 @@ const ImageNode = ({ id, data, selected, dragging }: NodeProps) => {
   const mjUploadKindRef = useRef<'sref' | 'oref'>('sref');
 
   const [error, setError] = useState<string | null>(null);
-  const [smartComposerOpenLocal, setSmartComposerOpenLocal] = useState(false);
+  const smartComposerOpenLocal = useIsSmartNodeComposerOpen(id);
+  const setSmartComposerOpenLocal = useCallback(
+    (nextOpen: boolean) => {
+      if (nextOpen) smartNodeComposerActions.open(id);
+      else smartNodeComposerActions.close(id);
+    },
+    [id],
+  );
   const [smartCardDragging, setSmartCardDragging] = useState(false);
   const [smartPreviewOpen, setSmartPreviewOpen] = useState(false);
   const [smartPreviewUrl, setSmartPreviewUrl] = useState('');
@@ -250,6 +246,7 @@ const ImageNode = ({ id, data, selected, dragging }: NodeProps) => {
   const [editingUrl, setEditingUrl] = useState<string | null>(null);
   const [smartResultSize, setSmartResultSize] = useState<{ width: number; height: number } | null>(null);
   const smartNodeRef = useRef<HTMLDivElement>(null);
+  const smartPromptRef = useRef<HTMLDivElement | null>(null);
   const smartImagePointerRef = useRef<{ x: number; y: number; moved: boolean } | null>(null);
   const imageRunSeqRef = useRef(0);
   const resumeImageTaskKeyRef = useRef('');
@@ -265,9 +262,15 @@ const ImageNode = ({ id, data, selected, dragging }: NodeProps) => {
     throwIfImageRunCancelled(runSeq);
   };
   const d = data as any;
-  const model = d?.model || IMAGE_MODELS[0].id;
-  const modelDef = useMemo(() => IMAGE_MODELS.find((m) => m.id === model) || IMAGE_MODELS[0], [model]);
   const apiSettings = useApiKeysStore((s) => s.settings);
+  const catalogImageModels = useMemo(() => modelsForKind(apiSettings, 'image'), [apiSettings]);
+  const savedRealModel = typeof d?.apiModel === 'string' ? d.apiModel : d?.model;
+  const model = effectiveModelId(savedRealModel, catalogImageModels);
+  const configuredImageProtocol = String(apiSettings.zhenzhenImageModelProtocols?.[model] || '').trim();
+  const modelDef = useMemo(
+    () => imageModelDefFor(model, configuredImageProtocol),
+    [configuredImageProtocol, model],
+  );
   const advancedProviders = apiSettings.advancedProviders || [];
   const imageAdvancedProviders = useMemo(
     () => advancedProvidersForNode(advancedProviders, 'image'),
@@ -454,16 +457,14 @@ const ImageNode = ({ id, data, selected, dragging }: NodeProps) => {
   const aspectRatio = d?.aspectRatio || modelDef.defaultAspectRatio;
   const sizeLevel = d?.sizeLevel || modelDef.defaultSize;
   // 子模型变体(对齐 gpt-image-2-web 的 g_model/n_model)
-  const savedApiModel = typeof d?.apiModel === 'string' ? d.apiModel : '';
-  const configuredApiModelOverride = String(apiSettings.zhenzhenImageModelOverrides?.[modelDef.id] || '').trim();
-  const configuredApiModelOptions = withUpstreamModelOption(modelDef.apiModelOptions, configuredApiModelOverride);
-  const configuredApiModels = parseModelList(configuredApiModelOverride);
-  const apiModel = savedApiModel && configuredApiModelOptions.some((opt) => opt.value === savedApiModel) && (!configuredApiModels.length || configuredApiModels.includes(savedApiModel))
-    ? savedApiModel
-    : (configuredApiModels[0] || modelDef.apiModel);
+  const apiModel = model;
   const effectiveApiModel = apiModel;
-  const apiModelOptions = configuredApiModelOptions;
+  const apiModelOptions = modelSelectOptions(
+    model && !catalogImageModels.includes(model) ? [model, ...catalogImageModels] : catalogImageModels,
+  );
   const defaultProviderApiModel = effectiveApiModel;
+  const generationModelSelectionRef = useRef({ modelId: effectiveApiModel, apiModel: effectiveApiModel });
+  generationModelSelectionRef.current = { modelId: effectiveApiModel, apiModel: effectiveApiModel };
 
   // ========== FAL 渠道识别及参数(不影响其他模型) ==========
   const isFal = isFalModel(effectiveApiModel);
@@ -479,7 +480,15 @@ const ImageNode = ({ id, data, selected, dragging }: NodeProps) => {
   const falN: number = clampImageOutputCount(d?.falN, 1);
   const coreImageCount: number = clampImageOutputCount(d?.imageCount, 1);
   const coreImageQuality: 'auto' | 'low' | 'medium' | 'high' = d?.imageQuality || 'auto';
-  const coreSubmitMode: 'async' | 'sync' = d?.imageSubmitMode === 'sync' ? 'sync' : 'async';
+  const coreImageProtocol = String(
+    apiSettings.zhenzhenImageModelProtocols?.[effectiveApiModel]
+      || apiSettings.zhenzhenImageModelProtocols?.[modelDef.id]
+      || '',
+  ).trim();
+  const isAzureGptImageProtocol = coreImageProtocol === 'azure-gpt-image';
+  const coreSubmitMode: 'async' | 'sync' = isAzureGptImageProtocol
+    ? 'sync'
+    : (d?.imageSubmitMode === 'sync' ? 'sync' : 'async');
   const falFormat: 'png' | 'jpeg' | 'webp' = d?.falFormat || 'png';
   const falSync: boolean = d?.falSync === true;
   // nbpro-fal: aspect_ratio/resolution/safety/imgMode/webSearch/sysPrompt/seed
@@ -526,11 +535,7 @@ const ImageNode = ({ id, data, selected, dragging }: NodeProps) => {
     ].filter(Boolean))).slice(0, MAX_IMAGE_OUTPUT_COUNT);
   }, [d?.imageUrls, imageUrl]);
   const imageResultSlots = useMemo<MediaTaskSlot[]>(() => {
-    const rawSlots = Array.isArray(d?.imageResultSlots) ? d.imageResultSlots : [];
-    if (rawSlots.length) {
-      return rawSlots.slice(0, MAX_IMAGE_OUTPUT_COUNT).map(normalizeImageResultSlot);
-    }
-    return smartImageUrls.map((url, index) => ({ status: 'success', url, index }));
+    return resolveMediaResultSlots(d?.imageResultSlots, smartImageUrls, MAX_IMAGE_OUTPUT_COUNT);
   }, [d?.imageResultSlots, smartImageUrls]);
   const smartImageSuccessUrls = useMemo(
     () => imageResultSlots
@@ -558,7 +563,7 @@ const ImageNode = ({ id, data, selected, dragging }: NodeProps) => {
     resumeImageTaskKeyRef.current = resumeKey;
     const runSeq = ++imageRunSeqRef.current;
 
-    const baseUrls = [...smartImageUrls];
+    const baseUrls: string[] = [];
     let slots: MediaTaskSlot[] = createPendingMediaSlots(Math.max(expectedImageOutputCount, taskIds.length, baseUrls.length));
     baseUrls.forEach((url, index) => {
       slots = markMediaSlotSuccess(slots, index, [url]);
@@ -624,8 +629,8 @@ const ImageNode = ({ id, data, selected, dragging }: NodeProps) => {
         const completedCount = slots.filter((slot) => slot.status === 'success' || slot.status === 'failed').length;
         scheduleProgressUpdate({
           progress: `${Math.min(99, Math.max(1, Math.floor((completedCount / Math.max(1, slots.length)) * 100)))}%`,
-          imageUrl: mergedUrls[0],
-          imageUrls: mergedUrls,
+          imageUrl: mergedUrls[0] || '',
+          imageUrls: [...mergedUrls],
           imageResultSlots: slots.map((slot) => ({ ...slot })),
         });
         await waitImagePoll(interval, runSeq);
@@ -772,6 +777,15 @@ const ImageNode = ({ id, data, selected, dragging }: NodeProps) => {
       });
       return;
     }
+    if (actionId === 'layer-agent') {
+      placeQuickActionNode('layer-agent', url, {
+        sourceImageUrl: url,
+        imageUrl: url,
+        status: 'idle',
+        error: '',
+      });
+      return;
+    }
     if (actionId === 'image-to-video') {
       placeQuickActionNode('video', url, {
         localRefImages: [url],
@@ -799,6 +813,7 @@ const ImageNode = ({ id, data, selected, dragging }: NodeProps) => {
       url,
       hasImageEditor: true,
       hasGridEditor: true,
+      hasLayerAgent: true,
       hasImageToVideo: true,
       hasClipStudio: true,
       hasDirector: false,
@@ -810,7 +825,7 @@ const ImageNode = ({ id, data, selected, dragging }: NodeProps) => {
             key={action.id}
             type="button"
             disabled={!action.enabled}
-            className="t8-smart-result-action"
+            className="t8-smart-result-action inline-flex items-center gap-1"
             data-disabled={action.enabled ? 'false' : 'true'}
             title={action.disabledReason || action.label}
             onMouseDown={(e) => e.stopPropagation()}
@@ -821,7 +836,8 @@ const ImageNode = ({ id, data, selected, dragging }: NodeProps) => {
               void handleResultQuickAction(action.id, url);
             }}
           >
-            {action.label}
+            {action.id === 'layer-agent' ? <Layers size={13} /> : null}
+            <span>{action.label}</span>
           </button>
         ))}
       </div>
@@ -865,9 +881,9 @@ const ImageNode = ({ id, data, selected, dragging }: NodeProps) => {
 
   // 切换模型时,如果当前比例/尺寸不在新模型选项里则重置
   const switchModel = (mId: string) => {
-    const newDef = IMAGE_MODELS.find((m) => m.id === mId) || IMAGE_MODELS[0];
-    const configuredModels = parseModelList(apiSettings.zhenzhenImageModelOverrides?.[newDef.id]);
-    const patch: any = { model: mId, apiModel: configuredModels[0] || newDef.apiModel };
+    const newDef = imageModelDefFor(mId, apiSettings.zhenzhenImageModelProtocols?.[mId]);
+    generationModelSelectionRef.current = { modelId: mId, apiModel: mId };
+    const patch: any = { model: mId, apiModel: mId };
     if (newDef.paramKind === 'mj') {
       if (!d?.mjVersion) patch.mjVersion = DEFAULT_MJ_VERSION;
       if (!d?.mjAr) patch.mjAr = DEFAULT_MJ_RATIO;
@@ -881,8 +897,8 @@ const ImageNode = ({ id, data, selected, dragging }: NodeProps) => {
   };
 
   const switchApiModel = (nextApiModel: string) => {
-    const nextSize = gptImage2ZhenzhenVariantSize(nextApiModel);
-    update(nextSize ? { apiModel: nextApiModel, sizeLevel: nextSize } : { apiModel: nextApiModel });
+    generationModelSelectionRef.current = { modelId: nextApiModel, apiModel: nextApiModel };
+    update({ model: nextApiModel, apiModel: nextApiModel });
   };
 
   // 从上游节点 + 本地上传按用户排序后的顺序聚合 prompt + 参考图
@@ -950,13 +966,74 @@ const ImageNode = ({ id, data, selected, dragging }: NodeProps) => {
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
+
+  const expandCoreImageBatchIntoNodes = (count: number) => {
+    const sourceNode = getNodes().find((node) => node.id === id);
+    if (!sourceNode || count <= 1) return false;
+    const existingNodes = getNodes();
+    const incomingEdges = getEdges().filter((edge) => edge.target === id);
+    const copyCount = count - 1;
+    const stamp = Date.now();
+    const width = (sourceNode.measured?.width || sourceNode.width || 380) as number;
+    const height = (sourceNode.measured?.height || sourceNode.height || 360) as number;
+    const columns = Math.min(3, copyCount);
+    const desired: PlacementRect[] = Array.from({ length: copyCount }, (_, index) => ({
+      x: sourceNode.position.x + width + 70 + (index % columns) * (width + 28),
+      y: sourceNode.position.y + Math.floor(index / columns) * (height + 28),
+      w: width,
+      h: height,
+    }));
+    const offset = placeBatchNodes(desired, existingNodes, { source: `placement:image-batch:${id}` });
+    const maxSerial = existingNodes.reduce((max, node) => Math.max(max, Number(node.data?.nodeSerialId) || 0), 0);
+    const clones: Node[] = desired.map((position, index) => ({
+      ...sourceNode,
+      id: `image-batch-${stamp}-${index}-${Math.random().toString(36).slice(2, 6)}`,
+      position: { x: position.x + offset.dx, y: position.y + offset.dy },
+      selected: false,
+      dragging: false,
+      data: {
+        ...sanitizeClipboardNodeData(sourceNode.data, sourceNode.type),
+        imageCount: 1,
+        status: 'idle',
+        progress: '',
+        error: null,
+        nodeSerialId: maxSerial + index + 1,
+      },
+    } as Node));
+    const clonedEdges: Edge[] = clones.flatMap((clone, cloneIndex) => incomingEdges.map((edge, edgeIndex) => ({
+      ...edge,
+      id: `e-image-batch-${stamp}-${cloneIndex}-${edgeIndex}-${Math.random().toString(36).slice(2, 6)}`,
+      target: clone.id,
+      selected: false,
+    } as Edge)));
+    const cloneIds = clones.map((clone) => clone.id);
+    update({ imageCount: 1, imageResultSlots: [], status: 'idle', progress: '', error: null });
+    addNodes(clones);
+    setEdges((edges) => [...edges, ...clonedEdges]);
+    setTimeout(() => {
+      useRunBusStore.getState().triggerRunMany([id, ...cloneIds], 'batch');
+    }, 120);
+    return true;
+  };
   const removeMjRef = (kind: 'sref' | 'oref', idx: number) => {
     if (kind === 'sref') update({ mjSrefImages: mjSrefImages.filter((_, i) => i !== idx) });
     else update({ mjOrefImages: mjOrefImages.filter((_, i) => i !== idx) });
   };
 
   const handleGenerate = async () => {
+    if (coreImageCount > 1 && !isExternalSelected && !isFal && !isMj) {
+      expandCoreImageBatchIntoNodes(coreImageCount);
+      return;
+    }
     const runSeq = ++imageRunSeqRef.current;
+    const runModelSelection = generationModelSelectionRef.current;
+    const runModelDef = imageModelDefFor(
+      runModelSelection.modelId,
+      apiSettings.zhenzhenImageModelProtocols?.[runModelSelection.apiModel],
+    );
+    const runApiModel = runModelSelection.apiModel || runModelDef.apiModel;
+    flushProgressUpdate();
+    resumeImageTaskKeyRef.current = '';
     setError(null);
     const { prompt: upstreamPrompt, images: upstreamImages } = collectUpstream();
     const resolvedLocalPrompt = resolveMediaMentions(localPrompt, promptMentions, mentionMaterials);
@@ -979,10 +1056,19 @@ const ImageNode = ({ id, data, selected, dragging }: NodeProps) => {
       return;
     }
     taskCompletionSound.primeAudio();
+    setSmartComposerOpenLocal(false);
+    smartPanelToggle.handledClickRef.current = false;
+    smartPanelToggle.suppressClickRef.current = true;
     update({
       status: 'generating',
       progress: '0%',
       error: null,
+      imageUrl: '',
+      imageUrls: [],
+      remoteImageUrls: [],
+      taskId: '',
+      falResponseUrl: '',
+      falEndpoint: '',
       imageResultSlots: createPendingMediaSlots(expectedImageOutputCount),
     });
     try {
@@ -1034,6 +1120,7 @@ const ImageNode = ({ id, data, selected, dragging }: NodeProps) => {
           providerId: providerSelection.provider.id,
           providerModel,
           model: providerModel,
+          paramKind: modelDef.paramKind,
           prompt: finalPrompt,
           size,
           // 比例 / 清晰度等级原样带给扩展平台（New API / apishu 等按 aspect_ratio + image_size 识别）。
@@ -1059,7 +1146,7 @@ const ImageNode = ({ id, data, selected, dragging }: NodeProps) => {
           remoteImageUrls: res.remoteImageUrls,
           lastPrompt: finalPrompt,
           usedI2I: allRefs.length > 0,
-          taskId: res.taskId || d?.taskId,
+          taskId: res.taskId || '',
         });
         logBus.success(`扩展平台完成 → ${urls[0]}`, src);
         taskCompletionSound.notifyComplete(id, 'image');
@@ -1268,7 +1355,7 @@ const ImageNode = ({ id, data, selected, dragging }: NodeProps) => {
 
       // ============ 原有标准路径(GPT2 standard / nano-banana / nano-banana-pro 未动) ============
       logBus.info(
-        `提交任务: model=${effectiveApiModel} 比例=${aspectRatio} 尺寸=${sizeLevel} 数量=${coreImageCount} 参考图=${allRefs.length} prompt="${finalPrompt.slice(0, 60)}${finalPrompt.length > 60 ? '…' : ''}"`,
+        `提交任务: model=${runApiModel} 比例=${aspectRatio} 尺寸=${sizeLevel} 数量=${coreImageCount} 参考图=${allRefs.length} prompt="${finalPrompt.slice(0, 60)}${finalPrompt.length > 60 ? '…' : ''}"`,
         src,
       );
       const allCoreImageUrls: string[] = [];
@@ -1312,12 +1399,13 @@ const ImageNode = ({ id, data, selected, dragging }: NodeProps) => {
         scheduleProgressUpdate({ progress: `${Math.min(99, Math.max(1, Math.floor(avg)))}%` });
       };
       const buildCoreImageRequest = () => ({
-        model: modelDef.id,
-        apiModel: effectiveApiModel,
-        paramKind: modelDef.paramKind,
+        model: runApiModel,
+        apiModel: runApiModel,
+        paramKind: runModelDef.paramKind,
         prompt: finalPrompt,
         aspect_ratio: aspectRatio,
         image_size: sizeLevel,
+        size: runModelDef.paramKind === 'gpt-size' ? gptImageSizeFor(aspectRatio, sizeLevel) : undefined,
         images: allRefs,
         n: 1,
         quality: coreImageQuality,
@@ -1398,7 +1486,7 @@ const ImageNode = ({ id, data, selected, dragging }: NodeProps) => {
           let lastProg = '5%';
           for (let i = 0; i < maxPoll; i++) {
             await waitImagePoll(interval, runSeq);
-            const q = await queryImageStatus(task.taskId, effectiveApiModel);
+            const q = await queryImageStatus(task.taskId, runApiModel);
             throwIfImageRunCancelled(runSeq);
             if (q.progress && q.progress !== lastProg) {
               lastProg = q.progress;
@@ -1498,6 +1586,14 @@ const ImageNode = ({ id, data, selected, dragging }: NodeProps) => {
     }
   }, [status, taskId, effectiveApiModel]);
 
+  useEffect(() => {
+    if (imageRunSeqRef.current === 0 && status === 'generating' && !taskId && smartImageUrls.length === 0) {
+      const message = '上次生成已中断，请重新生成';
+      setError(message);
+      update({ status: 'error', progress: '', error: message });
+    }
+  }, [status, taskId, smartImageUrls.length]);
+
   // 接入运行总线,供批量运行调起
   useRunTrigger(id, handleGenerate, 'image');
 
@@ -1570,6 +1666,7 @@ const ImageNode = ({ id, data, selected, dragging }: NodeProps) => {
   const smartImageAspectRatio = Math.max(0.25, Math.min(4, Number(d?.smartImageAspectRatio) || 0));
   const isSmartRegenerating = status === 'generating' && Boolean(imageUrl);
   const smartComposerOpen = smartComposerOpenLocal && !smartCardDragging && !dragging;
+  const smartImageCardState = status === 'generating' ? 'running' : status === 'error' ? 'failed' : imageUrl ? 'result' : 'empty';
   const smartComposerWidth = Math.max(smartCardWidth, 620);
   const smartResultInfoRows = useMemo(() => buildSmartImageResultInfo({
     url: smartPreviewUrl || primarySmartImageUrl,
@@ -1621,6 +1718,8 @@ const ImageNode = ({ id, data, selected, dragging }: NodeProps) => {
     };
   }, [primarySmartImageUrl, smartPreviewUrl]);
 
+  // Kept alongside the composer-owned dismissal: ignores prompt portals
+  // and other floating editors that legitimately sit outside the anchor.
   useOutsideClose({
     enabled: useSmartCardImageNode && smartComposerOpenLocal,
     refs: smartNodeRef,
@@ -1633,8 +1732,11 @@ const ImageNode = ({ id, data, selected, dragging }: NodeProps) => {
     onToggle: setSmartComposerOpenLocal,
     onDragChange: setSmartCardDragging,
     onDragClose: () => setSmartComposerOpenLocal(false),
-    disabled: !useSmartCardImageNode,
+    disabled: !useSmartCardImageNode || status === 'generating',
   });
+
+  // Composer open state is session-only; release it when the node unmounts.
+  useEffect(() => () => smartNodeComposerActions.close(id), [id]);
 
   const switchImageNodeVariant = (variant: 'smart-card' | 'classic') => {
     setSmartComposerOpenLocal(false);
@@ -1650,8 +1752,14 @@ const ImageNode = ({ id, data, selected, dragging }: NodeProps) => {
     return (
       <SmartNodeShell
         rootRef={smartNodeRef}
-        className="t8-smart-image-node relative overflow-visible"
+      data-canvas-node-root={true}
+      className={`t8-smart-image-node relative overflow-visible ${selected ? 'is-selected' : ''}`}
         style={{ width: smartCardWidth }}
+        accessibleLabel="图像节点"
+        smartState={smartImageCardState}
+        onKeyboardActivate={() => {
+          if (status !== 'generating') setSmartComposerOpenLocal(true);
+        }}
         rootProps={{
           ...dropProps,
           onPointerDown: smartPanelToggle.onPointerDown,
@@ -1679,21 +1787,6 @@ const ImageNode = ({ id, data, selected, dragging }: NodeProps) => {
             className="t8-smart-node-port !border-0"
             style={{ top: '50%' }}
           />
-          <ResizableCorners
-            selected={selected}
-            minWidth={300}
-            minHeight={160}
-            maxWidth={760}
-            maxHeight={720}
-            accent="var(--t8-accent)"
-            keepAspectRatio={false}
-            onResize={(_e, p) => update({ smartCardWidth: Math.round(p.width), smartCardHeight: Math.round(p.height) })}
-            onResizeEnd={(_e, p) => {
-              update({ smartCardWidth: Math.round(p.width), smartCardHeight: Math.round(p.height) });
-              syncImageNodeGeometry();
-            }}
-          />
-
           <div className="t8-smart-node-body">
             <div className="t8-smart-node-preview">
               {imageResultSlots.length > 0 ? (
@@ -1703,15 +1796,19 @@ const ImageNode = ({ id, data, selected, dragging }: NodeProps) => {
                     if (slot.status !== 'success' || !url) {
                       const isFailed = slot.status === 'failed';
                       const isCancelled = slot.status === 'cancelled';
+                      const slotErrorText = String(slot.error || '').trim();
+                      const slotTaskText = String(slot.taskId || '').trim();
                       const placeholderText = isFailed ? '失败' : (isCancelled ? '已停止' : (slot.status === 'running' ? '生成中' : '等待中'));
                       return (
                         <div
                           key={`slot-${index}-${slot.status}`}
                           className={`t8-smart-result-item t8-smart-result-placeholder t8-smart-result-placeholder--${slot.status}`}
-                          title={isFailed || isCancelled ? slot.error || placeholderText : '等待生成结果'}
+                          title={isFailed || isCancelled ? slotErrorText || placeholderText : (slotTaskText ? `等待生成结果 taskId=${slotTaskText}` : '等待生成结果')}
                         >
                           {isFailed || isCancelled ? <AlertCircle size={18} /> : <Loader2 size={18} className="animate-spin" />}
                           <span>{placeholderText}</span>
+                          {slotErrorText && <span className="t8-smart-result-placeholder-error">{slotErrorText}</span>}
+                          {slotTaskText && <span className="t8-smart-result-placeholder-task">task {slotTaskText.slice(-8)}</span>}
                         </div>
                       );
                     }
@@ -1913,12 +2010,30 @@ const ImageNode = ({ id, data, selected, dragging }: NodeProps) => {
           </div>
         </div>
 
+        <ResizableCorners
+          selected={selected}
+          minWidth={300}
+          minHeight={160}
+          maxWidth={760}
+          maxHeight={720}
+          accent="var(--t8-accent)"
+          keepAspectRatio={false}
+          onResize={(_e, p) => update({ smartCardWidth: Math.round(p.width), smartCardHeight: Math.round(p.height) })}
+          onResizeEnd={(_e, p) => {
+            update({ smartCardWidth: Math.round(p.width), smartCardHeight: Math.round(p.height) });
+            syncImageNodeGeometry();
+          }}
+        />
+
         {smartComposerOpen && (
           <SmartNodeComposer
             portal
             anchorRef={smartNodeRef}
             style={{ width: smartComposerWidth }}
             onMouseDown={(e) => e.stopPropagation()}
+            onRequestClose={() => setSmartComposerOpenLocal(false)}
+            ariaLabel="图像节点属性"
+            initialFocusRef={smartPromptRef}
           >
             <MaterialPreviewSection
               texts={orderedTexts}
@@ -1955,7 +2070,6 @@ const ImageNode = ({ id, data, selected, dragging }: NodeProps) => {
                     type="button"
                     className="nodrag nopan t8-btn t8-smart-classic-switch"
                     onPointerDown={(e) => {
-                      e.preventDefault();
                       e.stopPropagation();
                     }}
                     onClick={(e) => {
@@ -2019,39 +2133,18 @@ const ImageNode = ({ id, data, selected, dragging }: NodeProps) => {
                   </select>
                 </label>
               ) : (
-                <>
-                  <div className="t8-smart-segment" aria-label="图像模型">
-                    {IMAGE_MODELS.map((m) => {
-                      const isActive = m.id === model;
-                      return (
-                        <button
-                          key={m.id}
-                          type="button"
-                          onClick={() => switchModel(m.id)}
-                          title={m.description}
-                          className="t8-smart-segment__item"
-                          data-active={isActive ? 'true' : 'false'}
-                        >
-                          {m.tabLabel}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  {!isMj && (
-                    <label className="t8-smart-field">
-                      <span>具体模型</span>
-                      <select
-                        value={defaultProviderApiModel}
-                        onChange={(e) => switchApiModel(e.target.value)}
-                        className="t8-select t8-smart-select"
-                      >
-                        {apiModelOptions.map((opt) => (
-                          <option key={opt.value} value={opt.value}>{opt.label}</option>
-                        ))}
-                      </select>
-                    </label>
-                  )}
-                </>
+                <label className="t8-smart-field">
+                  <span>模型</span>
+                  <select
+                    value={defaultProviderApiModel}
+                    onChange={(e) => switchApiModel(e.target.value)}
+                    className="t8-select t8-smart-select"
+                  >
+                    {apiModelOptions.map((opt) => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                </label>
               )}
             </div>
             {isExternalSelected && providerSelection.provider && (
@@ -2100,14 +2193,12 @@ const ImageNode = ({ id, data, selected, dragging }: NodeProps) => {
 
             <div className="t8-smart-prompt-shell t8-smart-prompt-shell--compact">
               <MentionPromptInput
+                editorRef={smartPromptRef}
                 title="图像 Prompt"
                 value={localPrompt}
                 mentions={promptMentions}
                 materials={mentionMaterials}
                 onChange={(value, mentions) => update({ prompt: value, promptMentions: mentions })}
-                onSubmit={() => {
-                  if (status !== 'generating') void handleGenerate();
-                }}
                 placeholder={orderedTexts.length > 0 ? '已连接上游文本，也可在这里补充提示词' : '描述要生成的画面'}
                 isDark={isDark}
                 isPixel={isPixel}
@@ -2123,6 +2214,7 @@ const ImageNode = ({ id, data, selected, dragging }: NodeProps) => {
                   <select
                     value={coreSubmitMode}
                     onChange={(e) => update({ imageSubmitMode: e.target.value })}
+                    disabled={isAzureGptImageProtocol}
                     className="t8-select t8-smart-select"
                   >
                     <option value="async">异步</option>
@@ -2316,7 +2408,7 @@ const ImageNode = ({ id, data, selected, dragging }: NodeProps) => {
 
   return (
     <div
-      className={`t8-node t8-image-node-classic relative transition-all ${selected ? 't8-image-node-classic--selected' : ''} ${
+        className={`t8-node t8-image-node-classic relative transition-all ${selected ? 'is-selected t8-image-node-classic--selected' : ''} ${
         isAccepting ? 't8-image-node-classic--accepting' : ''
       }`}
       {...dropProps}
@@ -2341,7 +2433,6 @@ const ImageNode = ({ id, data, selected, dragging }: NodeProps) => {
           type="button"
           className="nodrag nopan t8-btn t8-smart-classic-switch"
           onPointerDown={(e) => {
-            e.preventDefault();
             e.stopPropagation();
           }}
           onClick={(e) => {
@@ -2784,40 +2875,9 @@ const ImageNode = ({ id, data, selected, dragging }: NodeProps) => {
           </div>
         )}
 
-        {/* 模型 TAB 切换(对应主项目 gpt-image-2-web Tab 0/1/2) */}
-        {!isExternalSelected && <div>
-          <label className="text-[10px] text-white/50 block mb-1">模型</label>
-          <div
-            className={`flex gap-0.5 p-0.5 rounded ${isPixel ? '' : 'bg-white/5'}`}
-            style={isPixel ? { background: 'var(--px-muted)', border: '1.5px solid var(--px-ink)' } : undefined}
-          >
-            {IMAGE_MODELS.map((m) => {
-              const isActive = m.id === model;
-              return (
-                <button
-                  key={m.id}
-                  onClick={() => switchModel(m.id)}
-                  title={m.description}
-                  className={`flex-1 py-1 text-[10px] font-semibold rounded transition-all ${
-                    isActive ? 'bg-amber-500/30 text-amber-200' : 'text-zinc-400 hover:text-zinc-200'
-                  }`}
-                  style={
-                    isPixel && isActive
-                      ? { background: 'var(--px-yellow)', color: 'var(--px-ink)', border: '1.5px solid var(--px-ink)', boxShadow: '1px 1px 0 var(--px-ink)' }
-                      : isPixel ? { color: 'var(--px-ink-soft)' } : undefined
-                  }
-                >
-                  {m.tabLabel}
-                </button>
-              );
-            })}
-          </div>
-        </div>}
-
-        {/* 子模型选择(对齐主项目 Tab 内的 model 下拉) - MJ 模式隐藏(用下面专属版本选择) */}
-        {!isExternalSelected && !isMj && (
+        {!isExternalSelected && (
           <div>
-            <label className="text-[10px] text-white/50 block mb-1">具体模型</label>
+            <label className="text-[10px] text-white/50 block mb-1">模型</label>
             <select
               value={defaultProviderApiModel}
               onChange={(e) => switchApiModel(e.target.value)}
@@ -2887,6 +2947,7 @@ const ImageNode = ({ id, data, selected, dragging }: NodeProps) => {
               <select
                 value={coreSubmitMode}
                 onChange={(e) => update({ imageSubmitMode: e.target.value })}
+                disabled={isAzureGptImageProtocol}
                 style={{ background: '#18181b', color: '#ffffff' }}
                 className="w-full rounded border border-white/10 px-2 py-1 text-xs outline-none focus:border-white/30"
               >

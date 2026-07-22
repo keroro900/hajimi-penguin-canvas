@@ -14,13 +14,8 @@
 | 项目 | 地址 |
 |---|---|
 | 当前仓库 | <https://github.com/keroro900/hajimi-penguin-canvas> |
-| 原项目位置 | <https://github.com/T8mars/T8-penguin-canvas> |
 | 推荐中转站 | <https://api.skylee9.cloudns.ch/> |
 | 联系 QQ | `1479704008` |
-| 在线站点 | <https://ai.t8star.org/register?aff=dP7j> |
-| 企鹅的在线画布 | <https://art.pebbling.cn/?invite=T8STAR> |
-| RunningHub 海外版 | <https://www.runninghub.ai/?inviteCode=rh-v1121> |
-| RunningHub 国内版 | <https://www.runninghub.cn/?inviteCode=rh-v1121> |
 
 ## 项目亮点
 
@@ -130,12 +125,6 @@ npm install
 cd backend
 npm install
 cd ..
-```
-
-如果需要查看原项目：
-
-```bash
-git clone https://github.com/T8mars/T8-penguin-canvas.git
 ```
 
 ### 启动开发模式
@@ -477,3 +466,5 @@ https://api.skylee9.cloudns.ch/
 许可证：MIT
 
 本仓库保留原项目来源和相关致谢；二次发布、修改和分发请遵守原项目许可证及各上游平台服务条款。
+
+原项目入口：<https://github.com/T8mars/T8-penguin-canvas>

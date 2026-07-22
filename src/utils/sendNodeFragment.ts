@@ -1,4 +1,5 @@
 import type { Edge, Node } from '@xyflow/react';
+import { sanitizeClipboardNodeData } from './canvasClipboard.ts';
 
 export interface SendNodeFragment {
   nodes: Node[];
@@ -71,7 +72,11 @@ export function buildSendNodeFragment(
 ): SendNodeFragment {
   const nodes = selectedNodes
     .filter((node) => node && typeof node.id === 'string' && node.id !== BULK_PHANTOM_ID)
-    .map((node) => clonePlain(node));
+    .map((node) => {
+      const cloned = clonePlain(node);
+      cloned.data = sanitizeClipboardNodeData(node.data, node.type);
+      return cloned;
+    });
   const selectedIds = new Set(nodes.map((node) => node.id));
   const edges = allEdges
     .filter((edge) => selectedIds.has(edge.source) && selectedIds.has(edge.target))
@@ -133,6 +138,7 @@ export function instantiateSendNodeFragment(
       y: basePosition.y + (sourcePosition.y - minY),
     };
     cloned.selected = selectNewNodes;
+    cloned.data = sanitizeClipboardNodeData(node.data, node.type);
     cloned.dragging = false;
     delete cloned.resizing;
     delete cloned.positionAbsolute;

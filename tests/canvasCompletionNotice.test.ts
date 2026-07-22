@@ -19,10 +19,10 @@ test('canvas completion notices mark only other canvases and clear when activate
   assert.match(store, /setActive\(id\)\s*\{[\s\S]*completionNoticeCanvasIds:/);
 });
 
-test('offscreen generation completion is wired to the sidebar canvas badge', () => {
+test('offscreen generation completion is wired to the shell panel canvas badge', () => {
   const store = read('../src/stores/canvas.ts');
   const hook = read('../src/components/nodes/useUpdateNodeData.ts');
-  const sidebar = read('../src/components/Sidebar.tsx');
+  const sidebar = read('../src/components/shell/ShellPanel.tsx');
   const css = read('../src/styles/index.css');
 
   assert.match(store, /completionNoticeCanvasIds/);

@@ -32,8 +32,22 @@ test('canvas pans with middle drag until long press commits to radial menu', () 
   assert.match(radialGestureBlock, /distanceBetween\(middlePan\.start, point\) > MIDDLE_PAN_MOVE_TOLERANCE/);
   assert.match(radialGestureBlock, /suppressMiddlePanAuxClick\(\)/);
   assert.match(radialGestureBlock, /clearPress\(\);/);
+  assert.match(radialGestureBlock, /if \(!slot\?\.enabled\) \{[\s\S]*radialPressRef\.current = null;[\s\S]*return;[\s\S]*\}/);
   assert.doesNotMatch(radialGestureBlock, /event\.button !== 2/);
   assert.doesNotMatch(radialGestureBlock, /event\.button === 2/);
+});
+
+test('radial node menu stays selectable after long-press release', () => {
+  const canvas = read('../src/components/Canvas.tsx');
+  const radialMenu = read('../src/components/RadialNodeMenu.tsx');
+
+  assert.match(canvas, /const handleRadialMenuSelect = useCallback\(\(index: number\) => \{/);
+  assert.match(canvas, /onSelect=\{handleRadialMenuSelect\}/);
+  assert.match(canvas, /onCancel=\{closeRadialMenu\}/);
+  assert.match(radialMenu, /onSelect: \(index: number\) => void;/);
+  assert.match(radialMenu, /onCancel: \(\) => void;/);
+  assert.match(radialMenu, /type="button"[\s\S]*onClick=\{\(\) => onSelect\(index\)\}/);
+  assert.match(radialMenu, /type="button"[\s\S]*onClick=\{onCancel\}/);
 });
 
 test('smart card media results stay draggable as nodes until explicit file drag-out chord', () => {

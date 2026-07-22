@@ -1,0 +1,336 @@
+/*
+ * Soft UI visual skin (新拟物 / 柔和浮雕)
+ * 内外双阴影、柔和渐变、胶囊按钮、雾面浮雕卡片。
+ * 长时间使用也舒适，像在触摸细腻的橡胶/绒面。
+ */
+
+html[data-theme-visual="soft"] {
+  /* 阴影母题：亮/暗双阴影形成浮雕。light 模式亮阴影偏白、暗阴影偏灰蓝；
+     dark 模式亮阴影微弱反光、暗阴影深陷。 */
+  --soft-shadow-light: rgba(255, 255, 255, 0.95);
+  --soft-shadow-dark: rgba(163, 177, 198, 0.55);
+  --soft-shadow-light-weak: rgba(255, 255, 255, 0.7);
+  --soft-shadow-dark-weak: rgba(163, 177, 198, 0.4);
+  --soft-raised: 8px 8px 18px var(--soft-shadow-dark), -8px -8px 18px var(--soft-shadow-light);
+  --soft-raised-sm: 5px 5px 12px var(--soft-shadow-dark-weak), -5px -5px 12px var(--soft-shadow-light-weak);
+  --soft-raised-lg: 10px 10px 24px var(--soft-shadow-dark), -10px -10px 24px var(--soft-shadow-light);
+  /* 内凹（按下/选中） */
+  --soft-inset: inset 4px 4px 8px var(--soft-shadow-dark), inset -4px -4px 8px var(--soft-shadow-light);
+  --soft-inset-sm: inset 3px 3px 6px var(--soft-shadow-dark-weak), inset -3px -3px 6px var(--soft-shadow-light-weak);
+  --soft-accent: var(--t8-accent);
+  --soft-accent-soft: color-mix(in srgb, var(--t8-accent) 16%, transparent);
+  --soft-accent-line: color-mix(in srgb, var(--t8-accent) 32%, transparent);
+  --soft-card-bg: var(--t8-bg-panel);
+  --soft-card-bg-elev: var(--t8-bg-panel-elevated);
+  --soft-muted-bg: var(--t8-bg-panel-muted);
+  --soft-border: color-mix(in srgb, var(--t8-text-main) 8%, transparent);
+  --soft-radius: 18px;
+  --soft-radius-pill: 9999px;
+  --soft-transition: 180ms cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* SHIFT 划线断连：柔光直线，克制不抢戏。 */
+  --t8-cut-cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%236c8eef' stroke-width='1.6' stroke-linecap='round' opacity='0.8'><path d='M4 12h16'/></svg>") 12 12, crosshair;
+  --t8-cut-color: var(--soft-accent);
+  --t8-cut-track: color-mix(in srgb, var(--soft-accent) 60%, transparent);
+  --t8-cut-button-bg: var(--soft-card-bg);
+  --t8-cut-button-fg: var(--soft-accent);
+  --t8-cut-button-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect fill='black' x='3' y='11' width='18' height='2' rx='1'/></svg>");
+}
+
+/* 深色模式：亮阴影只剩微光，暗阴影更深。 */
+html[data-theme-visual="soft"][data-theme-mode="dark"] {
+  --soft-shadow-light: rgba(255, 255, 255, 0.04);
+  --soft-shadow-dark: rgba(20, 22, 25, 0.85);
+  --soft-shadow-light-weak: rgba(255, 255, 255, 0.03);
+  --soft-shadow-dark-weak: rgba(20, 22, 25, 0.7);
+}
+
+html[data-theme-visual="soft"] body,
+html[data-theme-visual="soft"] #root {
+  background: var(--t8-bg-app);
+  color: var(--t8-text-main);
+  font-family: var(--t8-font-family);
+}
+
+/* 应用外壳：柔和渐变，不喧宾夺主。 */
+html[data-theme-visual="soft"] .t8-app-shell {
+  background:
+    radial-gradient(circle at 12% 10%, color-mix(in srgb, var(--soft-accent) 6%, transparent), transparent 32%),
+    radial-gradient(circle at 88% 18%, color-mix(in srgb, var(--t8-secondary) 5%, transparent), transparent 34%),
+    linear-gradient(180deg, var(--t8-bg-app), var(--t8-bg-canvas)) !important;
+}
+
+/* 顶栏：大圆角卡片化、双阴影浮起。 */
+html[data-theme-visual="soft"] .t8-topbar {
+  min-height: 50px;
+  background: var(--soft-card-bg) !important;
+  border-bottom: 1px solid var(--soft-border) !important;
+  box-shadow: var(--soft-raised-sm);
+}
+
+/* 侧栏：同样卡片化。 */
+html[data-theme-visual="soft"] .t8-sidebar,
+html[data-theme-visual="soft"] .t8-sidebar-scroll {
+  background: var(--soft-card-bg) !important;
+  border-right: 1px solid var(--soft-border) !important;
+}
+
+/* 通用卡片/面板：双阴影浮雕。 */
+html[data-theme-visual="soft"] .t8-card,
+html[data-theme-visual="soft"] .t8-sidebar-node {
+  background: var(--soft-card-bg) !important;
+  border: 1px solid var(--soft-border) !important;
+  border-radius: var(--soft-radius) !important;
+  box-shadow: var(--soft-raised-sm) !important;
+  transition: box-shadow var(--soft-transition), transform var(--soft-transition) !important;
+}
+
+html[data-theme-visual="soft"] .t8-panel {
+  background: var(--t8-bg-panel-elevated) !important;
+  border: 1px solid var(--t8-border) !important;
+  border-radius: var(--t8-radius-panel) !important;
+  box-shadow: var(--t8-shadow-panel) !important;
+}
+
+html[data-theme-visual="soft"] .t8-card:hover,
+html[data-theme-visual="soft"] .t8-sidebar-node:hover {
+  box-shadow: var(--soft-raised) !important;
+  transform: translateY(-1px);
+}
+
+/* 节点标题区：用主色淡底，不用硬色块。 */
+html[data-theme-visual="soft"] .react-flow__node:not(.react-flow__node-groupBox) .t8-node-header,
+html[data-theme-visual="soft"] .t8-node-header {
+  background: var(--t8-node-header-bg) !important;
+  border-bottom: 1px solid var(--soft-border) !important;
+  border-radius: var(--soft-radius) var(--soft-radius) 0 0 !important;
+}
+
+/* GroupBox：组背景内凹，让组内节点“浮在槽里”。 */
+html[data-theme-visual="soft"] .react-flow__node-groupBox > div:first-child {
+  background: var(--soft-muted-bg) !important;
+  border: 1px solid var(--soft-border) !important;
+  border-radius: var(--soft-radius) !important;
+  box-shadow: var(--soft-inset-sm) !important;
+}
+
+/* === 按钮：胶囊形 + 按压反馈 === */
+html[data-theme-visual="soft"] .react-flow__node:not(.react-flow__node-groupBox) button:not(.react-flow__controls-button):not([class*="text-red"]):not([class*="bg-red"]):not([title*="删除"]):not([aria-label*="删除"]),
+html[data-theme-visual="soft"] .t8-btn,
+html[data-theme-visual="soft"] .t8-mini-icon-button {
+  background: var(--soft-card-bg) !important;
+  border: 1px solid var(--soft-border) !important;
+  border-radius: var(--soft-radius-pill) !important;
+  box-shadow: var(--soft-raised-sm) !important;
+  color: var(--t8-text-main) !important;
+  transition: box-shadow var(--soft-transition), transform var(--soft-transition), background var(--soft-transition) !important;
+}
+
+html[data-theme-visual="soft"] .react-flow__node:not(.react-flow__node-groupBox) button:not(.react-flow__controls-button):not([class*="text-red"]):not([class*="bg-red"]):not([title*="删除"]):not([aria-label*="删除"]):hover,
+html[data-theme-visual="soft"] .t8-btn:hover,
+html[data-theme-visual="soft"] .t8-mini-icon-button:hover {
+  background: var(--soft-card-bg-elev) !important;
+  box-shadow: var(--soft-raised) !important;
+  transform: translateY(-1px);
+}
+
+html[data-theme-visual="soft"] .react-flow__node:not(.react-flow__node-groupBox) button:not(.react-flow__controls-button):not([class*="text-red"]):not([class*="bg-red"]):not([title*="删除"]):not([aria-label*="删除"]):active,
+html[data-theme-visual="soft"] .t8-btn:active,
+html[data-theme-visual="soft"] .t8-mini-icon-button:active {
+  box-shadow: var(--soft-inset-sm) !important;
+  transform: translateY(0);
+}
+
+/* 主按钮：主色填充，但保持柔和（不亮瞎）。 */
+html[data-theme-visual="soft"] .t8-btn--primary,
+html[data-theme-visual="soft"] button[class*="bg-"][class*="--accent"],
+html[data-theme-visual="soft"] .px-btn--mint {
+  background: var(--soft-accent) !important;
+  color: var(--t8-accent-text) !important;
+  box-shadow: var(--soft-raised-sm), 0 0 0 1px var(--soft-accent-line) !important;
+}
+
+html[data-theme-visual="soft"] .t8-btn--primary:hover {
+  background: var(--t8-accent-hover) !important;
+  box-shadow: var(--soft-raised), 0 0 0 1px var(--soft-accent-line) !important;
+}
+
+/* === 输入框/选择框：内凹，像刻在表面 === */
+html[data-theme-visual="soft"] .react-flow__node:not(.react-flow__node-groupBox) input,
+html[data-theme-visual="soft"] .react-flow__node:not(.react-flow__node-groupBox) select,
+html[data-theme-visual="soft"] .react-flow__node:not(.react-flow__node-groupBox) textarea,
+html[data-theme-visual="soft"] .t8-input,
+html[data-theme-visual="soft"] .t8-select,
+html[data-theme-visual="soft"] textarea {
+  background: var(--soft-muted-bg) !important;
+  border: 1px solid var(--soft-border) !important;
+  border-radius: 12px !important;
+  box-shadow: var(--soft-inset-sm) !important;
+  color: var(--t8-text-main) !important;
+  transition: box-shadow var(--soft-transition), border-color var(--soft-transition) !important;
+}
+
+html[data-theme-visual="soft"] .react-flow__node:not(.react-flow__node-groupBox) input:focus,
+html[data-theme-visual="soft"] .react-flow__node:not(.react-flow__node-groupBox) select:focus,
+html[data-theme-visual="soft"] .react-flow__node:not(.react-flow__node-groupBox) textarea:focus,
+html[data-theme-visual="soft"] .t8-input:focus,
+html[data-theme-visual="soft"] .t8-select:focus,
+html[data-theme-visual="soft"] textarea:focus {
+  outline: none !important;
+  border-color: var(--soft-accent-line) !important;
+  box-shadow: var(--soft-inset-sm), 0 0 0 3px var(--soft-accent-soft) !important;
+}
+
+/* select option：浅色/深色下拉项可读性兜底。 */
+html[data-theme-visual="soft"] select option {
+  background: var(--soft-card-bg-elev) !important;
+  color: var(--t8-text-main) !important;
+}
+
+html[data-theme-visual="soft"] select option:checked {
+  background: var(--soft-accent-soft) !important;
+  color: var(--t8-text-main) !important;
+}
+
+/* === 端口（Handle）：圆形小浮雕 === */
+html[data-theme-visual="soft"] .react-flow__handle {
+  border-radius: 50% !important;
+  border: 2px solid var(--soft-card-bg) !important;
+  background: var(--t8-accent) !important;
+  box-shadow: 2px 2px 4px var(--soft-shadow-dark-weak), -2px -2px 4px var(--soft-shadow-light-weak) !important;
+  transition: box-shadow var(--soft-transition) !important;
+}
+
+html[data-theme-visual="soft"] .react-flow__handle:hover {
+  box-shadow: 3px 3px 6px var(--soft-shadow-dark), -3px -3px 6px var(--soft-shadow-light) !important;
+}
+
+html[data-theme-visual="soft"] .react-flow__handle.react-flow__handle-connecting {
+  background: var(--t8-warning) !important;
+}
+
+html[data-theme-visual="soft"] .react-flow__handle.react-flow__handle-valid {
+  background: var(--t8-success) !important;
+}
+
+/* === 连线：柔和、不抢戏 === */
+html[data-theme-visual="soft"] .react-flow__edge-path {
+  stroke: var(--t8-edge) !important;
+  stroke-width: 1.8 !important;
+}
+
+html[data-theme-visual="soft"] .react-flow__edge.selected .react-flow__edge-path,
+html[data-theme-visual="soft"] .react-flow__edge:hover .react-flow__edge-path {
+  stroke: var(--t8-edge-selected) !important;
+  stroke-width: 2.4 !important;
+}
+
+/* 框选：主色淡填充。 */
+html[data-theme-visual="soft"] .react-flow__selection {
+  background: var(--t8-selection-bg) !important;
+  border: 1px solid var(--t8-selection-border) !important;
+  border-radius: 12px !important;
+}
+
+/* === MiniMap / 音乐按钮：浮起控件组（controls 面板保持透明，仅按钮走浮雕） === */
+html[data-theme-visual="soft"] .t8-theme-music-toggle {
+  background: var(--soft-card-bg) !important;
+  border: 1px solid var(--soft-border) !important;
+  border-radius: 14px !important;
+  box-shadow: var(--soft-raised-sm) !important;
+}
+
+/* controls 面板容器透明，只给内部按钮走浮雕。 */
+html[data-theme-visual="soft"] .react-flow__controls {
+  background: var(--t8-bg-panel-elevated) !important;
+  border: 1px solid var(--t8-border) !important;
+  border-radius: var(--t8-radius-panel) !important;
+  box-shadow: var(--t8-shadow-panel) !important;
+}
+
+html[data-theme-visual="soft"] .react-flow__controls-button {
+  background: var(--soft-card-bg) !important;
+  border: 1px solid var(--soft-border) !important;
+  border-radius: 12px !important;
+  box-shadow: var(--soft-raised-sm) !important;
+  color: var(--t8-text-main) !important;
+  margin: 2px 0 !important;
+}
+
+html[data-theme-visual="soft"] .react-flow__controls-button:hover {
+  background: var(--soft-accent-soft) !important;
+  color: var(--soft-accent) !important;
+}
+/* === 右键菜单 / 弹窗 / 抽屉 === */
+html[data-theme-visual="soft"] .t8-modal,
+html[data-theme-visual="soft"] .t8-drawer {
+  background: var(--soft-card-bg-elev) !important;
+  border: 1px solid var(--soft-border) !important;
+  border-radius: var(--soft-radius) !important;
+  box-shadow: var(--soft-raised-lg) !important;
+}
+
+html[data-theme-visual="soft"] .t8-context-menu {
+  background: var(--t8-bg-panel-elevated) !important;
+  border: 1px solid var(--t8-border) !important;
+  border-radius: var(--t8-radius-panel) !important;
+  box-shadow: var(--t8-shadow-panel) !important;
+}
+
+/* === SHIFT 划线轨迹：柔光直线 === */
+html[data-theme-visual="soft"] .t8-cut-track {
+  stroke: var(--t8-cut-track) !important;
+  stroke-width: 1.8 !important;
+  stroke-dasharray: none !important;
+  opacity: 0.7;
+}
+
+html[data-theme-visual="soft"] .t8-cut-button {
+  background: var(--t8-cut-button-bg) !important;
+  color: var(--t8-cut-button-fg) !important;
+  border: 1px solid var(--soft-border) !important;
+  border-radius: var(--soft-radius-pill) !important;
+  box-shadow: var(--soft-raised-sm) !important;
+}
+
+/* === 浮层反馈：选中节点的浮动操作栏也走胶囊 === */
+html[data-theme-visual="soft"] .t8-node-action-bar {
+  background: var(--soft-card-bg-elev) !important;
+  border: 1px solid var(--soft-border) !important;
+  border-radius: var(--soft-radius-pill) !important;
+  box-shadow: var(--soft-raised) !important;
+}
+
+/* === legacy 内部控件兜底：把节点里残留的暗色工具类映射回 soft 调色 === */
+html[data-theme-visual="soft"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) [class*="text-white"]:not(input):not(textarea):not(select) {
+  color: var(--t8-text-main) !important;
+}
+
+/* 浅色模式 svg 图标：跟随父级主文字色，不被 text-white/NN 冲淡 */
+html[data-theme-visual="soft"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) svg,
+html[data-theme-visual="soft"][data-theme-mode="light"] .t8-node svg {
+  color: var(--t8-text-main) !important;
+}
+
+html[data-theme-visual="soft"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) [class*="bg-white/"]:not(input):not(textarea):not(select):not(img):not(video):not(canvas) {
+  background: var(--soft-card-bg-elev) !important;
+}
+
+html[data-theme-visual="soft"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) [class*="bg-zinc-900"]:not(input):not(textarea):not(select):not(img):not(video):not(canvas),
+html[data-theme-visual="soft"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) [class*="bg-zinc-950"]:not(input):not(textarea):not(select):not(img):not(video):not(canvas) {
+  background: var(--soft-muted-bg) !important;
+}
+
+html[data-theme-visual="soft"][data-theme-mode="light"] .react-flow__node:not(.react-flow__node-groupBox) [class*="border-white/"] {
+  border-color: var(--soft-border) !important;
+}
+
+/* 减少动态效果偏好：关掉 hover 上浮和过渡。 */
+@media (prefers-reduced-motion: reduce) {
+  html[data-theme-visual="soft"] .react-flow__node:not(.react-flow__node-groupBox) > div:first-child,
+  html[data-theme-visual="soft"] .t8-card,
+  html[data-theme-visual="soft"] .t8-btn {
+    transition: none !important;
+    transform: none !important;
+  }
+}
