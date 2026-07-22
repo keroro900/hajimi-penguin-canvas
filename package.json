@@ -1,7 +1,7 @@
 {
   "name": "hajimi-canvas",
   "private": false,
-  "version": "2.4.0",
+  "version": "2.4.1",
   "type": "module",
   "main": "electron/main.cjs",
   "description": "JIMI AI — AI 节点画布工作流工具（Web + Electron 桌面端）",
@@ -119,6 +119,7 @@
       "electron/main.cjs",
       "electron/preload.cjs",
       "electron/loader.cjs",
+      "electron/smoke-ready.cjs",
       "package.json",
       "node_modules/**/*",
       "!node_modules/electron/**/*",

@@ -14,9 +14,10 @@ test('package config enables GitHub release updates and local release scripts', 
   const pkg = JSON.parse(read('../package.json'));
   const publish = pkg.build.publish?.[0];
 
-  assert.equal(pkg.version, '2.4.0');
+  assert.equal(pkg.version, '2.4.1');
   assert.ok(pkg.dependencies['electron-updater']);
   assert.ok(pkg.dependencies['electron-log']);
+  assert.ok(pkg.build.files.includes('electron/smoke-ready.cjs'));
   assert.equal(publish.provider, 'github');
   assert.equal(publish.owner, 'keroro900');
   assert.equal(publish.repo, 'hajimi-penguin-canvas');
@@ -84,7 +85,7 @@ test('release scripts split build, draft, publish, verification, and containment
   const release = read('../scripts/release-github.cjs');
   const verify = read('../scripts/verify-github-release.cjs');
   const allowlist = JSON.parse(read('../scripts/release-secret-allowlist.json'));
-  const notes = read('../release-notes/v2.4.0.md');
+  const notes = read('../release-notes/v2.4.1.md');
 
   assert.match(distRelease, /T8_REQUIRE_UPDATE_ARTIFACTS/);
   assert.match(distRelease, /git[\s\S]*status[\s\S]*--porcelain/);
