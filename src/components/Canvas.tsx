@@ -7070,7 +7070,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
 
   const dragFrameRef = useRef<ReturnType<typeof createRafThrottle<
     | { kind: 'clear' }
-    | { kind: 'group'; groupId: string; dx: number; dy: number }
+    | { kind: 'group'; apply: () => void }
     | {
         kind: 'snap';
         node: Node;
@@ -7088,25 +7088,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       }
 
       if (payload.kind === 'group') {
-        const ref = groupDragRef.current;
-        if (!ref || ref.groupId !== payload.groupId || ref.memberIds.length === 0) return;
-        const idSet = new Set(ref.memberIds);
-        setNodes((prev) => {
-          let changed = false;
-          const next = prev.map((n) => {
-            if (!idSet.has(n.id)) return n;
-            const initial = ref.memberPositions[n.id];
-            if (!initial) return n;
-            const nextX = initial.x + payload.dx;
-            const nextY = initial.y + payload.dy;
-            if (Math.abs(n.position.x - nextX) < 0.01 && Math.abs(n.position.y - nextY) < 0.01) {
-              return n;
-            }
-            changed = true;
-            return { ...n, position: { x: nextX, y: nextY } };
-          });
-          return changed ? next : prev;
-        });
+        payload.apply();
         return;
       }
 
@@ -7191,7 +7173,22 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         const dx = node.position.x - ref.startX;
         const dy = node.position.y - ref.startY;
         if (dx === 0 && dy === 0) return;
-        dragFrameRef.current?.schedule({ kind: 'group', groupId: node.id, dx, dy });
+        const idSet = new Set(ref.memberIds);
+        const applyMemberPositions = () => setNodes((prev) => {
+          let changed = false;
+          const next = prev.map((n) => {
+            if (!idSet.has(n.id)) return n;
+            const initial = ref.memberPositions[n.id];
+            if (!initial) return n;
+            const nextX = initial.x + dx;
+            const nextY = initial.y + dy;
+            if (Math.abs(n.position.x - nextX) < 0.01 && Math.abs(n.position.y - nextY) < 0.01) return n;
+            changed = true;
+            return { ...n, position: { x: initial.x + dx, y: initial.y + dy } };
+          });
+          return changed ? next : prev;
+        });
+        dragFrameRef.current?.schedule({ kind: 'group', apply: applyMemberPositions });
         return;
       }
       if (!snapEnabled) return;

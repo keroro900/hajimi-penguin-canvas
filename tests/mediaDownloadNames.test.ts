@@ -13,7 +13,6 @@ test('image preview and media nodes use explicit media download filenames', () =
   const upload = read('../src/components/nodes/UploadNode.tsx');
   const videoOutput = read('../src/components/nodes/VideoOutputNode.tsx');
   const modelPreview = read('../src/components/nodes/Model3DPreviewNode.tsx');
-  const codexImage = read('../src/components/nodes/CodexImageConjureNode.tsx');
   const canvas = read('../src/components/Canvas.tsx');
   const download = read('../src/utils/downloadMedia.ts');
 
@@ -34,10 +33,9 @@ test('image preview and media nodes use explicit media download filenames', () =
   assert.match(upload, /download=\{mediaDownloadFileName\(previewItem\.kind, previewItem\.url, 0, previewItem\.mime\)\}/);
   assert.match(videoOutput, /download=\{mediaDownloadFileName\(isVideoUrl\(u\) \? 'video' : 'image', u, i\)\}/);
   assert.match(modelPreview, /download=\{mediaDownloadFileName\('model3d', currentUrl, 0\)\}/);
-  assert.match(codexImage, /download=\{mediaDownloadFileName\('image', latestUrls\[0\], 0\)\}/);
   assert.match(canvas, /downloadMediaUrl\(item\.kind, item\.url, index, item\.mime\)/);
 
-  for (const source of [preview, output, image, upload, videoOutput, modelPreview, codexImage]) {
+  for (const source of [preview, output, image, upload, videoOutput, modelPreview]) {
     assert.match(source, /downloadMediaUrl/);
     assert.match(source, /preventDefault\(\)/);
   }

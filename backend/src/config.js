@@ -111,7 +111,7 @@ const config = {
   USER_LUT_DIR: process.env.T8PC_USER_LUT_DIR || path.join(DATA_ROOT, 'data', 'user-luts'),
   // 本地 Eagle API 默认地址。仅允许本机地址，避免桌面端变成远端请求代理。
   DEFAULT_EAGLE_API_BASE: 'http://127.0.0.1:41595',
-  // 用于旧版本配置迁移：遇到旧硬编码默认值时迁移到 hajimi 默认目录。
+  // 用于旧版本配置迁移：仅作为历史来源，目标仍为当前 hajimi 默认目录。
   LEGACY_WINDOWS_DEFAULT_ROOT,
 };
 

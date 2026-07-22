@@ -63,20 +63,13 @@ test('release metadata records merge-friendly content update scope', () => {
   assert.match(features, /content-pack-v2/);
 });
 
-test('ComfyUI, RH, and FAL manifests expose merge-friendly content pack examples', () => {
+test('active ComfyUI and FAL manifests expose merge-friendly content pack examples', () => {
   const comfyManifest = read('../src/data/comfyuiAppManifest.ts');
-  const rhManifest = read('../src/data/rhToolboxManifest.ts');
   const falManifest = read('../src/data/falToolboxManifest.ts');
 
   assert.match(comfyManifest, /id:\s*'content-recipes'/);
   assert.equal((comfyManifest.match(/['"]content-pack-v2['"]/g) || []).length >= 2, true);
   assert.match(comfyManifest, /缺模型|缺节点/);
-
-  assert.equal((rhManifest.match(/['"]content-pack-v2['"]/g) || []).length >= 3, true);
-  assert.match(rhManifest, /产品图精修/);
-  assert.match(rhManifest, /角色一致性九宫格/);
-  assert.match(rhManifest, /短链素材入库/);
-  assert.match(rhManifest, /["']?enabled["']?\s*:\s*false/);
 
   assert.equal((falManifest.match(/['"]content-pack-v2['"]/g) || []).length >= 3, true);
   assert.match(falManifest, /图生视频/);

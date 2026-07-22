@@ -1895,7 +1895,7 @@ const DirectorStoryboardNode = ({ id, data, selected }: NodeProps) => {
   return (
     <div
       {...dropProps}
-      className={`t8-node relative w-[460px] overflow-visible rounded-lg text-sm transition-all ${selected ? 'is-selected' : ''}`}
+      className={`relative w-[460px] overflow-visible t8-node rounded-lg text-sm transition-all ${selected ? 'is-selected' : ''}`}
       style={{
         background: 'var(--t8-bg-node, rgba(10,15,24,.95))',
         color: 'var(--t8-text-main, #f8fafc)',

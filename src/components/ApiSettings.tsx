@@ -240,7 +240,8 @@ const CLASSIFIED_KEYS: KeySpec[] = [
   { field: 'sunoApiKey', label: 'suno 系列', desc: 'Suno 音乐专用', bullet: 'bg-rose-400' },
 ];
 
-const MODEL_FETCH_FIELDS = new Set<KeyField>(['zhenzhenApiKey', 'llmApiKey', ...CLASSIFIED_KEYS.map((k) => k.field)]);
+const CLASSIFIED_MODEL_FETCH_FIELDS = new Set<KeyField>(CLASSIFIED_KEYS.map((k) => k.field));
+const MODEL_FETCH_FIELDS = new Set<KeyField>(['zhenzhenApiKey', 'llmApiKey', ...CLASSIFIED_MODEL_FETCH_FIELDS]);
 
 const ALL_FIELDS: KeyField[] = [
   ...COMMON_KEYS.map((k) => k.field),
@@ -1224,7 +1225,9 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
         await save(fetchSettingsPatch);
       }
       const result = await fetchZhenzhenModels({
-        baseUrl: draftBaseUrl,
+        baseUrl: CLASSIFIED_MODEL_FETCH_FIELDS.has(sourceField)
+          ? String(baseUrlInputs.zhenzhenBaseUrl || '').trim()
+          : draftBaseUrl,
         apiKey: explicitKey,
         apiKeyField: sourceField,
         timeoutMs: 30000,
@@ -2970,7 +2973,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
                 void handleFetchZhenzhenModels(f);
               }}
               className={`${eyeBtnCls} disabled:opacity-40 disabled:cursor-not-allowed`}
-              title={`使用${spec.label} Key 和对应 Base URL 拉取模型列表`}
+              title={`使用${spec.label} Key 和通用服务 Base URL 拉取模型列表`}
               aria-label={`${spec.label}拉取模型覆盖`}
               disabled={pendingClear || !!zhenzhenModelFetchStatus.loading}
             >

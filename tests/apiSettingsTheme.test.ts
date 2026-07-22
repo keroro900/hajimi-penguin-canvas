@@ -125,7 +125,7 @@ test('ApiSettings classified API keys can fetch default-service model overrides 
   assert.match(apiSettingsSource, /CLASSIFIED_MODEL_FETCH_FIELDS/);
   assert.match(apiSettingsSource, /handleFetchZhenzhenModels\(f\)/);
   assert.match(apiSettingsSource, /apiKeyField:\s*sourceField/);
-  assert.match(apiSettingsSource, /baseUrl:\s*String\(baseUrlInputs\.zhenzhenBaseUrl/);
+  assert.match(apiSettingsSource, /baseUrl:\s*CLASSIFIED_MODEL_FETCH_FIELDS\.has\(sourceField\)[\s\S]*baseUrlInputs\.zhenzhenBaseUrl/);
   assert.match(apiSettingsSource, /title=\{`使用\$\{spec\.label\} Key 和通用服务 Base URL 拉取模型列表`\}/);
   assert.match(apiSettingsSource, /aria-label=\{`\$\{spec\.label\}拉取模型覆盖`\}/);
   assert.doesNotMatch(apiSettingsSource, /gptImageBaseUrl|nanoBananaBaseUrl|veoBaseUrl|soraBaseUrl|grokBaseUrl|seedanceBaseUrl|sunoBaseUrl/);

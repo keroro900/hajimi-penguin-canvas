@@ -43,12 +43,14 @@ import {
   DEFAULT_MJ_VERSION,
   DEFAULT_MJ_RATIO,
   DEFAULT_MJ_SPEED,
+  IMAGE_MODELS,
   gptImage2ZhenzhenVariantSize,
   imageModelDefFor,
   parseModelList,
+  resolvePersistedModelSelection,
   withUpstreamModelOption,
 } from '../../providers/models';
-import { effectiveModelId, modelSelectOptions, modelsForKind } from '../../providers/modelCatalog';
+import { modelSelectOptions, modelsForKind } from '../../providers/modelCatalog';
 import {
   generateImage,
   submitImageAsync,
@@ -264,9 +266,14 @@ const ImageNode = ({ id, data, selected, dragging }: NodeProps) => {
   const d = data as any;
   const apiSettings = useApiKeysStore((s) => s.settings);
   const catalogImageModels = useMemo(() => modelsForKind(apiSettings, 'image'), [apiSettings]);
-  const savedRealModel = typeof d?.apiModel === 'string' ? d.apiModel : d?.model;
-  const model = effectiveModelId(savedRealModel, catalogImageModels);
-  const configuredImageProtocol = String(apiSettings.zhenzhenImageModelProtocols?.[model] || '').trim();
+  const savedNodeModel = String(d?.model || '').trim();
+  const savedRealModel = typeof d?.apiModel === 'string' ? d.apiModel : savedNodeModel;
+  const model = savedNodeModel || savedRealModel || IMAGE_MODELS[0].id;
+  const configuredImageProtocol = String(
+    apiSettings.zhenzhenImageModelProtocols?.[model]
+    || apiSettings.zhenzhenImageModelProtocols?.[savedRealModel]
+    || '',
+  ).trim();
   const modelDef = useMemo(
     () => imageModelDefFor(model, configuredImageProtocol),
     [configuredImageProtocol, model],
@@ -457,14 +464,23 @@ const ImageNode = ({ id, data, selected, dragging }: NodeProps) => {
   const aspectRatio = d?.aspectRatio || modelDef.defaultAspectRatio;
   const sizeLevel = d?.sizeLevel || modelDef.defaultSize;
   // 子模型变体(对齐 gpt-image-2-web 的 g_model/n_model)
-  const apiModel = model;
-  const effectiveApiModel = apiModel;
-  const apiModelOptions = modelSelectOptions(
-    model && !catalogImageModels.includes(model) ? [model, ...catalogImageModels] : catalogImageModels,
+  const savedApiModel = typeof d?.apiModel === 'string' ? d.apiModel : '';
+  const configuredApiModelOverride = String(apiSettings.zhenzhenImageModelOverrides?.[modelDef.id] || '').trim();
+  const configuredApiModelOptions = withUpstreamModelOption(modelDef.apiModelOptions, configuredApiModelOverride);
+  for (const option of modelSelectOptions(catalogImageModels)) {
+    if (!configuredApiModelOptions.some((existing) => existing.value === option.value)) configuredApiModelOptions.push(option);
+  }
+  const persistedModelSelection = resolvePersistedModelSelection(
+    configuredApiModelOptions,
+    savedApiModel,
+    parseModelList(configuredApiModelOverride)[0] || modelDef.apiModel,
   );
+  const apiModel = persistedModelSelection.value;
+  const effectiveApiModel = apiModel;
+  const apiModelOptions = persistedModelSelection.options;
   const defaultProviderApiModel = effectiveApiModel;
-  const generationModelSelectionRef = useRef({ modelId: effectiveApiModel, apiModel: effectiveApiModel });
-  generationModelSelectionRef.current = { modelId: effectiveApiModel, apiModel: effectiveApiModel };
+  const generationModelSelectionRef = useRef({ modelId: modelDef.id, apiModel: effectiveApiModel });
+  generationModelSelectionRef.current = { modelId: modelDef.id, apiModel: effectiveApiModel };
 
   // ========== FAL 渠道识别及参数(不影响其他模型) ==========
   const isFal = isFalModel(effectiveApiModel);
@@ -882,8 +898,9 @@ const ImageNode = ({ id, data, selected, dragging }: NodeProps) => {
   // 切换模型时,如果当前比例/尺寸不在新模型选项里则重置
   const switchModel = (mId: string) => {
     const newDef = imageModelDefFor(mId, apiSettings.zhenzhenImageModelProtocols?.[mId]);
-    generationModelSelectionRef.current = { modelId: mId, apiModel: mId };
-    const patch: any = { model: mId, apiModel: mId };
+    const nextApiModel = parseModelList(apiSettings.zhenzhenImageModelOverrides?.[newDef.id])[0] || newDef.apiModel;
+    generationModelSelectionRef.current = { modelId: mId, apiModel: nextApiModel };
+    const patch: any = { model: mId, apiModel: nextApiModel };
     if (newDef.paramKind === 'mj') {
       if (!d?.mjVersion) patch.mjVersion = DEFAULT_MJ_VERSION;
       if (!d?.mjAr) patch.mjAr = DEFAULT_MJ_RATIO;
@@ -897,8 +914,11 @@ const ImageNode = ({ id, data, selected, dragging }: NodeProps) => {
   };
 
   const switchApiModel = (nextApiModel: string) => {
-    generationModelSelectionRef.current = { modelId: nextApiModel, apiModel: nextApiModel };
-    update({ model: nextApiModel, apiModel: nextApiModel });
+    generationModelSelectionRef.current = { modelId: modelDef.id, apiModel: nextApiModel };
+    const nextSize = gptImage2ZhenzhenVariantSize(nextApiModel);
+    update(nextSize
+      ? { model: modelDef.id, apiModel: nextApiModel, sizeLevel: nextSize }
+      : { model: modelDef.id, apiModel: nextApiModel });
   };
 
   // 从上游节点 + 本地上传按用户排序后的顺序聚合 prompt + 参考图
@@ -1399,7 +1419,7 @@ const ImageNode = ({ id, data, selected, dragging }: NodeProps) => {
         scheduleProgressUpdate({ progress: `${Math.min(99, Math.max(1, Math.floor(avg)))}%` });
       };
       const buildCoreImageRequest = () => ({
-        model: runApiModel,
+        model: runModelDef.id,
         apiModel: runApiModel,
         paramKind: runModelDef.paramKind,
         prompt: finalPrompt,

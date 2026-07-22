@@ -73,7 +73,7 @@ test('LLM node uses configured common and independent chat models instead of har
   assert.match(models, /export const DEFAULT_LLM_MODEL = ''/);
   assert.match(models, /resolveConfiguredLlmChoice/);
   assert.match(models, /llmModelChoicesFromSettings/);
-  assert.match(node, /llmModelChoicesFromSettings\(apiSettings\)/);
+  assert.match(node, /llmModelOptionsFromSettings\(apiSettings\)/);
   assert.match(node, /modelSource:\s*selectedModelSource/);
   assert.doesNotMatch(node, /LLM_MODELS\.map/);
   assert.doesNotMatch(node, /Gemini 3\.5 Flash|GPT-5|gpt-4o/);

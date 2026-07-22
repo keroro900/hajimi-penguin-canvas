@@ -1,4 +1,5 @@
 import type { AdvancedProviderConfig, AdvancedProviderSummary, CanvasProviderSource } from '../types/canvas';
+import { registryModelsForProtocol } from './modelProtocolRegistry.ts';
 
 const MASKED_RE = /^\*{2,}/;
 
@@ -270,7 +271,7 @@ export function advancedProviderModelOptions(
       ? uniqueCompact([defaultModel, ...explicit])
       : explicit;
   }
-  return [];
+  return registryModelsForProtocol(String(provider.protocol || provider.id || ''), kind === 'llm' ? 'chat' : kind);
 }
 
 export function advancedProvidersForNode(

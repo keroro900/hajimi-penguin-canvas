@@ -19,15 +19,16 @@ test('LLM submissions preserve upstream text priority and local fallback', async
   assert.equal(module.resolveLlmSubmissionText('', '', { images: 0, videos: 0 }), '');
 });
 
-test('LLM node uses an inline workbench instead of a click-open composer', () => {
+test('LLM node mounts its workbench in the shared click-open composer', () => {
   const node = readFileSync(new URL('../src/components/nodes/LLMNode.tsx', import.meta.url), 'utf8');
   const css = readFileSync(new URL('../src/styles/theme-core.css', import.meta.url), 'utf8');
   assert.match(node, /t8-llm-workbench/);
   assert.match(node, /t8-llm-composer__prompt-stack/);
   assert.match(node, /<details[^>]*className="t8-llm-composer__advanced"/);
   assert.match(node, /t8-llm-composer__footer/);
-  assert.doesNotMatch(node, /<SmartNodeComposer/);
-  assert.doesNotMatch(node, /useIsSmartNodeComposerOpen/);
+  assert.match(node, /<SmartNodeComposer/);
+  assert.match(node, /useIsSmartNodeComposerOpen\(id\)/);
+  assert.match(node, /portal/);
   assert.match(css, /\.t8-llm-composer__prompt-stack\s*\{/);
   assert.match(css, /\.t8-llm-composer__footer\s*\{/);
   assert.match(css, /\.t8-llm-workbench\s*\{/);

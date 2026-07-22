@@ -15,7 +15,7 @@ const net = require('net');
 const { spawn } = require('child_process');
 const { fileURLToPath } = require('url');
 
-const APP_VERSION = '2.3.8';
+const APP_VERSION = '2.4.0';
 const UPDATE_DISABLED_MESSAGE = '开发模式不会检查 GitHub Release 更新';
 
 // 允许在 Linux/某些机型上规避 GPU 沙盒导致的启动延迟
@@ -32,7 +32,6 @@ let backendProcess = null;
 let backendPort = 18766;
 let logBuffer = [];
 let autoUpdater = null;
-let initialUpdateCheckStarted = false;
 let vibeXFrameUiPatchTimer = null;
 let updaterState = {
   status: 'idle',
@@ -1417,17 +1416,12 @@ function installDownloadedUpdate() {
   return { success: true, status: emitUpdaterStatus({ status: 'installing', message: '正在打开安装向导，请按提示完成安装' }) };
 }
 
-function startInitialUpdateCheck() {
-  if (initialUpdateCheckStarted) return;
-  initialUpdateCheckStarted = true;
+function initializeUpdaterStatus() {
   if (!isPackaged()) {
     emitUpdaterStatus({ status: 'disabled', message: UPDATE_DISABLED_MESSAGE, error: null });
     return;
   }
   emitUpdaterStatus({ status: 'idle', message: '等待检查更新', error: null });
-  setTimeout(() => {
-    void checkForUpdatesByUser();
-  }, 2500);
 }
 
 // ---------- 端口探测 ----------
@@ -1549,7 +1543,7 @@ function createMainWindow() {
 
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
-    startInitialUpdateCheck();
+    initializeUpdaterStatus();
   });
 
   mainWindow.on('closed', () => {

@@ -233,6 +233,10 @@ export default function SmartMediaPreviewModal({
   }, [onClose, open, zoom]);
 
   const handleWheel = (event: WheelEvent<HTMLDivElement>) => {
+    if (kind !== 'image') {
+      event.stopPropagation();
+      return;
+    }
     event.preventDefault();
     event.stopPropagation();
     const multiplier = Math.exp(-event.deltaY * 0.002);
@@ -376,23 +380,43 @@ export default function SmartMediaPreviewModal({
                 <Save size={15} />
               </button>
             )}
-            <a
-              href={safeUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              download={mediaDownloadFileName(kind, safeUrl, 0)}
-              className="t8-btn t8-smart-media-preview__tool"
-              title="下载"
-              aria-label="下载"
-              onMouseDown={(e) => e.stopPropagation()}
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                void downloadMediaUrl(kind, safeUrl, 0);
-              }}
-            >
-              <Download size={15} />
-            </a>
+            {kind === 'image' ? (
+              <a
+                href={safeUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                download={mediaDownloadFileName('image', safeUrl, 0)}
+                className="t8-btn t8-smart-media-preview__tool"
+                title="下载"
+                aria-label="下载"
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  void downloadMediaUrl('image', safeUrl, 0);
+                }}
+              >
+                <Download size={15} />
+              </a>
+            ) : (
+              <a
+                href={safeUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                download={mediaDownloadFileName('video', safeUrl, 0)}
+                className="t8-btn t8-smart-media-preview__tool"
+                title="下载"
+                aria-label="下载"
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  void downloadMediaUrl('video', safeUrl, 0);
+                }}
+              >
+                <Download size={15} />
+              </a>
+            )}
             <button
               type="button"
               className="t8-btn t8-smart-media-preview__tool"
@@ -412,7 +436,7 @@ export default function SmartMediaPreviewModal({
           ref={viewportRef}
           className="t8-smart-media-preview__viewport"
           data-panning={isPanning ? 'true' : 'false'}
-          onWheel={kind === 'image' ? handleWheel : undefined}
+          onWheel={handleWheel}
           onPointerDown={kind === 'image' ? handlePanPointerDown : undefined}
           onPointerMove={kind === 'image' ? handlePanPointerMove : undefined}
           onPointerUp={kind === 'image' ? handlePanPointerEnd : undefined}

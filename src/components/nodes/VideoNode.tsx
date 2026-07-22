@@ -21,9 +21,10 @@ import {
   SORA2_FAL_DURATIONS,
   SORA2_FAL_RESOLUTIONS,
   parseModelList,
+  resolvePersistedModelSelection,
   withUpstreamModelOption,
 } from '../../providers/models';
-import { effectiveModelId, modelSelectOptions, modelsForKind } from '../../providers/modelCatalog';
+import { modelSelectOptions, modelsForKind } from '../../providers/modelCatalog';
 import {
   generateExternalVideo,
   submitVideo,
@@ -204,12 +205,24 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
   const updateProviderParams = (patch: Record<string, any>) => update({ providerParams: { ...providerParams, ...patch } });
   const catalogVideoModels = useMemo(() => modelsForKind(apiSettings, 'video'), [apiSettings]);
   const rawModel = typeof d?.model === 'string' ? d.model : '';
-  const mainId = d?.mainId || '';
+  const isLegacySora2Model = /^sora-2(?:-\d{4}-\d{2}-\d{2})?$/.test(rawModel);
+  const mainId = d?.mainId || (isLegacySora2Model ? 'sora-2' : (d?.model && VIDEO_MODELS.find((m) => (
+    m.id === d.model || m.apiModelOptions.some((o) => o.value === d.model)
+  ))?.id)) || VIDEO_MODELS[0].id;
   const modelDef = useMemo(() => VIDEO_MODELS.find((m) => m.id === mainId) || VIDEO_MODELS[0], [mainId]);
-  const apiModel = effectiveModelId(rawModel, catalogVideoModels);
-  const apiModelOptions = modelSelectOptions(
-    apiModel && !catalogVideoModels.includes(apiModel) ? [apiModel, ...catalogVideoModels] : catalogVideoModels,
+  const configuredApiModelOverride = String(apiSettings.zhenzhenVideoModelOverrides?.[modelDef.id] || '').trim();
+  const configuredApiModels = parseModelList(configuredApiModelOverride);
+  let apiModelOptions = withUpstreamModelOption(modelDef.apiModelOptions, configuredApiModelOverride);
+  for (const option of modelSelectOptions(catalogVideoModels)) {
+    if (!apiModelOptions.some((existing) => existing.value === option.value)) apiModelOptions.push(option);
+  }
+  const persistedModelSelection = resolvePersistedModelSelection(
+    apiModelOptions,
+    rawModel,
+    configuredApiModels[0] || modelDef.apiModelOptions[0].value,
   );
+  apiModelOptions = persistedModelSelection.options;
+  const apiModel = persistedModelSelection.value;
   const effectiveApiModel = apiModel;
   const omniVideoMode = !isExternalSelected ? apishuVeoOmniMode(apiModel) : null;
   const isApishuVeoOmni = omniVideoMode !== null;
@@ -395,7 +408,7 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
     if (m.kind === 'video') update({ localRefVideos: localRefVideos.filter((url) => url !== m.url), materialOrder: nextOrder });
     if (m.kind === 'audio') update({ localRefAudios: localRefAudios.filter((url) => url !== m.url), materialOrder: nextOrder });
   };
-  const maxApishuVeoOmniRefs = isApishuVeoOmniEdit ? 0 : isApishuVeoOmniComponents ? 9 : isApishuVeoOmni ? 1 : 0;
+  const maxApishuVeoOmniRefs = isApishuVeoOmniEdit ? 1 : isApishuVeoOmniComponents ? 9 : isApishuVeoOmni ? 1 : 0;
   const maxMentionRefs =
     isApishuVeoOmni
       ? maxApishuVeoOmniRefs
@@ -490,7 +503,7 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
 
   // 分组动态跟随子模型: Seedance / 即梦 CLI 支持 image/video/audio, 其他 (grok/veo/sora) 仅 image
   const previewGroups = useMemo<ReadonlyArray<'text' | 'image' | 'video' | 'audio'>>(
-    () => (isApishuVeoOmniEdit ? ['text', 'video'] : (modelDef.kind === 'seedance' || isJimengSeedanceSelected ? ['text', 'image', 'video', 'audio'] : ['text', 'image'])),
+    () => (isApishuVeoOmniEdit ? ['text', 'image', 'video'] : (modelDef.kind === 'seedance' || isJimengSeedanceSelected ? ['text', 'image', 'video', 'audio'] : ['text', 'image'])),
     [isApishuVeoOmniEdit, modelDef.kind, isJimengSeedanceSelected],
   );
 
@@ -696,8 +709,8 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
       return;
     }
     if (isApishuVeoOmniEdit && videoUrls.length === 0) {
-      setError(`${apiModel} 需要 1 个源视频`);
-      logBus.error(`生成中止: ${apiModel} 缺少源视频`, src);
+      setError('veo-omni-flash-video-edit 需要 1 个源视频');
+      logBus.error('生成中止: veo-omni-flash-video-edit 缺少源视频', src);
       return;
     }
     taskCompletionSound.primeAudio();
@@ -991,7 +1004,7 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
   };
   const { dropProps, isAccepting } = useMaterialDropTarget({
     id,
-    accepts: isApishuVeoOmniEdit ? ['video', 'text'] : (isJimengSeedanceSelected ? ['image', 'video', 'audio', 'text'] : ['image', 'text']),
+    accepts: isApishuVeoOmniEdit ? ['image', 'video', 'text'] : (isJimengSeedanceSelected ? ['image', 'video', 'audio', 'text'] : ['image', 'text']),
     onDrop: handleDrop,
   });
 

@@ -1,7 +1,7 @@
 {
   "name": "hajimi-canvas",
   "private": false,
-  "version": "2.3.8",
+  "version": "2.4.0",
   "type": "module",
   "main": "electron/main.cjs",
   "description": "JIMI AI — AI 节点画布工作流工具（Web + Electron 桌面端）",
@@ -93,6 +93,14 @@
   "build": {
     "appId": "cn.hajimi.canvas",
     "productName": "JIMI AI",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "keroro900",
+        "repo": "hajimi-penguin-canvas",
+        "releaseType": "release"
+      }
+    ],
     "directories": {
       "output": "dist_electron",
       "buildResources": "electron/build-resources"

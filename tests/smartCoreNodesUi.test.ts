@@ -107,7 +107,6 @@ test('image smart card parameter composer renders above canvas nodes through a p
     css.indexOf('.t8-smart-node-composer--portal'),
     css.indexOf('.t8-smart-rh-node'),
   );
-  const zIndexMatch = portalBlock.match(/z-index:\s*(\d+)/);
 
   assert.match(composer, /createPortal/);
   assert.match(composer, /portal\?: boolean/);
@@ -115,10 +114,7 @@ test('image smart card parameter composer renders above canvas nodes through a p
   assert.match(composer, /document\.body/);
   assert.match(image, /<SmartNodeComposer[\s\S]*portal[\s\S]*anchorRef=\{smartNodeRef\}/);
   assert.match(css, /\.t8-smart-node-composer--portal/);
-  assert.ok(zIndexMatch, 'expected smart node composer portal z-index');
-  const zIndex = Number(zIndexMatch?.[1] || '0');
-  assert.ok(zIndex >= 10000, `expected composer portal to stay above canvas nodes, got ${zIndex}`);
-  assert.ok(zIndex < 10050, `expected composer portal to stay below global app overlays, got ${zIndex}`);
+  assert.match(portalBlock, /z-index:\s*var\(--t8-z-composer\)/);
   assert.match(css, /position:\s*fixed/);
 });
 

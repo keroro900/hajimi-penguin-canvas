@@ -68,7 +68,7 @@ test('backend bytecode encryption cleans stale output with Windows-safe retries'
   assert.match(encryptScript, /removeDirWithRetry\(OUT_DIR\)/);
 });
 
-test('Electron release publishing requires explicit per-version approval', () => {
+test('Electron release build and remote mutations require explicit per-version approval', () => {
   const distRelease = read('../scripts/dist-release.cjs');
   const githubRelease = read('../scripts/release-github.cjs');
 
@@ -77,13 +77,19 @@ test('Electron release publishing requires explicit per-version approval', () =>
   assert.match(distRelease, /process\.env\.T8_RELEASE_APPROVAL === releaseApproval/);
   assert.match(distRelease, /refusing to run Electron release without explicit approval/);
   assert.match(distRelease, /only after the user explicitly asks to publish/);
-  assert.match(distRelease, /github release upload \+ verify/);
+  assert.doesNotMatch(distRelease, /release', '(?:create|upload|edit)'/);
+  assert.match(distRelease, /refusing to build release artifacts from a dirty Git tree/);
 
-  assert.match(githubRelease, /const releaseApproval = `release-\$\{version\}`/);
-  assert.match(githubRelease, /function assertReleaseApproval\(\)/);
-  assert.match(githubRelease, /if \(dryRun\) return/);
-  assert.match(githubRelease, /process\.env\.T8_RELEASE_APPROVAL === releaseApproval/);
-  assert.match(githubRelease, /refusing to publish GitHub Release without explicit approval/);
+  assert.match(githubRelease, /const approval = `release-\$\{version\}`/);
+  assert.match(githubRelease, /function assertApproval\(mode\)/);
+  assert.match(githubRelease, /process\.env\.T8_RELEASE_APPROVAL !== approval/);
+  assert.match(githubRelease, /mode === 'status'[\s\S]*mode === 'dry-run'/);
+  assert.doesNotMatch(githubRelease, /--clobber/);
+});
+
+test('project test runner emits TAP for machine-readable release evidence', () => {
+  const runTests = read('../scripts/run-tests.cjs');
+  assert.match(runTests, /--test-reporter=tap/);
 });
 
 test('Electron release keeps one packaged ffmpeg runtime and excludes installer duplicate', () => {
@@ -96,7 +102,7 @@ test('Electron release keeps one packaged ffmpeg runtime and excludes installer 
   assert.equal(packageJson.build.compression, 'normal');
   assert.ok(files.includes('!node_modules/@ffmpeg-installer/**/*'));
   assert.ok(resources.includes('tools/ffmpeg-runtime->tools/ffmpeg'));
-  assert.deepEqual(ffmpegResource.filter, ['ffmpeg.exe', 'ffmpeg', 'README.md']);
+  assert.deepEqual(ffmpegResource.filter, ['ffmpeg.exe', 'ffprobe.exe', 'ffmpeg', 'ffprobe', 'README.md']);
   assert.match(llmMedia, /resRoot && path\.join\(resRoot, 'tools', 'ffmpeg', binary\)/);
   assert.match(llmMedia, /optional dev fallback only/);
 });

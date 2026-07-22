@@ -108,6 +108,19 @@ export function withUpstreamModelOption<T extends ModelSelectOption>(
   return [...additions, ...base];
 }
 
+export function resolvePersistedModelSelection<T extends ModelSelectOption>(
+  options: readonly T[],
+  persistedValue: unknown,
+  fallbackValue: string,
+): { options: T[]; value: string } {
+  const persisted = String(persistedValue || '').trim();
+  const resolvedOptions = [...options];
+  if (persisted && !resolvedOptions.some((option) => option.value === persisted)) {
+    resolvedOptions.unshift({ value: persisted, label: persisted } as T);
+  }
+  return { options: resolvedOptions, value: persisted || fallbackValue };
+}
+
 export interface ImageModelDef {
   id: string;             // 节点内部 id(如 'gpt-image-2')
   apiModel: string;       // 默认上游真实模型名(透传给 API)
@@ -140,7 +153,10 @@ const BANANA_PRO_RATIOS = ['Auto', '1:1', '16:9', '4:3', '4:5', '3:2', '2:3', '3
 // gpt-image-2-web Grok Image Tab 的比例集合,默认参考图传入方式为 Base64
 const GROK_IMAGE_RATIOS = ['1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3'];
 
-export const GPT_IMAGE_2_ZHENZHEN_SIZE_VARIANTS: Record<string, '2K' | '4K'> = {};
+export const GPT_IMAGE_2_ZHENZHEN_SIZE_VARIANTS: Record<string, '2K' | '4K'> = {
+  'gpt-image-2-2K': '2K',
+  'gpt-image-2-4K': '4K',
+};
 
 export function gptImage2ZhenzhenVariantSize(apiModel: string | undefined | null): '2K' | '4K' | null {
   return GPT_IMAGE_2_ZHENZHEN_SIZE_VARIANTS[String(apiModel || '').trim()] || null;
@@ -148,21 +164,116 @@ export function gptImage2ZhenzhenVariantSize(apiModel: string | undefined | null
 
 export const IMAGE_MODELS: ImageModelDef[] = [
   {
-    id: '',
-    apiModel: '',
-    label: 'Image',
-    tabLabel: 'Image',
+    id: 'gpt-image-2',
+    apiModel: 'gpt-image-2-all', // 主项目 Tab 0 默认选中
+    label: 'GPT Image 2',
+    tabLabel: 'GPT2',
     provider: 'zhenzhen',
     paramKind: 'gpt-size',
     capabilities: ['t2i', 'i2i', 'edit', 'text-render'],
-    apiModelOptions: [],
+    apiModelOptions: [
+      { value: 'gpt-image-2-all', label: 'gpt-image-2-all' },
+      { value: 'gpt-image-2', label: 'gpt-image-2' },
+      { value: 'gpt-image-2-2K', label: 'gpt-image-2-2K' },
+      { value: 'gpt-image-2-4K', label: 'gpt-image-2-4K' },
+      { value: 'gpt-image-2-fal', label: 'gpt-image-2-fal' },
+    ],
     aspectRatios: GPT_RATIOS,
     defaultAspectRatio: '1:1',
     sizes: ['1K', '2K', '4K'],
     defaultSize: '2K', // 主项目默认为 2K
     supportsReference: true,
     maxReferenceImages: 9,
-    description: 'Dynamic image model parameter template',
+    description: '支持文生图/图生图/编辑/文字渲染',
+  },
+  {
+    id: 'nano-banana-2',
+    apiModel: 'gemini-3.1-flash-image',
+    label: 'Nano Banana 2',
+    tabLabel: '香蕉2',
+    provider: 'zhenzhen',
+    paramKind: 'banana-ratio',
+    capabilities: ['t2i', 'i2i'],
+    apiModelOptions: [
+      { value: 'gemini-3.1-flash-image', label: 'gemini-3.1-flash-image' },
+      { value: 'nano-banana-2-fal', label: 'nano-banana-2-fal' },
+    ],
+    aspectRatios: BANANA_FLASH_RATIOS,
+    defaultAspectRatio: '1:1',
+    sizes: ['1K', '2K', '4K'],
+    defaultSize: '2K',
+    supportsReference: true,
+    maxReferenceImages: 5,
+    description: '高速生成,适合迭代',
+  },
+  {
+    id: 'nano-banana-pro',
+    apiModel: 'gemini-3-pro-image',
+    label: 'Nano Banana Pro',
+    tabLabel: '香蕉Pro',
+    provider: 'zhenzhen',
+    paramKind: 'banana-ratio',
+    capabilities: ['t2i', 'i2i', 'edit'],
+    apiModelOptions: [
+      { value: 'gemini-3-pro-image', label: 'gemini-3-pro-image' },
+      { value: 'gemini-3-pro-image-preview', label: 'gemini-3-pro-image-preview' },
+      { value: 'gemini-3-pro-image-2k', label: 'gemini-3-pro-image-2k' },
+      { value: 'gemini-3-pro-image-4k', label: 'gemini-3-pro-image-4k' },
+      { value: 'nano-banana-pro-fal', label: 'nano-banana-pro-fal' },
+    ],
+    aspectRatios: BANANA_PRO_RATIOS,
+    defaultAspectRatio: '1:1',
+    sizes: ['1K', '2K', '4K'],
+    defaultSize: '2K',
+    supportsReference: true,
+    maxReferenceImages: 5,
+    description: '高品质 Pro 版本',
+  },
+  {
+    id: 'grok-image',
+    apiModel: 'grok-4.2-image',
+    label: 'Grok Image',
+    tabLabel: 'Grok',
+    provider: 'zhenzhen',
+    paramKind: 'grok-image',
+    capabilities: ['t2i', 'i2i'],
+    apiModelOptions: [
+      { value: 'grok-4.2-image', label: 'grok-4.2-image' },
+    ],
+    aspectRatios: GROK_IMAGE_RATIOS,
+    defaultAspectRatio: '1:1',
+    sizes: [],
+    defaultSize: '',
+    supportsReference: true,
+    maxReferenceImages: 4,
+    description: 'Grok Image · 参考图 Base64',
+  },
+  // ========================================================================
+  // Midjourney — 完全对齐 gpt-image-2-web/index.html runMJ L4437~L4694
+  //   * 不走 FAL 渠道
+  //   * 不使用主流 size/imageSize 字段(MJ 用 ar 控制比例)
+  //   * 参考图通过 --sref/--oref(uploadMJImage 后取 URL) 注入 prompt
+  //   * 子模型在 prompt 后追加 --{version}(v 8.1 / niji 7 等)
+  //   * 速度 fast/turbo/relax 决定上游 URL 段(mj-fast/mj-turbo/mj-relax)
+  // ========================================================================
+  {
+    id: 'midjourney',
+    apiModel: 'midjourney',
+    label: 'Midjourney',
+    tabLabel: 'MJ',
+    provider: 'zhenzhen',
+    paramKind: 'mj',
+    capabilities: ['t2i', 'i2i'],
+    apiModelOptions: [
+      { value: 'midjourney', label: 'Midjourney' },
+    ],
+    aspectRatios: ['1:1', '4:3', '3:2', '16:9', '3:4', '2:3', '9:16'],
+    defaultAspectRatio: '1:1',
+    sizes: [],
+    defaultSize: '',
+    supportsReference: true,
+    maxReferenceImages: 4, // sref + oref(各 2 张)
+    description: 'Midjourney v8.1 / niji 7 等',
   },
 ];
 
@@ -257,7 +368,30 @@ export interface FalEndpointDef {
 }
 
 /** 按 apiModel(如 'gpt-image-2-fal' / 'nano-banana-pro-fal' / 'nano-banana-2-fal')索引 */
-export const FAL_REGISTRY: Record<string, FalEndpointDef> = {};
+export const FAL_REGISTRY: Record<string, FalEndpointDef> = {
+  'gpt-image-2-fal': {
+    endpoint: 'openai/gpt-image-2',
+    editEndpoint: 'openai/gpt-image-2/edit',
+    paramKind: 'gpt-fal',
+    maxRefs: 5,
+  },
+  'nano-banana-pro-fal': {
+    // nano-banana-pro FAL 只对外提供 edit 端点(主项目 line 3623)
+    endpoint: 'fal-ai/nano-banana-pro/edit',
+    editEndpoint: 'fal-ai/nano-banana-pro/edit',
+    paramKind: 'nbpro-fal',
+    maxRefs: 8,
+  },
+  // 主项目 runGeminiFal(line 3491) 与 runNanoFal 共用同一个 fal-ai/nano-banana-pro/edit 端点,
+  // 参数集与 nbpro-fal 完全一致(g2f_* 与 nf_* 仅是 UI 控件 id 前缀差异),
+  // 所以复用 nbpro-fal paramKind / maxRefs=8 。
+  'nano-banana-2-fal': {
+    endpoint: 'fal-ai/nano-banana-pro/edit',
+    editEndpoint: 'fal-ai/nano-banana-pro/edit',
+    paramKind: 'nbpro-fal',
+    maxRefs: 8,
+  },
+};
 
 /** 判断一个 apiModel 是否走 FAL 协议 */
 export function isFalModel(apiModel: string | undefined | null): boolean {
@@ -303,7 +437,40 @@ export interface VideoFalEndpointDef {
   /** 该 FAL 端点是否不支持 aspect_ratio UI/参数 */
   disableAspectRatio?: boolean;
 }
-export const VIDEO_FAL_REGISTRY: Record<string, VideoFalEndpointDef> = {};
+export const VIDEO_FAL_REGISTRY: Record<string, VideoFalEndpointDef> = {
+  // 主项目 runVeo3Fal (index.html line 3713)
+  'veo3.1-fal': {
+    endpoint: 'fal-ai/veo3.1/fast/reference-to-video',
+    paramKind: 'veo-fal',
+    maxRefImages: 3,
+  },
+  // 主项目 runGrokFal (index.html line 3772)
+  'grok-video-fal': {
+    endpoint: 'xai/grok-imagine-video/text-to-video',
+    i2vEndpoint: 'xai/grok-imagine-video/image-to-video',
+    referenceEndpoint: 'xai/grok-imagine-video/reference-to-video',
+    paramKind: 'grok-fal',
+    maxRefImages: 7,
+    defaultImageMode: 'base64',
+  },
+  // 主项目 gpt-image-2-web v4.5U: Grok Video 1.5 只走 image-to-video,不传 aspect_ratio。
+  'grok-imagine-video-1.5': {
+    endpoint: 'xai/grok-imagine-video/v1.5/image-to-video',
+    paramKind: 'grok-fal',
+    maxRefImages: 1,
+    defaultImageMode: 'base64',
+    requiresImage: true,
+    disableAspectRatio: true,
+  },
+  // 主项目 runSora2Fal (index.html line 5341)
+  'sora-2': {
+    endpoint: 'fal-ai/sora-2/text-to-video',
+    i2vEndpoint: 'fal-ai/sora-2/image-to-video',
+    paramKind: 'sora-fal',
+    maxRefImages: 1,
+    defaultImageMode: 'base64',
+  },
+};
 export function isFalVideoModel(apiModel: string): boolean {
   return apiModel in VIDEO_FAL_REGISTRY;
 }
@@ -335,7 +502,11 @@ export const SORA2_FAL_DURATIONS = [4, 8, 12, 16, 20];
 /** Sora2 FAL 分辨率(主项目 srf_resolution) */
 export const SORA2_FAL_RESOLUTIONS = ['720p', 'auto'];
 
-export const GROK_VIDEO_1_5_NEW_MODELS = [] as const;
+export const GROK_VIDEO_1_5_NEW_MODELS = [
+  'grok-1.5-video-6s',
+  'grok-1.5-video-10s',
+  'grok-1.5-video-15s',
+] as const;
 
 export type GrokVideo15NewModel = typeof GROK_VIDEO_1_5_NEW_MODELS[number];
 
@@ -355,7 +526,10 @@ export function grokVideo15NewSizeFromRatio(ratioOrSize: string): '1280x720' | '
   return '1280x720';
 }
 
-export const APISHU_VEO_OMNI_MODELS = [] as const;
+export const APISHU_VEO_OMNI_MODELS = [
+  'veo-omni-flash',
+  'veo-omni-flash-video-edit',
+] as const;
 
 export type ApishuVeoOmniModel = string;
 
@@ -394,14 +568,38 @@ export interface VideoModelDef {
 }
 
 // Veo 系列子模型。第一项是切到 Veo 分类时的默认具体模型。
-const VEO_MODELS: Array<{ value: string; label: string }> = [];
+const VEO_MODELS = [
+  { value: 'veo-omni-flash', label: 'Veo Omni' },
+  { value: 'veo-omni-flash-video-edit', label: 'Veo Omni Edit' },
+  { value: 'veo-omni-10s', label: 'veo-omni-10s' },
+  { value: 'veo3', label: 'veo3' },
+  { value: 'veo3-fast', label: 'veo3-fast' },
+  { value: 'veo3-pro', label: 'veo3-pro' },
+  { value: 'veo3-fast-frames', label: 'veo3-fast-frames' },
+  { value: 'veo3-pro-frames', label: 'veo3-pro-frames' },
+  { value: 'veo3.1', label: 'veo3.1 默认' },
+  { value: 'veo3.1-fast', label: 'veo3.1-fast' },
+  { value: 'veo3.1-pro', label: 'veo3.1-pro' },
+  { value: 'veo3.1-components', label: 'veo3.1-components' },
+  { value: 'veo3.1-4k', label: 'veo3.1-4k' },
+  { value: 'veo3.1-pro-4k', label: 'veo3.1-pro-4k' },
+  { value: 'veo3.1-components-4k', label: 'veo3.1-components-4k' },
+  { value: 'veo3.1-lite', label: 'veo3.1-lite' },
+  // FAL 渠道
+  { value: 'veo3.1-fal', label: 'veo3.1-fal (FAL)' },
+];
 
-export const SEEDANCE_MODEL_OPTIONS: Array<{ value: string; label: string }> = [];
+export const SEEDANCE_MODEL_OPTIONS = [
+  { value: 'doubao-seedance-2-0-fast-260128', label: 'seedance-2-0-fast' },
+  { value: 'doubao-seedance-2-0-260128', label: 'seedance-2-0' },
+  { value: 'doubao-seedance-2.0-mini', label: 'seedance-2.0-mini' },
+];
 
 export function resolveSeedanceVideoOverride(overrides: Record<string, unknown> | undefined, model: unknown): string {
   const savedModel = String(model || '').trim();
-  void overrides;
-  return savedModel;
+  const exact = String(overrides?.[savedModel] || '').trim();
+  if (exact) return exact;
+  return String(overrides?.['seedance-2.0'] || '').trim() || savedModel;
 }
 export const SEEDANCE_RATIO_OPTIONS = ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9', '9:21', 'adaptive'];
 export const SEEDANCE_RESOLUTION_OPTIONS = ['480p', '720p', 'native1080p', 'native4K', '1080p', '2k', '4k'];
@@ -410,20 +608,79 @@ export const SEEDANCE_API_MODEL_VALUES = SEEDANCE_MODEL_OPTIONS.map((item) => it
 
 export const VIDEO_MODELS: VideoModelDef[] = [
   {
-    id: '',
-    label: 'Video',
+    id: 'grok-video-3',
+    label: 'Grok Video',
+    kind: 'grok',
+    provider: 'zhenzhen',
+    description: 'xAI Grok Video (最多 7 张参考图)',
+    apiModelOptions: [
+      { value: 'grok-video-3', label: 'grok-video-3（新版1.5）' },
+      { value: 'grok-1.5-video-6s', label: 'grok-1.5-video-6s（Zhenzhen New）' },
+      { value: 'grok-1.5-video-10s', label: 'grok-1.5-video-10s（Zhenzhen New）' },
+      { value: 'grok-1.5-video-15s', label: 'grok-1.5-video-15s（Zhenzhen New）' },
+      { value: 'grok-imagine-video-1.5', label: 'Grok Video 1.5 (FAL)' },
+      { value: 'grok-video-fal', label: 'grok-video-fal (FAL)' },
+    ],
+    // 主项目 gk_ratio(line 1410): 2:3 / 3:2 / 16:9 / 9:16 / 1:1
+    ratios: ['2:3', '3:2', '16:9', '9:16', '1:1'],
+    defaultRatio: '16:9',
+    // gk_duration(line 1412): 6 / 10 / 15 / 30
+    durations: [6, 10, 15, 30],
+    defaultDuration: 15,
+    // gk_resolution(line 1414): 480P / 720P
+    resolutions: ['480P', '720P'],
+    defaultResolution: '720P',
+    supportImages: true,
+    maxRefImages: 7,
+  },
+  {
+    id: 'veo3.1',
+    label: 'Veo',
     kind: 'veo',
     provider: 'zhenzhen',
-    description: 'Dynamic video model parameter template',
-    apiModelOptions: [],
-    ratios: ['16:9', '9:16', '1:1', '4:3', '3:4'],
+    description: 'Google Veo 系列 (默认 veo-omni-10s)',
+    apiModelOptions: VEO_MODELS,
+    // 主项目 veo_ratio 只有 16:9 / 9:16(line 1352)
+    ratios: ['16:9', '9:16'],
     defaultRatio: '16:9',
-    durations: [5, 10, 15],
-    defaultDuration: 5,
-    resolutions: ['480p', '720p', '1080p', '4k'],
-    defaultResolution: '720p',
+    defaultDuration: 10,
     supportImages: true,
-    maxRefImages: 9,
+    maxRefImages: 3,
+  },
+  {
+    id: 'sora-2',
+    label: 'Sora2',
+    kind: 'sora',
+    provider: 'zhenzhen',
+    description: 'Sora2 支持 FAL 与 Zhenzhen API 双渠道；旧 sora-2 保持 FAL',
+    apiModelOptions: [
+      { value: 'sora-2', label: 'sora-2 (FAL)' },
+      { value: 'sora-2-zhenzhen', label: 'sora-2 (Zhenzhen API)' },
+    ],
+    ratios: ['16:9', '9:16'],
+    defaultRatio: '16:9',
+    durations: [15],
+    defaultDuration: 15,
+    resolutions: [],
+    defaultResolution: '',
+    supportImages: true,
+    maxRefImages: 1,
+  },
+  {
+    id: 'seedance-2.0',
+    label: 'Seedance 2.0',
+    kind: 'seedance',
+    provider: 'zhenzhen',
+    description: '字节 Seedance 分镜 (兼容 veo 字段)',
+    apiModelOptions: SEEDANCE_MODEL_OPTIONS,
+    ratios: SEEDANCE_RATIO_OPTIONS,
+    defaultRatio: '16:9',
+    durations: SEEDANCE_DURATION_OPTIONS,
+    defaultDuration: 5,
+    resolutions: SEEDANCE_RESOLUTION_OPTIONS,
+    defaultResolution: '480p',
+    supportImages: true,
+    maxRefImages: 3,
   },
 ];
 
@@ -611,12 +868,24 @@ export interface AudioModelDef {
   description?: string;
 }
 
-export const AUDIO_MODELS: AudioModelDef[] = [];
+export const AUDIO_MODELS: AudioModelDef[] = [
+  { id: 'suno-v5.5-generate', label: 'Suno V5.5 生成', provider: 'zhenzhen', mode: 'generate' },
+  { id: 'suno-v5.5-cover', label: 'Suno V5.5 翻唱', provider: 'zhenzhen', mode: 'cover' },
+  { id: 'suno-v5.5-extend', label: 'Suno V5.5 续写', provider: 'zhenzhen', mode: 'extend' },
+];
 
 // Suno 版本下拉选项（完全对齐主项目 gpt-image-2-web 的 SUNO_MV_MAP）。
 // value 将被原样发送给后端。
-export const SUNO_VERSIONS: Array<{ value: string; label: string }> = [];
-export const DEFAULT_SUNO_VERSION = '';
+export const SUNO_VERSIONS: Array<{ value: string; label: string }> = [
+  { value: 'v3.0', label: 'v3.0' },
+  { value: 'v3.5', label: 'v3.5' },
+  { value: 'v4', label: 'v4' },
+  { value: 'v4.5', label: 'v4.5' },
+  { value: 'v4.5+', label: 'v4.5+' },
+  { value: 'v5', label: 'v5' },
+  { value: 'v5.5', label: 'v5.5' },
+];
+export const DEFAULT_SUNO_VERSION = 'v5.5';
 
 // ========== LLM/Vision ==========
 // LLM 模型名由 API 设置里拉取/填写的真实模型列表驱动。
@@ -635,7 +904,14 @@ export interface LlmModelDef {
 }
 
 export const LLM_MODEL_OVERRIDE_KEY = 'llm-direct';
-export const LLM_MODELS: LlmModelDef[] = [];
+export const LLM_MODELS: LlmModelDef[] = [
+  { id: 'gemini-3.1-flash-lite-preview', label: 'gemini-3.1-flash-lite-preview', provider: 'llm-direct', vision: true, contextLength: 1_000_000 },
+  { id: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash', provider: 'llm-direct', vision: true, contextLength: 1_000_000 },
+  { id: 'gpt-4o', label: 'GPT-4o', provider: 'llm-direct', vision: true, contextLength: 128_000 },
+  { id: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro', provider: 'llm-direct', vision: true, contextLength: 2_000_000 },
+  { id: 'gpt-5', label: 'GPT-5', provider: 'llm-direct', vision: true, contextLength: 200_000 },
+  { id: 'gpt-image-2-all', label: 'GPT Image 2 All (图文)', provider: 'llm-direct', vision: true, imageOutput: true, nonStreaming: true, description: '可自动调用图像生成' },
+];
 export const DEFAULT_LLM_MODEL = '';
 
 export type LlmModelSource = 'llm-direct' | 'zhenzhen';

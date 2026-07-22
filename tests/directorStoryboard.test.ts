@@ -327,9 +327,11 @@ test('director storyboard active shot can override global model ratio and resolu
 
 test('director storyboard keeps existing Seedance model choices without adding apishu model ids', () => {
   const node = read('../src/components/nodes/DirectorStoryboardNode.tsx');
+  const registry = read('../shared/modelProtocolRegistry.json');
 
-  assert.match(node, /doubao-seedance-2-0-fast-260128/);
-  assert.match(node, /doubao-seedance-2-0-260128/);
+  assert.match(registry, /doubao-seedance-2-0-fast-260128/);
+  assert.match(registry, /doubao-seedance-2-0-260128/);
+  assert.match(node, /modelsForKind/);
   assert.doesNotMatch(node, /isLegacySeedancePlaceholderModel/);
 });
 
@@ -510,7 +512,7 @@ test('director bridge run plan uses prepared first and last frames instead of sh
 test('seedance proxy reports detailed zhenzhen file-upload failures before task submission', () => {
   const proxy = read('../backend/src/routes/proxy.js');
 
-  assert.match(proxy, /async function uploadRefToZhenzhen\(settings,\s*ref,\s*apiKey,\s*label = '参考素材'\)/);
+  assert.match(proxy, /async function uploadRefToZhenzhen\(settings,\s*ref,\s*apiKey,\s*label = '参考素材',\s*options = \{\}\)/);
   assert.match(proxy, /throw new Error\(`\$\{label\} 上传失败: \/v1\/files HTTP \$\{upR\.status\}/);
   assert.match(proxy, /uploadRefToZhenzhen\(settings,\s*a,\s*apiKey,\s*`reference_audio \$\{i \+ 1\}`\)/);
 });

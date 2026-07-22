@@ -330,9 +330,13 @@ function resolveVideosApiSeedanceModel(_settings, requestedModel, effectiveModel
   return effective || requested;
 }
 
+function resolveVideoModelOverride(settings, model) {
+  const requestedModel = String(model || '').trim();
+  return requestedModel;
+}
+
 function resolveSeedanceVideoModelOverride(_settings, model) {
-  const raw = String(model || '').trim();
-  return raw;
+  return String(model || '').trim();
 }
 
 // ========== 工具: 以提示词为准，将 settings.zhenzhenApiKey 临时覆盖为分类 key ==========
@@ -1843,12 +1847,12 @@ async function callImageUpstreamAsync({ settings, routeModelId, apiKey, original
     forceAsync,
   };
 
-  const selectedProtocol = imageModelProtocol(settings, routeModelId)
+  const protocol = imageModelProtocol(settings, routeModelId)
     || imageModelProtocol(settings, originalApiModel)
     || imageModelProtocol(settings, finalApiModel);
-  if (selectedProtocol === 'openai-chat') return await callGaiscOpenAiCompatibleImageAsync(geminiFallbackOptions);
-  if (selectedProtocol === 'gemini-generate-content') return await callGaiscGeminiGenerateContentImageAsync(geminiFallbackOptions);
-  if (selectedProtocol === 'gemini-interactions' || selectedProtocol === 'gemini-native') return await callGaiscGeminiInteractionsImageAsync(geminiFallbackOptions);
+  if (protocol === 'openai-chat') return await callGaiscOpenAiCompatibleImageAsync(geminiFallbackOptions);
+  if (protocol === 'gemini-generate-content') return await callGaiscGeminiGenerateContentImageAsync(geminiFallbackOptions);
+  if (protocol === 'gemini-interactions' || protocol === 'gemini-native') return await callGaiscGeminiInteractionsImageAsync(geminiFallbackOptions);
 
   // ===== Grok Image 路径(对齐 gpt-image-2-web Tab 12,默认参考图 Base64) =====
   if (paramKind === 'grok-image') {
@@ -4406,7 +4410,7 @@ router.post('/video/submit', async (req, res) => {
     return res.status(400).json({ success: false, error: 'model 和 prompt 必填' });
   }
   const requestedModel = String(model || '').trim();
-  const effectiveModel = requestedModel;
+  const effectiveModel = resolveVideoModelOverride(settings, requestedModel);
   const protocolModel = requestedModel || effectiveModel;
   const routeModel = String(protocolModelInput || protocolModel).trim() || protocolModel;
   const submitProtocol = resolveVideoSubmitProtocol(settings, requestedModel, effectiveModel, routeModel);
@@ -4595,11 +4599,11 @@ router.post('/video/submit', async (req, res) => {
         rememberTaskKey(taskId, apiKey, { model, effectiveModel });
       }
       return res.json({ success: true, data: { taskId, raw: data } });
-    } else if (isSoraZhenzhen) {
+      } else if (isSoraZhenzhen) {
       // ===== Sora2 Zhenzhen API 协议(参考 gpt-image-2-web runSora2) =====
       body = {
         prompt,
-        model: effectiveModel,
+          model: 'sora-2',
         aspect_ratio: aspect_ratio || ratio || '16:9',
         duration: String(duration ?? 15),
         private: privateVideo !== false && is_private !== false,

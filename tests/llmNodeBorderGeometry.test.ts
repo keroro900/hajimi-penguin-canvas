@@ -8,13 +8,13 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const llm = readFileSync(resolve(root, 'src/components/nodes/LLMNode.tsx'), 'utf8');
 const shell = readFileSync(resolve(root, 'src/components/nodes/shared/SmartNodeShell.tsx'), 'utf8');
 
-test('LLM keeps drag/drop props without making its unpainted square shell focusable', () => {
+test('LLM keeps drag/drop props and exposes keyboard activation for its composer', () => {
   const shellStart = llm.indexOf('<SmartNodeShell');
-  const shellEnd = llm.indexOf('>', shellStart);
+  const shellEnd = llm.indexOf('    >', shellStart);
   assert.ok(shellStart >= 0 && shellEnd > shellStart);
   const openingTag = llm.slice(shellStart, shellEnd + 1);
-  assert.match(openingTag, /rootProps=\{\{\s*\.\.\.dropProps\s*\}\}/);
-  assert.doesNotMatch(openingTag, /tabIndex/);
+  assert.match(openingTag, /onKeyboardActivate=\{\(\) => setSmartComposerOpenLocal\(true\)\}/);
+  assert.match(openingTag, /rootProps=\{\{[\s\S]*\.\.\.dropProps/);
   assert.match(openingTag, /className=\{`t8-smart-llm-node[\s\S]*is-selected/);
 });
 

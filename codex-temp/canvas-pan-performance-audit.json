@@ -1,0 +1,79 @@
+{
+  "capturedAt": "2026-07-21T17:10:00+08:00",
+  "url": "http://127.0.0.1:11422/%EF%BC%8C%E5%93%8D%E5%BA%94?perf-audit=20260721",
+  "build": "vite-development",
+  "tooling": {
+    "standardChromeDevToolsTraceAvailable": false,
+    "measurement": "Browser plugin raw CDP Performance.getMetrics plus CUA drag",
+    "note": "Formal chrome-devtools performance_start_trace was unavailable; before and after use the same browser surface, page, path, and metric API."
+  },
+  "scenario": {
+    "canvasNodeCount": 20,
+    "canvasEdgeCount": 10,
+    "handleCount": 37,
+    "baselineDomElementCount": 1163,
+    "postDomElementCount": 1176,
+    "path": [
+      { "x": 700, "y": 500 },
+      { "x": 715, "y": 500 },
+      { "x": 730, "y": 500 },
+      { "x": 745, "y": 500 },
+      { "x": 760, "y": 500 },
+      { "x": 775, "y": 500 },
+      { "x": 790, "y": 500 },
+      { "x": 805, "y": 500 },
+      { "x": 820, "y": 500 },
+      { "x": 835, "y": 500 },
+      { "x": 850, "y": 500 }
+    ],
+    "input": "Browser CUA drag; one discarded warmup; 180ms settle before final metrics",
+    "metricUnit": "seconds"
+  },
+  "baselineRuns": [
+    { "run": 1, "durationMs": 572, "TaskDuration": 0.35997, "ScriptDuration": 0.191583, "RecalcStyleDuration": 0.102463, "JSHeapUsedSize": 45379364 },
+    { "run": 2, "durationMs": 1082, "TaskDuration": 0.855067, "ScriptDuration": 0.711598, "RecalcStyleDuration": 0.081248, "JSHeapUsedSize": 43700220 },
+    { "run": 3, "durationMs": 597, "TaskDuration": 0.346648, "ScriptDuration": 0.19269, "RecalcStyleDuration": 0.095982, "JSHeapUsedSize": 49935108 },
+    { "run": 4, "durationMs": 650, "TaskDuration": 0.384867, "ScriptDuration": 0.228717, "RecalcStyleDuration": 0.08483, "JSHeapUsedSize": 35689776 },
+    { "run": 5, "durationMs": 505, "TaskDuration": 0.321854, "ScriptDuration": 0.219249, "RecalcStyleDuration": 0.064133, "JSHeapUsedSize": 56843164 }
+  ],
+  "postRuns": [
+    { "run": 1, "durationMs": 953, "TaskDuration": 0.705205, "ScriptDuration": 0.538664, "RecalcStyleDuration": 0.088733, "JSHeapUsedSize": 60339324, "renderFunctionInvocations": 23, "backgroundContaminated": true },
+    { "run": 2, "durationMs": 475, "TaskDuration": 0.244719, "ScriptDuration": 0.082124, "RecalcStyleDuration": 0.10033, "JSHeapUsedSize": 49898748, "renderFunctionInvocations": 3 },
+    { "run": 3, "durationMs": 511, "TaskDuration": 0.273846, "ScriptDuration": 0.132416, "RecalcStyleDuration": 0.09237, "JSHeapUsedSize": 42389264, "renderFunctionInvocations": 4 },
+    { "run": 4, "durationMs": 432, "TaskDuration": 0.179331, "ScriptDuration": 0.063084, "RecalcStyleDuration": 0.070927, "JSHeapUsedSize": 50436760, "renderFunctionInvocations": 3 },
+    { "run": 5, "durationMs": 414, "TaskDuration": 0.150216, "ScriptDuration": 0.065038, "RecalcStyleDuration": 0.058226, "JSHeapUsedSize": 65609516, "renderFunctionInvocations": 2 }
+  ],
+  "medians": {
+    "baseline": { "TaskDuration": 0.35997, "ScriptDuration": 0.219249, "RecalcStyleDuration": 0.08483 },
+    "post": { "TaskDuration": 0.244719, "ScriptDuration": 0.082124, "RecalcStyleDuration": 0.088733, "renderFunctionInvocations": 3 }
+  },
+  "deltasPct": {
+    "taskImprovement": 32.016835,
+    "scriptImprovement": 62.543045,
+    "recalcStyleRegression": 4.600967
+  },
+  "renderAudit": {
+    "pointerPathPoints": 11,
+    "cleanFixedZoomWarmupRenderFunctionInvocations": 2,
+    "interpretation": "The isolated fixed-zoom pan rendered for viewportMoving start/end only. Repeated samples include independent media/polling state updates; their median remains far below one render per pointer point."
+  },
+  "visualAudit": {
+    "idleVisibleHandleCount": 0,
+    "leftSideOnly": true,
+    "rightSideOnly": true,
+    "regularHandleCssPx": 14,
+    "smartHandleCssPx": 16,
+    "hitTargetCssPx": 38,
+    "regularGapCssPx": 12,
+    "smartGapCssPx": 11,
+    "plusCssPx": 7,
+    "phantomVisible": false
+  },
+  "thresholds": {
+    "minimumTaskImprovementPct": 20,
+    "minimumScriptImprovementPct": 30,
+    "maximumRecalcStyleRegressionPct": 10,
+    "maximumCleanFixedZoomRenderInvocations": 2
+  },
+  "passed": true
+}

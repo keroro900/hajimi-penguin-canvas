@@ -7,7 +7,7 @@ const require = createRequire(import.meta.url);
 const modelProtocolRegistry = require('../shared/modelProtocolRegistry.json');
 const proxyModule = require('../backend/src/routes/proxy.js');
 
-import { IMAGE_MODELS, gptImage2ZhenzhenVariantSize, isFalModel, resolveSeedanceVideoOverride, withUpstreamModelOption } from '../src/providers/models.ts';
+import { IMAGE_MODELS, gptImage2ZhenzhenVariantSize, isFalModel, resolvePersistedModelSelection, resolveSeedanceVideoOverride, withUpstreamModelOption } from '../src/providers/models.ts';
 
 const imageNodeSource = fs.readFileSync(new URL('../src/components/nodes/ImageNode.tsx', import.meta.url), 'utf8');
 const videoNodeSource = fs.readFileSync(new URL('../src/components/nodes/VideoNode.tsx', import.meta.url), 'utf8');
@@ -21,6 +21,23 @@ const settingsRouteSource = fs.readFileSync(new URL('../backend/src/routes/setti
 const apiServiceSource = fs.readFileSync(new URL('../src/services/api.ts', import.meta.url), 'utf8');
 const modelsSource = fs.readFileSync(new URL('../src/providers/models.ts', import.meta.url), 'utf8');
 const dynamicModelCatalogSource = fs.readFileSync(new URL('../src/components/DynamicModelCatalogEditor.tsx', import.meta.url), 'utf8');
+
+test('persisted custom model remains selected and visible when current options no longer contain it', () => {
+  const preserved = resolvePersistedModelSelection(
+    [{ value: 'configured-first', label: 'Configured first' }],
+    'custom-X',
+    'configured-first',
+  );
+  assert.equal(preserved.value, 'custom-X');
+  assert.equal(preserved.options.some((option) => option.value === 'custom-X'), true);
+
+  const fallback = resolvePersistedModelSelection(
+    [{ value: 'configured-first', label: 'Configured first' }],
+    '',
+    'configured-first',
+  );
+  assert.equal(fallback.value, 'configured-first');
+});
 
 function sourceFunctionBody(source, functionName) {
   const start = source.indexOf(`function ${functionName}`);
@@ -42,7 +59,7 @@ test('Nano Banana 2 maps to the current Gemini Flash image upstream model', () =
 });
 
 test('default service preserves the exact image model selected by the user', () => {
-  assert.match(imageNodeSource, /configuredApiModelOptions\.some\(\(opt\) => opt\.value === savedApiModel\)/);
+  assert.match(imageNodeSource, /resolvePersistedModelSelection\([\s\S]*configuredApiModelOptions,[\s\S]*savedApiModel/);
   assert.equal(
     proxyModule._testOnly.normalizeImageApiModel('nano-banana-2'),
     'nano-banana-2',
@@ -369,22 +386,12 @@ test('Nano Banana built-in options use current Gemini Pro model ids without rewr
   assert.match(apiSettingsSource, /MODEL_REGISTRY_DEFAULT_SERVICE\.imageModelOverrides/);
 });
 
-test('CanvasPlan image defaults use real upstream model names for Banana models', () => {
+test('shared model registry uses real upstream defaults without adding a CanvasPlan registry', () => {
   const canvasPlanSource = fs.readFileSync(new URL('../backend/src/utils/canvasPlan.js', import.meta.url), 'utf8');
-  const banana2Start = canvasPlanSource.indexOf("'nano-banana-2':");
-  const bananaProStart = canvasPlanSource.indexOf("'nano-banana-pro':");
-  const grokStart = canvasPlanSource.indexOf("'grok-image':");
-  assert.ok(banana2Start >= 0, 'missing nano-banana-2 plan registry');
-  assert.ok(bananaProStart > banana2Start, 'missing nano-banana-pro plan registry');
-  assert.ok(grokStart > bananaProStart, 'missing grok plan registry');
-  const banana2Plan = canvasPlanSource.slice(banana2Start, bananaProStart);
-  const bananaProPlan = canvasPlanSource.slice(bananaProStart, grokStart);
-  assert.match(banana2Plan, /defaultApiModel:\s*'gemini-3\.1-flash-image'/);
-  assert.doesNotMatch(banana2Plan, /apiModels:\s*\[[^\]]*'nano-banana-2'/);
-  assert.match(bananaProPlan, /defaultApiModel:\s*'gemini-3-pro-image'/);
-  assert.doesNotMatch(bananaProPlan, /apiModels:\s*\[[^\]]*'nano-banana-pro'/);
-  assert.doesNotMatch(bananaProPlan, /apiModels:\s*\[[^\]]*'nano-banana-pro-2k'/);
-  assert.doesNotMatch(bananaProPlan, /apiModels:\s*\[[^\]]*'nano-banana-pro-4k'/);
+  const overrides = modelProtocolRegistry.defaultService.imageModelOverrides;
+  assert.equal(overrides.some((item: any) => item.id === 'nano-banana-2' && item.placeholder === 'gemini-3.1-flash-image'), true);
+  assert.equal(overrides.some((item: any) => item.id === 'nano-banana-pro' && item.placeholder === 'gemini-3-pro-image'), true);
+  assert.doesNotMatch(canvasPlanSource, /IMAGE_MODEL_REGISTRY/);
 });
 
 test('Nano Banana model ids pass through unchanged in Images API request bodies', async () => {
@@ -1707,7 +1714,7 @@ test('SeedanceNode model selector is driven by default service settings instead 
   ]);
   assert.match(seedanceNodeSource, /const SEEDANCE_MODEL_OVERRIDE_KEY = 'seedance-2\.0'/);
   assert.match(seedanceNodeSource, /const configuredModelList = parseModelList\(configuredModelOverride\)/);
-  assert.match(seedanceNodeSource, /const modelOptions = withUpstreamModelOption\(MODEL_OPTIONS,\s*configuredModelList\.join\('\\n'\)\)/);
+  assert.match(seedanceNodeSource, /resolvePersistedModelSelection\([\s\S]*modelOptions,[\s\S]*savedModel/);
   assert.match(seedanceNodeSource, /configuredModelDefault = configuredModelList\[0\]/);
 });
 
@@ -1737,12 +1744,13 @@ test('default service image overrides can expose multiple upstream model choices
   assert.doesNotMatch(imageNodeSource, /const effectiveApiModel = configuredApiModelOverride \|\| apiModel/);
 });
 
-test('default service video overrides use the same multi-select surface as image overrides', () => {
+test('default service video overrides use the same multi-select surface and preserve the selected backend model', () => {
   assert.match(apiSettingsSource, /const selectedVideoModels = parseModelList/);
   assert.match(apiSettingsSource, /setZhenzhenVideoModelOverridesInput\(\(prev\) => \(\{ \.\.\.prev, \[field\.id\]: stringifyModelList\(next\) \}\)\)/);
   assert.match(apiSettingsSource, /selectedVideoModels\.includes\(model\)/);
   assert.doesNotMatch(apiSettingsSource, /<select\s+[^>]*value=\{zhenzhenVideoModelOverridesInput\[field\.id\] \|\| ''\}/);
   assert.match(proxySource, /function firstConfiguredVideoModel\(value\)/);
   assert.match(proxySource, /\.split\(\/\[\\r\\n,，;；\]\+\/\)/);
-  assert.match(proxySource, /return firstConfiguredVideoModel\(raw\) \|\| String\(model \|\| ''\)\.trim\(\)/);
+  assert.match(proxySource, /function resolveVideoModelOverride\(settings,\s*model\)[\s\S]*return requestedModel/);
+  assert.match(proxySource, /function resolveSeedanceVideoModelOverride\(_settings,\s*model\)[\s\S]*return String\(model \|\| ''\)\.trim\(\)/);
 });

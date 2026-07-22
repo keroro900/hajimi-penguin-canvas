@@ -14,13 +14,14 @@ test('package config enables GitHub release updates and local release scripts', 
   const pkg = JSON.parse(read('../package.json'));
   const publish = pkg.build.publish?.[0];
 
-  assert.match(pkg.version, /^\d+\.\d+\.\d+$/);
-  assert.equal(pkg.version.split('.').every((part: string) => Number(part) >= 0 && Number(part) <= 9), true);
+  assert.equal(pkg.version, '2.4.0');
   assert.ok(pkg.dependencies['electron-updater']);
   assert.ok(pkg.dependencies['electron-log']);
   assert.equal(publish.provider, 'github');
-  assert.equal(publish.owner, 'T8mars');
-  assert.equal(publish.repo, 'T8-penguin-canvas');
+  assert.equal(publish.owner, 'keroro900');
+  assert.equal(publish.repo, 'hajimi-penguin-canvas');
+  assert.equal(publish.releaseType, 'release');
+  assert.equal(pkg.build.win.artifactName, '${productName}-Setup-${version}.${ext}');
   assert.match(pkg.scripts['dist:release'], /scripts\/dist-release\.cjs|scripts\\dist-release\.cjs/);
   assert.match(pkg.scripts['release:verify'], /verify-github-release\.cjs/);
 });
@@ -37,6 +38,8 @@ test('electron main process owns updater checks, downloads, and install IPC', ()
   assert.match(main, /require\('electron-updater'\)/);
   assert.match(main, /autoUpdater\.autoDownload\s*=\s*false/);
   assert.match(main, /autoUpdater\.autoInstallOnAppQuit\s*=\s*false/);
+  assert.doesNotMatch(main, /setTimeout\([\s\S]{0,160}checkForUpdatesByUser/);
+  assert.match(main, /initializeUpdaterStatus/);
   assert.match(main, /autoUpdater\.on\('download-progress'/);
   assert.match(main, /ipcMain\.handle\('t8pc:updater:status'/);
   assert.match(main, /ipcMain\.handle\('t8pc:updater:check'/);
@@ -75,21 +78,34 @@ test('preload and frontend expose a narrow updater surface', () => {
   assert.match(button, /打开安装向导/);
 });
 
-test('release scripts verify installer, blockmap, latest.yml, and GitHub assets', () => {
+test('release scripts split build, draft, publish, verification, and containment modes', () => {
   const postBuild = read('../electron/_post_build.cjs');
   const distRelease = read('../scripts/dist-release.cjs');
   const release = read('../scripts/release-github.cjs');
   const verify = read('../scripts/verify-github-release.cjs');
+  const allowlist = JSON.parse(read('../scripts/release-secret-allowlist.json'));
+  const notes = read('../release-notes/v2.4.0.md');
 
   assert.match(distRelease, /T8_REQUIRE_UPDATE_ARTIFACTS/);
-  assert.match(distRelease, /release-github\.cjs/);
+  assert.match(distRelease, /git[\s\S]*status[\s\S]*--porcelain/);
+  assert.doesNotMatch(distRelease, /run\([^\n]*release-github\.cjs/);
+  assert.match(distRelease, /prepare-draft/);
   assert.match(postBuild, /T8_REQUIRE_UPDATE_ARTIFACTS/);
   assert.match(postBuild, /latest\.yml/);
   assert.match(postBuild, /\.blockmap/);
-  assert.match(release, /const createArgs = \[/);
-  assert.match(release, /'create'/);
-  assert.match(release, /gh', \['release', 'upload'/);
-  assert.match(release, /latest\.yml version mismatch/);
+  assert.match(release, /status[\s\S]*dry-run[\s\S]*prepare-draft[\s\S]*verify-draft[\s\S]*publish[\s\S]*verify-public[\s\S]*contain/);
+  assert.match(release, /executeReleaseMode/);
+  assert.match(release, /--state/);
+  assert.match(release, /release-secret-allowlist\.json/);
+  assert.match(release, /secret-scan\.cjs/);
+  assert.match(release, /scan-manifest/);
+  assert.match(release, /git[\s\S]*status[\s\S]*--porcelain/);
+  assert.doesNotMatch(release, /--clobber/);
+  assert.match(release, /release', 'create'[\s\S]*--draft/);
   assert.match(verify, /release', 'download'/);
   assert.match(verify, /missing release asset/);
+  assert.doesNotMatch(verify, /release', '(?:create|edit|upload|delete)'/);
+  assert.deepEqual(allowlist, { entries: [] });
+  assert.match(notes, /2\.3\.8/);
+  assert.match(notes, /keroro900\/hajimi-penguin-canvas/);
 });

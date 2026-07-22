@@ -56,10 +56,14 @@ import { probeVideo } from '../../services/videoOps';
 import { resolveVideoDisplaySize } from '../../utils/videoDisplayAspect';
 import {
   SEEDANCE_DURATION_OPTIONS,
+  SEEDANCE_MODEL_OPTIONS,
   SEEDANCE_RATIO_OPTIONS,
   SEEDANCE_RESOLUTION_OPTIONS,
+  parseModelList,
+  resolvePersistedModelSelection,
+  withUpstreamModelOption,
 } from '../../providers/models';
-import { effectiveModelId, modelSelectOptions, modelsForKind } from '../../providers/modelCatalog';
+import { modelSelectOptions, modelsForKind } from '../../providers/modelCatalog';
 
 /**
  * SeedanceNode — 字节 Seedance 2.0 视频分镜节点
@@ -78,6 +82,8 @@ import { effectiveModelId, modelSelectOptions, modelsForKind } from '../../provi
  *   - 多张同时可用作 first_frame / last_frame (UI 中按顺序取第 1、2 张)
  */
 
+const MODEL_OPTIONS = SEEDANCE_MODEL_OPTIONS;
+const SEEDANCE_MODEL_OVERRIDE_KEY = 'seedance-2.0';
 const RATIO_OPTIONS = SEEDANCE_RATIO_OPTIONS;
 const RESOLUTION_OPTIONS = SEEDANCE_RESOLUTION_OPTIONS;
 const DURATION_OPTIONS = SEEDANCE_DURATION_OPTIONS;
@@ -141,10 +147,20 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
   const externalProviderModel = providerSelection.providerModel || externalModelOptions[0] || '';
   const catalogVideoModels = useMemo(() => modelsForKind(apiSettings, 'video'), [apiSettings]);
   const savedModel = String(d.model || '').trim();
-  const model = effectiveModelId(savedModel, catalogVideoModels);
-  const modelOptions = modelSelectOptions(
-    model && !catalogVideoModels.includes(model) ? [model, ...catalogVideoModels] : catalogVideoModels,
+  const configuredModelOverride = String(apiSettings.zhenzhenVideoModelOverrides?.[SEEDANCE_MODEL_OVERRIDE_KEY] || '').trim();
+  const configuredModelList = parseModelList(configuredModelOverride);
+  let modelOptions = withUpstreamModelOption(MODEL_OPTIONS, configuredModelList.join('\n'));
+  for (const option of modelSelectOptions(catalogVideoModels)) {
+    if (!modelOptions.some((existing) => existing.value === option.value)) modelOptions.push(option);
+  }
+  const configuredModelDefault = configuredModelList[0];
+  const persistedModelSelection = resolvePersistedModelSelection(
+    modelOptions,
+    savedModel,
+    configuredModelDefault || MODEL_OPTIONS[0].value,
   );
+  modelOptions = persistedModelSelection.options;
+  const model = persistedModelSelection.value;
   const effectiveModel = model;
   const protocolModel: string = String(d?.protocolModel || '').trim();
   const pollingModel = protocolModel || effectiveModel;

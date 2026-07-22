@@ -20,7 +20,7 @@ import {
 import {
   decodeLlmModelChoice,
   isImageOutputLlm,
-  llmModelChoicesFromSettings,
+  llmModelOptionsFromSettings,
   resolveConfiguredLlmChoice,
 } from '../../providers/models';
 import {
@@ -62,7 +62,11 @@ import {
   normalizeExcludedMaterialIds,
 } from '../../utils/materialExclusion';
 import SmartNodeShell from './shared/SmartNodeShell';
+import SmartNodeComposer from './shared/SmartNodeComposer';
 import { SmartNodeFloatingPanel } from './shared/SmartNodeModalLayer';
+import { useOutsideClose } from './shared/useOutsideClose';
+import { useSmartNodePanelToggle } from './shared/useSmartNodePanelToggle';
+import { smartNodeComposerActions, useIsSmartNodeComposerOpen } from '../../stores/smartNodeComposer';
 import { resolveLlmSubmissionText } from '../../utils/llmSubmission';
 import { buildLlmConversationMessages } from '../../utils/llmConversation';
 
@@ -193,11 +197,22 @@ const LLMNode = ({ id, data, selected }: NodeProps) => {
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
   const [editText, setEditText] = useState('');
   const [resultOpen, setResultOpen] = useState(false);
+  const smartComposerOpenLocal = useIsSmartNodeComposerOpen(id);
+  const setSmartComposerOpenLocal = useCallback(
+    (nextOpen: boolean) => {
+      if (nextOpen) smartNodeComposerActions.open(id);
+      else smartNodeComposerActions.close(id);
+    },
+    [id],
+  );
+  const [smartCardDragging, setSmartCardDragging] = useState(false);
+  const smartPromptRef = useRef<HTMLDivElement | null>(null);
 
   const sysRef = useCallback((el: HTMLElement | null) => attachWheelBlock(el), []);
   const userRef = useCallback(
     (el: HTMLElement | null) => {
       attachWheelBlock(el);
+      smartPromptRef.current = el as HTMLDivElement | null;
     },
     [],
   );
@@ -206,7 +221,7 @@ const LLMNode = ({ id, data, selected }: NodeProps) => {
   const d = data as any;
   const apiSettings = useApiKeysStore((s) => s.settings);
   const advancedProviders = apiSettings.advancedProviders;
-  const modelOptions = useMemo(() => llmModelChoicesFromSettings(apiSettings), [apiSettings]);
+  const modelOptions = useMemo(() => llmModelOptionsFromSettings(apiSettings), [apiSettings]);
   const selectedModel = resolveConfiguredLlmChoice(d?.model, d?.modelSource, apiSettings);
   const model = selectedModel.model;
   const selectedModelSource = selectedModel.source;
@@ -700,8 +715,27 @@ const LLMNode = ({ id, data, selected }: NodeProps) => {
 
   const smartNodeRef = useRef<HTMLDivElement>(null);
   const smartCardWidth = Math.min(540, Math.max(460, Number(d?.smartCardWidth) || 500));
+  const smartComposerWidth = Math.max(smartCardWidth, 620);
+  const smartComposerOpen = smartComposerOpenLocal && !smartCardDragging;
   const smartLlmCardState =
     status === 'generating' ? 'running' : status === 'error' ? 'failed' : hasChat ? 'result' : 'empty';
+
+  useEffect(() => () => smartNodeComposerActions.close(id), [id]);
+
+  useOutsideClose({
+    enabled: smartComposerOpenLocal,
+    refs: smartNodeRef,
+    onOutside: () => setSmartComposerOpenLocal(false),
+  });
+
+  const smartPanelToggle = useSmartNodePanelToggle({
+    open: smartComposerOpenLocal,
+    dragging: smartCardDragging,
+    onToggle: setSmartComposerOpenLocal,
+    onDragChange: setSmartCardDragging,
+    onDragClose: () => setSmartComposerOpenLocal(false),
+    ignoreSelector: '.nodrag, input, textarea, select, button, [contenteditable="true"], [data-drag-source]',
+  });
 
   return (
     <SmartNodeShell
@@ -711,7 +745,15 @@ const LLMNode = ({ id, data, selected }: NodeProps) => {
       style={{ width: smartCardWidth }}
       accessibleLabel="LLM 节点"
       smartState={smartLlmCardState}
-      rootProps={{ ...dropProps }}
+      onKeyboardActivate={() => setSmartComposerOpenLocal(true)}
+      rootProps={{
+        ...dropProps,
+        onPointerDown: smartPanelToggle.onPointerDown,
+        onPointerMove: smartPanelToggle.onPointerMove,
+        onPointerUp: smartPanelToggle.onPointerUp,
+        onClick: smartPanelToggle.onClick,
+        onPointerCancel: smartPanelToggle.onPointerCancel,
+      }}
     >
       {/* 输入 Handle — 固定在整体左侧 */}
       <Handle
@@ -938,6 +980,16 @@ const LLMNode = ({ id, data, selected }: NodeProps) => {
           </SmartNodeFloatingPanel>
           </>
         )}
+          {smartComposerOpen && (
+          <SmartNodeComposer
+            portal
+            anchorRef={smartNodeRef}
+            style={{ width: smartComposerWidth }}
+            onMouseDown={(e) => e.stopPropagation()}
+            onRequestClose={() => setSmartComposerOpenLocal(false)}
+            ariaLabel="LLM 节点属性"
+            initialFocusRef={smartPromptRef}
+          >
           <div className="t8-llm-workbench nodrag nowheel">
           <div className="t8-llm-composer__workspace">
             <div className="t8-llm-composer__body">
@@ -1315,6 +1367,8 @@ const LLMNode = ({ id, data, selected }: NodeProps) => {
             </div>
           </div>
           </div>
+          </SmartNodeComposer>
+          )}
       </div>
     </SmartNodeShell>
   );

@@ -150,7 +150,7 @@ test('creative desk is wired through types, canvas UI, layer styles, and resourc
   assert.match(canvas, /getResourceItems\(\{ kind: 'image'/);
   assert.match(canvas, /addResourceItem\(\{[\s\S]*kind:\s*'image'/);
 
-  assert.match(css, /\.t8-control-rail\s*\{[\s\S]*z-index:\s*78/);
+  assert.match(css, /\.t8-control-rail\s*\{[\s\S]*z-index:\s*var\(--t8-z-canvas-chrome\)/);
   assert.match(css, /\.t8-creative-desk-layer/);
   assert.match(css, /\.t8-creative-desk-layer\s*\{[\s\S]*pointer-events:\s*none/);
   assert.match(css, /\.t8-creative-desk-layer\.is-editing\s*\{[\s\S]*pointer-events:\s*auto/);
