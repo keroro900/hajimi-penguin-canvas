@@ -77,7 +77,7 @@ function main() {
 
   run('build + encrypt', command('npm'), ['run', 'prepack:enc']);
   run('prepare runtime archives', command('npm'), ['run', 'prepack:runtimes']);
-  run('electron-builder nsis', electronBuilder, ['--win', '--x64']);
+  run('electron-builder nsis', electronBuilder, ['--win', '--x64', '--config.electronDist=node_modules/electron/dist']);
   run('post-build checks', process.execPath, [path.join(ROOT, 'electron', '_post_build.cjs')]);
   console.log('[dist-release] build complete; next run release-github.cjs prepare-draft with the sealed release state');
 }

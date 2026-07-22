@@ -89,6 +89,7 @@ test('release scripts split build, draft, publish, verification, and containment
 
   assert.match(distRelease, /T8_REQUIRE_UPDATE_ARTIFACTS/);
   assert.match(distRelease, /git[\s\S]*status[\s\S]*--porcelain/);
+  assert.match(distRelease, /--config\.electronDist=node_modules\/electron\/dist/);
   assert.doesNotMatch(distRelease, /run\([^\n]*release-github\.cjs/);
   assert.match(distRelease, /prepare-draft/);
   assert.match(postBuild, /T8_REQUIRE_UPDATE_ARTIFACTS/);
